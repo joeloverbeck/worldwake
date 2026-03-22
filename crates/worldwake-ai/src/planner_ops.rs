@@ -1361,8 +1361,13 @@ mod tests {
             ("pick_up", PlannerTransitionKind::PickUpGroundLot),
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
         ];
+        let unclassified = defs
+            .iter()
+            .filter(|def| !table.contains_key(&def.id))
+            .map(|def| def.name.as_str())
+            .collect::<Vec<_>>();
 
-        assert_eq!(table.len(), defs.len());
+        assert_eq!(unclassified, vec!["press_force_claim", "yield_force_claim"]);
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);

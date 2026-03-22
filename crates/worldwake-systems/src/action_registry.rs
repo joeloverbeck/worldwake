@@ -80,6 +80,8 @@ mod tests {
             "bribe",
             "threaten",
             "declare_support",
+            "press_force_claim",
+            "yield_force_claim",
             "travel",
             "pick_up",
             "put_down",

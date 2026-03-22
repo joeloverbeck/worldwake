@@ -11,17 +11,26 @@ use worldwake_sim::{
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, BribeActionPayload, CommitOutcome, DeclareSupportActionPayload,
     DeterministicRng, DurationExpr, Interruptibility, PayloadEntityRole, Precondition,
-    RuntimeBeliefView, TargetSpec, ThreatenActionPayload,
+    PressForceClaimActionPayload, RuntimeBeliefView, TargetSpec, ThreatenActionPayload,
+    YieldForceClaimActionPayload,
 };
 
 pub fn register_office_actions(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
-) -> [ActionDefId; 3] {
+) -> [ActionDefId; 5] {
     let bribe_id = register_bribe_action(defs, handlers);
     let threaten_id = register_threaten_action(defs, handlers);
     let declare_support_id = register_declare_support_action(defs, handlers);
-    [bribe_id, threaten_id, declare_support_id]
+    let press_force_claim_id = register_press_force_claim_action(defs, handlers);
+    let yield_force_claim_id = register_yield_force_claim_action(defs, handlers);
+    [
+        bribe_id,
+        threaten_id,
+        declare_support_id,
+        press_force_claim_id,
+        yield_force_claim_id,
+    ]
 }
 
 fn register_bribe_action(
@@ -70,6 +79,46 @@ fn register_declare_support_action(
         .with_authoritative_payload_validator(validate_declare_support_payload_authoritatively),
     );
     defs.register(declare_support_action_def(
+        ActionDefId(defs.len() as u32),
+        handler,
+    ))
+}
+
+fn register_press_force_claim_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(
+        ActionHandler::new(
+            start_press_force_claim,
+            tick_press_force_claim,
+            commit_press_force_claim,
+            abort_press_force_claim,
+        )
+        .with_payload_override_validator(validate_press_force_claim_payload_override)
+        .with_authoritative_payload_validator(validate_press_force_claim_payload_authoritatively),
+    );
+    defs.register(press_force_claim_action_def(
+        ActionDefId(defs.len() as u32),
+        handler,
+    ))
+}
+
+fn register_yield_force_claim_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(
+        ActionHandler::new(
+            start_yield_force_claim,
+            tick_yield_force_claim,
+            commit_yield_force_claim,
+            abort_yield_force_claim,
+        )
+        .with_payload_override_validator(validate_yield_force_claim_payload_override)
+        .with_authoritative_payload_validator(validate_yield_force_claim_payload_authoritatively),
+    );
+    defs.register(yield_force_claim_action_def(
         ActionDefId(defs.len() as u32),
         handler,
     ))
@@ -183,6 +232,46 @@ fn declare_support_action_def(id: ActionDefId, handler: ActionHandlerId) -> Acti
     }
 }
 
+fn press_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    ActionDef {
+        id,
+        name: "press_force_claim".to_string(),
+        domain: worldwake_sim::ActionDomain::Social,
+        actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
+        targets: Vec::new(),
+        preconditions: vec![Precondition::ActorAlive],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::NonInterruptible,
+        commit_conditions: vec![Precondition::ActorAlive],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
+fn yield_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    ActionDef {
+        id,
+        name: "yield_force_claim".to_string(),
+        domain: worldwake_sim::ActionDomain::Social,
+        actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
+        targets: Vec::new(),
+        preconditions: vec![Precondition::ActorAlive],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::NonInterruptible,
+        commit_conditions: vec![Precondition::ActorAlive],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
 fn bribe_payload<'a>(
     def: &ActionDef,
     payload: &'a ActionPayload,
@@ -208,6 +297,30 @@ fn declare_support_payload<'a>(
     payload.as_declare_support().ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
             "action def {} requires DeclareSupport payload",
+            def.id
+        ))
+    })
+}
+
+fn press_force_claim_payload<'a>(
+    def: &ActionDef,
+    payload: &'a ActionPayload,
+) -> Result<&'a PressForceClaimActionPayload, ActionError> {
+    payload.as_press_force_claim().ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "action def {} requires PressForceClaim payload",
+            def.id
+        ))
+    })
+}
+
+fn yield_force_claim_payload<'a>(
+    def: &ActionDef,
+    payload: &'a ActionPayload,
+) -> Result<&'a YieldForceClaimActionPayload, ActionError> {
+    payload.as_yield_force_claim().ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "action def {} requires YieldForceClaim payload",
             def.id
         ))
     })
@@ -377,6 +490,56 @@ fn validate_declare_support_payload_authoritatively(
     validate_declare_support_context_in_world(world, actor, payload)
 }
 
+fn validate_press_force_claim_payload_override(
+    _def: &ActionDef,
+    actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    _view: &dyn RuntimeBeliefView,
+) -> bool {
+    let Some(payload) = payload.as_press_force_claim() else {
+        return false;
+    };
+    payload.office != actor
+}
+
+fn validate_press_force_claim_payload_authoritatively(
+    def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    world: &World,
+) -> Result<(), ActionError> {
+    let payload = press_force_claim_payload(def, payload)?;
+    validate_press_force_claim_context_in_world(world, actor, payload)
+}
+
+fn validate_yield_force_claim_payload_override(
+    _def: &ActionDef,
+    actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    _view: &dyn RuntimeBeliefView,
+) -> bool {
+    let Some(payload) = payload.as_yield_force_claim() else {
+        return false;
+    };
+    payload.office != actor
+}
+
+fn validate_yield_force_claim_payload_authoritatively(
+    def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    world: &World,
+) -> Result<(), ActionError> {
+    let payload = yield_force_claim_payload(def, payload)?;
+    validate_yield_force_claim_context_in_world(world, actor, payload)
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn start_bribe(
     def: &ActionDef,
@@ -541,6 +704,104 @@ fn abort_declare_support(
     Ok(())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn start_press_force_claim(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let _ = press_force_claim_payload(def, &instance.payload)?;
+    Ok(Some(ActionState::Empty))
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_press_force_claim(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_press_force_claim(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let payload = press_force_claim_payload(def, &instance.payload)?;
+    validate_press_force_claim_context_in_world(txn, instance.actor, payload)?;
+    let incumbent = txn.office_holder(payload.office);
+    txn.add_force_claim(instance.actor, payload.office)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    txn.add_target(payload.office);
+    if let Some(holder) = incumbent.filter(|holder| *holder != instance.actor) {
+        txn.add_hostility(instance.actor, holder)
+            .map_err(|error| ActionError::InternalError(error.to_string()))?;
+        txn.add_target(holder);
+    }
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_press_force_claim(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn start_yield_force_claim(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let _ = yield_force_claim_payload(def, &instance.payload)?;
+    Ok(Some(ActionState::Empty))
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_yield_force_claim(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_yield_force_claim(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let payload = yield_force_claim_payload(def, &instance.payload)?;
+    validate_yield_force_claim_context_in_world(txn, instance.actor, payload)?;
+    txn.remove_force_claim(instance.actor, payload.office)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    txn.add_target(payload.office);
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_yield_force_claim(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
 fn validate_agent_target_context(
     txn: &WorldTxn<'_>,
     actor: EntityId,
@@ -615,6 +876,74 @@ fn validate_declare_support_context_in_world(
         return Err(ActionError::PreconditionFailed(format!(
             "candidate {} is not eligible for office {}",
             payload.candidate, payload.office
+        )));
+    }
+    Ok(())
+}
+
+fn validate_press_force_claim_context_in_world(
+    world: &World,
+    actor: EntityId,
+    payload: &PressForceClaimActionPayload,
+) -> Result<(), ActionError> {
+    let office_data = world
+        .get_component_office_data(payload.office)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
+        })?;
+    if office_data.succession_law != SuccessionLaw::Force {
+        return Err(ActionError::PreconditionFailed(format!(
+            "office {} does not use force-based succession",
+            payload.office
+        )));
+    }
+    if world.effective_place(actor) != Some(office_data.jurisdiction) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is not at office jurisdiction {}",
+            office_data.jurisdiction
+        )));
+    }
+    if !candidate_is_eligible(world, office_data, actor) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is not eligible for office {}",
+            payload.office
+        )));
+    }
+    if world.offices_contested_by(actor).contains(&payload.office) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} already contests office {}",
+            payload.office
+        )));
+    }
+    if world.office_holder(payload.office) == Some(actor) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} already holds office {}",
+            payload.office
+        )));
+    }
+    Ok(())
+}
+
+fn validate_yield_force_claim_context_in_world(
+    world: &World,
+    actor: EntityId,
+    payload: &YieldForceClaimActionPayload,
+) -> Result<(), ActionError> {
+    let office_data = world
+        .get_component_office_data(payload.office)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
+        })?;
+    if world.effective_place(actor) != Some(office_data.jurisdiction) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is not at office jurisdiction {}",
+            office_data.jurisdiction
+        )));
+    }
+    if !world.offices_contested_by(actor).contains(&payload.office) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} does not contest office {}",
+            payload.office
         )));
     }
     Ok(())
@@ -788,7 +1117,8 @@ mod tests {
         AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
         BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
-        PerAgentBeliefView, SystemExecutionContext, SystemId, ThreatenActionPayload,
+        PerAgentBeliefView, PressForceClaimActionPayload, SystemExecutionContext, SystemId,
+        ThreatenActionPayload, YieldForceClaimActionPayload,
     };
 
     fn pm(value: u16) -> Permille {
@@ -823,7 +1153,7 @@ mod tests {
         DeterministicRng::new(Seed([seed; 32]))
     }
 
-    fn setup_registries() -> (ActionDefRegistry, ActionHandlerRegistry, [ActionDefId; 3]) {
+    fn setup_registries() -> (ActionDefRegistry, ActionHandlerRegistry, [ActionDefId; 5]) {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let ids = register_office_actions(&mut defs, &mut handlers);
@@ -1082,13 +1412,17 @@ mod tests {
     fn register_office_actions_creates_social_defs() {
         let (defs, handlers, ids) = setup_registries();
 
-        assert_eq!(handlers.len(), 3);
+        assert_eq!(handlers.len(), 5);
         assert_eq!(defs.get(ids[0]).unwrap().name, "bribe");
         assert_eq!(defs.get(ids[1]).unwrap().name, "threaten");
         assert_eq!(defs.get(ids[2]).unwrap().name, "declare_support");
+        assert_eq!(defs.get(ids[3]).unwrap().name, "press_force_claim");
+        assert_eq!(defs.get(ids[4]).unwrap().name, "yield_force_claim");
         assert_eq!(
             defs.iter().map(|def| def.domain).collect::<Vec<_>>(),
             vec![
+                worldwake_sim::ActionDomain::Social,
+                worldwake_sim::ActionDomain::Social,
                 worldwake_sim::ActionDomain::Social,
                 worldwake_sim::ActionDomain::Social,
                 worldwake_sim::ActionDomain::Social,
@@ -1565,6 +1899,240 @@ mod tests {
     }
 
     #[test]
+    fn press_force_claim_commit_adds_claim_and_hostility_against_incumbent() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            office.eligibility_rules = Vec::new();
+            txn.set_component_office_data(fx.office, office).unwrap();
+            txn.assign_office(fx.office, fx.target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = ActionInstance {
+            instance_id: ActionInstanceId(9),
+            def_id: ids[3],
+            payload: ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+                office: fx.office,
+            }),
+            actor: fx.actor,
+            targets: Vec::new(),
+            start_tick: Tick(3),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
+
+        let log = commit_action(&mut fx.world, &defs, &handlers, ids[3], &instance, 14, 3);
+        let record = log.get(log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+
+        assert_eq!(fx.world.offices_contested_by(fx.actor), vec![fx.office]);
+        assert_eq!(fx.world.hostile_towards(fx.target), vec![fx.actor]);
+        assert!(record.tags().contains(&EventTag::Political));
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(record.target_ids().contains(&fx.office));
+        assert!(record.target_ids().contains(&fx.target));
+    }
+
+    #[test]
+    fn press_force_claim_requires_force_law_jurisdiction_eligibility_and_no_duplicate_claim() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        let def = defs.get(ids[3]).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let payload = ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+            office: fx.office,
+        });
+
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            office.eligibility_rules = vec![EligibilityRule::FactionMember(fx.faction)];
+            txn.set_component_office_data(fx.office, office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+
+        {
+            let other_place = fx
+                .world
+                .topology()
+                .place_ids()
+                .find(|place| *place != fx.place)
+                .unwrap();
+            let mut txn = new_txn(&mut fx.world, 3);
+            txn.add_member(fx.actor, fx.faction).unwrap();
+            txn.set_ground_location(fx.actor, other_place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+
+        {
+            let mut txn = new_txn(&mut fx.world, 4);
+            txn.set_ground_location(fx.actor, fx.place).unwrap();
+            txn.add_force_claim(fx.actor, fx.office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn press_force_claim_rejects_current_recognized_holder() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            office.eligibility_rules = Vec::new();
+            office.vacancy_since = None;
+            txn.set_component_office_data(fx.office, office).unwrap();
+            txn.assign_office(fx.office, fx.actor).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let def = defs.get(ids[3]).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let payload = ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+            office: fx.office,
+        });
+
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn yield_force_claim_removes_existing_claim_and_requires_local_membership() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            txn.set_component_office_data(fx.office, office).unwrap();
+            txn.add_force_claim(fx.actor, fx.office).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = ActionInstance {
+            instance_id: ActionInstanceId(10),
+            def_id: ids[4],
+            payload: ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
+                office: fx.office,
+            }),
+            actor: fx.actor,
+            targets: Vec::new(),
+            start_tick: Tick(3),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
+
+        let log = commit_action(&mut fx.world, &defs, &handlers, ids[4], &instance, 15, 3);
+        let record = log.get(log.events_by_tag(EventTag::ActionCommitted)[0]).unwrap();
+
+        assert!(fx.world.offices_contested_by(fx.actor).is_empty());
+        assert!(record.tags().contains(&EventTag::Political));
+        assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(record.target_ids().contains(&fx.office));
+
+        let def = defs.get(ids[4]).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let payload = ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
+            office: fx.office,
+        });
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+
+        let other_place = fx
+            .world
+            .topology()
+            .place_ids()
+            .find(|place| *place != fx.place)
+            .unwrap();
+        {
+            let mut txn = new_txn(&mut fx.world, 4);
+            txn.add_force_claim(fx.actor, fx.office).unwrap();
+            txn.set_ground_location(fx.actor, other_place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+    }
+
+    #[test]
     fn bribe_event_records_witnessed_obligation() {
         let (defs, handlers, ids) = setup_registries();
         let mut fx = SocialFixture::new();
@@ -1711,6 +2279,34 @@ mod tests {
             reservation_ids: Vec::new(),
             local_state: None,
         };
+        let press_force_claim = ActionInstance {
+            instance_id: ActionInstanceId(9),
+            def_id: ids[3],
+            payload: ActionPayload::PressForceClaim(PressForceClaimActionPayload {
+                office: fx.office,
+            }),
+            actor: fx.actor,
+            targets: Vec::new(),
+            start_tick: Tick(6),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
+        let yield_force_claim = ActionInstance {
+            instance_id: ActionInstanceId(10),
+            def_id: ids[4],
+            payload: ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
+                office: fx.office,
+            }),
+            actor: fx.actor,
+            targets: Vec::new(),
+            start_tick: Tick(7),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
 
         let bribe_log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &bribe, 11, 3);
         let threaten_log = commit_action(&mut fx.world, &defs, &handlers, ids[1], &threaten, 12, 4);
@@ -1722,6 +2318,34 @@ mod tests {
             &declare_support,
             13,
             5,
+        );
+        {
+            let mut txn = new_txn(&mut fx.world, 5);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.succession_law = SuccessionLaw::Force;
+            office.eligibility_rules = Vec::new();
+            txn.set_component_office_data(fx.office, office).unwrap();
+            txn.assign_office(fx.office, fx.target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let press_log = commit_action(
+            &mut fx.world,
+            &defs,
+            &handlers,
+            ids[3],
+            &press_force_claim,
+            14,
+            6,
+        );
+        let yield_log = commit_action(
+            &mut fx.world,
+            &defs,
+            &handlers,
+            ids[4],
+            &yield_force_claim,
+            15,
+            7,
         );
 
         let bribe_record = bribe_log
@@ -1740,5 +2364,15 @@ mod tests {
             .get(support_log.events_by_tag(EventTag::ActionCommitted)[0])
             .unwrap();
         assert!(support_record.tags().contains(&EventTag::Political));
+
+        let press_record = press_log
+            .get(press_log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
+        assert!(press_record.tags().contains(&EventTag::Political));
+
+        let yield_record = yield_log
+            .get(yield_log.events_by_tag(EventTag::ActionCommitted)[0])
+            .unwrap();
+        assert!(yield_record.tags().contains(&EventTag::Political));
     }
 }
