@@ -526,6 +526,16 @@ fn run_wounded_politician(
         Tick(0),
         PerceptionSource::DirectObservation,
     );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
+    );
 
     let initial_medicine_total = total_live_lot_quantity(&h.world, CommodityKind::Medicine);
     let initial_wound_load = h.agent_wound_load(agent);
@@ -1579,6 +1589,16 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
         informant_update_tick,
         PerceptionSource::DirectObservation,
     );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        informant,
+        office,
+        None,
+        informant_update_tick,
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
+    );
 
     let mut tell_commit_tick = None;
     for _ in 0..40 {
@@ -1824,6 +1844,16 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
         &[office],
         speaker_update_tick,
         PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        office,
+        None,
+        speaker_update_tick,
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
     );
 
     let mut tell_commit_tick = None;
@@ -2074,6 +2104,19 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
                 from: herald,
                 chain_len: 1,
             },
+        );
+        seed_office_holder_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            office,
+            None,
+            Tick(0),
+            worldwake_core::InstitutionalKnowledgeSource::Report {
+                from: herald,
+                chain_len: 1,
+            },
+            Some(VILLAGE_SQUARE),
         );
     }
 
@@ -2516,6 +2559,16 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         &[office],
         office_observed_tick,
         PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        office,
+        None,
+        office_observed_tick,
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
     );
 
     let mut saw_recent_omission = false;

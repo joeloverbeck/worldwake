@@ -148,9 +148,12 @@ pub enum PoliticalGoalFamily {
 pub enum PoliticalCandidateOmissionReason {
     ForceSuccessionLaw,
     OfficeNotVisiblyVacant,
+    OfficeHolderBeliefUnknownNoConsultableRecord,
+    OfficeHolderBeliefConflicted,
     ActorNotEligible,
     CandidateNotEligible,
     AlreadyDeclaredSupport,
+    SupportDeclarationBeliefConflicted,
 }
 
 /// Diagnostic record for a political goal omitted before generation.
@@ -1113,6 +1116,31 @@ mod tests {
             support_trace.goal_status(&support_goal),
             GoalTraceStatus::OmittedPolitical(
                 PoliticalCandidateOmissionReason::CandidateNotEligible
+            )
+        );
+
+        let conflicted_goal = GoalKind::ClaimOffice { office: entity(44) };
+        let conflicted_trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            vec![PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office: entity(44),
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
+            }],
+            Vec::new(),
+        );
+        assert_eq!(
+            conflicted_trace.goal_status(&conflicted_goal),
+            GoalTraceStatus::OmittedPolitical(
+                PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted
             )
         );
     }

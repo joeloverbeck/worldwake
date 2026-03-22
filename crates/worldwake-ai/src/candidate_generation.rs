@@ -11,15 +11,16 @@ use crate::{
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
-    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, OfficeData,
-    PerceptionSource, Quantity, RecipientKnowledgeStatus, Tick,
+    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecipientKnowledgeStatus,
+    RecordData, RecordKind, Tick,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
     RecipeRegistry,
 };
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Evidence {
     entities: BTreeSet<EntityId>,
     places: BTreeSet<EntityId>,
@@ -311,18 +312,134 @@ fn emit_political_candidates(
             );
             continue;
         }
-        if !office_is_visibly_vacant(ctx.view, office, &office_data) {
-            record_office_wide_political_omission(
-                diagnostics,
-                office,
-                PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant,
-            );
-            continue;
-        }
+        let office_evidence = match political_office_evidence(ctx, office, &office_data) {
+            Ok(evidence) => evidence,
+            Err(reason) => {
+                record_office_wide_political_omission(diagnostics, office, reason);
+                continue;
+            }
+        };
 
-        emit_claim_office_candidate(candidates, diagnostics, ctx, office, &office_data);
-        emit_support_candidate_goals(candidates, diagnostics, ctx, office, &office_data);
+        emit_claim_office_candidate(
+            candidates,
+            diagnostics,
+            ctx,
+            office,
+            &office_data,
+            &office_evidence,
+        );
+        emit_support_candidate_goals(
+            candidates,
+            diagnostics,
+            ctx,
+            office,
+            &office_data,
+            &office_evidence,
+        );
     }
+}
+
+fn political_office_evidence(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+    office_data: &OfficeData,
+) -> Result<Evidence, PoliticalCandidateOmissionReason> {
+    if office_data.vacancy_since.is_none() {
+        return Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant);
+    }
+
+    match ctx.view.believed_office_holder(office) {
+        InstitutionalBeliefRead::Certain(None) => Ok(Evidence::default()),
+        InstitutionalBeliefRead::Certain(Some(_)) => {
+            Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant)
+        }
+        InstitutionalBeliefRead::Unknown => known_consultable_office_register(ctx, office)
+            .ok_or(PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord),
+        InstitutionalBeliefRead::Conflicted(_) => {
+            Err(PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted)
+        }
+    }
+}
+
+fn known_consultable_office_register(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+) -> Option<Evidence> {
+    ctx.view
+        .known_entity_beliefs(ctx.agent)
+        .into_iter()
+        .filter_map(|(entity, _)| {
+            (ctx.view.entity_kind(entity) == Some(EntityKind::Record))
+                .then_some((entity, ctx.view.record_data(entity)?))
+        })
+        .find_map(|(record, record_data)| {
+            (record_data.record_kind == RecordKind::OfficeRegister
+                && !matches!(
+                    consulted_office_holder_read_for_record(&record_data, office),
+                    InstitutionalBeliefRead::Unknown
+                ))
+            .then(|| {
+                let mut evidence = Evidence::with_entity(record);
+                evidence.places.insert(record_data.home_place);
+                evidence
+            })
+        })
+}
+
+fn consulted_office_holder_read_for_record(
+    record_data: &RecordData,
+    office: EntityId,
+) -> InstitutionalBeliefRead<Option<EntityId>> {
+    let mut holders = BTreeSet::new();
+    for entry in record_data
+        .entries_newest_first()
+        .take(record_data.max_entries_per_consult as usize)
+    {
+        if let worldwake_core::InstitutionalClaim::OfficeHolder {
+            office: entry_office,
+            holder,
+            ..
+        } = entry.claim
+        {
+            if entry_office == office {
+                holders.insert(holder);
+            }
+        }
+    }
+
+    match holders.len() {
+        0 => InstitutionalBeliefRead::Unknown,
+        1 => InstitutionalBeliefRead::Certain(
+            *holders
+                .iter()
+                .next()
+                .expect("single office-holder belief must exist"),
+        ),
+        _ => InstitutionalBeliefRead::Conflicted(holders.into_iter().collect()),
+    }
+}
+
+fn support_declaration_conflicted(
+    view: &dyn GoalBeliefView,
+    office: EntityId,
+    supporter: EntityId,
+) -> bool {
+    matches!(
+        view.believed_support_declaration(office, supporter),
+        InstitutionalBeliefRead::Conflicted(_)
+    )
+}
+
+fn support_declaration_matches_candidate(
+    view: &dyn GoalBeliefView,
+    office: EntityId,
+    supporter: EntityId,
+    candidate: EntityId,
+) -> bool {
+    matches!(
+        view.believed_support_declaration(office, supporter),
+        InstitutionalBeliefRead::Certain(Some(current)) if current == candidate
+    )
 }
 
 fn emit_claim_office_candidate(
@@ -331,6 +448,7 @@ fn emit_claim_office_candidate(
     ctx: &GenerationContext<'_>,
     office: EntityId,
     office_data: &OfficeData,
+    office_evidence: &Evidence,
 ) {
     if !candidate_is_eligible(ctx.view, office_data, ctx.agent) {
         diagnostics
@@ -343,10 +461,18 @@ fn emit_claim_office_candidate(
             });
         return;
     }
-    if ctx.view.office_holder(office) == Some(ctx.agent) {
+    if support_declaration_conflicted(ctx.view, office, ctx.agent) {
+        diagnostics
+            .omitted_political
+            .push(PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+            });
         return;
     }
-    if ctx.view.support_declaration(ctx.agent, office) == Some(ctx.agent) {
+    if support_declaration_matches_candidate(ctx.view, office, ctx.agent, ctx.agent) {
         diagnostics
             .omitted_political
             .push(PoliticalCandidateOmission {
@@ -358,7 +484,8 @@ fn emit_claim_office_candidate(
         return;
     }
 
-    let mut evidence = Evidence::with_entity(office);
+    let mut evidence = office_evidence.clone();
+    evidence.entities.insert(office);
     evidence.entities.insert(ctx.agent);
     evidence.places.insert(office_data.jurisdiction);
     emit_candidate(
@@ -376,8 +503,9 @@ fn emit_support_candidate_goals(
     ctx: &GenerationContext<'_>,
     office: EntityId,
     office_data: &OfficeData,
+    office_evidence: &Evidence,
 ) {
-    let current_declaration = ctx.view.support_declaration(ctx.agent, office);
+    let current_declaration_conflicted = support_declaration_conflicted(ctx.view, office, ctx.agent);
     for (candidate, _) in ctx.view.known_entity_beliefs(ctx.agent) {
         if candidate == ctx.agent {
             continue;
@@ -399,7 +527,18 @@ fn emit_support_candidate_goals(
                 });
             continue;
         }
-        if current_declaration == Some(candidate) {
+        if current_declaration_conflicted {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::SupportCandidateForOffice,
+                    office,
+                    candidate: Some(candidate),
+                    reason: PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+                });
+            continue;
+        }
+        if support_declaration_matches_candidate(ctx.view, office, ctx.agent, candidate) {
             diagnostics
                 .omitted_political
                 .push(PoliticalCandidateOmission {
@@ -411,7 +550,8 @@ fn emit_support_candidate_goals(
             continue;
         }
 
-        let mut evidence = Evidence::with_entity(office);
+        let mut evidence = office_evidence.clone();
+        evidence.entities.insert(office);
         evidence.entities.insert(candidate);
         evidence.places.insert(office_data.jurisdiction);
         emit_candidate(
@@ -445,14 +585,6 @@ fn record_office_wide_political_omission(
             candidate: None,
             reason,
         });
-}
-
-fn office_is_visibly_vacant(
-    view: &dyn GoalBeliefView,
-    office: EntityId,
-    office_data: &OfficeData,
-) -> bool {
-    office_data.vacancy_since.is_some() && view.office_holder(office).is_none()
 }
 
 fn candidate_is_eligible(
@@ -1527,11 +1659,12 @@ mod tests {
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity,
-        RecipeId, RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity, RecordData,
+        RecordEntryId, RecordKind, RecipeId, RecipientKnowledgeStatus, ResourceSource,
+        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1576,11 +1709,15 @@ mod tests {
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
+        record_data: BTreeMap<EntityId, RecordData>,
         office_data: BTreeMap<EntityId, OfficeData>,
         office_holders: BTreeMap<EntityId, EntityId>,
+        office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
+        support_declaration_beliefs:
+            BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
     }
 
     impl Default for TestBeliefView {
@@ -1623,11 +1760,14 @@ mod tests {
                 beliefs: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
                 told_beliefs: BTreeMap::new(),
+                record_data: BTreeMap::new(),
                 office_data: BTreeMap::new(),
                 office_holders: BTreeMap::new(),
+                office_holder_beliefs: BTreeMap::new(),
                 factions_by_member: BTreeMap::new(),
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
+                support_declaration_beliefs: BTreeMap::new(),
             }
         }
     }
@@ -1952,12 +2092,26 @@ mod tests {
             self.corpses_at.get(&place).cloned().unwrap_or_default()
         }
 
+        fn record_data(&self, record: EntityId) -> Option<RecordData> {
+            self.record_data.get(&record).cloned()
+        }
+
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data.get(&office).cloned()
         }
 
         fn office_holder(&self, office: EntityId) -> Option<EntityId> {
             self.office_holders.get(&office).copied()
+        }
+
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
@@ -1973,6 +2127,17 @@ mod tests {
 
         fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
             self.support_declarations.get(&(supporter, office)).copied()
+        }
+
+        fn believed_support_declaration(
+            &self,
+            office: EntityId,
+            supporter: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.support_declaration_beliefs
+                .get(&(office, supporter))
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
@@ -2152,6 +2317,27 @@ mod tests {
             eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
             succession_period_ticks: 8,
             vacancy_since: Some(Tick(3)),
+        }
+    }
+
+    fn office_register_record(issuer: EntityId, home_place: EntityId, office: EntityId) -> RecordData {
+        RecordData {
+            record_kind: RecordKind::OfficeRegister,
+            home_place,
+            issuer,
+            consultation_ticks: 4,
+            max_entries_per_consult: 2,
+            entries: vec![worldwake_core::InstitutionalRecordEntry {
+                entry_id: RecordEntryId(0),
+                claim: InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: None,
+                    effective_tick: Tick(3),
+                },
+                recorded_tick: Tick(3),
+                supersedes: None,
+            }],
+            next_entry_id: 1,
         }
     }
 
@@ -4615,6 +4801,8 @@ mod tests {
         view.entities_at.insert(town, vec![agent, candidate]);
         view.office_data
             .insert(office, vacant_office("Ruler", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
         view.factions_by_member.insert(agent, vec![faction]);
         view.factions_by_member.insert(candidate, vec![faction]);
         view.loyalties.insert((agent, candidate), pm(650));
@@ -4639,7 +4827,139 @@ mod tests {
     }
 
     #[test]
-    fn political_candidates_require_known_office_belief_for_generation() {
+    fn political_candidates_use_institutional_beliefs_for_unknown_certain_and_conflicted_reads() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let record = entity(4);
+        let town = entity(10);
+        let archive = entity(12);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate, record]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.entity_kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.effective_places.insert(record, archive);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.entities_at.insert(archive, vec![record]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![
+                known_entity(office, town),
+                known_entity(candidate, town),
+                known_entity(record, archive),
+            ],
+        );
+        view.record_data
+            .insert(record, office_register_record(agent, archive, office));
+
+        let unknown_with_record = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            contains_goal(&unknown_with_record.candidates, GoalKind::ClaimOffice { office }),
+            "unknown vacancy belief should remain emittable when a consultable office register is known"
+        );
+        assert!(
+            contains_goal(
+                &unknown_with_record.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "unknown vacancy belief should still allow support goals when a consultable office register is known"
+        );
+        for goal in &unknown_with_record.candidates {
+            if matches!(
+                goal.key.kind,
+                GoalKind::ClaimOffice { office: goal_office }
+                    | GoalKind::SupportCandidateForOffice { office: goal_office, .. }
+                    if goal_office == office
+            ) {
+                assert!(
+                    goal.evidence_entities.contains(&record),
+                    "political goals emitted through the consult path must carry record evidence"
+                );
+                assert!(
+                    goal.evidence_places.contains(&archive),
+                    "political goals emitted through the consult path must carry record home-place evidence"
+                );
+            }
+        }
+
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        let with_certain_vacancy = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+        assert!(contains_goal(
+            &with_certain_vacancy.candidates,
+            GoalKind::ClaimOffice { office }
+        ));
+        assert!(contains_goal(
+            &with_certain_vacancy.candidates,
+            GoalKind::SupportCandidateForOffice { office, candidate }
+        ));
+
+        view.office_holder_beliefs.insert(
+            office,
+            InstitutionalBeliefRead::Conflicted(vec![None, Some(candidate)]),
+        );
+        let conflicted = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+        assert!(
+            !contains_goal(&conflicted.candidates, GoalKind::ClaimOffice { office }),
+            "conflicted office-holder beliefs must suppress claim-office generation"
+        );
+        assert!(
+            !contains_goal(
+                &conflicted.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "conflicted office-holder beliefs must suppress support-office generation"
+        );
+        assert!(contains_political_omission(
+            &conflicted.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
+        ));
+        assert!(contains_political_omission(
+            &conflicted.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_unknown_belief_require_consultable_record_evidence() {
         let agent = entity(1);
         let office = entity(2);
         let candidate = entity(3);
@@ -4659,49 +4979,96 @@ mod tests {
         view.factions_by_member.insert(candidate, vec![faction]);
         view.loyalties.insert((agent, candidate), pm(650));
         view.beliefs
-            .insert(agent, vec![known_entity(candidate, town)]);
+            .insert(agent, vec![known_entity(office, town), known_entity(candidate, town)]);
 
-        let without_office_belief = generate_candidates(
+        let no_record = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
 
         assert!(
-            !contains_goal(&without_office_belief, GoalKind::ClaimOffice { office }),
-            "unknown offices must not emit ClaimOffice candidates"
+            !contains_goal(&no_record.candidates, GoalKind::ClaimOffice { office }),
+            "unknown vacancy belief without a consultable record must suppress ClaimOffice"
         );
         assert!(
             !contains_goal(
-                &without_office_belief,
+                &no_record.candidates,
                 GoalKind::SupportCandidateForOffice { office, candidate }
             ),
-            "unknown offices must not emit support candidates even when a loyal candidate is known"
+            "unknown vacancy belief without a consultable record must suppress support goals"
         );
+        assert!(contains_political_omission(
+            &no_record.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord,
+        ));
+        assert!(contains_political_omission(
+            &no_record.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord,
+        ));
+    }
 
+    #[test]
+    fn political_candidates_do_not_fallback_to_live_support_or_holder_helpers() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let incumbent = entity(4);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate, incumbent]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(incumbent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.effective_places.insert(incumbent, town);
+        view.entities_at.insert(town, vec![agent, candidate, incumbent]);
+        view.office_data
+            .insert(office, vacant_office("Captain", town, faction));
+        view.office_holders.insert(office, incumbent);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.support_declarations.insert((agent, office), agent);
         view.beliefs.insert(
             agent,
             vec![known_entity(office, town), known_entity(candidate, town)],
         );
 
-        let with_office_belief = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
+            6,
         );
 
-        assert!(contains_goal(
-            &with_office_belief,
-            GoalKind::ClaimOffice { office }
-        ));
-        assert!(contains_goal(
-            &with_office_belief,
-            GoalKind::SupportCandidateForOffice { office, candidate }
-        ));
+        assert!(
+            contains_goal(&result.candidates, GoalKind::ClaimOffice { office }),
+            "candidate generation must not fallback to live office-holder or self-support helpers once institutional beliefs are present"
+        );
+        assert!(
+            contains_goal(
+                &result.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "support-candidate emission must ignore stale live support declarations when the institutional belief read does not confirm them"
+        );
     }
 
     #[test]
@@ -4725,6 +5092,8 @@ mod tests {
         let mut office_data = vacant_office("Captain", town, faction);
         view.office_holders.insert(office, incumbent);
         view.office_data.insert(office, office_data.clone());
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(incumbent)));
         let occupied_with_stale_vacancy = generate_candidates_with_travel_horizon(
             &view,
             agent,
@@ -4755,6 +5124,8 @@ mod tests {
         view.office_holders.clear();
         office_data.vacancy_since = None;
         view.office_data.insert(office, office_data.clone());
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
         let filled = generate_candidates_with_travel_horizon(
             &view,
             agent,
@@ -4785,6 +5156,10 @@ mod tests {
         office_data.vacancy_since = Some(Tick(2));
         view.office_data.insert(office, office_data);
         view.support_declarations.insert((agent, office), agent);
+        view.support_declaration_beliefs.insert(
+            (office, agent),
+            InstitutionalBeliefRead::Certain(Some(agent)),
+        );
         let declared = generate_candidates_with_travel_horizon(
             &view,
             agent,
@@ -4803,6 +5178,73 @@ mod tests {
             office,
             None,
             PoliticalCandidateOmissionReason::AlreadyDeclaredSupport,
+        ));
+    }
+
+    #[test]
+    fn political_candidates_suppress_conflicted_support_beliefs() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.office_data
+            .insert(office, vacant_office("Captain", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.support_declaration_beliefs.insert(
+            (office, agent),
+            InstitutionalBeliefRead::Conflicted(vec![Some(agent), Some(candidate)]),
+        );
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::default(),
+            Tick(10),
+            6,
+        );
+
+        assert!(
+            !contains_goal(&result.candidates, GoalKind::ClaimOffice { office }),
+            "conflicted self-support belief should suppress ClaimOffice commitment"
+        );
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            "conflicted self-support belief should suppress support commitments"
+        );
+        assert!(contains_political_omission(
+            &result.diagnostics,
+            PoliticalGoalFamily::ClaimOffice,
+            office,
+            None,
+            PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
+        ));
+        assert!(contains_political_omission(
+            &result.diagnostics,
+            PoliticalGoalFamily::SupportCandidateForOffice,
+            office,
+            Some(candidate),
+            PoliticalCandidateOmissionReason::SupportDeclarationBeliefConflicted,
         ));
     }
 
@@ -4890,6 +5332,8 @@ mod tests {
             .insert(town, vec![agent, ineligible_candidate]);
         view.office_data
             .insert(office, vacant_office("Captain", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
         view.factions_by_member.insert(agent, vec![other_faction]);
         view.factions_by_member
             .insert(ineligible_candidate, vec![other_faction]);

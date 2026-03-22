@@ -77,6 +77,16 @@ fn build_simple_office_claim_scenario(
         Tick(0),
         PerceptionSource::DirectObservation,
     );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
+    );
 
     (h, agent, office)
 }
@@ -257,6 +267,16 @@ fn golden_competing_claims_with_loyal_supporter() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
+        seed_office_holder_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            office,
+            None,
+            Tick(0),
+            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+            Some(VILLAGE_SQUARE),
+        );
     }
     // C needs to know about A as a candidate to support.
     seed_actor_beliefs(
@@ -416,6 +436,16 @@ fn golden_bribe_support_coalition() {
             &[office],
             Tick(0),
             PerceptionSource::DirectObservation,
+        );
+        seed_office_holder_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            office,
+            None,
+            Tick(0),
+            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+            Some(VILLAGE_SQUARE),
         );
     }
     // A needs to know about B (bribe target) and C (competitor).
@@ -645,6 +675,16 @@ fn golden_threaten_with_courage_diversity() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
+        seed_office_holder_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            office,
+            None,
+            Tick(0),
+            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+            Some(VILLAGE_SQUARE),
+        );
     }
     // A needs to know about B, C (threaten targets) and D (competitor).
     seed_actor_beliefs(
@@ -787,6 +827,16 @@ fn golden_travel_to_distant_jurisdiction_for_claim() {
         &[office],
         Tick(0),
         PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
     );
 
     // Verify starting position.
@@ -945,6 +995,19 @@ fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, State
             chain_len: 1,
         },
     );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        None,
+        Tick(phase_one_end),
+        worldwake_core::InstitutionalKnowledgeSource::Report {
+            from: informant,
+            chain_len: 1,
+        },
+        Some(bandit_camp),
+    );
     let seeded_belief = agent_belief_about(&h.world, agent, office)
         .expect("agent should immediately receive the explicit office belief update");
     assert!(
@@ -1081,6 +1144,16 @@ fn build_survival_pressure_suppresses_political_goals_scenario(
         &[office],
         Tick(0),
         PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
     );
 
     (h, agent, office, hunger_high)
@@ -1279,6 +1352,16 @@ fn golden_faction_eligibility_filters_office_claim() {
             Tick(0),
             PerceptionSource::DirectObservation,
         );
+        seed_office_holder_belief(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            office,
+            None,
+            Tick(0),
+            worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+            Some(VILLAGE_SQUARE),
+        );
     }
 
     for _ in 0..30 {
@@ -1411,6 +1494,16 @@ fn build_force_succession_scenario(
         &[office],
         Tick(0),
         PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        living_claimant,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
     );
 
     (h, living_claimant, dead_rival, office)

@@ -111,6 +111,10 @@ pub trait GoalBeliefView {
     fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        let _ = record;
+        None
+    }
     fn office_data(&self, office: EntityId) -> Option<OfficeData> {
         let _ = office;
         None
@@ -679,6 +683,13 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::corpse_entities_at(self, place)
+            }
+
+            fn record_data(
+                &self,
+                record: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::RecordData> {
+                $crate::RuntimeBeliefView::record_data(self, record)
             }
 
             fn office_data(

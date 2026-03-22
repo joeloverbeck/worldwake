@@ -13,17 +13,18 @@ use std::num::NonZeroU32;
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BlockedIntentMemory,
-    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
-    ComponentDelta, ComponentKind, ComponentValue, ControlSource, DeprivationExposure,
-    DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog, EventRecord,
-    EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace,
-    Quantity, RecipeId, RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource,
-    Seed, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-    WoundCause, WoundId, WoundList,
+    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
+    BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
+    CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
+    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, PerceptionProfile,
+    PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
+    RelationDelta, RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw,
+    TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -273,6 +274,45 @@ pub fn seed_belief_from_world(
         .expect("golden harness should only seed beliefs for observable subjects");
     seed_belief(world, event_log, agent, subject, belief.clone());
     belief
+}
+
+pub fn seed_office_holder_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    office: EntityId,
+    holder: Option<EntityId>,
+    learned_tick: Tick,
+    source: InstitutionalKnowledgeSource,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::OfficeHolderOf { office },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office,
+                holder,
+                effective_tick: learned_tick,
+            },
+            source,
+            learned_tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, learned_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep institutional belief stores writable");
+    commit_txn(txn, event_log);
 }
 
 pub fn seed_told_belief_memory(

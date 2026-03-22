@@ -27,11 +27,13 @@ The current architecture has a narrow runtime seam where AI reads live office/fa
 13. Additional live-code clarification after ticket `-008`: Tell now relays institutional claims for entity subjects through conversation memory into `institutional_beliefs`, so social institutional propagation is no longer the blocker. The remaining gap is removal of the AI-side live helper seam and migration of remaining political callers/goldens onto the belief-backed path.
 14. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
 15. Additional architectural note: the seam is not only the `PerAgentBeliefView` implementation. `crates/worldwake-sim/src/belief_view.rs` still exposes trait methods named `office_holder`, `factions_of`, `support_declaration`, and `support_declarations_for_office`. After all AI callers migrate, this ticket should either delete those public-institutional trait methods or narrow them so the old omniscient query shape cannot be reintroduced through another runtime belief-view implementation.
+16. Additional reassessment after ticket `-012`: office-register interpretation is now duplicated between `crates/worldwake-ai/src/candidate_generation.rs` (`consulted_office_holder_read_for_record`) and `crates/worldwake-ai/src/goal_model.rs` (`consulted_office_holder_read_for_record`). That duplication is part of the same live-seam cleanup problem, not a separate feature: candidate emission and planner prerequisite checks must derive office-holder reads from record data through one shared helper so their semantics cannot drift.
 
 ## Architecture Check
 
 1. Removing the live helper path is the only correct approach per Principle 26 (no backward compatibility layers). Keeping both paths would create a maintenance burden and eventual divergence.
 2. This is explicitly anti-backward-compatibility — the old path is deleted, not preserved.
+3. Centralizing office-register interpretation is cleaner than letting candidate generation and planner prerequisites each re-derive vacancy semantics. Foundations Principles 12, 21, 24, and 25 require one belief-backed interpretation of institutional records, with both layers consuming the same derived result rather than maintaining parallel logic.
 
 ## Verification Layers
 
@@ -39,6 +41,7 @@ The current architecture has a narrow runtime seam where AI reads live office/fa
 2. `PerAgentBeliefView` institutional methods backed by belief store → unit tests
 3. Golden tests pass with institutional belief setup → `cargo test -p worldwake-ai`
 4. Political AI behaves correctly with belief-based institutional knowledge → golden test scenarios
+5. Candidate generation and planner prerequisite gating interpret the same office register the same way → focused unit tests on the shared helper plus caller coverage
 
 ## What to Change
 
@@ -66,7 +69,13 @@ Replace `actor_support_declarations` and `office_support_declarations` with beli
 
 Grep for `actor_support_declarations` and `office_support_declarations` across the AI crate and update to use the new institutional belief query methods on `PlanningState`.
 
-### 4. Update golden tests
+### 4. Centralize office-register interpretation
+
+Move the "consulted office register -> `InstitutionalBeliefRead<Option<EntityId>>`" logic behind one shared helper consumed by both candidate generation and planner/prerequisite evaluation. The helper must operate on concrete record data / planning-state record access, not on live world truth, and it must remain the only place where `OfficeRegister` entries are folded into office-holder belief certainty for political AI.
+
+This ticket should delete the duplicated `consulted_office_holder_read_for_record` implementations rather than leaving equivalent copies behind.
+
+### 5. Update golden tests
 
 For each golden test that exercises political behavior:
 - Add record entities to the test world setup
@@ -78,7 +87,7 @@ Note:
 - Any golden that expects autonomous "Unknown institutional belief -> seek record -> consult -> act" behavior depends on tickets `-011` and `-012`. If those tickets are not landed yet, do not paper over the gap here with live truth shortcuts or bespoke test-only seeding.
 - Any golden that uses social institutional propagation should now prefer the landed `-008` Tell path over bespoke institutional-belief injection when ordinary Tell is sufficient for the scenario.
 
-### 5. Verification grep
+### 6. Verification grep
 
 After all changes, run a workspace-wide grep for direct live institutional reads in AI modules. There must be zero hits for:
 - `world.office_holder` / `world.offices_held` in AI/belief-view context
@@ -101,7 +110,9 @@ Also verify the legacy trait seam is gone or intentionally narrowed:
 - `crates/worldwake-ai/src/planning_snapshot.rs` (modify — remove old fields, use institutional beliefs)
 - `crates/worldwake-ai/src/planning_state.rs` (modify — remove old support_declaration_overrides if replaced)
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — remove any remaining live truth reads)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — consume shared office-register interpretation helper instead of local duplicate)
 - `crates/worldwake-ai/src/search.rs` (modify — remove any remaining live truth reads)
+- `crates/worldwake-ai/src/` shared institutional helper module or existing appropriate AI module (modify/new — single office-register interpretation path)
 - `crates/worldwake-ai/tests/golden_offices.rs` (modify — update setup with record/belief infrastructure)
 - Other golden test files that exercise political behavior (modify)
 
@@ -124,7 +135,8 @@ Also verify the legacy trait seam is gone or intentionally narrowed:
 6. Workspace grep for live institutional reads in AI modules returns zero hits
 7. `PerAgentBeliefView` institutional methods return belief-derived results, not live truth, for office holder, faction membership, and support declarations
 8. The old trait-level institutional helper seam in `crates/worldwake-sim/src/belief_view.rs` is removed or narrowed so omniscient public-institutional reads cannot be reintroduced accidentally
-9. Existing suite: `cargo test --workspace`
+9. Candidate generation and planner prerequisite evaluation both call the same office-register interpretation helper; no duplicate `OfficeRegister` folding logic remains in `candidate_generation.rs` and `goal_model.rs`
+10. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
@@ -132,6 +144,7 @@ Also verify the legacy trait seam is gone or intentionally narrowed:
 2. Both architectures are NOT preserved in parallel (Principle 26)
 3. Authoritative office/faction/support state remains unchanged (only the AI reading path changed)
 4. All information reaching AI is traceable to witness, report, or record consultation
+5. Office-register interpretation is defined once and reused across candidate generation and planner gating, so the same institutional record cannot produce divergent vacancy semantics in different AI layers
 
 ## Test Plan
 
@@ -139,7 +152,8 @@ Also verify the legacy trait seam is gone or intentionally narrowed:
 
 1. `crates/worldwake-ai/tests/golden_offices.rs` — updated existing + new institutional belief scenarios
 2. `crates/worldwake-sim/src/per_agent_belief_view.rs` — belief-backed institutional query unit tests
-3. Verification script: grep for live institutional reads in AI crate
+3. `crates/worldwake-ai/src/goal_model.rs` or shared helper tests — office-register interpretation shared by candidate generation and planner gating
+4. Verification script: grep for live institutional reads in AI crate
 
 ### Commands
 
