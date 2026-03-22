@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    to_shared_belief_snapshot, ActionDefId, AgentBeliefStore, BodyCostPerTick, EntityId,
-    EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, PerceptionProfile,
-    PerceptionSource, RecipientKnowledgeStatus, TellMemoryKey, TellProfile, ToldBeliefMemory,
-    VisibilitySpec, World, WorldTxn,
+    ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, EntityId,
+    EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile, PerceptionSource,
+    RecipientKnowledgeStatus, TellMemoryKey, TellProfile, ToldBeliefMemory, VisibilitySpec,
+    World, WorldTxn,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, AbortReason, ActionAbortRequestReason,
@@ -90,6 +91,56 @@ fn degrade_source(speaker: EntityId, source: PerceptionSource) -> PerceptionSour
         }
         PerceptionSource::Inference => PerceptionSource::Rumor { chain_len: 1 },
     }
+}
+
+fn degrade_institutional_source(
+    speaker: EntityId,
+    source: InstitutionalKnowledgeSource,
+) -> InstitutionalKnowledgeSource {
+    match source {
+        InstitutionalKnowledgeSource::WitnessedEvent
+        | InstitutionalKnowledgeSource::RecordConsultation { .. }
+        | InstitutionalKnowledgeSource::SelfDeclaration => {
+            InstitutionalKnowledgeSource::Report {
+                from: speaker,
+                chain_len: 1,
+            }
+        }
+        InstitutionalKnowledgeSource::Report { chain_len, .. } => {
+            InstitutionalKnowledgeSource::Report {
+                from: speaker,
+                chain_len: chain_len.saturating_add(1),
+            }
+        }
+    }
+}
+
+fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey {
+    match claim {
+        InstitutionalClaim::OfficeHolder { office, .. } => {
+            InstitutionalBeliefKey::OfficeHolderOf { office }
+        }
+        InstitutionalClaim::FactionMembership { faction, .. } => {
+            InstitutionalBeliefKey::FactionMembersOf { faction }
+        }
+        InstitutionalClaim::SupportDeclaration {
+            supporter, office, ..
+        } => InstitutionalBeliefKey::SupportFor { supporter, office },
+    }
+}
+
+fn listener_already_has_institutional_claim(
+    store: &AgentBeliefStore,
+    belief: &BelievedInstitutionalClaim,
+) -> bool {
+    store
+        .institutional_beliefs
+        .get(&institutional_belief_key(belief.claim))
+        .is_some_and(|claims| {
+            claims.iter().any(|existing| {
+                existing.claim == belief.claim && existing.source == belief.source
+            })
+        })
 }
 
 fn passes_acceptance_check(fidelity: u16, rng: &mut DeterministicRng) -> bool {
@@ -326,7 +377,11 @@ fn commit_tell(
         return Ok(CommitOutcome::empty());
     }
 
-    let shared_state = to_shared_belief_snapshot(&speaker_belief);
+    let shared_state = speaker_beliefs.shared_belief_snapshot_for_subject(
+        payload.subject_entity,
+        &speaker_belief,
+        speaker_profile.max_relay_chain_len,
+    );
     let told_key = TellMemoryKey {
         counterparty: listener,
         subject: payload.subject_entity,
@@ -346,21 +401,51 @@ fn commit_tell(
         counterparty: speaker,
         subject: payload.subject_entity,
     };
-    let disposition = if !passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng)
+    let speaker_institutional_beliefs = speaker_beliefs.relayable_institutional_beliefs_for_subject(
+        payload.subject_entity,
+        speaker_profile.max_relay_chain_len,
+    );
+    let disposition = if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng)
     {
-        HeardBeliefDisposition::NotInternalized
-    } else if listener_beliefs
-        .get_entity(&payload.subject_entity)
-        .is_some_and(|existing| existing.observed_tick >= speaker_belief.observed_tick)
-    {
-        HeardBeliefDisposition::AlreadyHeldEqualOrNewer
-    } else {
+        let mut accepted_any = false;
         let mut transferred = speaker_belief.clone();
         transferred.source = degrade_source(speaker, speaker_belief.source);
+        let should_update_entity = listener_beliefs
+            .get_entity(&payload.subject_entity)
+            .is_none_or(|existing| existing.observed_tick < speaker_belief.observed_tick);
+        if should_update_entity {
+            listener_beliefs.update_entity(payload.subject_entity, transferred);
+            listener_beliefs
+                .enforce_capacity(&required_perception_profile(txn, listener)?, txn.tick());
+            accepted_any = true;
+        }
 
-        listener_beliefs.update_entity(payload.subject_entity, transferred);
-        listener_beliefs.enforce_capacity(&required_perception_profile(txn, listener)?, txn.tick());
-        HeardBeliefDisposition::Accepted
+        let listener_perception = required_perception_profile(txn, listener)?;
+        for belief in speaker_institutional_beliefs {
+            let relayed = BelievedInstitutionalClaim {
+                claim: belief.claim,
+                source: degrade_institutional_source(speaker, belief.source),
+                learned_tick: txn.tick(),
+                learned_at: txn.effective_place(listener),
+            };
+            if listener_already_has_institutional_claim(&listener_beliefs, &relayed) {
+                continue;
+            }
+            listener_beliefs.record_institutional_belief(
+                institutional_belief_key(relayed.claim),
+                relayed,
+                &listener_perception,
+            );
+            accepted_any = true;
+        }
+
+        if accepted_any {
+            HeardBeliefDisposition::Accepted
+        } else {
+            HeardBeliefDisposition::AlreadyHeldEqualOrNewer
+        }
+    } else {
+        HeardBeliefDisposition::NotInternalized
     };
 
     listener_beliefs.record_heard_belief(
@@ -397,14 +482,16 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, to_shared_belief_snapshot, ActionDefId,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, CauseRef,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
-        HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, PerceptionProfile, PerceptionSource, Permille, Quantity, RecipeId,
-        RecipientKnowledgeStatus, ResourceSource, Seed, TellMemoryKey, TellProfile, Tick,
-        TickRange, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
+        BodyCostPerTick, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog,
+        EventTag, EventView, HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource,
+        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed,
+        SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
+        TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
@@ -520,6 +607,110 @@ mod tests {
         (
             defs, handlers, tell_id, world, place, speaker, listener, subject,
         )
+    }
+
+    fn world_with_speaker_listener_and_office_subject(
+        source: PerceptionSource,
+    ) -> (World, EntityId, EntityId, EntityId, EntityId) {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+
+        let (speaker, listener, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let speaker = txn.create_agent("Speaker", ControlSource::Ai).unwrap();
+            let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Village Elder").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Village Elder".to_string(),
+                    jurisdiction: place,
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 5,
+                    vacancy_since: Some(Tick(1)),
+                },
+            )
+            .unwrap();
+            txn.set_component_tell_profile(
+                listener,
+                TellProfile {
+                    max_tell_candidates: 3,
+                    max_relay_chain_len: 3,
+                    acceptance_fidelity: Permille::new(1000).unwrap(),
+                    ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            for entity in [speaker, listener, office] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (speaker, listener, office)
+        };
+
+        let belief = build_believed_entity_state(&world, office, Tick(2), source).unwrap();
+        let mut store = world
+            .get_component_agent_belief_store(speaker)
+            .cloned()
+            .unwrap_or_else(AgentBeliefStore::new);
+        store.update_entity(office, belief);
+
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        (world, place, speaker, listener, office)
+    }
+
+    fn tell_office_test_setup(
+        source: PerceptionSource,
+    ) -> (
+        ActionDefRegistry,
+        ActionHandlerRegistry,
+        ActionDefId,
+        World,
+        EntityId,
+        EntityId,
+        EntityId,
+        EntityId,
+    ) {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let tell_id = register_tell_action(&mut defs, &mut handlers);
+        let (world, place, speaker, listener, office) =
+            world_with_speaker_listener_and_office_subject(source);
+        (
+            defs, handlers, tell_id, world, place, speaker, listener, office,
+        )
+    }
+
+    fn office_holder_claim(office: EntityId, holder: Option<EntityId>, tick: u64) -> InstitutionalClaim {
+        InstitutionalClaim::OfficeHolder {
+            office,
+            holder,
+            effective_tick: Tick(tick),
+        }
+    }
+
+    fn office_holder_belief(
+        office: EntityId,
+        holder: Option<EntityId>,
+        source: InstitutionalKnowledgeSource,
+        learned_tick: u64,
+        learned_at: Option<EntityId>,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: office_holder_claim(office, holder, learned_tick),
+            source,
+            learned_tick: Tick(learned_tick),
+            learned_at,
+        }
     }
 
     fn tell_instance(
@@ -1608,6 +1799,154 @@ mod tests {
         assert!(listener_store.get_entity(&older_subject).is_none());
         assert!(listener_store.get_entity(&subject).is_some());
         assert_eq!(listener_store.known_entities.len(), 1);
+    }
+
+    #[test]
+    fn tell_commit_projects_institutional_claims_and_records_them_in_heard_memory() {
+        let (defs, handlers, tell_id, mut world, place, speaker, listener, office) =
+            tell_office_test_setup(PerceptionSource::DirectObservation);
+        let vacancy = office_holder_belief(
+            office,
+            None,
+            InstitutionalKnowledgeSource::WitnessedEvent,
+            4,
+            Some(place),
+        );
+        {
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap_or_default();
+            let profile = *world.get_component_perception_profile(speaker).unwrap();
+            store.record_institutional_belief(
+                InstitutionalBeliefKey::OfficeHolderOf { office },
+                vacancy.clone(),
+                &profile,
+            );
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, office);
+
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
+
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        let received = listener_store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .unwrap();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].claim, vacancy.claim);
+        assert_eq!(
+            received[0].source,
+            InstitutionalKnowledgeSource::Report {
+                from: speaker,
+                chain_len: 1,
+            }
+        );
+        let heard = listener_store
+            .heard_beliefs
+            .get(&tell_memory_key(speaker, office))
+            .unwrap();
+        assert_eq!(heard.disposition, HeardBeliefDisposition::Accepted);
+        assert_eq!(heard.heard_state.institutional_claims.len(), 1);
+        assert_eq!(heard.heard_state.institutional_claims[0].claim, vacancy.claim);
+        assert_eq!(heard.heard_state.institutional_claims[0].source, vacancy.source);
+    }
+
+    #[test]
+    fn tell_commit_relays_institutional_claims_with_incremented_chain_length() {
+        let (defs, handlers, tell_id, mut world, place, speaker, listener, office) =
+            tell_office_test_setup(PerceptionSource::DirectObservation);
+        let vacancy = office_holder_belief(
+            office,
+            None,
+            InstitutionalKnowledgeSource::Report {
+                from: entity(90),
+                chain_len: 1,
+            },
+            4,
+            Some(place),
+        );
+        {
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap_or_default();
+            let profile = *world.get_component_perception_profile(speaker).unwrap();
+            store.record_institutional_belief(
+                InstitutionalBeliefKey::OfficeHolderOf { office },
+                vacancy,
+                &profile,
+            );
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, office);
+
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
+
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        let received = listener_store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .unwrap();
+        assert_eq!(received.len(), 1);
+        assert_eq!(
+            received[0].source,
+            InstitutionalKnowledgeSource::Report {
+                from: speaker,
+                chain_len: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn tell_commit_does_not_duplicate_identical_institutional_claims_on_repeat_tell() {
+        let (defs, handlers, tell_id, mut world, place, speaker, listener, office) =
+            tell_office_test_setup(PerceptionSource::DirectObservation);
+        let vacancy = office_holder_belief(
+            office,
+            None,
+            InstitutionalKnowledgeSource::WitnessedEvent,
+            4,
+            Some(place),
+        );
+        {
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap_or_default();
+            let profile = *world.get_component_perception_profile(speaker).unwrap();
+            store.record_institutional_belief(
+                InstitutionalBeliefKey::OfficeHolderOf { office },
+                vacancy,
+                &profile,
+            );
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let first = tell_instance(tell_id, speaker, listener, office);
+        let second = tell_instance(tell_id, speaker, listener, office);
+
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &first, 1, 8);
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &second, 2, 9);
+
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        let received = listener_store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .unwrap();
+        assert_eq!(received.len(), 1);
     }
 
     #[test]

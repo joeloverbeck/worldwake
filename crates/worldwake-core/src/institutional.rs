@@ -13,7 +13,7 @@ pub enum RecordKind {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct RecordEntryId(pub u64);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum InstitutionalClaim {
     OfficeHolder {
         office: EntityId,
@@ -159,7 +159,7 @@ pub struct BelievedInstitutionalClaim {
     pub learned_at: Option<EntityId>,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum InstitutionalKnowledgeSource {
     WitnessedEvent,
     Report {

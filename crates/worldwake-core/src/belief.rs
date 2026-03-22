@@ -2,7 +2,8 @@
 
 use crate::{
     BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
-    Permille, Quantity, ResourceSource, Tick, WorkstationTag, World, Wound,
+    InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, Tick,
+    WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -172,12 +173,66 @@ impl AgentBeliefStore {
         profile: &TellProfile,
     ) -> RecipientKnowledgeStatus {
         match self.told_belief_memory(key, current_tick, profile) {
-            Some(memory) => recipient_knowledge_status(current_belief, Some(memory)),
+            Some(memory)
+                if memory.shared_state
+                    == self.shared_belief_snapshot_for_subject(
+                        key.subject,
+                        current_belief,
+                        profile.max_relay_chain_len,
+                    ) =>
+            {
+                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+            }
+            Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
             None if self.told_beliefs.contains_key(key) => {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }
             None => RecipientKnowledgeStatus::UnknownToSpeaker,
         }
+    }
+
+    #[must_use]
+    pub fn shared_belief_snapshot_for_subject(
+        &self,
+        subject: EntityId,
+        state: &BelievedEntityState,
+        max_relay_chain_len: u8,
+    ) -> SharedBeliefSnapshot {
+        let mut institutional_claims = self
+            .relayable_institutional_beliefs_for_subject(subject, max_relay_chain_len)
+            .into_iter()
+            .map(|belief| SharedInstitutionalBelief {
+                claim: belief.claim,
+                source: belief.source,
+            })
+            .collect::<Vec<_>>();
+        institutional_claims.sort_unstable();
+
+        SharedBeliefSnapshot {
+            last_known_place: state.last_known_place,
+            last_known_inventory: state.last_known_inventory.clone(),
+            workstation_tag: state.workstation_tag,
+            resource_source: state.resource_source.clone(),
+            alive: state.alive,
+            wounds: state.wounds.clone(),
+            last_known_courage: state.last_known_courage,
+            source: state.source,
+            institutional_claims,
+        }
+    }
+
+    #[must_use]
+    pub fn relayable_institutional_beliefs_for_subject(
+        &self,
+        subject: EntityId,
+        max_relay_chain_len: u8,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        self.institutional_beliefs
+            .values()
+            .flat_map(|beliefs| beliefs.iter().cloned())
+            .filter(|belief| institutional_claim_subject(belief.claim) == subject)
+            .filter(|belief| institutional_chain_len(belief.source) <= max_relay_chain_len)
+            .collect()
     }
 
     fn enforce_institutional_capacity(&mut self, profile: &PerceptionProfile) {
@@ -293,6 +348,12 @@ pub struct HeardBeliefMemory {
     pub disposition: HeardBeliefDisposition,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct SharedInstitutionalBelief {
+    pub claim: InstitutionalClaim,
+    pub source: InstitutionalKnowledgeSource,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum HeardBeliefDisposition {
     Accepted,
@@ -311,6 +372,7 @@ pub struct SharedBeliefSnapshot {
     pub wounds: Vec<Wound>,
     pub last_known_courage: Option<Permille>,
     pub source: PerceptionSource,
+    pub institutional_claims: Vec<SharedInstitutionalBelief>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -332,6 +394,7 @@ pub fn to_shared_belief_snapshot(state: &BelievedEntityState) -> SharedBeliefSna
         wounds: state.wounds.clone(),
         last_known_courage: state.last_known_courage,
         source: state.source,
+        institutional_claims: Vec::new(),
     }
 }
 
@@ -341,6 +404,23 @@ pub fn share_equivalent(
     prior_shared_state: &SharedBeliefSnapshot,
 ) -> bool {
     to_shared_belief_snapshot(current_belief) == *prior_shared_state
+}
+
+fn institutional_claim_subject(claim: InstitutionalClaim) -> EntityId {
+    match claim {
+        InstitutionalClaim::OfficeHolder { office, .. }
+        | InstitutionalClaim::SupportDeclaration { office, .. } => office,
+        InstitutionalClaim::FactionMembership { faction, .. } => faction,
+    }
+}
+
+fn institutional_chain_len(source: InstitutionalKnowledgeSource) -> u8 {
+    match source {
+        InstitutionalKnowledgeSource::WitnessedEvent
+        | InstitutionalKnowledgeSource::RecordConsultation { .. }
+        | InstitutionalKnowledgeSource::SelfDeclaration => 0,
+        InstitutionalKnowledgeSource::Report { chain_len, .. } => chain_len,
+    }
 }
 
 #[must_use]
@@ -736,6 +816,24 @@ mod tests {
                 disposition,
             },
         )
+    }
+
+    fn office_holder_belief(
+        office: u32,
+        holder: Option<u32>,
+        source: InstitutionalKnowledgeSource,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(office),
+                holder: holder.map(entity),
+                effective_tick: Tick(learned_tick),
+            },
+            source,
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(9)),
+        }
     }
 
     fn assert_component_bounds<T: Component>() {}
@@ -1259,6 +1357,31 @@ mod tests {
         assert_eq!(
             recipient_knowledge_status(&current, None),
             RecipientKnowledgeStatus::UnknownToSpeaker
+        );
+    }
+
+    #[test]
+    fn recipient_knowledge_status_treats_changed_institutional_payload_as_new_shareable_content() {
+        let tell_profile = tell_profile();
+        let key = tell_memory_key(7, 44);
+        let subject = entity(44);
+        let current = sample_state(8, 4);
+        let mut store = AgentBeliefStore::new();
+        let memory = ToldBeliefMemory {
+            shared_state: to_shared_belief_snapshot(&current),
+            told_tick: Tick(6),
+        };
+        store.record_told_belief(key, memory);
+        store.update_entity(subject, current.clone());
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office: subject },
+            office_holder_belief(subject.slot, Some(11), InstitutionalKnowledgeSource::WitnessedEvent, 8),
+            &profile(8, 100),
+        );
+
+        assert_eq!(
+            store.recipient_knowledge_status(&key, &current, Tick(8), &tell_profile),
+            RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
         );
     }
 

@@ -24,7 +24,8 @@ The current architecture has a narrow runtime seam where AI reads live office/fa
 10. Golden test scenarios must set up belief state (records + consultation or witness events) so agents have institutional knowledge through legitimate paths. Scenarios that previously relied on omniscient truth must be updated.
 11. Additional live-code clarification after ticket `-005`: `consult_record` is now a real registered action and the AI semantics table already classifies it minimally for registry integrity, but autonomous consult-goal emission/search remains owned by tickets `-011` and `-012`.
 12. Additional live-code clarification after ticket `-006`: witness acquisition now exists in `crates/worldwake-systems/src/perception.rs`, so the remaining architecture gap is no longer acquisition for visible political events; it is the AI-side cutover off the live helper seam.
-13. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
+13. Additional live-code clarification after ticket `-008`: Tell now relays institutional claims for entity subjects through conversation memory into `institutional_beliefs`, so social institutional propagation is no longer the blocker. The remaining gap is removal of the AI-side live helper seam and migration of remaining political callers/goldens onto the belief-backed path.
+14. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
 
 ## Architecture Check
 
@@ -74,6 +75,7 @@ For each golden test that exercises political behavior:
 
 Note:
 - Any golden that expects autonomous "Unknown institutional belief -> seek record -> consult -> act" behavior depends on tickets `-011` and `-012`. If those tickets are not landed yet, do not paper over the gap here with live truth shortcuts or bespoke test-only seeding.
+- Any golden that uses social institutional propagation should now prefer the landed `-008` Tell path over bespoke institutional-belief injection when ordinary Tell is sufficient for the scenario.
 
 ### 5. Verification grep
 

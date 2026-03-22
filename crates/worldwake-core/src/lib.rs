@@ -73,8 +73,8 @@ pub use belief::{
     recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
     BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
     MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, SharedBeliefSnapshot, SocialObservation, SocialObservationKind,
-    TellMemoryKey, TellProfile, ToldBeliefMemory,
+    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SocialObservation,
+    SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
 };
 pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
 pub use canonical::{

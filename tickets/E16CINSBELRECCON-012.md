@@ -16,14 +16,14 @@ The AI candidate generation layer must emit `GoalKind::ConsultRecord` candidates
 2. Current political candidate generation reads support declarations and office state. After E16c, these must come from institutional beliefs (PlanningSnapshot), not live truth.
 3. When institutional belief is `Unknown` for a relevant office → emit `ConsultRecord` candidate targeting the appropriate record.
 4. When institutional belief is `Conflicted` for a relevant office → suppress political goal candidates that require commitment (ClaimOffice, SupportCandidateForOffice).
-5. The candidate generation layer does NOT read live world state — it reads from the belief view / planning snapshot.
+5. The candidate generation layer does not call `World` directly, but the current political candidate path still reaches live institutional truth indirectly through the legacy belief-view seam (`ctx.view.office_holder()` / `ctx.view.support_declaration()`). This ticket must cut over those reads to the new planning/snapshot institutional-belief surface.
 6. N/A — no heuristic removal.
 7. N/A.
 8. Closure boundary: candidate generation for ClaimOffice and SupportCandidateForOffice. The exact symbols are `generate_candidates()` and the political subsection within it.
 9. N/A.
 10. ConsultRecord candidates should only be emitted when: (a) the agent has a plausible political goal, (b) the required institutional belief is Unknown, (c) a record of the right kind is known to exist. This prevents agents from randomly consulting records they have no use for.
 11. Mismatch + correction: current code in `crates/worldwake-ai/src/candidate_generation.rs` still calls `ctx.view.office_holder()` and `ctx.view.support_declaration()` in the political candidate path. This ticket should migrate those candidate-generation reads onto the new institutional-belief-backed planning/snapshot queries as soon as tickets `-009` and `-010` land; it must not add more logic on top of the legacy live-helper path.
-12. N/A.
+12. Additional live-code clarification after ticket `-008`: Tell-side institutional propagation for entity subjects now exists, so the remaining blocker here is no longer "can institutional facts arrive socially?" It is "does candidate generation consume the new institutional-belief substrate instead of the live helper seam?"
 
 ## Architecture Check
 
