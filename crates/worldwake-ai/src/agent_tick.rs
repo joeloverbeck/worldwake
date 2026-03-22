@@ -5862,6 +5862,30 @@ mod tests {
                     }),
                     "Force-law support-candidate goals must not enter political plan search in agent_tick"
                 );
+                let claim_attempt = planning
+                    .planning
+                    .attempts
+                    .iter()
+                    .find(|attempt| {
+                        matches!(
+                            attempt.goal.kind,
+                            GoalKind::ClaimOffice { office: goal_office } if goal_office == office
+                        )
+                    })
+                    .expect("force-law ClaimOffice attempt should be present");
+                let root = claim_attempt
+                    .expansion_summaries
+                    .iter()
+                    .find(|summary| summary.depth == 0)
+                    .expect("root expansion summary should be present for ClaimOffice");
+                assert!(
+                    root.root_candidates.iter().any(|candidate| {
+                        candidate.op_kind == Some(PlannerOpKind::PressForceClaim)
+                            && candidate.outcome
+                                == crate::decision_trace::RootCandidateOutcome::Expanded
+                    }),
+                    "force-law ClaimOffice root trace should expose the retained PressForceClaim candidate"
+                );
                 let selected_plan = planning
                     .selection
                     .selected_plan

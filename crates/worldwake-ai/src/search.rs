@@ -1,4 +1,5 @@
 use crate::goal_model::trace_prerequisite_guidance;
+use crate::goal_model::GoalPayloadOverrideError;
 use crate::planner_ops::planner_only_candidates;
 use crate::{
     apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
@@ -35,6 +36,8 @@ struct SearchCandidate {
     authoritative_targets: Vec<EntityId>,
     planning_targets: Vec<PlanningEntityRef>,
     payload_override: Option<ActionPayload>,
+    planner_only: bool,
+    trace_index: Option<usize>,
 }
 
 impl<'snapshot> FrontierEntry<'snapshot> {
@@ -145,6 +148,8 @@ pub fn search_plan(
         expansions = expansions.saturating_add(1);
 
         let depth = node.steps.len() as u8;
+        let record_root_candidates = depth == 0 && expansion_summaries.is_some();
+        let mut root_candidates = Vec::new();
 
         let mut candidates = search_candidates(
             goal,
@@ -153,6 +158,7 @@ pub fn search_plan(
             registry,
             handlers,
             binding_rejections.as_deref_mut(),
+            record_root_candidates.then_some(&mut root_candidates),
         );
         let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
         let mut travel_pruning = None;
@@ -177,7 +183,7 @@ pub fn search_plan(
         let mut successors = Vec::new();
         let mut candidates_skipped = 0u16;
         for candidate in candidates {
-            let Some((terminal, successor)) = build_successor(
+            let (terminal, successor) = match build_successor_detailed(
                 goal,
                 semantics_table,
                 registry,
@@ -185,10 +191,30 @@ pub fn search_plan(
                 &candidate,
                 recipes,
                 budget,
-            ) else {
-                candidates_skipped += 1;
-                continue;
+            ) {
+                Ok(result) => result,
+                Err(reason) => {
+                    candidates_skipped += 1;
+                    if let Some(trace_index) = candidate.trace_index {
+                        if let Some(trace) = root_candidates.get_mut(trace_index) {
+                            trace.outcome =
+                                crate::decision_trace::RootCandidateOutcome::Skipped(reason);
+                        }
+                    }
+                    continue;
+                }
             };
+            if let Some(trace_index) = candidate.trace_index {
+                if let Some(trace) = root_candidates.get_mut(trace_index) {
+                    trace.payload_status = root_candidate_payload_status(
+                        candidate.payload_override.as_ref(),
+                        successor
+                            .steps
+                            .last()
+                            .and_then(|step| step.payload_override.as_ref()),
+                    );
+                }
+            }
             if let Some(terminal_kind) = terminal {
                 terminal_successors.push((terminal_kind, successor));
             } else {
@@ -226,6 +252,7 @@ pub fn search_plan(
                                 found_goal_satisfied,
                                 travel_pruning: travel_pruning.clone(),
                                 prerequisite_guidance: combined_places.guidance_trace.clone(),
+                                root_candidates: root_candidates.clone(),
                             });
                         }
                         return PlanSearchResult::Found(PlannedPlan::new(
@@ -264,6 +291,7 @@ pub fn search_plan(
                 found_goal_satisfied,
                 travel_pruning,
                 prerequisite_guidance: combined_places.guidance_trace,
+                root_candidates,
             });
         }
 
@@ -436,6 +464,7 @@ fn prune_travel_away_from_goal(
     })
 }
 
+#[cfg(test)]
 fn build_successor<'snapshot>(
     goal: &GroundedGoal,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -445,15 +474,43 @@ fn build_successor<'snapshot>(
     recipes: &RecipeRegistry,
     budget: &PlanningBudget,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
-    let def = registry.get(candidate.def_id)?;
-    let semantics = semantics_table.get(&candidate.def_id)?;
+    build_successor_detailed(
+        goal,
+        semantics_table,
+        registry,
+        node,
+        candidate,
+        recipes,
+        budget,
+    )
+    .ok()
+}
+
+fn build_successor_detailed<'snapshot>(
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    node: &SearchNode<'snapshot>,
+    candidate: &SearchCandidate,
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
+) -> Result<
+    (Option<PlanTerminalKind>, SearchNode<'snapshot>),
+    crate::decision_trace::RootCandidateSkipReason,
+> {
+    let def = registry
+        .get(candidate.def_id)
+        .ok_or(crate::decision_trace::RootCandidateSkipReason::MissingActionDef)?;
+    let semantics = semantics_table
+        .get(&candidate.def_id)
+        .ok_or(crate::decision_trace::RootCandidateSkipReason::MissingSemantics)?;
     if !goal
         .key
         .kind
         .relevant_op_kinds()
         .contains(&semantics.op_kind)
     {
-        return None;
+        return Err(crate::decision_trace::RootCandidateSkipReason::IrrelevantGoalOp);
     }
 
     let actor = node.state.snapshot().actor();
@@ -467,14 +524,17 @@ fn build_successor<'snapshot>(
             def,
             semantics,
         )
-        .ok()?;
+        .map_err(root_candidate_payload_error)?;
     let effective_payload = payload_override.as_ref().unwrap_or(&def.payload);
-    let duration = node.state.estimate_duration(
-        actor,
-        &def.duration,
-        &candidate.authoritative_targets,
-        effective_payload,
-    )?;
+    let duration = node
+        .state
+        .estimate_duration(
+            actor,
+            &def.duration,
+            &candidate.authoritative_targets,
+            effective_payload,
+        )
+        .ok_or(crate::decision_trace::RootCandidateSkipReason::DurationEstimateFailed)?;
     let estimated_ticks = duration.ticks();
 
     let transition = apply_hypothetical_transition(
@@ -483,7 +543,8 @@ fn build_successor<'snapshot>(
         node.state.clone(),
         &candidate.planning_targets,
         payload_override.as_ref(),
-    )?;
+    )
+    .ok_or(crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed)?;
     let step = PlannedStep {
         def_id: candidate.def_id,
         targets: transition.targets,
@@ -495,9 +556,12 @@ fn build_successor<'snapshot>(
     };
     let terminal = terminal_kind(goal, &transition.state, &step);
     if !semantics.may_appear_mid_plan && terminal.is_none() {
-        return None;
+        return Err(crate::decision_trace::RootCandidateSkipReason::NonTerminalLeafOnly);
     }
-    let total_estimated_ticks = node.total_estimated_ticks.checked_add(estimated_ticks)?;
+    let total_estimated_ticks = node
+        .total_estimated_ticks
+        .checked_add(estimated_ticks)
+        .ok_or(crate::decision_trace::RootCandidateSkipReason::TotalDurationOverflow)?;
     let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
     let heuristic_ticks = compute_heuristic(
         node.state.snapshot(),
@@ -507,7 +571,7 @@ fn build_successor<'snapshot>(
     let mut steps = node.steps.clone();
     steps.push(step);
 
-    Some((
+    Ok((
         terminal,
         SearchNode {
             state: transition.state,
@@ -530,6 +594,80 @@ fn relevant_action_defs(
         .collect()
 }
 
+fn root_candidate_payload_error(
+    error: GoalPayloadOverrideError,
+) -> crate::decision_trace::RootCandidateSkipReason {
+    use crate::decision_trace::PayloadOverrideFailureReason as TracePayloadError;
+
+    let reason = match error {
+        GoalPayloadOverrideError::MissingTarget => TracePayloadError::MissingTarget,
+        GoalPayloadOverrideError::UnsupportedGoal => TracePayloadError::UnsupportedGoal,
+        GoalPayloadOverrideError::MissingActorPlace => TracePayloadError::MissingActorPlace,
+        GoalPayloadOverrideError::SellerUnavailable => TracePayloadError::SellerUnavailable,
+        GoalPayloadOverrideError::SellerOutOfStock => TracePayloadError::SellerOutOfStock,
+        GoalPayloadOverrideError::ActorCannotPay => TracePayloadError::ActorCannotPay,
+    };
+    crate::decision_trace::RootCandidateSkipReason::PayloadOverride(reason)
+}
+
+fn push_root_candidate_trace(
+    sink: &mut Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    trace: crate::decision_trace::RootCandidateTrace,
+) -> Option<usize> {
+    let sink = sink.as_deref_mut()?;
+    sink.push(trace);
+    Some(sink.len() - 1)
+}
+
+fn update_root_candidate_outcome(
+    sink: &mut Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    trace_index: Option<usize>,
+    outcome: crate::decision_trace::RootCandidateOutcome,
+) {
+    let Some(trace_index) = trace_index else {
+        return;
+    };
+    let Some(sink) = sink.as_deref_mut() else {
+        return;
+    };
+    if let Some(trace) = sink.get_mut(trace_index) {
+        trace.outcome = outcome;
+    }
+}
+
+fn root_candidate_payload_status(
+    candidate_payload: Option<&ActionPayload>,
+    resolved_payload: Option<&ActionPayload>,
+) -> crate::decision_trace::RootCandidatePayloadStatus {
+    if candidate_payload.is_some() {
+        return crate::decision_trace::RootCandidatePayloadStatus::CandidateProvided;
+    }
+    if resolved_payload.is_some() {
+        return crate::decision_trace::RootCandidatePayloadStatus::GoalSynthesized;
+    }
+    crate::decision_trace::RootCandidatePayloadStatus::None
+}
+
+fn root_candidate_trace_from_candidate(
+    candidate: &SearchCandidate,
+    registry: &ActionDefRegistry,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> crate::decision_trace::RootCandidateTrace {
+    crate::decision_trace::RootCandidateTrace {
+        def_id: candidate.def_id,
+        action_name: registry
+            .get(candidate.def_id)
+            .map_or_else(|| "<unknown>".to_string(), |def| def.name.clone()),
+        op_kind: semantics_table
+            .get(&candidate.def_id)
+            .map(|sem| sem.op_kind),
+        authoritative_targets: candidate.authoritative_targets.clone(),
+        planner_only: candidate.planner_only,
+        payload_status: root_candidate_payload_status(candidate.payload_override.as_ref(), None),
+        outcome: crate::decision_trace::RootCandidateOutcome::Expanded,
+    }
+}
+
 fn search_candidates(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
@@ -537,9 +675,10 @@ fn search_candidates(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
 ) -> Vec<SearchCandidate> {
     let relevant_defs = relevant_action_defs(goal, semantics_table);
-    let mut candidates = get_affordances_for_defs(
+    let candidates = get_affordances_for_defs(
         &node.state,
         node.state.snapshot().actor(),
         registry,
@@ -551,60 +690,85 @@ fn search_candidates(
         search_candidates_from_affordance(goal, &node.state, registry, &affordance)
     })
     .collect::<Vec<_>>();
+    let mut candidates = candidates;
     candidates.extend(
         planner_only_candidates(&node.state, semantics_table)
             .into_iter()
             .map(search_candidate_from_planner),
     );
-    candidates
-        .retain(|candidate| !candidate_uses_blocked_facility_use(candidate, &node.state, registry));
-    // Reject candidates whose authoritative targets violate goal binding.
-    // When a rejection collector is provided, record rejected candidates for traces.
-    if let Some(rejections) = binding_rejections {
-        candidates.retain(|candidate| {
-            let Some(semantics) = semantics_table.get(&candidate.def_id) else {
-                return true;
-            };
-            let passes = goal
-                .key
-                .kind
-                .matches_binding(&candidate.authoritative_targets, semantics.op_kind);
-            if !passes {
-                let required_target = goal.key.entity.or(goal.key.place);
+    let mut root_candidates = root_candidates;
+    let mut binding_rejections = binding_rejections;
+    let mut filtered = Vec::with_capacity(candidates.len());
+
+    for mut candidate in candidates {
+        let trace_index = push_root_candidate_trace(
+            &mut root_candidates,
+            root_candidate_trace_from_candidate(&candidate, registry, semantics_table),
+        );
+
+        if let Some((facility, intended_action)) =
+            candidate_blocked_facility_use(&candidate, &node.state, registry)
+        {
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::BlockedFacilityUse {
+                        facility,
+                        intended_action,
+                    },
+                ),
+            );
+            continue;
+        }
+
+        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+            candidate.trace_index = trace_index;
+            filtered.push(candidate);
+            continue;
+        };
+        let passes_binding = goal
+            .key
+            .kind
+            .matches_binding(&candidate.authoritative_targets, semantics.op_kind);
+        if !passes_binding {
+            let required_target = goal.key.entity.or(goal.key.place);
+            if let Some(rejections) = binding_rejections.as_deref_mut() {
                 rejections.push(crate::decision_trace::BindingRejection {
                     def_id: candidate.def_id,
                     rejected_targets: candidate.authoritative_targets.clone(),
                     required_target,
                 });
             }
-            passes
-        });
-    } else {
-        candidates.retain(|candidate| {
-            let Some(semantics) = semantics_table.get(&candidate.def_id) else {
-                return true;
-            };
-            goal.key
-                .kind
-                .matches_binding(&candidate.authoritative_targets, semantics.op_kind)
-        });
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::BindingMismatch {
+                        required_target,
+                    },
+                ),
+            );
+            continue;
+        }
+
+        candidate.trace_index = trace_index;
+        filtered.push(candidate);
     }
-    candidates
+    filtered
 }
 
-fn candidate_uses_blocked_facility_use(
+fn candidate_blocked_facility_use(
     candidate: &SearchCandidate,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
-) -> bool {
-    let Some(facility) = candidate.authoritative_targets.first().copied() else {
-        return false;
-    };
-    let Some(intended_action) = intended_exclusive_action(candidate, registry) else {
-        return false;
-    };
+) -> Option<(EntityId, ActionDefId)> {
+    let facility = candidate.authoritative_targets.first().copied()?;
+    let intended_action = intended_exclusive_action(candidate, registry)?;
 
-    state.is_facility_use_blocked(facility, intended_action)
+    state
+        .is_facility_use_blocked(facility, intended_action)
+        .then_some((facility, intended_action))
 }
 
 fn intended_exclusive_action(
@@ -644,6 +808,8 @@ fn search_candidates_from_affordance(
         authoritative_targets: affordance.bound_targets.clone(),
         planning_targets,
         payload_override: affordance.payload_override.clone(),
+        planner_only: false,
+        trace_index: None,
     };
 
     let Some(def) = registry.get(affordance.def_id) else {
@@ -746,6 +912,8 @@ fn search_candidate_from_planner(
         authoritative_targets: Vec::new(),
         planning_targets: candidate.targets,
         payload_override: candidate.payload_override,
+        planner_only: true,
+        trace_index: None,
     }
 }
 
@@ -2711,7 +2879,7 @@ mod tests {
         };
 
         let initial_candidates =
-            search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
+            search_candidates(&goal, &node, &semantics, &registry, &handlers, None, None);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -2743,6 +2911,7 @@ mod tests {
             &semantics,
             &registry,
             &handlers,
+            None,
             None,
         );
         let travel = follow_up_candidates
@@ -2920,6 +3089,8 @@ mod tests {
             authoritative_targets: Vec::new(),
             planning_targets: Vec::new(),
             payload_override: None,
+            planner_only: true,
+            trace_index: None,
         };
 
         let (_, successor) = build_successor(
@@ -2952,6 +3123,8 @@ mod tests {
             authoritative_targets: vec![lot],
             planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
             payload_override: None,
+            planner_only: false,
+            trace_index: None,
         };
         let (_, successor) = build_successor(
             &goal,
@@ -2986,6 +3159,8 @@ mod tests {
             authoritative_targets: vec![lot],
             planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
             payload_override: None,
+            planner_only: false,
+            trace_index: None,
         };
         let (_, successor) = build_successor(
             &goal,
@@ -3381,6 +3556,7 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             None,
+            None,
         );
 
         assert!(!candidates.iter().any(|candidate| {
@@ -3439,12 +3615,87 @@ mod tests {
             &fixture.registry,
             &fixture.handlers,
             None,
+            None,
         );
 
         assert!(!candidates.iter().any(|candidate| {
             candidate.def_id == queue_def
                 && candidate.authoritative_targets == vec![fixture.orchard_row]
         }));
+    }
+
+    #[test]
+    fn search_trace_records_blocked_facility_use_root_filter() {
+        let fixture = build_exclusive_orchard_fixture(false);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            evidence_entities: BTreeSet::from([fixture.orchard_row]),
+            evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        };
+        let blocked = BlockedIntentMemory {
+            intents: vec![BlockedIntent {
+                goal_key: goal.key,
+                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+                related_entity: Some(fixture.orchard_row),
+                related_place: Some(fixture.orchard_farm),
+                related_action: Some(fixture.harvest_action),
+                observed_tick: Tick(2),
+                expires_tick: Tick(20),
+            }],
+        };
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            fixture.actor,
+            &goal.evidence_entities,
+            &goal.evidence_places,
+            PlanningBudget::default().snapshot_travel_horizon,
+            &blocked,
+            Tick(3),
+        );
+        let queue_def = fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_facility_use")
+            .map(|def| def.id)
+            .expect("queue action should be registered");
+        let mut expansions = Vec::new();
+
+        let _result = search_plan(
+            &snapshot,
+            &goal,
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            Some(&mut expansions),
+        );
+
+        let root = expansions
+            .iter()
+            .find(|summary| summary.depth == 0)
+            .expect("root expansion summary should be recorded");
+        let blocked_queue = root
+            .root_candidates
+            .iter()
+            .find(|candidate| {
+                candidate.def_id == queue_def
+                    && candidate.authoritative_targets == vec![fixture.orchard_row]
+            })
+            .expect("blocked queue candidate should still appear in root provenance");
+        assert_eq!(
+            blocked_queue.outcome,
+            crate::decision_trace::RootCandidateOutcome::Filtered(
+                crate::decision_trace::RootCandidateFilterReason::BlockedFacilityUse {
+                    facility: fixture.orchard_row,
+                    intended_action: fixture.harvest_action,
+                },
+            )
+        );
     }
 
     #[test]
@@ -4003,6 +4254,8 @@ mod tests {
             authoritative_targets: vec![destination],
             planning_targets: vec![PlanningEntityRef::Authoritative(destination)],
             payload_override: None,
+            planner_only: false,
+            trace_index: None,
         }
     }
 
@@ -4012,6 +4265,8 @@ mod tests {
             authoritative_targets: vec![target],
             planning_targets: vec![PlanningEntityRef::Authoritative(target)],
             payload_override: None,
+            planner_only: false,
+            trace_index: None,
         }
     }
 
@@ -4373,7 +4628,7 @@ mod tests {
             heuristic_ticks: 0,
         };
 
-        let pick_up = search_candidates(&goal, &node, &semantics, &registry, &handlers, None)
+        let pick_up = search_candidates(&goal, &node, &semantics, &registry, &handlers, None, None)
             .into_iter()
             .find(|candidate| {
                 registry
@@ -4486,7 +4741,8 @@ mod tests {
             &PlanningBudget::default(),
         );
 
-        let candidates = search_candidates(&goal, &node, &semantics, &registry, &handlers, None);
+        let candidates =
+            search_candidates(&goal, &node, &semantics, &registry, &handlers, None, None);
 
         assert!(
             candidates.iter().any(|candidate| {
@@ -5525,5 +5781,100 @@ mod tests {
             .steps
             .iter()
             .all(|step| step.op_kind != PlannerOpKind::ConsultRecord));
+    }
+
+    #[test]
+    fn search_trace_records_force_claim_root_candidate_outcomes() {
+        let actor = entity(1);
+        let office = entity(3);
+        let hall = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, office, hall]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(hall, EntityKind::Place);
+        view.effective_places.insert(actor, hall);
+        view.effective_places.insert(office, hall);
+        view.entities_at.insert(hall, vec![actor, office]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.office_holder_beliefs.insert(
+            office,
+            worldwake_core::InstitutionalBeliefRead::Certain(None),
+        );
+        view.office_data.insert(
+            office,
+            worldwake_core::OfficeData {
+                title: "War Chief".to_string(),
+                jurisdiction: hall,
+                succession_law: worldwake_core::SuccessionLaw::Force,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+
+        let (registry, handlers) = build_registry();
+        let semantics = build_semantics_table(&registry);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([office]),
+            &BTreeSet::from([hall]),
+            0,
+        );
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::ClaimOffice { office }),
+            evidence_entities: BTreeSet::from([office]),
+            evidence_places: BTreeSet::from([hall]),
+        };
+        let mut expansions = Vec::new();
+
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &semantics,
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            None,
+            Some(&mut expansions),
+        );
+
+        let plan = match result {
+            PlanSearchResult::Found(plan) => plan,
+            other => panic!("expected plan, got {other:?}"),
+        };
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::PressForceClaim);
+
+        let root = expansions
+            .iter()
+            .find(|summary| summary.depth == 0)
+            .expect("root expansion summary should be recorded");
+        let press_force_claim = root
+            .root_candidates
+            .iter()
+            .find(|candidate| candidate.op_kind == Some(PlannerOpKind::PressForceClaim))
+            .expect("force-claim root candidate should be traced");
+        assert_eq!(
+            press_force_claim.outcome,
+            crate::decision_trace::RootCandidateOutcome::Expanded
+        );
+
+        let declare_support = root
+            .root_candidates
+            .iter()
+            .find(|candidate| candidate.op_kind == Some(PlannerOpKind::DeclareSupport))
+            .expect("declare_support root candidate should be traced");
+        assert_eq!(
+            declare_support.outcome,
+            crate::decision_trace::RootCandidateOutcome::Skipped(
+                crate::decision_trace::RootCandidateSkipReason::PayloadOverride(
+                    crate::decision_trace::PayloadOverrideFailureReason::UnsupportedGoal,
+                ),
+            )
+        );
     }
 }

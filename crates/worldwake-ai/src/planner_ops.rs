@@ -1388,7 +1388,10 @@ mod tests {
             .map(|def| def.name.as_str())
             .collect::<Vec<_>>();
 
-        assert!(unclassified.is_empty(), "all registered actions should classify");
+        assert!(
+            unclassified.is_empty(),
+            "all registered actions should classify"
+        );
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);

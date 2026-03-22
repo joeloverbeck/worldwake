@@ -240,6 +240,70 @@ pub struct BindingRejection {
     pub required_target: Option<EntityId>,
 }
 
+/// Candidate payload provenance at the root search boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootCandidatePayloadStatus {
+    None,
+    CandidateProvided,
+    GoalSynthesized,
+}
+
+/// Why a concrete root candidate was filtered before successor construction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootCandidateFilterReason {
+    BindingMismatch {
+        required_target: Option<EntityId>,
+    },
+    BlockedFacilityUse {
+        facility: EntityId,
+        intended_action: ActionDefId,
+    },
+}
+
+/// Why payload synthesis failed for a root candidate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PayloadOverrideFailureReason {
+    MissingTarget,
+    UnsupportedGoal,
+    MissingActorPlace,
+    SellerUnavailable,
+    SellerOutOfStock,
+    ActorCannotPay,
+}
+
+/// Why a root candidate failed during successor construction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootCandidateSkipReason {
+    MissingActionDef,
+    MissingSemantics,
+    IrrelevantGoalOp,
+    PayloadOverride(PayloadOverrideFailureReason),
+    DurationEstimateFailed,
+    HypotheticalTransitionFailed,
+    NonTerminalLeafOnly,
+    TotalDurationOverflow,
+}
+
+/// Final root-boundary status for one candidate seen by search.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootCandidateOutcome {
+    Expanded,
+    Filtered(RootCandidateFilterReason),
+    Skipped(RootCandidateSkipReason),
+}
+
+/// Structured root candidate provenance for one goal attempt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootCandidateTrace {
+    pub def_id: ActionDefId,
+    pub action_name: String,
+    pub op_kind: Option<PlannerOpKind>,
+    pub authoritative_targets: Vec<EntityId>,
+    pub planner_only: bool,
+    pub payload_status: RootCandidatePayloadStatus,
+    pub outcome: RootCandidateOutcome,
+}
+
 /// Per-expansion summary recorded during plan search.
 #[derive(Clone, Debug)]
 pub struct SearchExpansionSummary {
@@ -271,6 +335,9 @@ pub struct SearchExpansionSummary {
     /// Concrete goal-relevant / prerequisite guidance surfaces for this
     /// expansion boundary, when any exist.
     pub prerequisite_guidance: Option<PrerequisiteGuidanceTrace>,
+    /// Root candidate inventory and outcomes for this expansion. Populated only
+    /// for the root expansion (`depth == 0`).
+    pub root_candidates: Vec<RootCandidateTrace>,
 }
 
 /// Why a prerequisite place was excluded from guidance.
@@ -1549,6 +1616,7 @@ mod tests {
                 }],
             }),
             prerequisite_guidance: None,
+            root_candidates: vec![],
         };
         assert_eq!(summary.depth, 0);
         assert_eq!(summary.remaining_travel_ticks, 4);

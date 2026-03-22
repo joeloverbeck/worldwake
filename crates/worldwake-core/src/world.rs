@@ -3908,6 +3908,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn social_query_helpers_hide_archived_entities_even_if_rows_are_stale() {
         let mut world = World::new(Topology::new()).unwrap();
         let member = world

@@ -2,7 +2,7 @@
 
 mod golden_harness;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use golden_harness::*;
 use worldwake_ai::{
@@ -21,8 +21,7 @@ use worldwake_sim::{
     get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
     InputKind, OfficeSuccessionOutcome, PerAgentBeliefView, PressForceClaimActionPayload,
     RequestProvenance, RuntimeBeliefView, SupportCountTrace, SupportResolutionTrace,
-    VacancyTimerTrace,
-    YieldForceClaimActionPayload,
+    VacancyTimerTrace, YieldForceClaimActionPayload,
 };
 
 // ---------------------------------------------------------------------------
@@ -242,7 +241,7 @@ fn seed_known_office_at_place(
         office,
         BelievedEntityState {
             last_known_place: Some(place),
-            last_known_inventory: Default::default(),
+            last_known_inventory: BTreeMap::default(),
             workstation_tag: None,
             resource_source: None,
             alive: true,
@@ -254,6 +253,7 @@ fn seed_known_office_at_place(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn seed_force_controller_belief(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
@@ -2881,6 +2881,7 @@ fn golden_contested_force_claim_resolves_after_yield_replays_deterministically()
 // event, the remote listener remains ignorant until a committed `tell`, and
 // the listener then receives the relayed force-control claim.
 
+#[allow(clippy::too_many_lines)]
 fn build_force_control_locality_and_tell_scenario(
     seed: Seed,
 ) -> (

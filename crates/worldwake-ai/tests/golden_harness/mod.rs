@@ -775,6 +775,7 @@ pub fn seed_office_register(
 }
 
 /// Create a vacant Office entity with `OfficeData` at a jurisdiction.
+#[allow(clippy::needless_pass_by_value)]
 pub fn seed_office(
     world: &mut World,
     event_log: &mut EventLog,

@@ -1501,7 +1501,7 @@ mod tests {
             entity,
             BelievedEntityState {
                 last_known_place: Some(place),
-                last_known_inventory: Default::default(),
+                last_known_inventory: std::collections::BTreeMap::default(),
                 workstation_tag: None,
                 resource_source: None,
                 alive: true,
@@ -1630,7 +1630,7 @@ mod tests {
                 fx.office,
                 BelievedEntityState {
                     last_known_place: None,
-                    last_known_inventory: Default::default(),
+                    last_known_inventory: std::collections::BTreeMap::default(),
                     workstation_tag: None,
                     resource_source: None,
                     alive: true,
@@ -2537,6 +2537,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn committed_events_include_expected_tags() {
         let (defs, handlers, ids) = setup_registries();
         let mut fx = SocialFixture::new();

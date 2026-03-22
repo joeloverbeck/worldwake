@@ -580,6 +580,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn typed_accessors_cover_social_payload_variants() {
         let harvest = ActionPayload::Harvest(sample_payload());
         let consult = ActionPayload::ConsultRecord(sample_consult_record_payload());

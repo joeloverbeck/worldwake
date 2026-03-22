@@ -617,6 +617,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn remove_all_cleans_rows_when_entity_is_relation_target_or_reserver() {
         let item = entity(10);
         let container = entity(11);
@@ -731,6 +732,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn remove_all_cleans_social_rows_when_entity_is_target_holder_or_office() {
         let member = entity(10);
         let faction = entity(11);

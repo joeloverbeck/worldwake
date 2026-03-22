@@ -1024,6 +1024,7 @@ mod tests {
     }
 
     impl Fixture {
+        #[allow(clippy::needless_pass_by_value)]
         fn new(law: worldwake_core::SuccessionLaw) -> Self {
             let mut world = World::new(build_prototype_world()).unwrap();
             let place = world.topology().place_ids().next().unwrap();
