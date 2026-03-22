@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S16b: Force-Legitimacy Cross-System Emergence Golden E2E Suites
 
@@ -182,3 +182,14 @@ All suites follow `docs/golden-e2e-testing.md`:
 - Use decision traces for AI reasoning (ClaimOffice generation, ShareBelief candidate selection)
 - Use politics traces for force-control state machine transitions
 - Deterministic replay companions for all suites
+
+## Outcome
+
+**Completion date**: 2026-03-23
+
+All 3 suites implemented across tickets S16BFORLEGEMEGOL-001 through S16BFORLEGEMEGOL-004:
+- Suite 10: `golden_force_controller_departure_enables_rival_claim` (S16BFORLEGEMEGOL-002)
+- Suite 11: `golden_force_claim_creates_hostility_witnessed_and_propagated` (S16BFORLEGEMEGOL-003)
+- Suite 12: `golden_contested_force_state_propagates_through_belief_system` (S16BFORLEGEMEGOL-004)
+
+S16BFORLEGEMEGOL-001 provided shared harness helpers. All 6 golden tests (3 main + 3 replay) pass. `golden_emergent.rs` grew from 22 to 30 `golden_*` tests during this spec's implementation.

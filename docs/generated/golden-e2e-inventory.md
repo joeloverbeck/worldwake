@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 153
+- Total `golden_*` tests: 155
 
 ## Per-File Inventory
 
@@ -17,7 +17,7 @@ Do not hand-edit it.
 | `golden_care.rs` | 16 |
 | `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 4 |
-| `golden_emergent.rs` | 28 |
+| `golden_emergent.rs` | 30 |
 | `golden_offices.rs` | 21 |
 | `golden_production.rs` | 21 |
 | `golden_social.rs` | 14 |
@@ -125,6 +125,8 @@ Do not hand-edit it.
 - `golden_force_controller_departure_enables_rival_claim_replays_deterministically`
 - `golden_force_claim_creates_hostility_witnessed_and_propagated`
 - `golden_force_claim_creates_hostility_witnessed_and_propagated_replays_deterministically`
+- `golden_contested_force_state_propagates_through_belief_system`
+- `golden_contested_force_state_propagates_through_belief_system_replays_deterministically`
 
 ### `golden_offices.rs`
 

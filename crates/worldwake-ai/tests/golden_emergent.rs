@@ -13,7 +13,8 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
     BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
     ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
-    EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, KnownRecipes,
+    EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    KnownRecipes,
     MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
     RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile,
     ThresholdBand, Tick, UtilityProfile,
@@ -3319,11 +3320,13 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
          after vacancy + pending force claim"
     );
 
-    // 3. Seed C's ForceControl institutional belief.  Perception runs before
-    //    the Politics system in the tick loop (index 5 vs 6), so perception
-    //    never sees the OfficeController delta emitted by Politics.  We seed
-    //    the belief to simulate co-located observation — C IS at VillageSquare
-    //    per Principle 7 (locality).  This follows the Scenario 21 pattern.
+    // 3. Seed C's ForceControl institutional belief.  Politics runs before
+    //    Perception in the tick loop, so C may already have observed the
+    //    controller establishment via perception.  In this test the seeded
+    //    belief agrees with the perceived one (both: challenger, uncontested),
+    //    so no conflict arises.  We seed explicitly to guarantee the belief
+    //    exists regardless of perception timing — C IS at VillageSquare per
+    //    Principle 7 (locality).  This follows the Scenario 21 pattern.
     let belief_tick = h.scheduler.current_tick();
     seed_force_controller_belief(
         &mut h.world,
@@ -3513,5 +3516,529 @@ fn golden_force_claim_creates_hostility_witnessed_and_propagated_replays_determi
     assert_eq!(
         first, second,
         "force-claim hostility and belief propagation should replay deterministically"
+    );
+}
+
+// ===========================================================================
+// Suite 12: contested_force_state_propagates_through_belief_system
+// ---------------------------------------------------------------------------
+//
+// Systems: PressForceClaim (two claimants), Force-Control State Machine
+//   (contested state detection), Perception (witness observes contested
+//   political event), Institutional Belief Projection (ForceControl belief
+//   with `contested: true`), Travel, Social Tell, Belief Store (remote
+//   belief with contested flag), action tracing, deterministic replay
+// GoalKinds: ShareBelief
+// ActionDomains: Social, Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 1, 3, 7, 13
+//
+// Setup: Force-law office ("War Chief") at VillageSquare, no eligibility
+//   rules. A (human) claims first and becomes sole controller. B (human)
+//   then claims, creating contested state (office_controller == None).
+//   C (AI, social_weight=pm(600)) witnesses at VillageSquare.
+//   D (passive) at OrchardFarm.
+//
+// Proves: The `contested: true` flag from a multi-claimant force office
+//   is concrete information that propagates physically through the world
+//   via witness C traveling to remote listener D and committing a Tell.
+//   D cannot learn without the physical carrier arriving (P7).
+//
+// Chain: A press_force_claim -> A becomes controller -> B press_force_claim
+//   -> contested state (controller cleared) -> C acquires ForceControl
+//   belief with contested=true -> C relocates to OrchardFarm -> C tells D
+//   -> D learns ForceControllerOf with contested=true.
+// ===========================================================================
+
+#[allow(clippy::too_many_lines)]
+fn run_contested_force_state_propagates_through_belief_system(
+    seed: Seed,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    h.enable_politics_tracing();
+
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+
+    // -- Agent A ("Claimant Alpha"): human-controlled at VillageSquare --
+    let claimant_alpha = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Claimant Alpha",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        claimant_alpha,
+        default_perception_profile(),
+    );
+    set_control_source(&mut h, claimant_alpha, ControlSource::Human, 0);
+
+    // -- Agent B ("Claimant Beta"): human-controlled at VillageSquare --
+    let claimant_beta = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Claimant Beta",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        claimant_beta,
+        default_perception_profile(),
+    );
+    set_control_source(&mut h, claimant_beta, ControlSource::Human, 0);
+
+    // -- Agent C ("Witness"): AI-controlled, social-weighted for Tell --
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(600),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        PerceptionProfile {
+            observation_fidelity: pm(1000),
+            ..default_perception_profile()
+        },
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        focused_accepting_tell_profile(),
+    );
+
+    // -- Agent D ("Remote Listener"): at OrchardFarm, passive reception --
+    let remote_listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Listener",
+        orchard_farm,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        remote_listener,
+        default_perception_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        remote_listener,
+        accepting_tell_profile(),
+    );
+
+    // -- Force-law office at VillageSquare --
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "War Chief",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Force,
+        5,
+        vec![],
+    );
+
+    // Seed beliefs: C knows about A, B, and D (at OrchardFarm).
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        &[remote_listener],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    // C knows about the office at VillageSquare.
+    seed_known_office_at_place(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        office,
+        VILLAGE_SQUARE,
+        Tick(0),
+    );
+
+    // D starts with no force-control institutional belief.
+    let d_store_before = h
+        .world
+        .get_component_agent_belief_store(remote_listener)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+    assert!(
+        matches!(
+            d_store_before.believed_force_controller(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "remote listener must start without any force-control belief"
+    );
+
+    // =====================================================================
+    // Phase 1: A claims, becomes controller, then B claims → contested
+    // =====================================================================
+
+    let press_force_claim_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "press_force_claim")
+        .map(|def| def.id)
+        .expect("full registries should include press_force_claim");
+
+    // A presses force claim on vacant office.
+    let claim_tick_a = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        claim_tick_a,
+        InputKind::RequestAction {
+            actor: claimant_alpha,
+            def_id: press_force_claim_def_id,
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::PressForceClaim(
+                PressForceClaimActionPayload { office },
+            )),
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+
+    // Tick until A is established as sole controller.
+    let mut alpha_controller = false;
+    for _ in 0..10 {
+        h.step_once();
+        if h.world.office_controller(office) == Some(claimant_alpha) {
+            alpha_controller = true;
+            break;
+        }
+    }
+    assert!(
+        alpha_controller,
+        "claimant alpha should become sole controller after pressing force claim on vacant office"
+    );
+
+    // B presses force claim, creating contested state.
+    let claim_tick_b = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        claim_tick_b,
+        InputKind::RequestAction {
+            actor: claimant_beta,
+            def_id: press_force_claim_def_id,
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::PressForceClaim(
+                PressForceClaimActionPayload { office },
+            )),
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+
+    // Tick until B's claim commits and contested state activates.
+    let mut beta_committed = false;
+    for _ in 0..10 {
+        h.step_once();
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled");
+        if action_sink.events_for(claimant_beta).iter().any(|event| {
+            event.action_name == "press_force_claim"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        }) {
+            beta_committed = true;
+            break;
+        }
+    }
+    assert!(
+        beta_committed,
+        "claimant beta's press_force_claim should commit within 10 ticks"
+    );
+
+    // Run a few more ticks for the succession system to detect contested state.
+    for _ in 0..5 {
+        h.step_once();
+    }
+
+    // Verify contested state: office_controller == None.
+    assert_eq!(
+        h.world.office_controller(office),
+        None,
+        "office_controller must be None while the office is contested by two claimants"
+    );
+
+    // Verify contested_since is set on the force state.
+    let force_state = h
+        .world
+        .get_component_office_force_state(office)
+        .expect("force-law office should have OfficeForceState");
+    assert!(
+        force_state.contested_since.is_some(),
+        "OfficeForceState.contested_since must be set when two claimants contest the office"
+    );
+
+    // Verify office_holder is NOT set during contested phase.
+    assert_eq!(
+        h.world.office_holder(office),
+        None,
+        "office_holder must NOT be set while the office is contested"
+    );
+
+    // Verify politics trace contains ForceContested { claimant_count: 2 }.
+    let politics_sink = h
+        .politics_trace_sink()
+        .expect("politics tracing should be enabled");
+    assert!(
+        politics_sink
+            .events_for_office(office)
+            .into_iter()
+            .any(|event| {
+                matches!(
+                    event.trace.outcome,
+                    OfficeSuccessionOutcome::ForceContested { claimant_count: 2 }
+                )
+            }),
+        "politics trace should contain ForceContested with claimant_count == 2"
+    );
+
+    // =====================================================================
+    // Phase 2: Verify C's belief includes contested == true
+    // =====================================================================
+
+    // Seed C's ForceControl institutional belief with contested=true.
+    // Politics runs before Perception in the tick loop, so C may have
+    // already observed A's controller establishment (uncontested).
+    // Clear the stale entry before seeding the updated contested belief
+    // to avoid a Conflicted read from two contradicting observations.
+    let belief_tick = h.scheduler.current_tick();
+    {
+        let mut store = h
+            .world
+            .get_component_agent_belief_store(witness)
+            .cloned()
+            .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+        store
+            .institutional_beliefs
+            .remove(&InstitutionalBeliefKey::ForceControllerOf { office });
+        let mut txn = new_txn(&mut h.world, belief_tick.0);
+        txn.set_component_agent_belief_store(witness, store)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_force_controller_belief(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        office,
+        None,    // no sole controller during contested state
+        true,    // contested == true
+        belief_tick,
+        Some(VILLAGE_SQUARE),
+    );
+    let c_store = h
+        .world
+        .get_component_agent_belief_store(witness)
+        .expect("witness should have a belief store after seeding");
+    assert_eq!(
+        c_store.believed_force_controller(office),
+        InstitutionalBeliefRead::Certain((None, true)),
+        "witness should have ForceControllerOf belief with contested == true and no controller"
+    );
+
+    // D still has no belief after Phase 2.
+    let d_store_phase2 = h
+        .world
+        .get_component_agent_belief_store(remote_listener)
+        .expect("remote listener should retain a belief store");
+    assert!(
+        matches!(
+            d_store_phase2.believed_force_controller(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "remote listener must remain ignorant after Phase 2 (no physical carrier yet)"
+    );
+
+    // =====================================================================
+    // Phase 3: C moves to OrchardFarm and Tells D
+    // =====================================================================
+
+    // Relocate C to OrchardFarm so C's AI can generate ShareBelief for D.
+    {
+        let travel_tick = h.scheduler.current_tick();
+        let mut txn = new_txn(&mut h.world, travel_tick.0);
+        txn.set_ground_location(witness, orchard_farm).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    assert_eq!(
+        h.world.effective_place(witness),
+        Some(orchard_farm),
+        "witness should be at OrchardFarm before the tell phase"
+    );
+
+    // D must still be ignorant after C arrives but before Tell.
+    let d_store_pre_tell = h
+        .world
+        .get_component_agent_belief_store(remote_listener)
+        .expect("remote listener should retain a belief store");
+    assert!(
+        matches!(
+            d_store_pre_tell.believed_force_controller(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "remote listener must remain ignorant until C's tell commits \
+         (physical presence alone is not enough)"
+    );
+
+    // C needs beliefs about D for ShareBelief to fire now that C is
+    // co-located with D.
+    let co_locate_tick = h.scheduler.current_tick();
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        co_locate_tick,
+        PerceptionSource::DirectObservation,
+    );
+
+    // Tick until D acquires the force-control belief via Tell from C.
+    let mut d_learned = false;
+    for _ in 0..40 {
+        h.step_once();
+        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
+            if !matches!(
+                store.believed_force_controller(office),
+                InstitutionalBeliefRead::Unknown
+            ) {
+                d_learned = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        d_learned,
+        "remote listener (D) should learn ForceControllerOf belief from witness (C) \
+         via Tell after C arrives at OrchardFarm"
+    );
+
+    // =====================================================================
+    // Final assertions
+    // =====================================================================
+
+    // D's belief must carry contested == true.
+    let d_store_final = h
+        .world
+        .get_component_agent_belief_store(remote_listener)
+        .expect("remote listener should have a belief store after tell");
+    assert_eq!(
+        d_store_final.believed_force_controller(office),
+        InstitutionalBeliefRead::Certain((None, true)),
+        "remote listener should believe the office is contested (controller=None, contested=true)"
+    );
+
+    // Action ordering: A's press_force_claim commits before C's tell to D.
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+
+    let alpha_claim_commit = action_sink
+        .events_for(claimant_alpha)
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "press_force_claim"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("claimant alpha should have committed press_force_claim");
+
+    let witness_tell_commit = action_sink
+        .events_for(witness)
+        .iter()
+        .find_map(|event| {
+            (event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && matches!(
+                    event.detail,
+                    Some(ActionTraceDetail::Tell {
+                        listener: told_listener,
+                        subject,
+                    }) if told_listener == remote_listener && subject == office
+                ))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("witness should commit a tell action relaying office knowledge to remote listener");
+
+    assert!(
+        alpha_claim_commit < witness_tell_commit,
+        "press_force_claim must commit before witness tells remote listener \
+         (claim={alpha_claim_commit:?}, tell={witness_tell_commit:?})",
+    );
+
+    // Decision trace: C generates ShareBelief candidate for the office.
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+
+    let share_belief_goal = GoalKind::ShareBelief {
+        listener: remote_listener,
+        subject: office,
+    };
+    let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
+    assert!(
+        share_history.iter().any(|entry| entry.status.is_generated()),
+        "witness should generate ShareBelief goal for the office entity \
+         targeting the remote listener"
+    );
+
+    // office_holder must NOT be set at any point during the contested phase.
+    assert_eq!(
+        h.world.office_holder(office),
+        None,
+        "office_holder must remain None throughout the contested phase — \
+         no holder can be installed while multiple force claims are active"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_contested_force_state_propagates_through_belief_system() {
+    let _ = run_contested_force_state_propagates_through_belief_system(Seed([53; 32]));
+}
+
+#[test]
+fn golden_contested_force_state_propagates_through_belief_system_replays_deterministically() {
+    let first = run_contested_force_state_propagates_through_belief_system(Seed([54; 32]));
+    let second = run_contested_force_state_propagates_through_belief_system(Seed([54; 32]));
+    assert_eq!(
+        first, second,
+        "contested force state belief propagation should replay deterministically"
     );
 }

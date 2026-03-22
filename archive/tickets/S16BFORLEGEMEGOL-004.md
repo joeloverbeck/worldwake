@@ -1,6 +1,6 @@
 # S16BFORLEGEMEGOL-004: Suite 12 — Contested Force State Propagates Through Belief System
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — golden test only
@@ -113,3 +113,23 @@ Following the standard pattern.
 1. `cargo test -p worldwake-ai golden_contested_force_state_propagates_through_belief_system`
 2. `cargo test -p worldwake-ai --test golden_emergent`
 3. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+**Completion date**: 2026-03-23
+
+**What changed**:
+- Added `run_contested_force_state_propagates_through_belief_system` + main test + replay companion to `golden_emergent.rs` (~200 lines, Suite 12).
+- Added `InstitutionalBeliefKey` to golden_emergent.rs imports.
+- Fixed stale Suite 11 comment (incorrectly claimed "Perception runs before Politics").
+- Added "Belief Seeding After Political State Changes" convention to `docs/golden-e2e-testing.md`.
+- Regenerated `docs/generated/golden-e2e-inventory.md` (153→155 tests, golden_emergent 28→30).
+
+**Deviations from ticket**:
+- Phase 2 required clearing C's stale ForceControllerOf entry before seeding the contested belief. Politics runs before Perception (not after, as Suite 11's comment incorrectly stated), so C acquires an intermediate `(Some(alpha), false)` belief during Phase 1 that conflicts with the later `(None, true)` seed. The clear-and-seed pattern is documented in the new golden-e2e-testing.md convention.
+
+**Verification**:
+- `cargo test -p worldwake-ai golden_contested_force_state_propagates_through_belief_system` — 2 passed
+- `cargo test -p worldwake-ai --test golden_emergent` — 44 passed
+- `cargo clippy -p worldwake-ai` — clean
+- `python3 scripts/golden_inventory.py --write --check-docs` — ok

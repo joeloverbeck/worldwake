@@ -77,6 +77,9 @@ Established the delivered office-record golden coverage and closed the documenta
 ### E16b: Force Legitimacy & Jurisdiction Control — COMPLETED
 Replaced the thin E16 force-succession shortcut with explicit jurisdiction-control state: public claims, contested control, uncontested hold periods, and eventual installation into office. Force succession now arises from concrete local state (claims, contests, hold durations) rather than a hidden timing heuristic, with proper information paths for coups and recognition.
 
+### S16b (golden): Force-Legitimacy Emergence Golden E2E Suites — COMPLETED
+3 cross-system golden tests in `golden_emergent.rs` proving E16b's force-legitimacy mechanisms participate in emergent multi-system chains: Suite 10 (controller departure enables rival claim), Suite 11 (force claim creates hostility witnessed and propagated), Suite 12 (contested force state propagates through belief system). All 6 tests (3 main + 3 replay) pass with deterministic replay.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -91,6 +94,7 @@ S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 ✅ (planner prerequisite-aware search heuristic completed)
 E16c ──→ S13 (political emergence golden coverage needs institutional beliefs)
+E16b, E16c ──→ S16b-golden ✅ (force-legitimacy emergence golden suites completed)
 E16c ──→ S19 ✅ (institutional record consultation golden coverage completed)
 S15 ✅ (cross-system start-failure emergence golden coverage)
 S16 ✅ (S09 behavioral golden validation coverage)
@@ -185,6 +189,8 @@ S22, S23 ──→ S27 (expectation-violation goals — needs intention frames +
 - **S13**: Political Emergence Golden E2E Suites
   - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
+- **S16b-golden**: Force-Legitimacy Emergence Golden E2E Suites — ✅ COMPLETED
+  - 3 golden suites proving force-legitimacy participates in emergent multi-system chains (controller departure, hostility propagation, contested state propagation)
 
 #### Phase 3 Gate
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
@@ -324,7 +330,7 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
 | 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | PENDING |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

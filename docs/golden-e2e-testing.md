@@ -153,6 +153,29 @@ For social goldens, also document subject choice explicitly. Agent subjects can 
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 When a focused planning test is specifically about a planner failure boundary, assert the exact failure mode your scenario is meant to prove instead of only asserting "no plan". Use `BudgetExhausted`, `FrontierExhausted`, or another concrete planner-owned boundary as appropriate. Generic non-success is too weak because it also matches unrelated earlier contract breaks.
 
+## Belief Seeding After Political State Changes
+
+Politics runs before Perception in the tick loop (`system_manifest.rs`). When an agent is co-located during a political state transition (e.g., controller establishment, contested state activation), Perception projects the political event into the agent's institutional belief store in the same tick.
+
+If a test later seeds a *different* institutional belief for the same key (e.g., seeding `contested: true` after the agent already perceived `controller: Some(A), contested: false`), the two observations coexist and `believed_force_controller` returns `Conflicted` instead of `Certain`.
+
+**When the seeded belief agrees** with what perception projected (e.g., Suite 11 seeds the same controller perception already recorded), no conflict arises — both observations collapse to `Certain`.
+
+**When the seeded belief disagrees** (e.g., Suite 12 seeds a contested state that contradicts the earlier uncontested observation), clear the stale entry before seeding:
+
+```rust
+let mut store = h.world.get_component_agent_belief_store(agent).cloned().unwrap();
+store.institutional_beliefs.remove(
+    &InstitutionalBeliefKey::ForceControllerOf { office },
+);
+let mut txn = new_txn(&mut h.world, tick.0);
+txn.set_component_agent_belief_store(agent, store).unwrap();
+commit_txn(txn, &mut h.event_log);
+// Now seed_force_controller_belief will produce a clean Certain read.
+```
+
+This is not a hack — it models the agent updating their belief to newer information. The alternative (issuing all claims simultaneously) avoids intermediate observations but prevents testing sequential state transitions.
+
 ## Prototype World Topology Reference
 
 The prototype world (`build_prototype_world`) defines directed travel edges between places. When issuing a human `RequestAction` for travel, the target must be a **directly adjacent** place — there is no multi-hop resolution for human inputs. The travel action's `TargetAdjacentToActor(0)` precondition will reject non-adjacent targets with a `StartFailed`.
