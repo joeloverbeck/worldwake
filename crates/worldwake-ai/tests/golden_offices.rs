@@ -3,11 +3,12 @@
 mod golden_harness;
 
 use golden_harness::*;
+use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, BeliefConfidencePolicy, CombatProfile,
     CommodityKind, DeadAt, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-    Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
+    InstitutionalBeliefRead, MetabolismProfile, PerceptionProfile, PerceptionSource, Permille,
+    PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, Tick, UtilityProfile,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -1132,6 +1133,266 @@ fn golden_information_locality_for_political_facts_replays_deterministically() {
     assert_eq!(
         first, second,
         "political locality scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 33: Remote Record Travel + Consultation + Political Action
+// ---------------------------------------------------------------------------
+//
+// Setup: Single sated claimant starts at OrchardFarm with high enterprise
+// weight. The office is vacant at VillageSquare, but the vacancy entry exists
+// only in a remote OfficeRegister at RulersHall. The claimant knows about the
+// office and the remote record entity, but has no seeded institutional belief
+// about the office holder.
+//
+// Expected: ClaimOffice remains the selected goal, the initial selected plan is
+// Travel(RulersHall) -> ConsultRecord(remote record) -> Travel(VillageSquare)
+// -> DeclareSupport(self), consult_record commits before declare_support, and
+// succession installs the claimant as office holder.
+
+fn build_remote_record_consultation_political_action_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Archive Claimant",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        default_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+    let remote_record = seed_office_register(&mut h.world, &mut h.event_log, RULERS_HALL);
+    seed_office_vacancy_entry(&mut h.world, &mut h.event_log, office, RULERS_HALL);
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        &[office, remote_record],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let initial_beliefs = h
+        .world
+        .get_component_agent_belief_store(agent)
+        .expect("claimant should have a belief store after entity belief seeding");
+    assert!(
+        matches!(
+            initial_beliefs.believed_office_holder(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "claimant should start with unknown office-holder belief so ConsultRecord owns the prerequisite"
+    );
+
+    let local_record = h
+        .world
+        .query_record_data()
+        .find_map(|(entity, record)| {
+            (record.record_kind == worldwake_core::RecordKind::OfficeRegister
+                && record.home_place == VILLAGE_SQUARE)
+                .then_some((entity, record.entries.len()))
+        })
+        .expect("seed_office should create the jurisdiction-local office register");
+    assert_eq!(
+        local_record.1, 0,
+        "the jurisdiction-local office register should remain empty in the remote-record scenario"
+    );
+
+    let remote_record_data = h
+        .world
+        .get_component_record_data(remote_record)
+        .expect("remote office register should exist");
+    assert_eq!(
+        remote_record_data.entries.len(),
+        1,
+        "remote office register should hold the vacancy entry for the scenario"
+    );
+
+    (h, agent, office, remote_record, local_record.0)
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_remote_record_consultation_political_action(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, agent, office, remote_record, _) =
+        build_remote_record_consultation_political_action_scenario(seed);
+
+    for _ in 0..30 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(agent) {
+            break;
+        }
+    }
+
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for remote-record office scenario");
+    let tick_zero_trace = decision_sink
+        .trace_at(agent, Tick(0))
+        .expect("claimant should produce a tick 0 decision trace");
+    let planning_tick_zero = match &tick_zero_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+    let selected_plan = planning_tick_zero
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("claimant should select a remote-record office plan at tick 0");
+    assert_eq!(
+        planning_tick_zero.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "remote-record office scenario should start from a fresh search result"
+    );
+    assert!(
+        planning_tick_zero.candidates.generated.iter().any(
+            |goal| matches!(goal.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
+        ),
+        "tick 0 candidates should include ClaimOffice for the vacant office"
+    );
+    let step_kinds = selected_plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        step_kinds,
+        vec![
+            PlannerOpKind::Travel,
+            PlannerOpKind::Travel,
+            PlannerOpKind::Travel,
+            PlannerOpKind::Travel,
+            PlannerOpKind::ConsultRecord,
+            PlannerOpKind::Travel,
+            PlannerOpKind::DeclareSupport,
+        ],
+        "selected plan should expose the concrete multi-hop route to the remote record before the political terminal step"
+    );
+    assert_eq!(
+        selected_plan.steps[0].targets,
+        vec![prototype_place_entity(PrototypePlace::EastFieldTrail)],
+        "the first step should leave Orchard Farm toward East Field Trail"
+    );
+    assert_eq!(
+        selected_plan.steps[1].targets,
+        vec![prototype_place_entity(PrototypePlace::SouthGate)],
+        "the second step should continue toward South Gate"
+    );
+    assert_eq!(
+        selected_plan.steps[2].targets,
+        vec![VILLAGE_SQUARE],
+        "the third step should bring the claimant back to Village Square on the way to the archive"
+    );
+    assert_eq!(
+        selected_plan.steps[3].targets,
+        vec![RULERS_HALL],
+        "the fourth step should reach the remote record location"
+    );
+    assert_eq!(
+        selected_plan.steps[4].targets,
+        vec![remote_record],
+        "the consult step should target the remote office register"
+    );
+    assert_eq!(
+        selected_plan.steps[5].targets,
+        vec![VILLAGE_SQUARE],
+        "the return travel step should target the office jurisdiction"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for remote-record office scenario");
+    let consult_commit = action_sink
+        .events_for(agent)
+        .into_iter()
+        .find_map(|event| {
+            (event.action_name == "consult_record"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("claimant should commit consult_record before acting politically");
+    let declare_support_commit = action_sink
+        .events_for(agent)
+        .into_iter()
+        .find_map(|event| {
+            (event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("claimant should commit declare_support after consulting the record");
+    assert!(
+        consult_commit < declare_support_commit,
+        "consult_record must commit before declare_support in the remote-record path"
+    );
+
+    assert_eq!(
+        h.world.effective_place(agent),
+        Some(VILLAGE_SQUARE),
+        "claimant should finish at the office jurisdiction after the return leg"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(agent),
+        "claimant should become office holder after remote consultation and succession"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_remote_record_consultation_political_action() {
+    let _ = run_remote_record_consultation_political_action(Seed([124; 32]));
+}
+
+#[test]
+fn golden_remote_record_consultation_political_action_replays_deterministically() {
+    let seed = Seed([125; 32]);
+
+    let first = run_remote_record_consultation_political_action(seed);
+    let second = run_remote_record_consultation_political_action(seed);
+
+    assert_eq!(
+        first, second,
+        "remote-record office scenario should replay deterministically"
+    );
+
+    let (fresh, _, _, _, _) = build_remote_record_consultation_political_action_scenario(seed);
+    let initial_world_hash = hash_world(&fresh.world).unwrap();
+    assert_ne!(
+        first.0, initial_world_hash,
+        "remote-record office scenario should change world state non-trivially"
     );
 }
 
