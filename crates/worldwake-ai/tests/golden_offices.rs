@@ -1426,6 +1426,318 @@ fn golden_remote_record_consultation_political_action_replays_deterministically(
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 34: Knowledge Asymmetry Race
+// ---------------------------------------------------------------------------
+//
+// Setup: Two sated claimants start co-located at VillageSquare with high
+// enterprise weight. Both know about the same vacant office. Only the
+// uninformed claimant needs to consult the local office register because the
+// informed claimant already has Certain(None) office-holder belief.
+//
+// Expected: both claimants generate ClaimOffice, but the informed claimant
+// selects direct DeclareSupport while the uninformed claimant selects
+// ConsultRecord -> DeclareSupport. Because the record's consultation duration
+// is authoritatively raised to 12 ticks and both agents use
+// consultation_speed_factor=pm(500), the uninformed claimant spends 6 ticks
+// consulting and loses the initial support-law succession window.
+
+#[allow(clippy::too_many_lines)]
+fn build_knowledge_asymmetry_race_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let informed_agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Informed Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        informed_agent,
+        default_perception_profile(),
+    );
+
+    let uninformed_agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Uninformed Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        uninformed_agent,
+        default_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+    let record = seed_office_register(&mut h.world, &mut h.event_log, VILLAGE_SQUARE);
+    seed_office_vacancy_entry(&mut h.world, &mut h.event_log, office, VILLAGE_SQUARE);
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let mut record_data = txn
+            .get_component_record_data(record)
+            .cloned()
+            .expect("knowledge-asymmetry scenario should have a local office register");
+        record_data.consultation_ticks = 12;
+        txn.set_component_record_data(record, record_data)
+            .expect("knowledge-asymmetry scenario should be able to raise consultation duration");
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        informed_agent,
+        &[office],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        informed_agent,
+        office,
+        None,
+        Tick(0),
+        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+        Some(VILLAGE_SQUARE),
+    );
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        uninformed_agent,
+        &[office, record],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let informed_beliefs = h
+        .world
+        .get_component_agent_belief_store(informed_agent)
+        .expect("informed claimant should have a belief store");
+    assert!(
+        matches!(
+            informed_beliefs.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        ),
+        "informed claimant should start with certain vacancy knowledge"
+    );
+    let uninformed_beliefs = h
+        .world
+        .get_component_agent_belief_store(uninformed_agent)
+        .expect("uninformed claimant should have a belief store");
+    assert!(
+        matches!(
+            uninformed_beliefs.believed_office_holder(office),
+            InstitutionalBeliefRead::Unknown
+        ),
+        "uninformed claimant should start with unknown office-holder belief"
+    );
+    assert_eq!(
+        h.world
+            .get_component_record_data(record)
+            .expect("knowledge-asymmetry scenario should retain the local office register")
+            .consultation_ticks,
+        12,
+        "scenario setup must encode the longer consult in authoritative record state"
+    );
+
+    (h, informed_agent, uninformed_agent, office, record)
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_knowledge_asymmetry_race(seed: Seed) -> (StateHash, StateHash) {
+    let (mut h, informed_agent, uninformed_agent, office, record) =
+        build_knowledge_asymmetry_race_scenario(seed);
+
+    for _ in 0..20 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(informed_agent) {
+            break;
+        }
+    }
+
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for knowledge-asymmetry scenario");
+
+    let informed_tick_zero = decision_sink
+        .trace_at(informed_agent, Tick(0))
+        .expect("informed claimant should produce a tick 0 decision trace");
+    let informed_planning = match &informed_tick_zero.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace for informed claimant, got {other:?}"),
+    };
+    assert!(
+        informed_planning.candidates.generated.iter().any(
+            |goal| matches!(goal.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
+        ),
+        "informed claimant should generate ClaimOffice at tick 0"
+    );
+    assert_eq!(
+        informed_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "informed claimant should select a fresh search result"
+    );
+    let informed_selected_plan = informed_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("informed claimant should select an office-claim plan");
+    let informed_step_kinds = informed_selected_plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        informed_step_kinds,
+        vec![PlannerOpKind::DeclareSupport],
+        "informed claimant should not need ConsultRecord before declaring support"
+    );
+
+    let uninformed_tick_zero = decision_sink
+        .trace_at(uninformed_agent, Tick(0))
+        .expect("uninformed claimant should produce a tick 0 decision trace");
+    let uninformed_planning = match &uninformed_tick_zero.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace for uninformed claimant, got {other:?}"),
+    };
+    assert!(
+        uninformed_planning.candidates.generated.iter().any(
+            |goal| matches!(goal.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
+        ),
+        "uninformed claimant should also generate ClaimOffice at tick 0"
+    );
+    assert_eq!(
+        uninformed_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "uninformed claimant should also start from a fresh search result"
+    );
+    let uninformed_selected_plan = uninformed_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("uninformed claimant should select an office-claim plan");
+    let uninformed_step_kinds = uninformed_selected_plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        uninformed_step_kinds,
+        vec![PlannerOpKind::ConsultRecord, PlannerOpKind::DeclareSupport],
+        "uninformed claimant should need ConsultRecord before declaring support"
+    );
+    assert_eq!(
+        uninformed_selected_plan.steps[0].targets,
+        vec![record],
+        "uninformed claimant should target the local office register"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for knowledge-asymmetry scenario");
+    let informed_declare_commit = action_sink
+        .events_for(informed_agent)
+        .into_iter()
+        .find_map(|event| {
+            (event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("informed claimant should commit declare_support");
+    let uninformed_consult_commit = action_sink
+        .events_for(uninformed_agent)
+        .into_iter()
+        .find_map(|event| {
+            (event.action_name == "consult_record"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
+        })
+        .expect("uninformed claimant should commit consult_record");
+    assert!(
+        informed_declare_commit < uninformed_consult_commit,
+        "informed claimant must commit declare_support before the uninformed consult finishes"
+    );
+    let uninformed_declared_support = action_sink
+        .events_for(uninformed_agent)
+        .iter()
+        .any(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+    assert!(
+        !uninformed_declared_support,
+        "uninformed claimant must not commit declare_support before the office is installed"
+    );
+
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(informed_agent),
+        "informed claimant should win the office before the uninformed claimant can finish the consult-driven branch"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_knowledge_asymmetry_race_informed_wins_office() {
+    let _ = run_knowledge_asymmetry_race(Seed([126; 32]));
+}
+
+#[test]
+fn golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically() {
+    let seed = Seed([127; 32]);
+
+    let first = run_knowledge_asymmetry_race(seed);
+    let second = run_knowledge_asymmetry_race(seed);
+
+    assert_eq!(
+        first, second,
+        "knowledge-asymmetry office race should replay deterministically"
+    );
+
+    let (fresh, _, _, _, _) = build_knowledge_asymmetry_race_scenario(seed);
+    let initial_world_hash = hash_world(&fresh.world).unwrap();
+    assert_ne!(
+        first.0, initial_world_hash,
+        "knowledge-asymmetry office race should change world state non-trivially"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 17: Survival Pressure Suppresses Political Goals
 // ---------------------------------------------------------------------------
 //
