@@ -55,7 +55,7 @@ pub fn dispatch_table() -> SystemDispatchTable {
         trade_system_tick,
         combat_system,
         facility_queue_system,
-        perception_system,
         succession_system,
+        perception_system,
     ])
 }

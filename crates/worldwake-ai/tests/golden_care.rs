@@ -685,8 +685,8 @@ fn golden_healer_acquires_ground_medicine_for_patient() {
 
 #[test]
 fn golden_healer_acquires_ground_medicine_for_patient_replays_deterministically() {
-    let first = run_healer_acquires_ground_medicine_for_patient(Seed([17; 32]));
-    let second = run_healer_acquires_ground_medicine_for_patient(Seed([17; 32]));
+    let first = run_healer_acquires_ground_medicine_for_patient(Seed([19; 32]));
+    let second = run_healer_acquires_ground_medicine_for_patient(Seed([19; 32]));
 
     assert_eq!(
         first, second,

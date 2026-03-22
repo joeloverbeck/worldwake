@@ -18,8 +18,11 @@ macro_rules! define_system_ids {
             /// - `Production` runs before `Trade` so newly created goods exist before market exchange.
             /// - `Trade` runs before `Combat` so economic resolution happens before violence mutates the world.
             /// - `Combat` runs before `FacilityQueue` so completed exclusive actions can free the next turn.
-            /// - `FacilityQueue` runs before `Perception` so observers can react to the current tick's queue outcomes.
-            /// - `Perception` runs before `Politics` so social systems consume freshly propagated local information.
+            /// - `FacilityQueue` runs before `Politics` so completed exclusive actions can free resources before political resolution.
+            /// - `Politics` runs before `Perception` so institutional state changes (`OfficeController`, contested state)
+            ///   are visible to co-located observers in the same tick via `force_control_claims_for_event()`.
+            ///   Without this ordering, `Perception` cannot project institutional beliefs from political events
+            ///   (violates Principle 7: locality of information).
             ///
             /// Do not reorder this list casually. Any change here changes the simulation's causal sequencing.
             pub const ALL: [Self; define_system_ids!(@count $($variant),+)] = [$(Self::$variant),+];
@@ -49,8 +52,8 @@ define_system_ids! {
     (Trade, "trade"),
     (Combat, "combat"),
     (FacilityQueue, "facility_queue"),
-    (Perception, "perception"),
     (Politics, "politics"),
+    (Perception, "perception"),
 }
 
 impl fmt::Display for SystemId {
@@ -153,8 +156,8 @@ mod tests {
                 SystemId::Trade,
                 SystemId::Combat,
                 SystemId::FacilityQueue,
-                SystemId::Perception,
                 SystemId::Politics,
+                SystemId::Perception,
             ]
         );
     }
@@ -216,8 +219,8 @@ mod tests {
                 SystemId::Trade,
                 SystemId::Combat,
                 SystemId::FacilityQueue,
-                SystemId::Perception,
                 SystemId::Politics,
+                SystemId::Perception,
             ]
         );
     }
