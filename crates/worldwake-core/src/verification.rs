@@ -336,6 +336,18 @@ impl ActualWorldState {
                 candidate,
             });
         }
+        for office in world.offices_contested_by(entity) {
+            relations.insert(RelationValue::ContestsOffice {
+                claimant: entity,
+                office,
+            });
+        }
+        for office in world.offices_controlled_by(entity) {
+            relations.insert(RelationValue::OfficeController {
+                office,
+                controller: entity,
+            });
+        }
         for target in world.hostile_targets_of(entity) {
             relations.insert(RelationValue::HostileTo {
                 subject: entity,
@@ -397,6 +409,14 @@ fn relation_is_live(
         RelationValue::OfficeHolder { office, holder } => {
             live_entities.get(office) == Some(&EntityKind::Office)
                 && live_entities.contains_key(holder)
+        }
+        RelationValue::ContestsOffice { claimant, office } => {
+            live_entities.contains_key(claimant)
+                && live_entities.get(office) == Some(&EntityKind::Office)
+        }
+        RelationValue::OfficeController { office, controller } => {
+            live_entities.get(office) == Some(&EntityKind::Office)
+                && live_entities.contains_key(controller)
         }
     }
 }

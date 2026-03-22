@@ -799,6 +799,84 @@ impl<'w> WorldTxn<'w> {
         Ok(())
     }
 
+    pub fn add_force_claim(
+        &mut self,
+        claimant: EntityId,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self
+            .staged_world
+            .offices_contested_by(claimant)
+            .contains(&office);
+        self.staged_world.add_force_claim(claimant, office)?;
+        let after = self
+            .staged_world
+            .offices_contested_by(claimant)
+            .contains(&office);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::ContestsOffice,
+            RelationValue::ContestsOffice { claimant, office },
+        );
+        Ok(())
+    }
+
+    pub fn remove_force_claim(
+        &mut self,
+        claimant: EntityId,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self
+            .staged_world
+            .offices_contested_by(claimant)
+            .contains(&office);
+        self.staged_world.remove_force_claim(claimant, office)?;
+        let after = self
+            .staged_world
+            .offices_contested_by(claimant)
+            .contains(&office);
+        self.push_presence_relation_delta(
+            before,
+            after,
+            RelationKind::ContestsOffice,
+            RelationValue::ContestsOffice { claimant, office },
+        );
+        Ok(())
+    }
+
+    pub fn set_office_controller(
+        &mut self,
+        office: EntityId,
+        controller: EntityId,
+    ) -> Result<(), WorldError> {
+        let before = self.staged_world.authoritative_office_controller(office);
+        self.staged_world.set_office_controller(office, controller)?;
+        let after = self.staged_world.authoritative_office_controller(office);
+        self.push_single_target_relation_delta(
+            office,
+            before,
+            after,
+            RelationKind::OfficeController,
+            |office, controller| RelationValue::OfficeController { office, controller },
+        );
+        Ok(())
+    }
+
+    pub fn clear_office_controller(&mut self, office: EntityId) -> Result<(), WorldError> {
+        let before = self.staged_world.authoritative_office_controller(office);
+        self.staged_world.clear_office_controller(office)?;
+        let after = self.staged_world.authoritative_office_controller(office);
+        self.push_single_target_relation_delta(
+            office,
+            before,
+            after,
+            RelationKind::OfficeController,
+            |office, controller| RelationValue::OfficeController { office, controller },
+        );
+        Ok(())
+    }
+
     pub fn add_hostility(&mut self, subject: EntityId, target: EntityId) -> Result<(), WorldError> {
         let before = self
             .staged_world
@@ -1266,6 +1344,10 @@ impl<'w> WorldTxn<'w> {
         self.push_archive_removed_support_declarations(&snapshot.support_declarations);
         self.push_archive_removed_office_holder(snapshot.entity, snapshot.office_holder);
         self.push_archive_removed_offices_held(snapshot.entity, &snapshot.offices_held);
+        self.push_archive_removed_force_claims(snapshot.entity, &snapshot.contests_office);
+        self.push_archive_removed_force_claimants(snapshot.entity, &snapshot.contested_by);
+        self.push_archive_removed_office_controller(snapshot.entity, snapshot.office_controller);
+        self.push_archive_removed_controlled_offices(snapshot.entity, &snapshot.offices_controlled);
         self.push_archive_removed_hostility_targets(snapshot.entity, &snapshot.hostile_to);
         self.push_archive_removed_hostility_subjects(snapshot.entity, &snapshot.hostility_from);
         for reservation in snapshot.released_reservations {
@@ -1453,6 +1535,63 @@ impl<'w> WorldTxn<'w> {
                     relation: RelationValue::OfficeHolder {
                         office: *office,
                         holder,
+                    },
+                }));
+        }
+    }
+
+    fn push_archive_removed_force_claims(&mut self, claimant: EntityId, offices: &[EntityId]) {
+        for office in offices {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::ContestsOffice,
+                    relation: RelationValue::ContestsOffice {
+                        claimant,
+                        office: *office,
+                    },
+                }));
+        }
+    }
+
+    fn push_archive_removed_force_claimants(&mut self, office: EntityId, claimants: &[EntityId]) {
+        for claimant in claimants {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::ContestsOffice,
+                    relation: RelationValue::ContestsOffice {
+                        claimant: *claimant,
+                        office,
+                    },
+                }));
+        }
+    }
+
+    fn push_archive_removed_office_controller(
+        &mut self,
+        office: EntityId,
+        controller: Option<EntityId>,
+    ) {
+        if let Some(controller) = controller {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::OfficeController,
+                    relation: RelationValue::OfficeController { office, controller },
+                }));
+        }
+    }
+
+    fn push_archive_removed_controlled_offices(
+        &mut self,
+        controller: EntityId,
+        offices: &[EntityId],
+    ) {
+        for office in offices {
+            self.deltas
+                .push(StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::OfficeController,
+                    relation: RelationValue::OfficeController {
+                        office: *office,
+                        controller,
                     },
                 }));
         }
@@ -1684,6 +1823,10 @@ fn observed_relation_entities(relation_delta: &RelationDelta) -> BTreeSet<Entity
             candidate,
         } => BTreeSet::from([*supporter, *office, *candidate]),
         RelationValue::OfficeHolder { office, holder } => BTreeSet::from([*office, *holder]),
+        RelationValue::ContestsOffice { claimant, office } => BTreeSet::from([*claimant, *office]),
+        RelationValue::OfficeController { office, controller } => {
+            BTreeSet::from([*office, *controller])
+        }
     }
 }
 
@@ -2600,6 +2743,31 @@ mod tests {
     }
 
     #[test]
+    fn archive_entity_records_force_control_relation_teardown() {
+        let mut world = World::new(test_topology()).unwrap();
+        let claimant = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let controller = world
+            .create_agent("Bram", ControlSource::Human, Tick(2))
+            .unwrap();
+        let contested_office = world.create_office("Contested Chair", Tick(3)).unwrap();
+        let controlled_office = world.create_office("Held Chair", Tick(4)).unwrap();
+        world.add_force_claim(claimant, contested_office).unwrap();
+        world
+            .set_office_controller(controlled_office, controller)
+            .unwrap();
+
+        let mut claimant_txn = new_txn(&mut world);
+        let claimant_err = claimant_txn.archive_entity(claimant).unwrap_err();
+        assert!(matches!(claimant_err, WorldError::PreconditionFailed(_)));
+
+        let mut controller_txn = new_txn(&mut world);
+        let controller_err = controller_txn.archive_entity(controller).unwrap_err();
+        assert!(matches!(controller_err, WorldError::PreconditionFailed(_)));
+    }
+
+    #[test]
     fn reservation_wrappers_snapshot_created_and_released_records() {
         let mut world = World::new(test_topology()).unwrap();
         let item = world
@@ -2749,6 +2917,105 @@ mod tests {
                 relation: RelationValue::HostileTo { subject, target: actual_target },
             }) if *subject == member && *actual_target == owner
         )));
+    }
+
+    #[test]
+    fn force_claim_wrappers_record_add_and_remove_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let claimant = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let office = world.create_office("Chair", Tick(2)).unwrap();
+
+        let mut add_txn = new_txn(&mut world);
+        add_txn.add_force_claim(claimant, office).unwrap();
+        assert_eq!(
+            add_txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::ContestsOffice,
+                relation: RelationValue::ContestsOffice { claimant, office },
+            })]
+        );
+        commit_txn(add_txn);
+        assert_eq!(world.force_claimants_for_office(office), vec![claimant]);
+
+        let mut remove_txn = new_txn(&mut world);
+        remove_txn.remove_force_claim(claimant, office).unwrap();
+        assert_eq!(
+            remove_txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: RelationKind::ContestsOffice,
+                relation: RelationValue::ContestsOffice { claimant, office },
+            })]
+        );
+        commit_txn(remove_txn);
+        assert_eq!(world.force_claimants_for_office(office), Vec::<EntityId>::new());
+    }
+
+    #[test]
+    fn office_controller_wrappers_record_replace_and_clear_deltas() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_office("Chair", Tick(1)).unwrap();
+        let first = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let second = world
+            .create_agent("Bram", ControlSource::Human, Tick(3))
+            .unwrap();
+
+        let mut assign_txn = new_txn(&mut world);
+        assign_txn.set_office_controller(office, first).unwrap();
+        assert_eq!(
+            assign_txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeController,
+                relation: RelationValue::OfficeController {
+                    office,
+                    controller: first,
+                },
+            })]
+        );
+        commit_txn(assign_txn);
+        assert_eq!(world.office_controller(office), Some(first));
+
+        let mut replace_txn = new_txn(&mut world);
+        replace_txn.set_office_controller(office, second).unwrap();
+        assert_eq!(
+            replace_txn.deltas(),
+            &[
+                StateDelta::Relation(RelationDelta::Removed {
+                    relation_kind: RelationKind::OfficeController,
+                    relation: RelationValue::OfficeController {
+                        office,
+                        controller: first,
+                    },
+                }),
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::OfficeController,
+                    relation: RelationValue::OfficeController {
+                        office,
+                        controller: second,
+                    },
+                }),
+            ]
+        );
+        commit_txn(replace_txn);
+        assert_eq!(world.office_controller(office), Some(second));
+
+        let mut clear_txn = new_txn(&mut world);
+        clear_txn.clear_office_controller(office).unwrap();
+        assert_eq!(
+            clear_txn.deltas(),
+            &[StateDelta::Relation(RelationDelta::Removed {
+                relation_kind: RelationKind::OfficeController,
+                relation: RelationValue::OfficeController {
+                    office,
+                    controller: second,
+                },
+            })]
+        );
+        commit_txn(clear_txn);
+        assert_eq!(world.office_controller(office), None);
     }
 
     #[test]

@@ -16,9 +16,12 @@ pub enum ArchiveResolution {
     RevokeMemberships,
     RevokeLoyalty,
     RevokeSupportDeclarations,
+    RevokeForceClaims,
     RevokeHostility,
     VacateOffice,
     RelinquishOffices,
+    VacateOfficeControl,
+    RelinquishControlledOffices,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,6 +59,14 @@ impl ArchivePreparationPolicy {
                     ArchiveResolution::RevokeSupportDeclarations,
                 ),
                 (
+                    ArchiveDependencyKind::ContestsOffices,
+                    ArchiveResolution::RevokeForceClaims,
+                ),
+                (
+                    ArchiveDependencyKind::HasForceClaimants,
+                    ArchiveResolution::RevokeForceClaims,
+                ),
+                (
                     ArchiveDependencyKind::HasHostileSubjects,
                     ArchiveResolution::RevokeHostility,
                 ),
@@ -66,6 +77,14 @@ impl ArchivePreparationPolicy {
                 (
                     ArchiveDependencyKind::HoldsOffices,
                     ArchiveResolution::RelinquishOffices,
+                ),
+                (
+                    ArchiveDependencyKind::HasOfficeController,
+                    ArchiveResolution::VacateOfficeControl,
+                ),
+                (
+                    ArchiveDependencyKind::ControlsOffices,
+                    ArchiveResolution::RelinquishControlledOffices,
                 ),
             ]),
         }
@@ -161,6 +180,10 @@ pub struct ArchiveMutationSnapshot {
     pub support_declarations: Vec<(EntityId, EntityId, EntityId)>,
     pub office_holder: Option<EntityId>,
     pub offices_held: Vec<EntityId>,
+    pub contests_office: Vec<EntityId>,
+    pub contested_by: Vec<EntityId>,
+    pub office_controller: Option<EntityId>,
+    pub offices_controlled: Vec<EntityId>,
     pub hostile_to: Vec<EntityId>,
     pub hostility_from: Vec<EntityId>,
     pub released_reservations: Vec<ReservationRecord>,
@@ -191,6 +214,10 @@ impl World {
             support_declarations: self.snapshot_support_declarations(entity),
             office_holder: self.relations.office_holder.get(&entity).copied(),
             offices_held: Self::snapshot_entities(&self.relations.offices_held, entity),
+            contests_office: Self::snapshot_entities(&self.relations.contests_office, entity),
+            contested_by: Self::snapshot_entities(&self.relations.contested_by, entity),
+            office_controller: self.relations.office_controller.get(&entity).copied(),
+            offices_controlled: Self::snapshot_entities(&self.relations.offices_controlled, entity),
             hostile_to: Self::snapshot_entities(&self.relations.hostile_to, entity),
             hostility_from: Self::snapshot_entities(&self.relations.hostility_from, entity),
             released_reservations: self.snapshot_archive_reservations(entity),
@@ -291,6 +318,14 @@ impl World {
                 self.clear_support_declarations_referencing(entity);
                 Ok(())
             }
+            (ArchiveDependencyKind::ContestsOffices, ArchiveResolution::RevokeForceClaims) => {
+                self.clear_force_claims_for_claimant(entity, &dependency.dependents);
+                Ok(())
+            }
+            (ArchiveDependencyKind::HasForceClaimants, ArchiveResolution::RevokeForceClaims) => {
+                self.clear_force_claims_for_office(entity, &dependency.dependents);
+                Ok(())
+            }
             (ArchiveDependencyKind::HasHostileSubjects, ArchiveResolution::RevokeHostility) => {
                 self.clear_hostility(entity, &dependency.dependents);
                 Ok(())
@@ -301,6 +336,20 @@ impl World {
             }
             (ArchiveDependencyKind::HoldsOffices, ArchiveResolution::RelinquishOffices) => {
                 self.relinquish_offices(&dependency.dependents);
+                Ok(())
+            }
+            (
+                ArchiveDependencyKind::HasOfficeController,
+                ArchiveResolution::VacateOfficeControl,
+            ) => {
+                self.clear_office_control(entity);
+                Ok(())
+            }
+            (
+                ArchiveDependencyKind::ControlsOffices,
+                ArchiveResolution::RelinquishControlledOffices,
+            ) => {
+                self.relinquish_controlled_offices(&dependency.dependents);
                 Ok(())
             }
             (kind, resolution) => Err(WorldError::InvalidOperation(format!(
@@ -428,6 +477,30 @@ impl World {
     }
 
     #[allow(dead_code)]
+    fn clear_force_claims_for_office(&mut self, office: EntityId, dependents: &[EntityId]) {
+        for claimant in dependents {
+            Self::clear_many_to_many_relation(
+                &mut self.relations.contests_office,
+                &mut self.relations.contested_by,
+                *claimant,
+                office,
+            );
+        }
+    }
+
+    #[allow(dead_code)]
+    fn clear_force_claims_for_claimant(&mut self, claimant: EntityId, dependents: &[EntityId]) {
+        for office in dependents {
+            Self::clear_many_to_many_relation(
+                &mut self.relations.contests_office,
+                &mut self.relations.contested_by,
+                claimant,
+                *office,
+            );
+        }
+    }
+
+    #[allow(dead_code)]
     fn clear_support_declarations_referencing(&mut self, entity: EntityId) {
         self.relations
             .support_declarations
@@ -442,10 +515,25 @@ impl World {
         );
     }
 
+    pub(super) fn clear_office_control(&mut self, office: EntityId) {
+        Self::clear_entity_relation(
+            &mut self.relations.office_controller,
+            &mut self.relations.offices_controlled,
+            office,
+        );
+    }
+
     #[allow(dead_code)]
     fn relinquish_offices(&mut self, dependents: &[EntityId]) {
         for office in dependents {
             self.clear_office_assignment(*office);
+        }
+    }
+
+    #[allow(dead_code)]
+    fn relinquish_controlled_offices(&mut self, dependents: &[EntityId]) {
+        for office in dependents {
+            self.clear_office_control(*office);
         }
     }
 
@@ -469,9 +557,21 @@ impl World {
                 ArchiveDependencyKind::HasSupportDeclarers,
                 ArchiveResolution::RevokeSupportDeclarations,
             )
+            | (
+                ArchiveDependencyKind::ContestsOffices | ArchiveDependencyKind::HasForceClaimants,
+                ArchiveResolution::RevokeForceClaims,
+            )
             | (ArchiveDependencyKind::HasHostileSubjects, ArchiveResolution::RevokeHostility)
             | (ArchiveDependencyKind::HasOfficeHolder, ArchiveResolution::VacateOffice)
-            | (ArchiveDependencyKind::HoldsOffices, ArchiveResolution::RelinquishOffices) => Ok(()),
+            | (ArchiveDependencyKind::HoldsOffices, ArchiveResolution::RelinquishOffices)
+            | (
+                ArchiveDependencyKind::HasOfficeController,
+                ArchiveResolution::VacateOfficeControl,
+            )
+            | (
+                ArchiveDependencyKind::ControlsOffices,
+                ArchiveResolution::RelinquishControlledOffices,
+            ) => Ok(()),
             (
                 ArchiveDependencyKind::PossessesEntities,
                 ArchiveResolution::TransferPossessionsTo(target),

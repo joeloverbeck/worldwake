@@ -68,11 +68,13 @@ pub enum RelationKind {
     LoyalTo,
     SupportDeclaration,
     OfficeHolder,
+    ContestsOffice,
+    OfficeController,
     HostileTo,
 }
 
 impl RelationKind {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 12] = [
         Self::LocatedIn,
         Self::InTransit,
         Self::ContainedBy,
@@ -82,6 +84,8 @@ impl RelationKind {
         Self::LoyalTo,
         Self::SupportDeclaration,
         Self::OfficeHolder,
+        Self::ContestsOffice,
+        Self::OfficeController,
         Self::HostileTo,
     ];
 }
@@ -125,6 +129,14 @@ pub enum RelationValue {
         office: EntityId,
         holder: EntityId,
     },
+    ContestsOffice {
+        claimant: EntityId,
+        office: EntityId,
+    },
+    OfficeController {
+        office: EntityId,
+        controller: EntityId,
+    },
     HostileTo {
         subject: EntityId,
         target: EntityId,
@@ -144,6 +156,8 @@ impl RelationValue {
             Self::LoyalTo { .. } => RelationKind::LoyalTo,
             Self::SupportDeclaration { .. } => RelationKind::SupportDeclaration,
             Self::OfficeHolder { .. } => RelationKind::OfficeHolder,
+            Self::ContestsOffice { .. } => RelationKind::ContestsOffice,
+            Self::OfficeController { .. } => RelationKind::OfficeController,
             Self::HostileTo { .. } => RelationKind::HostileTo,
         }
     }
@@ -504,9 +518,17 @@ mod tests {
                 office: entity(17),
                 holder: entity(18),
             },
+            RelationValue::ContestsOffice {
+                claimant: entity(19),
+                office: entity(20),
+            },
+            RelationValue::OfficeController {
+                office: entity(21),
+                controller: entity(22),
+            },
             RelationValue::HostileTo {
-                subject: entity(19),
-                target: entity(20),
+                subject: entity(23),
+                target: entity(24),
             },
         ]
     }
@@ -602,6 +624,8 @@ mod tests {
                 RelationKind::LoyalTo,
                 RelationKind::SupportDeclaration,
                 RelationKind::OfficeHolder,
+                RelationKind::ContestsOffice,
+                RelationKind::OfficeController,
                 RelationKind::HostileTo,
             ]
         );

@@ -25,6 +25,10 @@ pub enum ArchiveDependencyKind {
     HasHostileSubjects,
     HasOfficeHolder,
     HoldsOffices,
+    HasForceClaimants,
+    ContestsOffices,
+    HasOfficeController,
+    ControlsOffices,
 }
 
 impl ArchiveDependencyKind {
@@ -40,6 +44,10 @@ impl ArchiveDependencyKind {
             Self::HasHostileSubjects => "has hostile subjects",
             Self::HasOfficeHolder => "has an office holder",
             Self::HoldsOffices => "holds offices",
+            Self::HasForceClaimants => "has force claimants",
+            Self::ContestsOffices => "contests offices",
+            Self::HasOfficeController => "has an office controller",
+            Self::ControlsOffices => "controls offices",
         }
     }
 }
@@ -68,6 +76,10 @@ pub struct RelationTables {
     pub(crate) support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
     pub(crate) office_holder: BTreeMap<EntityId, EntityId>,
     pub(crate) offices_held: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) contests_office: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) contested_by: BTreeMap<EntityId, BTreeSet<EntityId>>,
+    pub(crate) office_controller: BTreeMap<EntityId, EntityId>,
+    pub(crate) offices_controlled: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) hostile_to: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) hostility_from: BTreeMap<EntityId, BTreeSet<EntityId>>,
     pub(crate) reservations: BTreeMap<ReservationId, ReservationRecord>,
@@ -126,6 +138,27 @@ impl RelationTables {
             ArchiveDependencyKind::HoldsOffices,
             self.offices_held.get(&entity),
         );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::HasForceClaimants,
+            self.contested_by.get(&entity),
+        );
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::ContestsOffices,
+            self.contests_office.get(&entity),
+        );
+        if let Some(controller) = self.office_controller.get(&entity).copied() {
+            dependencies.push(ArchiveDependency {
+                kind: ArchiveDependencyKind::HasOfficeController,
+                dependents: vec![controller],
+            });
+        }
+        Self::push_archive_dependency(
+            &mut dependencies,
+            ArchiveDependencyKind::ControlsOffices,
+            self.offices_controlled.get(&entity),
+        );
 
         dependencies
     }
@@ -144,6 +177,16 @@ impl RelationTables {
         );
         self.remove_support_declarations(entity);
         Self::remove_entity_relations(&mut self.office_holder, &mut self.offices_held, entity);
+        Self::remove_many_to_many_relations(
+            &mut self.contests_office,
+            &mut self.contested_by,
+            entity,
+        );
+        Self::remove_entity_relations(
+            &mut self.office_controller,
+            &mut self.offices_controlled,
+            entity,
+        );
         Self::remove_many_to_many_relations(&mut self.hostile_to, &mut self.hostility_from, entity);
         self.remove_entity_reservations(entity);
     }
@@ -371,6 +414,10 @@ mod tests {
         assert!(tables.support_declarations.is_empty());
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
+        assert!(tables.contests_office.is_empty());
+        assert!(tables.contested_by.is_empty());
+        assert!(tables.office_controller.is_empty());
+        assert!(tables.offices_controlled.is_empty());
         assert!(tables.hostile_to.is_empty());
         assert!(tables.hostility_from.is_empty());
         assert!(tables.reservations.is_empty());
@@ -443,6 +490,16 @@ mod tests {
         tables.office_holder.insert(office, item);
         tables
             .offices_held
+            .insert(item, [office].into_iter().collect());
+        tables
+            .contests_office
+            .insert(item, [office].into_iter().collect());
+        tables
+            .contested_by
+            .insert(office, [item].into_iter().collect());
+        tables.office_controller.insert(office, item);
+        tables
+            .offices_controlled
             .insert(item, [office].into_iter().collect());
         tables
             .hostile_to
@@ -549,6 +606,10 @@ mod tests {
         assert!(tables.support_declarations.is_empty());
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
+        assert!(tables.contests_office.is_empty());
+        assert!(tables.contested_by.is_empty());
+        assert!(tables.office_controller.is_empty());
+        assert!(tables.offices_controlled.is_empty());
         assert!(tables.hostile_to.is_empty());
         assert!(tables.hostility_from.is_empty());
         assert!(tables.reservations.is_empty());
@@ -596,6 +657,16 @@ mod tests {
             .offices_held
             .insert(item, [office].into_iter().collect());
         tables
+            .contests_office
+            .insert(item, [office].into_iter().collect());
+        tables
+            .contested_by
+            .insert(office, [item].into_iter().collect());
+        tables.office_controller.insert(office, item);
+        tables
+            .offices_controlled
+            .insert(item, [office].into_iter().collect());
+        tables
             .hostile_to
             .insert(item, [enemy].into_iter().collect());
         tables
@@ -629,6 +700,13 @@ mod tests {
             Some(&candidate)
         );
         assert_eq!(tables.office_holder.get(&office), Some(&item));
+        assert_eq!(tables.contests_office.get(&item), Some(&BTreeSet::from([office])));
+        assert_eq!(tables.contested_by.get(&office), Some(&BTreeSet::from([item])));
+        assert_eq!(tables.office_controller.get(&office), Some(&item));
+        assert_eq!(
+            tables.offices_controlled.get(&item),
+            Some(&BTreeSet::from([office]))
+        );
         assert_eq!(tables.hostile_to.get(&item), Some(&BTreeSet::from([enemy])));
         assert_eq!(
             tables.reservations.get(&reservation_id).unwrap().reserver,
@@ -680,6 +758,16 @@ mod tests {
             .offices_held
             .insert(holder, [office].into_iter().collect());
         tables
+            .contests_office
+            .insert(hostile_subject, [office].into_iter().collect());
+        tables
+            .contested_by
+            .insert(office, [hostile_subject].into_iter().collect());
+        tables.office_controller.insert(office, holder);
+        tables
+            .offices_controlled
+            .insert(holder, [office].into_iter().collect());
+        tables
             .hostile_to
             .insert(hostile_subject, [target].into_iter().collect());
         tables
@@ -693,6 +781,15 @@ mod tests {
         assert!(tables.hostile_to.is_empty());
         assert!(tables.hostility_from.is_empty());
         assert_eq!(
+            tables.contests_office.get(&hostile_subject),
+            Some(&BTreeSet::from([office]))
+        );
+        assert_eq!(
+            tables.contested_by.get(&office),
+            Some(&BTreeSet::from([hostile_subject]))
+        );
+        assert_eq!(tables.office_controller.get(&office), Some(&holder));
+        assert_eq!(
             tables.member_of.get(&member),
             Some(&BTreeSet::from([faction]))
         );
@@ -701,9 +798,15 @@ mod tests {
         tables.remove_all(holder);
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
+        assert!(tables.office_controller.is_empty());
+        assert!(tables.offices_controlled.is_empty());
         assert_eq!(
             tables.member_of.get(&member),
             Some(&BTreeSet::from([faction]))
+        );
+        assert_eq!(
+            tables.contests_office.get(&hostile_subject),
+            Some(&BTreeSet::from([office]))
         );
 
         tables.remove_all(faction);
@@ -715,6 +818,17 @@ mod tests {
             .offices_held
             .insert(member, [office].into_iter().collect());
         tables
+            .contests_office
+            .insert(member, [office].into_iter().collect());
+        tables.contested_by.insert(
+            office,
+            BTreeSet::from([hostile_subject, member]),
+        );
+        tables.office_controller.insert(office, member);
+        tables
+            .offices_controlled
+            .insert(member, [office].into_iter().collect());
+        tables
             .support_declarations
             .insert((supporter, office), member);
 
@@ -722,5 +836,54 @@ mod tests {
         assert!(tables.support_declarations.is_empty());
         assert!(tables.office_holder.is_empty());
         assert!(tables.offices_held.is_empty());
+        assert!(tables.contests_office.is_empty());
+        assert!(tables.contested_by.is_empty());
+        assert!(tables.office_controller.is_empty());
+        assert!(tables.offices_controlled.is_empty());
+    }
+
+    #[test]
+    fn remove_all_cleans_force_claim_and_controller_rows() {
+        let claimant = entity(30);
+        let claimant_b = entity(31);
+        let office = entity(32);
+        let office_b = entity(33);
+        let controller = entity(34);
+
+        let mut tables = RelationTables::default();
+        tables
+            .contests_office
+            .insert(claimant, BTreeSet::from([office, office_b]));
+        tables
+            .contests_office
+            .insert(claimant_b, BTreeSet::from([office]));
+        tables
+            .contested_by
+            .insert(office, BTreeSet::from([claimant, claimant_b]));
+        tables
+            .contested_by
+            .insert(office_b, BTreeSet::from([claimant]));
+        tables.office_controller.insert(office, controller);
+        tables
+            .offices_controlled
+            .insert(controller, BTreeSet::from([office]));
+
+        tables.remove_all(claimant);
+        assert_eq!(
+            tables.contested_by.get(&office),
+            Some(&BTreeSet::from([claimant_b]))
+        );
+        assert!(!tables.contested_by.contains_key(&office_b));
+        assert!(!tables.contests_office.contains_key(&claimant));
+        assert_eq!(
+            tables.contests_office.get(&claimant_b),
+            Some(&BTreeSet::from([office]))
+        );
+
+        tables.remove_all(office);
+        assert!(!tables.contested_by.contains_key(&office));
+        assert!(!tables.contests_office.contains_key(&claimant_b));
+        assert!(tables.office_controller.is_empty());
+        assert!(tables.offices_controlled.is_empty());
     }
 }

@@ -2028,6 +2028,71 @@ mod tests {
     }
 
     #[test]
+    fn prepare_entity_for_archive_clears_force_claim_and_control_blockers() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let claimant = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let controller = world
+            .create_agent("Bram", ControlSource::Human, Tick(2))
+            .unwrap();
+        let contested_office = world.create_office("Contested Chair", Tick(3)).unwrap();
+        let controlled_office = world.create_office("Held Chair", Tick(4)).unwrap();
+
+        world.add_force_claim(claimant, contested_office).unwrap();
+        world
+            .set_office_controller(controlled_office, controller)
+            .unwrap();
+
+        assert_eq!(
+            world.archive_dependencies(claimant).unwrap(),
+            vec![crate::ArchiveDependency {
+                kind: crate::ArchiveDependencyKind::ContestsOffices,
+                dependents: vec![contested_office],
+            }]
+        );
+        assert_eq!(
+            world.archive_dependencies(controller).unwrap(),
+            vec![crate::ArchiveDependency {
+                kind: crate::ArchiveDependencyKind::ControlsOffices,
+                dependents: vec![controlled_office],
+            }]
+        );
+
+        assert_eq!(
+            world.prepare_entity_for_archive(claimant).unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::ContestsOffices,
+                        dependents: vec![contested_office],
+                    },
+                    resolution: crate::ArchiveResolution::RevokeForceClaims,
+                }],
+                blocked: vec![],
+            }
+        );
+        assert_eq!(
+            world.prepare_entity_for_archive(controller).unwrap(),
+            crate::ArchivePreparationReport {
+                applied: vec![crate::ArchivePreparationAction {
+                    dependency: crate::ArchiveDependency {
+                        kind: crate::ArchiveDependencyKind::ControlsOffices,
+                        dependents: vec![controlled_office],
+                    },
+                    resolution: crate::ArchiveResolution::RelinquishControlledOffices,
+                }],
+                blocked: vec![],
+            }
+        );
+
+        assert_eq!(world.offices_contested_by(claimant), Vec::<EntityId>::new());
+        assert_eq!(world.office_controller(controlled_office), None);
+        assert_eq!(world.archive_dependencies(claimant).unwrap(), Vec::new());
+        assert_eq!(world.archive_dependencies(controller).unwrap(), Vec::new());
+    }
+
+    #[test]
     fn prepare_entity_for_archive_with_policy_leaves_disallowed_blockers_intact() {
         let mut world = World::new(test_topology()).unwrap();
         let container = world.create_container(open_container(20), Tick(1)).unwrap();
@@ -3708,6 +3773,72 @@ mod tests {
     }
 
     #[test]
+    fn force_claim_queries_stay_bidirectional_and_idempotent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office_a = world.create_office("Granary Chair", Tick(1)).unwrap();
+        let office_b = world.create_office("Market Chair", Tick(2)).unwrap();
+        let claimant_a = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let claimant_b = world
+            .create_agent("Bram", ControlSource::Human, Tick(4))
+            .unwrap();
+
+        world.add_force_claim(claimant_b, office_a).unwrap();
+        world.add_force_claim(claimant_a, office_a).unwrap();
+        world.add_force_claim(claimant_a, office_b).unwrap();
+        world.add_force_claim(claimant_a, office_a).unwrap();
+
+        assert_eq!(world.force_claimants_for_office(office_a), vec![claimant_a, claimant_b]);
+        assert_eq!(world.force_claimants_for_office(office_b), vec![claimant_a]);
+        assert_eq!(world.offices_contested_by(claimant_a), vec![office_a, office_b]);
+        assert_eq!(world.offices_contested_by(claimant_b), vec![office_a]);
+
+        world.remove_force_claim(claimant_a, office_a).unwrap();
+        world.remove_force_claim(claimant_a, office_a).unwrap();
+
+        assert_eq!(world.force_claimants_for_office(office_a), vec![claimant_b]);
+        assert_eq!(world.offices_contested_by(claimant_a), vec![office_b]);
+    }
+
+    #[test]
+    fn office_controller_queries_replace_prior_controller_and_clear_idempotently() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office_a = world.create_office("Granary Chair", Tick(1)).unwrap();
+        let office_b = world.create_office("Market Chair", Tick(2)).unwrap();
+        let first_controller = world
+            .create_agent("Aster", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let second_controller = world
+            .create_agent("Bram", ControlSource::Human, Tick(4))
+            .unwrap();
+
+        world
+            .set_office_controller(office_a, first_controller)
+            .unwrap();
+        world
+            .set_office_controller(office_b, first_controller)
+            .unwrap();
+        world
+            .set_office_controller(office_a, second_controller)
+            .unwrap();
+
+        assert_eq!(world.office_controller(office_a), Some(second_controller));
+        assert_eq!(world.office_controller(office_b), Some(first_controller));
+        assert_eq!(world.offices_controlled_by(first_controller), vec![office_b]);
+        assert_eq!(world.offices_controlled_by(second_controller), vec![office_a]);
+
+        world.clear_office_controller(office_a).unwrap();
+        world.clear_office_controller(office_a).unwrap();
+
+        assert_eq!(world.office_controller(office_a), None);
+        assert_eq!(
+            world.offices_controlled_by(second_controller),
+            Vec::<EntityId>::new()
+        );
+    }
+
+    #[test]
     fn support_declarations_overwrite_count_and_clear_by_office() {
         let mut world = World::new(Topology::new()).unwrap();
         let office = world.create_office("Granary Chair", Tick(1)).unwrap();
@@ -3823,6 +3954,19 @@ mod tests {
             .insert(member, BTreeSet::from([office]));
         world
             .relations
+            .contests_office
+            .insert(member, BTreeSet::from([office]));
+        world
+            .relations
+            .contested_by
+            .insert(office, BTreeSet::from([member]));
+        world.relations.office_controller.insert(office, member);
+        world
+            .relations
+            .offices_controlled
+            .insert(member, BTreeSet::from([office]));
+        world
+            .relations
             .hostile_to
             .insert(member, BTreeSet::from([hostile_target]));
         world
@@ -3847,6 +3991,10 @@ mod tests {
         );
         assert_eq!(world.office_holder(office), None);
         assert_eq!(world.offices_held_by(member), Vec::<EntityId>::new());
+        assert_eq!(world.force_claimants_for_office(office), Vec::<EntityId>::new());
+        assert_eq!(world.offices_contested_by(member), Vec::<EntityId>::new());
+        assert_eq!(world.office_controller(office), None);
+        assert_eq!(world.offices_controlled_by(member), Vec::<EntityId>::new());
         assert_eq!(world.hostile_targets_of(member), Vec::<EntityId>::new());
         assert_eq!(
             world.hostile_towards(hostile_target),
@@ -3888,11 +4036,23 @@ mod tests {
             Err(WorldError::InvalidOperation(_))
         ));
         assert!(matches!(
+            world.add_force_claim(agent, item),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
+            world.set_office_controller(item, agent),
+            Err(WorldError::InvalidOperation(_))
+        ));
+        assert!(matches!(
             world.add_hostility(missing, faction),
             Err(WorldError::EntityNotFound(id)) if id == missing
         ));
         assert!(matches!(
             world.vacate_office(missing),
+            Err(WorldError::EntityNotFound(id)) if id == missing
+        ));
+        assert!(matches!(
+            world.clear_office_controller(missing),
             Err(WorldError::EntityNotFound(id)) if id == missing
         ));
         assert!(matches!(

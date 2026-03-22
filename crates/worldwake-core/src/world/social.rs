@@ -225,6 +225,137 @@ impl World {
             .unwrap_or_default()
     }
 
+    pub(crate) fn add_force_claim(
+        &mut self,
+        claimant: EntityId,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        self.ensure_alive(claimant)?;
+        self.ensure_live_kind(office, EntityKind::Office, "force claim office")?;
+        Self::set_many_to_many_relation(
+            &mut self.relations.contests_office,
+            &mut self.relations.contested_by,
+            claimant,
+            office,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn remove_force_claim(
+        &mut self,
+        claimant: EntityId,
+        office: EntityId,
+    ) -> Result<(), WorldError> {
+        self.ensure_alive(claimant)?;
+        self.ensure_live_kind(office, EntityKind::Office, "force claim office")?;
+        Self::clear_many_to_many_relation(
+            &mut self.relations.contests_office,
+            &mut self.relations.contested_by,
+            claimant,
+            office,
+        );
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn force_claimants_for_office(&self, office: EntityId) -> Vec<EntityId> {
+        if self
+            .ensure_live_kind(office, EntityKind::Office, "force claim office")
+            .is_err()
+        {
+            return Vec::new();
+        }
+
+        self.relations
+            .contested_by
+            .get(&office)
+            .map(|claimants| {
+                claimants
+                    .iter()
+                    .copied()
+                    .filter(|claimant| self.is_alive(*claimant))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
+        if !self.is_alive(claimant) {
+            return Vec::new();
+        }
+
+        self.relations
+            .contests_office
+            .get(&claimant)
+            .map(|offices| {
+                offices
+                    .iter()
+                    .copied()
+                    .filter(|office| self.entity_kind(*office) == Some(EntityKind::Office))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn set_office_controller(
+        &mut self,
+        office: EntityId,
+        controller: EntityId,
+    ) -> Result<(), WorldError> {
+        self.ensure_live_kind(office, EntityKind::Office, "office controller target")?;
+        self.ensure_alive(controller)?;
+        Self::set_entity_relation(
+            &mut self.relations.office_controller,
+            &mut self.relations.offices_controlled,
+            office,
+            controller,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn clear_office_controller(&mut self, office: EntityId) -> Result<(), WorldError> {
+        self.ensure_live_kind(office, EntityKind::Office, "office controller target")?;
+        Self::clear_entity_relation(
+            &mut self.relations.office_controller,
+            &mut self.relations.offices_controlled,
+            office,
+        );
+        Ok(())
+    }
+
+    #[must_use]
+    pub(crate) fn authoritative_office_controller(&self, office: EntityId) -> Option<EntityId> {
+        self.ensure_live_kind(office, EntityKind::Office, "office controller target")
+            .ok()?;
+        self.relations.office_controller.get(&office).copied()
+    }
+
+    #[must_use]
+    pub fn office_controller(&self, office: EntityId) -> Option<EntityId> {
+        let controller = self.authoritative_office_controller(office)?;
+        self.is_alive(controller).then_some(controller)
+    }
+
+    #[must_use]
+    pub fn offices_controlled_by(&self, controller: EntityId) -> Vec<EntityId> {
+        if !self.is_alive(controller) {
+            return Vec::new();
+        }
+
+        self.relations
+            .offices_controlled
+            .get(&controller)
+            .map(|offices| {
+                offices
+                    .iter()
+                    .copied()
+                    .filter(|office| self.entity_kind(*office) == Some(EntityKind::Office))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn declare_support(
         &mut self,
         supporter: EntityId,
