@@ -31,18 +31,18 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `S03c` | Suppression Then Binding Combined (S02 + S03) | `golden_combat.rs:2059` | `golden_suppression_then_binding_combined`<br>`golden_action_trace_records_loot_lifecycle` | `golden_suppression_then_binding_combined_replays_deterministically` |
 | `6` | Deterministic Replay Fidelity | `golden_determinism.rs:135` | `golden_deterministic_replay_fidelity`<br>`golden_save_load_round_trip_under_ai` | — |
 | `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:182` | `golden_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
-| `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:16` | `golden_simple_office_claim_via_declare_support` | — |
-| `11b` | Deterministic Replay | `golden_offices.rs:129` | — | `golden_simple_office_claim_deterministic_replay` |
-| `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:158` | `golden_competing_claims_with_loyal_supporter` | — |
-| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:321` | `golden_bribe_support_coalition` | — |
-| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:534` | `golden_threaten_with_courage_diversity` | — |
-| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:831` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
-| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:936` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
-| `33` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1140` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
-| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1429` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
-| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1741` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
-| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:1936` | `golden_faction_eligibility_filters_office_claim` | — |
-| `19` | Force Succession Installs Sole Living Eligible Contender | `golden_offices.rs:2088` | `golden_force_succession_sole_eligible` | `golden_force_succession_deterministic_replay` |
+| `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:19` | `golden_simple_office_claim_via_declare_support` | — |
+| `11b` | Deterministic Replay | `golden_offices.rs:132` | — | `golden_simple_office_claim_deterministic_replay` |
+| `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:161` | `golden_competing_claims_with_loyal_supporter` | — |
+| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:324` | `golden_bribe_support_coalition` | — |
+| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:537` | `golden_threaten_with_courage_diversity` | — |
+| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:834` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
+| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:939` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
+| `33` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1143` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
+| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1434` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
+| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1784` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
+| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:1979` | `golden_faction_eligibility_filters_office_claim` | — |
+| `19` | Force Succession Installs Sole Living Eligible Contender | `golden_offices.rs:2131` | `golden_force_succession_sole_eligible` | `golden_force_succession_deterministic_replay` |
 | `3` | Resource Contention with Conservation | `golden_production.rs:2183` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_grant_expiry_before_intended_action`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_facility_queue_patience_timeout_replays_deterministically` |
 | `4` | Materialization Barrier Chain | `golden_production.rs:2488` | `golden_materialization_barrier_chain` | — |
 | `6b` | Multi-Recipe Craft Path | `golden_production.rs:2574` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically` |
@@ -155,84 +155,84 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
-- Source: `golden_offices.rs:16`
+- Source: `golden_offices.rs:19`
 - Primary tests: `golden_simple_office_claim_via_declare_support`
 - Replay tests: None
 - All tests: `golden_simple_office_claim_via_declare_support`
 
 ### Scenario 11b: Deterministic Replay
 
-- Source: `golden_offices.rs:129`
+- Source: `golden_offices.rs:132`
 - Primary tests: None
 - Replay tests: `golden_simple_office_claim_deterministic_replay`
 - All tests: `golden_simple_office_claim_deterministic_replay`
 
 ### Scenario 12: Competing Claims with Loyal Supporter
 
-- Source: `golden_offices.rs:158`
+- Source: `golden_offices.rs:161`
 - Primary tests: `golden_competing_claims_with_loyal_supporter`
 - Replay tests: None
 - All tests: `golden_competing_claims_with_loyal_supporter`
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:321`
+- Source: `golden_offices.rs:324`
 - Primary tests: `golden_bribe_support_coalition`
 - Replay tests: None
 - All tests: `golden_bribe_support_coalition`
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:534`
+- Source: `golden_offices.rs:537`
 - Primary tests: `golden_threaten_with_courage_diversity`
 - Replay tests: None
 - All tests: `golden_threaten_with_courage_diversity`
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:831`
+- Source: `golden_offices.rs:834`
 - Primary tests: `golden_travel_to_distant_jurisdiction_for_claim`
 - Replay tests: None
 - All tests: `golden_travel_to_distant_jurisdiction_for_claim`
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:936`
+- Source: `golden_offices.rs:939`
 - Primary tests: `golden_information_locality_for_political_facts`
 - Replay tests: `golden_information_locality_for_political_facts_replays_deterministically`
 - All tests: `golden_information_locality_for_political_facts`, `golden_information_locality_for_political_facts_replays_deterministically`
 
 ### Scenario 33: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1140`
+- Source: `golden_offices.rs:1143`
 - Primary tests: `golden_remote_record_consultation_political_action`
 - Replay tests: `golden_remote_record_consultation_political_action_replays_deterministically`
 - All tests: `golden_remote_record_consultation_political_action`, `golden_remote_record_consultation_political_action_replays_deterministically`
 
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1429`
+- Source: `golden_offices.rs:1434`
 - Primary tests: `golden_knowledge_asymmetry_race_informed_wins_office`
 - Replay tests: `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
 - All tests: `golden_knowledge_asymmetry_race_informed_wins_office`, `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1741`
+- Source: `golden_offices.rs:1784`
 - Primary tests: `golden_survival_pressure_suppresses_political_goals`
 - Replay tests: `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 - All tests: `golden_survival_pressure_suppresses_political_goals`, `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:1936`
+- Source: `golden_offices.rs:1979`
 - Primary tests: `golden_faction_eligibility_filters_office_claim`
 - Replay tests: None
 - All tests: `golden_faction_eligibility_filters_office_claim`
 
 ### Scenario 19: Force Succession Installs Sole Living Eligible Contender
 
-- Source: `golden_offices.rs:2088`
+- Source: `golden_offices.rs:2131`
 - Primary tests: `golden_force_succession_sole_eligible`
 - Replay tests: `golden_force_succession_deterministic_replay`
 - All tests: `golden_force_succession_sole_eligible`, `golden_force_succession_deterministic_replay`

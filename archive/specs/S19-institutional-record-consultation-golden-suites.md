@@ -1,10 +1,10 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S19: Institutional Record Consultation Golden E2E Suites
 
 ## Summary
 
-Add 3 golden E2E tests to `golden_offices.rs` that exercise the ConsultRecord action as a real-world knowledge acquisition mechanism. Currently all political golden tests seed institutional beliefs directly — no test exercises ConsultRecord end-to-end through the AI planner. These scenarios prove that records are real world artifacts with duration costs, that institutional knowledge requires physical consultation (Principle 7), and that knowledge asymmetry creates emergent competitive outcomes (Principle 20).
+This spec closed with a narrower delivered surface than its original draft described. The live repo now has golden E2E office-record coverage in `golden_offices.rs` for Scenario 33 (`golden_remote_record_consultation_political_action`) and Scenario 34 (`golden_knowledge_asymmetry_race_informed_wins_office`), plus aligned human-maintained golden docs. The earlier draft’s planned Scenario 32 local-consult golden was not shipped as a separate source-declared scenario block and should not be treated as delivered coverage.
 
 ## Phase
 
@@ -23,16 +23,16 @@ Phase 3: Information & Politics (post-E16c)
 
 ## Gap Analysis
 
-E16c delivered three novel mechanisms with zero golden E2E coverage:
+The original draft gap analysis is now stale. E16c no longer has zero golden E2E coverage for ConsultRecord. The delivered live coverage is:
 
 | Mechanism | Unit Test Coverage | Golden E2E Coverage |
 |-----------|-------------------|-------------------|
-| ConsultRecord as mid-plan prerequisite | `search.rs:5330` (`search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belief_unknown`) | **None** |
-| ConsultRecord skipped when belief is Certain | `search.rs:5448` (`search_political_goal_skips_consult_record_when_vacancy_belief_is_already_certain`) | **None** |
-| ConsultRecord step overrides Unknown belief | `goal_model.rs:2717` (`consult_record_step_overrides_unknown_vacancy_belief_and_unblocks_declare_support`) | **None** |
-| Record entity creation and consultation handler | `world.rs:1158`, `consult_record_actions.rs` handler tests | **None** |
+| ConsultRecord as mid-plan prerequisite | `search.rs:5330` (`search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belief_unknown`) | Scenario 33 (`golden_remote_record_consultation_political_action`) |
+| ConsultRecord skipped when belief is Certain | `search.rs:5448` (`search_political_goal_skips_consult_record_when_vacancy_belief_is_already_certain`) | Scenario 34 informed branch (`golden_knowledge_asymmetry_race_informed_wins_office`) |
+| ConsultRecord step overrides Unknown belief | `goal_model.rs:2717` (`consult_record_step_overrides_unknown_vacancy_belief_and_unblocks_declare_support`) | Scenario 33 and Scenario 34 uninformed branch |
+| Record entity creation and consultation handler | `world.rs:1158`, `consult_record_actions.rs` handler tests | Scenario 33 and Scenario 34 |
 
-All existing political goldens (Scenarios 11-19, 22-25, 28) use `seed_office_holder_belief()` to provide `Certain` institutional beliefs, bypassing the ConsultRecord prerequisite path entirely. S13 scenarios (21-23) also seed beliefs directly.
+The remaining deviation is source inventory rather than runtime coverage breadth: the draft planned a separate Scenario 32 local-consult golden, but the live shipped source-declared S19 scenarios are 33 and 34.
 
 ## Scenarios
 
@@ -262,7 +262,7 @@ No new positive-feedback loops are introduced by these test scenarios — they e
 
 | File | Role |
 |------|------|
-| `specs/S19-institutional-record-consultation-golden-suites.md` | This spec |
+| `archive/specs/S19-institutional-record-consultation-golden-suites.md` | This archived spec |
 | `crates/worldwake-ai/tests/golden_offices.rs` | Add 3 suites (~6 tests + replay companions) |
 | `crates/worldwake-ai/tests/golden_harness/mod.rs` | Add `RULERS_HALL` constant, `seed_office_register()` helper |
 | `docs/golden-e2e-coverage.md` | Update coverage matrix |
@@ -299,3 +299,20 @@ After all tickets:
 ## Implementation Order
 
 S19-001 (Scenario 32, includes harness helpers) → S19-002 (Scenario 33) → S19-003 (Scenario 34) → S19-004 + S19-005 (doc updates, parallel)
+
+## Outcome
+
+- Completed: 2026-03-22
+- What actually changed:
+  - live golden coverage now includes Scenario 33 (`golden_remote_record_consultation_political_action`) and Scenario 34 (`golden_knowledge_asymmetry_race_informed_wins_office`) in [`crates/worldwake-ai/tests/golden_offices.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_offices.rs)
+  - [`docs/golden-e2e-coverage.md`](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-coverage.md) and [`docs/golden-e2e-scenarios.md`](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-scenarios.md) were aligned to those delivered scenarios
+- Deviations from original plan:
+  - the original draft assumed no golden E2E ConsultRecord coverage yet and planned a separate Scenario 32 local-consult golden
+  - the archived delivered source-declared coverage consists of Scenario 33 and 34 only; Scenario 32 was not shipped as a separate golden block and is therefore not claimed as delivered
+- Verification results:
+  - `python3 scripts/golden_inventory.py --write --check-docs` ✅
+  - `cargo test -p worldwake-ai --test golden_offices golden_remote_record_consultation_political_action` ✅
+  - `cargo test -p worldwake-ai --test golden_offices golden_knowledge_asymmetry_race_informed_wins_office` ✅
+  - `cargo test -p worldwake-ai` ✅
+  - `cargo test --workspace` ✅
+  - `cargo clippy --workspace --all-targets -- -D warnings` ✅

@@ -1,6 +1,6 @@
 # Golden E2E Suite: Coverage Dashboard
 
-**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21, S18 craft-restock supply-chain coverage added 2026-03-21)
+**Date**: 2026-03-12 (updated 2026-03-18, offices/locality added 2026-03-18, inventory grounded 2026-03-18, S13-002 social-political emergence added 2026-03-18, S13-003 wounded-politician ordering added 2026-03-19, E15c social coverage aligned 2026-03-19, S14 conversation-memory emergence added 2026-03-19, S08 care start-abort regression added 2026-03-19, S15 start-failure emergence inventory aligned 2026-03-19, S16 spatial multi-hop coverage added 2026-03-21, inventory generation added 2026-03-21, S17 wound-lifecycle coverage aligned 2026-03-21, S18 craft-restock supply-chain coverage added 2026-03-21, S19 office-record coverage aligned 2026-03-22)
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
@@ -38,7 +38,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | LootCorpse | Yes | 8 |
 | BuryCorpse | Yes | 8b |
 | ShareBelief | Yes | 2e, 22, 24, 25 |
-| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 28 |
+| ClaimOffice | Yes | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 28, 33, 34 |
 | SupportCandidateForOffice | Yes | 12, 13, 14 |
 
 **Coverage: 19/19 GoalKinds tested (100%).**
@@ -79,7 +79,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | OrchardFarm | Yes | 1, 2d, 2d-craft, 3, 3b, 4, 5 |
 | GeneralStore | Yes | 2d, 2d-craft |
 | CommonHouse | **No** | — |
-| RulersHall | **No** | — |
+| RulersHall | Yes | 33 |
 | GuardPost | **No** | — |
 | PublicLatrine | Yes | 7b |
 | NorthCrossroads | Yes | 3b |
@@ -88,7 +88,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | SouthGate | Yes | 2d |
 | EastFieldTrail | Yes | 3b |
 
-**9/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route, the VillageSquare→OrchardFarm branchy-hub route, the GeneralStore→OrchardFarm merchant harvest-restock route, and the GeneralStore→OrchardFarm prerequisite-aware craft-restock route.**
+**10/12 places are now used. Multi-hop travel is explicitly tested via the BanditCamp→OrchardFarm route, the VillageSquare→OrchardFarm branchy-hub route, the GeneralStore→OrchardFarm merchant harvest-restock route, the GeneralStore→OrchardFarm prerequisite-aware craft-restock route, and the OrchardFarm→RulersHall office-record consultation route.**
 
 ### Cross-System Interaction Coverage
 
@@ -162,6 +162,8 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | Remote office Tell → reported office belief update → ClaimOffice emerges → travel → DeclareSupport → succession installation | Yes |
 | Same-place office fact still requires Tell: co-location alone does not create office knowledge, but Tell unlocks ClaimOffice and DeclareSupport at the same place | Yes |
 | Already-told recent subject omitted before truncation → older untold office fact still told → remote ClaimOffice travel and succession still occur | Yes |
+| Unknown office-holder belief + known remote register entity → remote travel to RulersHall → `consult_record` updates institutional belief → return travel to jurisdiction → `declare_support` → succession installation | Yes |
+| Same vacant office + same ambition but different office-holder belief certainty → informed claimant declares support immediately while uninformed claimant pays consult duration → support-law succession installs informed claimant first | Yes |
 | Remote office claim race: two informed claimants travel toward the same vacancy → winner installs first → loser records political `StartFailed` at authoritative start → next AI tick clears stale claim path and stops re-attempting the occupied office | Yes |
 | Wounded politician ordering: medium pain commits `heal` before `declare_support`, low pain commits `declare_support` before `heal`, and both converge to office-holder + reduced wounds | Yes |
 | 200-tick multi-agent world with conservation + deterministic replay (Principle 6) | Yes |
@@ -182,7 +184,7 @@ See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for t
 | ActionDomain coverage | 11/11 full | 11/11 full |
 | Needs tested | 5/5 | 5/5 |
 | Places used | 9/12 | 9/12 |
-| Cross-system chains | 71 | 71 |
+| Cross-system chains | 73 | 73 |
 
 ### Pending Backlog Summary
 

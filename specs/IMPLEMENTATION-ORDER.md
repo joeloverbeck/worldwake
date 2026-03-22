@@ -71,6 +71,9 @@ Established dynamic per-node prerequisite-aware place guidance for planner searc
 ### S18: Prerequisite-Aware Emergent Chain Goldens — COMPLETED
 Established the missing Phase 3 golden proof for craft-restock and stale prerequisite-belief recovery, and closed the archival loop on the live planner contract after the stale `ProduceCommodity` narrative was corrected to the lawful `RestockCommodity` surface.
 
+### S19: Institutional Record Consultation Golden E2E Suites — COMPLETED
+Established the delivered office-record golden coverage and closed the documentation/archive loop around the live source-declared scenarios: Scenario 33 now proves remote record travel plus consultation plus political follow-through, Scenario 34 proves knowledge-asymmetry-driven office races, and the hand-maintained golden docs were aligned to the shipped scenario inventory instead of the older planned Scenario 32 narrative.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -85,7 +88,7 @@ S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 ✅ (planner prerequisite-aware search heuristic completed)
 E16c ──→ S13 (political emergence golden coverage needs institutional beliefs)
-E16c ──→ S19 (institutional record consultation golden coverage needs ConsultRecord action + records)
+E16c ──→ S19 ✅ (institutional record consultation golden coverage completed)
 S15 ✅ (cross-system start-failure emergence golden coverage)
 S16 ✅ (S09 behavioral golden validation coverage)
 E15 ──→ E15b (social AI goals need Tell mechanics + belief system) ✅
@@ -153,6 +156,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
   - Scenario 29 in `golden_emergent.rs` proves deprivation worsening consolidates without duplicating wounds, and Scenario 30 in `golden_combat.rs` proves recovery-aware need promotion opens the wound-recovery gate; both shipped with deterministic replay companions and aligned golden docs/inventory
 - **S18**: Prerequisite-Aware Emergent Chain Goldens — ✅ COMPLETED
   - craft-restock and stale prerequisite-belief recovery goldens are shipped, and the stale planner-surface narrative was corrected to the live `RestockCommodity` contract before archival
+- **S19**: Institutional Record Consultation Golden E2E Suites — ✅ COMPLETED
+  - shipped office-record golden proof for the live Scenario 33 remote-record route and Scenario 34 knowledge-asymmetry race, then aligned the human-maintained golden docs to the generated/source-declared inventory instead of the older planned Scenario 32 draft narrative
 
 **Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
@@ -167,9 +172,6 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S13**: Political Emergence Golden E2E Suites
   - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
-- **S19**: Institutional Record Consultation Golden E2E Suites
-  - needs E16c, E16d, S13 (institutional beliefs, ConsultRecord action, Record entities)
-  - adds ConsultRecord prerequisite coverage: local consultation, remote multi-hop record travel, and knowledge asymmetry race
 
 #### Phase 3 Gate
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
@@ -231,7 +233,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
-| `S19-institutional-record-consultation-golden-suites.md` | 3 | 13 | E16c, E16d, S13, E14 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
@@ -262,6 +263,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S18 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

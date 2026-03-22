@@ -719,6 +719,36 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 **Foundation alignment**: Principle 7 (information locality), Principle 10 (belief-only planning), Principle 13 (knowledge acquisition path matters), Principle 27 (decision traces make the negative AI contract inspectable).
 **Cross-system chain**: No office belief → no political candidate generation → explicit reported office belief update → `ClaimOffice` candidate → travel to jurisdiction → `declare_support` → succession resolution.
 
+### Scenario 33: Remote Record Travel + Consultation + Political Action
+**File**: `golden_offices.rs` | **Tests**: `golden_remote_record_consultation_political_action`, `golden_remote_record_consultation_political_action_replays_deterministically`
+**Systems exercised**: AI political candidate generation and selected-plan tracing, multi-hop travel, `consult_record`, institutional-knowledge tracing, political actions (`declare_support`), succession, deterministic replay
+**Setup**: A single sated claimant starts at Orchard Farm with high `enterprise_weight`. The vacant office is at Village Square, but the vacancy entry that can satisfy the claimant's unknown office-holder belief lives only in a remote `OfficeRegister` at Rulers Hall. The claimant is seeded with entity beliefs about the office and remote record, but no institutional office-holder belief.
+**Emergent behavior proven**:
+- Tick-0 decision traces still generate `ClaimOffice` even though the office-holder belief is `Unknown`.
+- The selected plan exposes the concrete remote-information path rather than a shortcut: multi-hop travel from Orchard Farm through East Field Trail and South Gate to Rulers Hall, `consult_record` against the remote register, return travel to Village Square, then `declare_support`.
+- Action traces prove `consult_record` commits before `declare_support`.
+- Institutional-knowledge tracing proves the office-holder belief transitions from `Unknown` to `Certain(None)` specifically because of `RecordConsultation { record, home_place: RulersHall }`.
+- The claimant finishes at Village Square and becomes office holder after the ordinary support-law succession delay.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Foundation alignment**: Principle 7 (knowledge requires physical locality), Principle 8 (travel and consultation both consume real time), Principle 12 (planning starts from belief uncertainty rather than world truth), Principle 24 (AI, travel, record consultation, and politics interact through shared state).
+**Cross-system chain**: unknown office-holder belief + known remote register entity → `ClaimOffice` candidate still generated → selected plan routes to Rulers Hall first → `consult_record` commits and updates institutional belief via record consultation → return to Village Square → `declare_support` → succession installation.
+**Distinct from Scenario 15 and Scenario 16**: Scenario 15 proves travel to a distant jurisdiction when office vacancy is already known. Scenario 16 proves no office behavior appears before an explicit belief update. Scenario 33 proves the missing middle path: the agent lawfully travels to a remote record to acquire the office fact itself, then returns to act politically.
+
+### Scenario 34: Knowledge Asymmetry Race
+**File**: `golden_offices.rs` | **Tests**: `golden_knowledge_asymmetry_race_informed_wins_office`, `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
+**Systems exercised**: AI political candidate generation and selected-plan tracing, `consult_record`, action tracing, political succession tracing, authoritative office-holder resolution, deterministic replay
+**Setup**: Two sated, equally ambitious claimants start co-located at Village Square with beliefs about the same vacant support-law office. The informed claimant also starts with `Certain(None)` office-holder belief. The uninformed claimant instead knows the local office register entity but must consult it. The scenario raises the record's authoritative `consultation_ticks` to 12 so, under the live `consultation_speed_factor = pm(500)`, the uninformed branch spends 6 ticks consulting.
+**Emergent behavior proven**:
+- Both claimants generate `ClaimOffice` at tick 0, so the divergence is not candidate availability.
+- Decision traces show the informed claimant selecting `DeclareSupport` directly while the uninformed claimant selects `ConsultRecord -> DeclareSupport`.
+- Action traces prove the informed claimant commits `declare_support` before the uninformed claimant finishes `consult_record`.
+- The uninformed claimant does not commit `declare_support` before installation closes the opportunity.
+- Politics tracing shows support-law succession installing the informed claimant after the 5-tick vacancy timer with only that claimant's support declaration counted.
+- Two runs with the same seed produce identical world and event-log hashes.
+**Foundation alignment**: Principle 8 (consultation duration is a concrete action cost), Principle 12 (knowledge state and world state are distinct), Principle 20 (otherwise similar agents diverge because they know different things), Principle 24 (competitive outcome emerges from shared state plus duration, not from an explicit priority override).
+**Cross-system chain**: same vacant office + same ambition but different office-holder belief certainty → informed branch selects direct `declare_support` while uninformed branch pays `consult_record` duration → succession timer advances on the informed declaration → office installs before the uninformed branch can finish and compete.
+**Distinct from Scenario 28**: Scenario 28 is a stale-claim race driven by lawful delay from self-care and later political `StartFailed`. Scenario 34 is a clean knowledge-asymmetry race where both agents are co-located and healthy, and the deciding variable is the consult-duration cost imposed by missing institutional knowledge.
+
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 **File**: `golden_offices.rs` | **Tests**: `golden_survival_pressure_suppresses_political_goals`, `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 **Systems exercised**: Needs/self-care (`eat`), AI (ClaimOffice candidate generation, shared goal-policy suppression, ranking, action sequencing), Political actions (`declare_support`), Succession (installation), action tracing, deterministic replay
