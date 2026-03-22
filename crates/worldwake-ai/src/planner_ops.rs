@@ -135,41 +135,43 @@ pub fn build_semantics_table(
 }
 
 fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
-    match (def.domain, def.name.as_str(), &def.payload) {
-        (ActionDomain::Travel, "travel", _) => Some(PlannerOpKind::Travel),
-        (ActionDomain::Needs, "eat" | "drink", _) => Some(PlannerOpKind::Consume),
-        (ActionDomain::Needs, "sleep", _) => Some(PlannerOpKind::Sleep),
-        (ActionDomain::Needs, "toilet", _) => Some(PlannerOpKind::Relieve),
-        (ActionDomain::Needs, "wash", _) => Some(PlannerOpKind::Wash),
-        (ActionDomain::Trade, "trade", _) => Some(PlannerOpKind::Trade),
-        (ActionDomain::Production, "queue_for_facility_use", ActionPayload::None) => {
+    match (def.domain, def.name.as_str()) {
+        (ActionDomain::Travel, "travel") => Some(PlannerOpKind::Travel),
+        (ActionDomain::Needs, "eat" | "drink") => Some(PlannerOpKind::Consume),
+        (ActionDomain::Needs, "sleep") => Some(PlannerOpKind::Sleep),
+        (ActionDomain::Needs, "toilet") => Some(PlannerOpKind::Relieve),
+        (ActionDomain::Needs, "wash") => Some(PlannerOpKind::Wash),
+        (ActionDomain::Trade, "trade") => Some(PlannerOpKind::Trade),
+        (ActionDomain::Production, "queue_for_facility_use") => {
             Some(PlannerOpKind::QueueForFacilityUse)
         }
-        (ActionDomain::Production, name, ActionPayload::Harvest(_))
-            if name.starts_with("harvest:") =>
+        (ActionDomain::Production, name)
+            if name.starts_with("harvest:") && matches!(def.payload, ActionPayload::Harvest(_)) =>
         {
             Some(PlannerOpKind::Harvest)
         }
-        (ActionDomain::Production, name, ActionPayload::Craft(_)) if name.starts_with("craft:") => {
+        (ActionDomain::Production, name)
+            if name.starts_with("craft:") && matches!(def.payload, ActionPayload::Craft(_)) =>
+        {
             Some(PlannerOpKind::Craft)
         }
-        (ActionDomain::Transport, "pick_up" | "put_down", _) => Some(PlannerOpKind::MoveCargo),
-        (ActionDomain::Care, "heal", _) => Some(PlannerOpKind::Heal),
-        (ActionDomain::Corpse, "loot", _) => Some(PlannerOpKind::Loot),
-        (ActionDomain::Corpse, "bury", _) => Some(PlannerOpKind::Bury),
-        (ActionDomain::Social, "tell", ActionPayload::None) => Some(PlannerOpKind::Tell),
-        (ActionDomain::Social, "consult_record", ActionPayload::None) => {
+        (ActionDomain::Transport, "pick_up" | "put_down") => Some(PlannerOpKind::MoveCargo),
+        (ActionDomain::Care, "heal") => Some(PlannerOpKind::Heal),
+        (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
+        (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
+        (ActionDomain::Social, "tell") => Some(PlannerOpKind::Tell),
+        (ActionDomain::Social, "consult_record") => {
             Some(PlannerOpKind::ConsultRecord)
         }
-        (ActionDomain::Social, "bribe", ActionPayload::None) => Some(PlannerOpKind::Bribe),
-        (ActionDomain::Social, "threaten", ActionPayload::None) => Some(PlannerOpKind::Threaten),
-        (ActionDomain::Social, "declare_support", ActionPayload::None) => {
+        (ActionDomain::Social, "bribe") => Some(PlannerOpKind::Bribe),
+        (ActionDomain::Social, "threaten") => Some(PlannerOpKind::Threaten),
+        (ActionDomain::Social, "declare_support") => {
             Some(PlannerOpKind::DeclareSupport)
         }
-        (ActionDomain::Social, "press_force_claim", _) => Some(PlannerOpKind::PressForceClaim),
-        (ActionDomain::Social, "yield_force_claim", _) => Some(PlannerOpKind::YieldForceClaim),
-        (ActionDomain::Combat, "attack", _) => Some(PlannerOpKind::Attack),
-        (ActionDomain::Combat, "defend", _) => Some(PlannerOpKind::Defend),
+        (ActionDomain::Social, "press_force_claim") => Some(PlannerOpKind::PressForceClaim),
+        (ActionDomain::Social, "yield_force_claim") => Some(PlannerOpKind::YieldForceClaim),
+        (ActionDomain::Combat, "attack") => Some(PlannerOpKind::Attack),
+        (ActionDomain::Combat, "defend") => Some(PlannerOpKind::Defend),
         _ => None,
     }
 }
@@ -750,9 +752,9 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 mod tests {
     use super::{
         apply_hypothetical_transition, authoritative_target, authoritative_targets,
-        build_semantics_table, planner_only_candidates, resolve_planning_targets_with,
-        ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlannerOpSemantics, PlannerTransitionKind, GOALS_MOVE_CARGO,
+        build_semantics_table, classify_action_def, planner_only_candidates,
+        resolve_planning_targets_with, ExpectedMaterialization, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, GOALS_MOVE_CARGO,
     };
     use crate::{
         build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GoalKindTag, GroundedGoal,
@@ -769,8 +771,11 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
-        DurationExpr, MaterializationTag, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-        TradeActionPayload, TransportActionPayload,
+        BribeActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload,
+        DurationExpr, MaterializationTag, PressForceClaimActionPayload,
+        QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        YieldForceClaimActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1418,6 +1423,82 @@ mod tests {
             def.name.starts_with("craft:")
                 && table.get(&def.id).unwrap().op_kind == PlannerOpKind::Craft
         }));
+    }
+
+    #[test]
+    fn classify_action_def_fixed_name_families_ignore_placeholder_payload_shape() {
+        let defs = build_phase_two_registry();
+        let variants = [
+            (
+                "queue_for_facility_use",
+                ActionPayload::QueueForFacilityUse(QueueForFacilityUsePayload {
+                    intended_action: ActionDefId(999),
+                }),
+                PlannerOpKind::QueueForFacilityUse,
+            ),
+            (
+                "tell",
+                ActionPayload::Tell(TellActionPayload {
+                    listener: entity(2),
+                    subject_entity: entity(3),
+                }),
+                PlannerOpKind::Tell,
+            ),
+            (
+                "consult_record",
+                ActionPayload::ConsultRecord(ConsultRecordActionPayload { record: entity(4) }),
+                PlannerOpKind::ConsultRecord,
+            ),
+            (
+                "bribe",
+                ActionPayload::Bribe(BribeActionPayload {
+                    target: entity(5),
+                    offered_commodity: CommodityKind::Coin,
+                    offered_quantity: Quantity(1),
+                }),
+                PlannerOpKind::Bribe,
+            ),
+            (
+                "threaten",
+                ActionPayload::Threaten(ThreatenActionPayload { target: entity(6) }),
+                PlannerOpKind::Threaten,
+            ),
+            (
+                "declare_support",
+                ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+                    office: entity(7),
+                    candidate: entity(8),
+                }),
+                PlannerOpKind::DeclareSupport,
+            ),
+            (
+                "press_force_claim",
+                ActionPayload::PressForceClaim(PressForceClaimActionPayload { office: entity(9) }),
+                PlannerOpKind::PressForceClaim,
+            ),
+            (
+                "yield_force_claim",
+                ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
+                    office: entity(10),
+                }),
+                PlannerOpKind::YieldForceClaim,
+            ),
+        ];
+
+        for (name, payload, expected) in variants {
+            let mut def = defs
+                .iter()
+                .find(|def| def.name == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("missing registered action def {name}"));
+            def.payload = payload;
+
+            assert_eq!(
+                classify_action_def(&def),
+                Some(expected),
+                "{name} should classify by stable action identity, not default payload shape"
+            );
+        }
     }
 
     #[test]
