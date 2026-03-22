@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    build_believed_entity_state, AgentBeliefStore, BelievedInstitutionalClaim, CauseRef, EntityId,
-    EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind, PendingEvent, PerceptionSource,
-    RelationDelta, RelationValue, SocialObservation, SocialObservationKind, StateDelta,
-    VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state, AgentBeliefStore, BelievedInstitutionalClaim, CauseRef,
+    ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
+    EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, MismatchKind, PendingEvent, PerceptionSource, RelationDelta,
+    RelationValue, SocialObservation, SocialObservationKind, StateDelta, VisibilitySpec,
+    WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -474,6 +475,9 @@ fn institutional_claims_for_event(
     }
 
     let mut normalized = BTreeMap::new();
+    for (key, claim) in force_control_claims_for_event(record) {
+        normalized.insert(key, claim);
+    }
     for delta in record.state_deltas() {
         let Some((key, claim)) = institutional_claim_from_delta(delta, record.tick()) else {
             continue;
@@ -482,6 +486,80 @@ fn institutional_claims_for_event(
     }
 
     normalized.into_iter().collect()
+}
+
+fn force_control_claims_for_event(
+    record: &impl EventView,
+) -> Vec<(InstitutionalBeliefKey, InstitutionalClaim)> {
+    enum ControllerProjection {
+        Unspecified,
+        None,
+        Some(EntityId),
+    }
+
+    struct Projection {
+        controller: ControllerProjection,
+        contested: Option<bool>,
+    }
+
+    impl Default for Projection {
+        fn default() -> Self {
+            Self {
+                controller: ControllerProjection::Unspecified,
+                contested: None,
+            }
+        }
+    }
+
+    let mut by_office = BTreeMap::<EntityId, Projection>::new();
+
+    for delta in record.state_deltas() {
+        match delta {
+            StateDelta::Relation(RelationDelta::Added {
+                relation: RelationValue::OfficeController { office, controller },
+                ..
+            }) => {
+                by_office.entry(*office).or_default().controller =
+                    ControllerProjection::Some(*controller);
+            }
+            StateDelta::Relation(RelationDelta::Removed {
+                relation: RelationValue::OfficeController { office, .. },
+                ..
+            }) => {
+                by_office.entry(*office).or_default().controller = ControllerProjection::None;
+            }
+            StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::OfficeForceState,
+                after: ComponentValue::OfficeForceState(state),
+                ..
+            }) => {
+                by_office.entry(*entity).or_default().contested =
+                    Some(state.contested_since.is_some());
+            }
+            _ => {}
+        }
+    }
+
+    by_office
+        .into_iter()
+        .map(|(office, projection)| {
+            let controller = match projection.controller {
+                ControllerProjection::Unspecified | ControllerProjection::None => None,
+                ControllerProjection::Some(controller) => Some(controller),
+            };
+            let contested = projection.contested.unwrap_or(false);
+            (
+                InstitutionalBeliefKey::ForceControllerOf { office },
+                InstitutionalClaim::ForceControl {
+                    office,
+                    controller,
+                    contested,
+                    effective_tick: record.tick(),
+                },
+            )
+        })
+        .collect()
 }
 
 fn institutional_claim_from_delta(
@@ -564,13 +642,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
-        BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ControlSource,
-        DeadAt, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
-        ObservedEntitySnapshot, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, RelationDelta,
-        RelationKind, RelationValue, ResourceSource, Seed, SocialObservationKind, StateDelta, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ComponentDelta,
+        ComponentKind, ComponentValue, ControlSource, DeadAt, EntityKind, EventLog, EventPayload,
+        EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, MismatchKind, ObservedEntitySnapshot, OfficeForceState,
+        PendingEvent, PerceptionProfile, PerceptionSource, Permille, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
+        ResourceSource, Seed, SocialObservationKind, StateDelta, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -1885,6 +1964,90 @@ mod tests {
         );
         assert_eq!(beliefs[0].learned_tick, Tick(4));
         assert_eq!(beliefs[0].learned_at, Some(place));
+    }
+
+    #[test]
+    fn political_event_projects_force_control_claim_for_witness() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, controller, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let controller = txn.create_agent("Controller", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Steward").unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(controller, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, controller, office)
+        };
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(5),
+            place,
+            None,
+            vec![office, controller],
+            vec![
+                StateDelta::Relation(RelationDelta::Added {
+                    relation_kind: RelationKind::OfficeController,
+                    relation: RelationValue::OfficeController { office, controller },
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: office,
+                    component_kind: ComponentKind::OfficeForceState,
+                    before: Some(ComponentValue::OfficeForceState(OfficeForceState {
+                        control_since: None,
+                        contested_since: Some(Tick(4)),
+                        last_uncontested_tick: None,
+                    })),
+                    after: ComponentValue::OfficeForceState(OfficeForceState {
+                        control_since: Some(Tick(5)),
+                        contested_since: None,
+                        last_uncontested_tick: Some(Tick(5)),
+                    }),
+                }),
+            ],
+        );
+        let mut rng = DeterministicRng::new(Seed([33; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let store = world.get_component_agent_belief_store(observer).unwrap();
+        let beliefs = store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::ForceControllerOf { office })
+            .unwrap();
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(
+            beliefs[0].claim,
+            InstitutionalClaim::ForceControl {
+                office,
+                controller: Some(controller),
+                contested: false,
+                effective_tick: Tick(5),
+            }
+        );
+        assert_eq!(
+            beliefs[0].source,
+            InstitutionalKnowledgeSource::WitnessedEvent
+        );
     }
 
     #[test]

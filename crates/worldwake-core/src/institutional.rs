@@ -32,6 +32,12 @@ pub enum InstitutionalClaim {
         candidate: Option<EntityId>,
         effective_tick: Tick,
     },
+    ForceControl {
+        office: EntityId,
+        controller: Option<EntityId>,
+        contested: bool,
+        effective_tick: Tick,
+    },
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -142,6 +148,9 @@ pub enum InstitutionalBeliefKey {
     OfficeHolderOf {
         office: EntityId,
     },
+    ForceControllerOf {
+        office: EntityId,
+    },
     FactionMembersOf {
         faction: EntityId,
     },
@@ -210,6 +219,19 @@ mod tests {
             office: entity(10),
             supporter: entity(30),
             candidate,
+            effective_tick: Tick(effective_tick),
+        }
+    }
+
+    fn force_control_claim(
+        controller: Option<EntityId>,
+        contested: bool,
+        effective_tick: u64,
+    ) -> InstitutionalClaim {
+        InstitutionalClaim::ForceControl {
+            office: entity(10),
+            controller,
+            contested,
             effective_tick: Tick(effective_tick),
         }
     }
@@ -344,6 +366,7 @@ mod tests {
                 office: entity(3),
             },
             InstitutionalBeliefKey::OfficeHolderOf { office: entity(7) },
+            InstitutionalBeliefKey::ForceControllerOf { office: entity(6) },
             InstitutionalBeliefKey::FactionMembersOf { faction: entity(2) },
         ];
 
@@ -353,6 +376,7 @@ mod tests {
             keys,
             vec![
                 InstitutionalBeliefKey::OfficeHolderOf { office: entity(7) },
+                InstitutionalBeliefKey::ForceControllerOf { office: entity(6) },
                 InstitutionalBeliefKey::FactionMembersOf { faction: entity(2) },
                 InstitutionalBeliefKey::SupportFor {
                     supporter: entity(4),
@@ -378,7 +402,7 @@ mod tests {
         };
         let read = InstitutionalBeliefRead::Conflicted(vec![
             support_claim(Some(entity(41)), 13),
-            support_claim(None, 14),
+            force_control_claim(None, true, 14),
         ]);
 
         let record_bytes = bincode::serialize(&record).unwrap();
@@ -400,6 +424,7 @@ mod tests {
     fn nullable_vacancy_and_no_candidate_claims_are_preserved() {
         let office_claim = office_holder_claim(None, 15);
         let support_claim = support_claim(None, 16);
+        let force_claim = force_control_claim(None, true, 17);
 
         match office_claim {
             InstitutionalClaim::OfficeHolder { holder, .. } => assert_eq!(holder, None),
@@ -411,6 +436,18 @@ mod tests {
                 assert_eq!(candidate, None);
             }
             other => panic!("expected support declaration claim, got {other:?}"),
+        }
+
+        match force_claim {
+            InstitutionalClaim::ForceControl {
+                controller,
+                contested,
+                ..
+            } => {
+                assert_eq!(controller, None);
+                assert!(contested);
+            }
+            other => panic!("expected force control claim, got {other:?}"),
         }
     }
 }

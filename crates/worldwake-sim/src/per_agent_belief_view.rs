@@ -787,6 +787,13 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.belief_store.believed_office_holder(office)
     }
 
+    fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+        self.belief_store.believed_force_controller(office)
+    }
+
     fn believed_membership(
         &self,
         faction: EntityId,
@@ -1818,6 +1825,54 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn believed_force_controller_reads_from_institutional_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (agent, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Believer", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Steward").unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (agent, office)
+        };
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::ForceControllerOf { office },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::ForceControl {
+                    office,
+                    controller: Some(entity(173)),
+                    contested: false,
+                    effective_tick: Tick(6),
+                },
+                source: worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(6),
+                learned_at: Some(entity(174)),
+            }],
+        );
+        let mut txn = new_txn(&mut world, 1);
+        txn.set_component_agent_belief_store(agent, beliefs).unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+
+        let view = PerAgentBeliefView::new_at_tick(
+            agent,
+            Tick(6),
+            &world,
+            world.get_component_agent_belief_store(agent).unwrap(),
+        );
+
+        assert_eq!(
+            RuntimeBeliefView::believed_force_controller(&view, office),
+            InstitutionalBeliefRead::Certain((Some(entity(173)), false))
+        );
+        assert_eq!(
+            GoalBeliefView::believed_force_controller(&view, office),
+            InstitutionalBeliefRead::Certain((Some(entity(173)), false))
         );
     }
 

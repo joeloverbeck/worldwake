@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use worldwake_core::{
-    CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, OfficeData,
-    OfficeForceProfile, OfficeForceState, Permille, SuccessionLaw, Tick, VisibilitySpec,
-    WitnessData, World, WorldTxn,
+    CauseRef, EligibilityRule, EntityId, EntityKind, EventLog, EventTag, InstitutionalClaim,
+    OfficeData, OfficeForceProfile, OfficeForceState, Permille, RecordEntryId, RecordKind,
+    SuccessionLaw, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
     ForceCandidateTrace, OfficeAvailabilityPhase, OfficeSuccessionOutcome, OfficeSuccessionTrace,
@@ -491,6 +491,13 @@ fn install_force_office_holder(
         txn.set_component_office_force_state(office, cleared_state)
             .map_err(|error| SystemError::new(error.to_string()))?;
     }
+    stage_force_control_record_update(
+        &mut txn,
+        office,
+        office_data.jurisdiction,
+        force_control_claim(office, None, false, tick),
+    )?;
+    txn.add_target(office).add_target(holder);
     let _ = txn.commit(event_log);
     Ok(())
 }
@@ -513,11 +520,17 @@ fn commit_force_control_update(
     let jurisdiction = world
         .get_component_office_data(office)
         .map(|office_data| office_data.jurisdiction);
-    let mut txn = new_political_txn(world, tick, jurisdiction);
+    let jurisdiction = jurisdiction.unwrap_or_else(|| {
+        world.get_component_office_data(office)
+            .expect("office should still have OfficeData")
+            .jurisdiction
+    });
+    let mut txn = new_political_txn(world, tick, Some(jurisdiction));
     if controller_changed {
         if let Some(controller) = resolution.desired_controller {
             txn.set_office_controller(office, controller)
                 .map_err(|error| SystemError::new(error.to_string()))?;
+            txn.add_target(controller);
         } else {
             txn.clear_office_controller(office)
                 .map_err(|error| SystemError::new(error.to_string()))?;
@@ -531,6 +544,18 @@ fn commit_force_control_update(
         txn.remove_force_claim(*claimant, office)
             .map_err(|error| SystemError::new(error.to_string()))?;
     }
+    stage_force_control_record_update(
+        &mut txn,
+        office,
+        jurisdiction,
+        force_control_claim(
+            office,
+            resolution.desired_controller,
+            resolution.next_state.contested_since.is_some(),
+            tick,
+        ),
+    )?;
+    txn.add_target(office);
     let _ = txn.commit(event_log);
     Ok(())
 }
@@ -551,6 +576,92 @@ fn stage_office_holder_install(
         .map_err(|error| SystemError::new(error.to_string()))?;
     txn.add_target(office).add_target(holder);
     Ok(())
+}
+
+fn force_control_claim(
+    office: EntityId,
+    controller: Option<EntityId>,
+    contested: bool,
+    tick: Tick,
+) -> InstitutionalClaim {
+    InstitutionalClaim::ForceControl {
+        office,
+        controller,
+        contested,
+        effective_tick: tick,
+    }
+}
+
+fn stage_force_control_record_update(
+    txn: &mut WorldTxn<'_>,
+    office: EntityId,
+    jurisdiction: EntityId,
+    claim: InstitutionalClaim,
+) -> Result<(), SystemError> {
+    let Some(record) = unique_record_at_place(txn, jurisdiction, RecordKind::OfficeRegister)? else {
+        return Ok(());
+    };
+    let current = active_force_control_entry(txn, record, office)?;
+    if current.as_ref().is_some_and(|(_, existing)| *existing == claim) {
+        return Ok(());
+    }
+
+    match current {
+        Some((entry_id, _)) => txn
+            .supersede_record_entry(record, entry_id, claim)
+            .map_err(|error| SystemError::new(error.to_string()))?,
+        None => txn
+            .append_record_entry(record, claim)
+            .map_err(|error| SystemError::new(error.to_string()))?,
+    };
+    Ok(())
+}
+
+fn unique_record_at_place(
+    txn: &WorldTxn<'_>,
+    place: EntityId,
+    kind: RecordKind,
+) -> Result<Option<EntityId>, SystemError> {
+    let matches = txn
+        .query_record_data()
+        .filter_map(|(entity, record)| {
+            (record.home_place == place && record.record_kind == kind).then_some(entity)
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [record] => Ok(Some(*record)),
+        _ => Err(SystemError::new(format!(
+            "multiple {kind:?} records at place {place}"
+        ))),
+    }
+}
+
+fn active_force_control_entry(
+    txn: &WorldTxn<'_>,
+    record: EntityId,
+    office: EntityId,
+) -> Result<Option<(RecordEntryId, InstitutionalClaim)>, SystemError> {
+    let record_data = txn
+        .get_component_record_data(record)
+        .ok_or_else(|| SystemError::new(format!("record {record} lacks RecordData")))?;
+    let matches = record_data
+        .active_entries()
+        .into_iter()
+        .filter_map(|entry| match entry.claim {
+            InstitutionalClaim::ForceControl {
+                office: claim_office, ..
+            } if claim_office == office => Some((entry.entry_id, entry.claim)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [entry] => Ok(Some(*entry)),
+        _ => Err(SystemError::new(format!(
+            "multiple active force-control entries for office {office} in record {record}"
+        ))),
+    }
 }
 
 fn force_hold_complete(
@@ -1502,6 +1613,39 @@ mod tests {
                 last_uncontested_tick: None,
             })
         );
+        let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        assert_eq!(
+            register.entries.last().unwrap().claim,
+            worldwake_core::InstitutionalClaim::ForceControl {
+                office: fx.office,
+                controller: None,
+                contested: true,
+                effective_tick: Tick(5),
+            }
+        );
+    }
+
+    #[test]
+    fn force_control_establishment_writes_force_control_record_entry() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Force);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+        fx.add_force_claim(fx.candidate_a, 4);
+        event_log = EventLog::new();
+
+        run_succession(&mut fx.world, &mut event_log, 4);
+
+        let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        assert_eq!(
+            register.entries.last().unwrap().claim,
+            worldwake_core::InstitutionalClaim::ForceControl {
+                office: fx.office,
+                controller: Some(fx.candidate_a),
+                contested: false,
+                effective_tick: Tick(4),
+            }
+        );
     }
 
     #[test]
@@ -1609,10 +1753,31 @@ mod tests {
             .force_claimants_for_office_including_dead(fx.office)
             .is_empty());
         let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
-        assert_eq!(register.entries.len(), 3);
         assert_eq!(
-            register.entries[2].supersedes,
-            Some(register.entries[1].entry_id)
+            register.active_entries().len(),
+            2,
+            "office register should retain one active holder entry and one active force-control entry"
+        );
+        assert!(register.active_entries().iter().any(|entry| {
+            entry.claim
+                == worldwake_core::InstitutionalClaim::OfficeHolder {
+                    office: fx.office,
+                    holder: Some(fx.candidate_a),
+                    effective_tick: Tick(6),
+                }
+        }));
+        assert!(register.active_entries().iter().any(|entry| {
+            entry.claim
+                == worldwake_core::InstitutionalClaim::ForceControl {
+                    office: fx.office,
+                    controller: None,
+                    contested: false,
+                    effective_tick: Tick(6),
+                }
+        }));
+        assert!(
+            register.entries.len() >= 4,
+            "force-control history should preserve controller transitions before installation"
         );
         let record = event_log
             .get(event_log.events_by_tag(EventTag::Political)[0])

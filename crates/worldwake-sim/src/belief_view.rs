@@ -126,6 +126,13 @@ pub trait GoalBeliefView {
         let _ = office;
         InstitutionalBeliefRead::Unknown
     }
+    fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+        let _ = office;
+        InstitutionalBeliefRead::Unknown
+    }
     fn believed_membership(
         &self,
         faction: EntityId,
@@ -298,6 +305,13 @@ pub trait RuntimeBeliefView {
         &self,
         office: EntityId,
     ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        let _ = office;
+        InstitutionalBeliefRead::Unknown
+    }
+    fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
         let _ = office;
         InstitutionalBeliefRead::Unknown
     }
@@ -688,6 +702,16 @@ macro_rules! impl_goal_belief_view {
                 office: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
                 $crate::RuntimeBeliefView::believed_office_holder(self, office)
+            }
+
+            fn believed_force_controller(
+                &self,
+                office: worldwake_core::EntityId,
+            ) -> worldwake_core::InstitutionalBeliefRead<(
+                Option<worldwake_core::EntityId>,
+                bool,
+            )> {
+                $crate::RuntimeBeliefView::believed_force_controller(self, office)
             }
 
             fn believed_membership(

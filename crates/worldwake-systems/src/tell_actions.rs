@@ -118,6 +118,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
         InstitutionalClaim::OfficeHolder { office, .. } => {
             InstitutionalBeliefKey::OfficeHolderOf { office }
         }
+        InstitutionalClaim::ForceControl { office, .. } => {
+            InstitutionalBeliefKey::ForceControllerOf { office }
+        }
         InstitutionalClaim::FactionMembership { faction, .. } => {
             InstitutionalBeliefKey::FactionMembersOf { faction }
         }
@@ -710,6 +713,27 @@ mod tests {
     ) -> BelievedInstitutionalClaim {
         BelievedInstitutionalClaim {
             claim: office_holder_claim(office, holder, learned_tick),
+            source,
+            learned_tick: Tick(learned_tick),
+            learned_at,
+        }
+    }
+
+    fn force_control_belief(
+        office: EntityId,
+        controller: Option<EntityId>,
+        contested: bool,
+        source: InstitutionalKnowledgeSource,
+        learned_tick: u64,
+        learned_at: Option<EntityId>,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::ForceControl {
+                office,
+                controller,
+                contested,
+                effective_tick: Tick(learned_tick),
+            },
             source,
             learned_tick: Tick(learned_tick),
             learned_at,
@@ -1956,6 +1980,55 @@ mod tests {
             .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
             .unwrap();
         assert_eq!(received.len(), 1);
+    }
+
+    #[test]
+    fn tell_commit_relays_force_control_claims() {
+        let (defs, handlers, tell_id, mut world, place, speaker, listener, office) =
+            tell_office_test_setup(PerceptionSource::DirectObservation);
+        let contested = force_control_belief(
+            office,
+            None,
+            true,
+            InstitutionalKnowledgeSource::WitnessedEvent,
+            4,
+            Some(place),
+        );
+        {
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap_or_default();
+            let profile = *world.get_component_perception_profile(speaker).unwrap();
+            store.record_institutional_belief(
+                InstitutionalBeliefKey::ForceControllerOf { office },
+                contested.clone(),
+                &profile,
+            );
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, office);
+
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
+
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        let received = listener_store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::ForceControllerOf { office })
+            .unwrap();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].claim, contested.claim);
+        assert_eq!(
+            received[0].source,
+            InstitutionalKnowledgeSource::Report {
+                from: speaker,
+                chain_len: 1,
+            }
+        );
     }
 
     #[test]

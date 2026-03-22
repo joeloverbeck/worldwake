@@ -257,6 +257,28 @@ impl AgentBeliefStore {
     }
 
     #[must_use]
+    pub fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::ForceControllerOf { office })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::ForceControl {
+                    office: claim_office,
+                    controller,
+                    contested,
+                    ..
+                } if *claim_office == office => Some((*controller, *contested)),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
     pub fn believed_membership(
         &self,
         faction: EntityId,
@@ -526,6 +548,7 @@ pub fn share_equivalent(
 fn institutional_claim_subject(claim: InstitutionalClaim) -> EntityId {
     match claim {
         InstitutionalClaim::OfficeHolder { office, .. }
+        | InstitutionalClaim::ForceControl { office, .. }
         | InstitutionalClaim::SupportDeclaration { office, .. } => office,
         InstitutionalClaim::FactionMembership { faction, .. } => faction,
     }
@@ -994,6 +1017,25 @@ mod tests {
         }
     }
 
+    fn force_control_belief(
+        office: u32,
+        controller: Option<u32>,
+        contested: bool,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::ForceControl {
+                office: entity(office),
+                controller: controller.map(entity),
+                contested,
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(14)),
+        }
+    }
+
     fn assert_component_bounds<T: Component>() {}
 
     fn assert_serde_bounds<T: Eq + Clone + Serialize + DeserializeOwned>() {}
@@ -1258,6 +1300,52 @@ mod tests {
         assert_eq!(
             store.believed_office_holder(office),
             InstitutionalBeliefRead::Conflicted(vec![Some(entity(74)), Some(entity(75))])
+        );
+    }
+
+    #[test]
+    fn believed_force_controller_returns_unknown_when_absent() {
+        let store = AgentBeliefStore::new();
+
+        assert_eq!(
+            store.believed_force_controller(entity(76)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn believed_force_controller_collapses_agreeing_claims() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(77);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::ForceControllerOf { office },
+            vec![
+                force_control_belief(77, Some(78), false, 4),
+                force_control_belief(77, Some(78), false, 6),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_force_controller(office),
+            InstitutionalBeliefRead::Certain((Some(entity(78)), false))
+        );
+    }
+
+    #[test]
+    fn believed_force_controller_returns_conflicted_for_distinct_reads() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(79);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::ForceControllerOf { office },
+            vec![
+                force_control_belief(79, Some(80), false, 3),
+                force_control_belief(79, None, true, 5),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_force_controller(office),
+            InstitutionalBeliefRead::Conflicted(vec![(None, true), (Some(entity(80)), false)])
         );
     }
 

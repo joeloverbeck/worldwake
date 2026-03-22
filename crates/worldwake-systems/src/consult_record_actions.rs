@@ -177,6 +177,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
         InstitutionalClaim::OfficeHolder { office, .. } => {
             InstitutionalBeliefKey::OfficeHolderOf { office }
         }
+        InstitutionalClaim::ForceControl { office, .. } => {
+            InstitutionalBeliefKey::ForceControllerOf { office }
+        }
         InstitutionalClaim::FactionMembership { faction, .. } => {
             InstitutionalBeliefKey::FactionMembersOf { faction }
         }
@@ -888,6 +891,46 @@ mod tests {
         assert!(
             knowledge_trace.events_for(actor).is_empty(),
             "duplicate consult data should not emit an effective-read transition trace"
+        );
+    }
+
+    #[test]
+    fn consult_record_projects_force_control_claim_under_force_controller_key() {
+        let (mut world, actor, record, _) = setup_world(4, 1, 500);
+        let office = entity(150);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let _ = txn
+                .append_record_entry(
+                    record,
+                    InstitutionalClaim::ForceControl {
+                        office,
+                        controller: None,
+                        contested: true,
+                        effective_tick: Tick(1),
+                    },
+                )
+                .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, def_id) = setup_registries();
+
+        run_consult_through_step_tick(&mut world, actor, record, &defs, &handlers, def_id);
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        let beliefs = store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::ForceControllerOf { office })
+            .unwrap();
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(
+            beliefs[0].claim,
+            InstitutionalClaim::ForceControl {
+                office,
+                controller: None,
+                contested: true,
+                effective_tick: Tick(1),
+            }
         );
     }
 }

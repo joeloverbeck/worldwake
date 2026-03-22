@@ -43,6 +43,13 @@ pub enum InstitutionalBeliefReadSummary {
     OfficeHolderConflicted {
         holders: Vec<Option<EntityId>>,
     },
+    ForceControllerCertain {
+        controller: Option<EntityId>,
+        contested: bool,
+    },
+    ForceControllerConflicted {
+        claims: Vec<(Option<EntityId>, bool)>,
+    },
     FactionMembershipClaims {
         claims: Vec<FactionMembershipClaimSummary>,
     },
@@ -214,6 +221,20 @@ pub fn summarize_institutional_read(
                 }
             }
         }
+        InstitutionalBeliefKey::ForceControllerOf { office } => {
+            match store.believed_force_controller(office) {
+                InstitutionalBeliefRead::Unknown => InstitutionalBeliefReadSummary::Unknown,
+                InstitutionalBeliefRead::Certain((controller, contested)) => {
+                    InstitutionalBeliefReadSummary::ForceControllerCertain {
+                        controller,
+                        contested,
+                    }
+                }
+                InstitutionalBeliefRead::Conflicted(claims) => {
+                    InstitutionalBeliefReadSummary::ForceControllerConflicted { claims }
+                }
+            }
+        }
         InstitutionalBeliefKey::FactionMembersOf { faction } => {
             let mut claims = store
                 .institutional_beliefs
@@ -257,6 +278,9 @@ fn institutional_belief_key(claim: worldwake_core::InstitutionalClaim) -> Instit
     match claim {
         worldwake_core::InstitutionalClaim::OfficeHolder { office, .. } => {
             InstitutionalBeliefKey::OfficeHolderOf { office }
+        }
+        worldwake_core::InstitutionalClaim::ForceControl { office, .. } => {
+            InstitutionalBeliefKey::ForceControllerOf { office }
         }
         worldwake_core::InstitutionalClaim::FactionMembership { faction, .. } => {
             InstitutionalBeliefKey::FactionMembersOf { faction }
@@ -413,6 +437,36 @@ mod tests {
                 &after,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn summarize_institutional_read_reports_force_control_claims() {
+        let office = entity(21);
+        let record = entity(22);
+        let mut store = AgentBeliefStore::default();
+        record_claim(
+            &mut store,
+            InstitutionalBeliefKey::ForceControllerOf { office },
+            InstitutionalClaim::ForceControl {
+                office,
+                controller: None,
+                contested: true,
+                effective_tick: Tick(3),
+            },
+            record,
+            0,
+        );
+
+        assert_eq!(
+            summarize_institutional_read(
+                &store,
+                &InstitutionalBeliefKey::ForceControllerOf { office }
+            ),
+            InstitutionalBeliefReadSummary::ForceControllerCertain {
+                controller: None,
+                contested: true,
+            }
         );
     }
 
