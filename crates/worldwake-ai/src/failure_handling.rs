@@ -712,9 +712,10 @@ mod tests {
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
-        ActionStartFailureReason, CombatActionPayload, CraftActionPayload, DurationExpr,
-        InterruptReason, ReplanNeeded, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
-        ResolvedRequestTrace, RuntimeBeliefView, TradeActionPayload,
+        ActionStartFailureReason, CombatActionPayload, CraftActionPayload,
+        DeclareSupportActionPayload, DurationExpr, InterruptReason, ReplanNeeded,
+        RequestAttemptTrace, RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
+        RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -1024,6 +1025,24 @@ mod tests {
         }
     }
 
+    fn claim_office_goal(office: EntityId) -> GoalKey {
+        GoalKey::from(GoalKind::ClaimOffice { office })
+    }
+
+    fn declare_support_step(office: EntityId, candidate: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(6),
+            targets: Vec::new(),
+            payload_override: Some(ActionPayload::DeclareSupport(
+                DeclareSupportActionPayload { office, candidate },
+            )),
+            op_kind: PlannerOpKind::DeclareSupport,
+            estimated_ticks: 1,
+            is_materialization_barrier: true,
+            expected_materializations: Vec::new(),
+        }
+    }
+
     fn attack_step(target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(4),
@@ -1326,6 +1345,57 @@ mod tests {
         );
 
         assert_eq!(fact, BlockingFact::SellerOutOfStock);
+    }
+
+    #[test]
+    fn handle_plan_failure_keeps_stale_political_start_failures_on_shared_unknown_path() {
+        let agent = entity(1);
+        let place = entity(10);
+        let office = entity(20);
+        let goal = claim_office_goal(office);
+        let step = declare_support_step(office, agent);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, place);
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(6),
+            request: sample_request(6),
+            reason: ActionStartFailureReason::PreconditionFailed(
+                format!("office {office} is not vacant"),
+            ),
+        };
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut blocked = BlockedIntentMemory::default();
+        let budget = PlanningBudget::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: Some(ExecutionFailure::Start(&start_failure)),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut blocked,
+            &budget,
+        );
+
+        assert_eq!(runtime.current_plan, None);
+        assert!(runtime.dirty);
+        assert_eq!(blocked.intents.len(), 1);
+        assert_eq!(blocked.intents[0].blocking_fact, BlockingFact::Unknown);
+        assert_eq!(blocked.intents[0].related_entity, Some(office));
+        assert_eq!(blocked.intents[0].related_place, Some(place));
+        assert_eq!(
+            blocked.intents[0].expires_tick,
+            Tick(20 + u64::from(budget.transient_block_ticks))
+        );
     }
 
     #[test]

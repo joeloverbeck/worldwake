@@ -464,9 +464,9 @@ The GOAP plan search operates on `PlanningSnapshot` (immutable read-only state).
 
 S12 (completed after this spec was originally drafted) enables multi-hop travel-to-prerequisite plans. ConsultRecord integrates with this:
 
-1. When candidate generation detects `Unknown` institutional beliefs, it emits `GoalKind::ConsultRecord` candidates.
-2. If the relevant record is at a remote location, the plan search produces: `Travel(to record place) → ConsultRecord → Travel(back) → PoliticalAction`.
-3. `ConsultRecord` is registered as a `PlannerOpKind` with `may_appear_mid_plan: true` — it can serve as a prerequisite step in multi-step plans.
+1. When candidate generation detects `Unknown` institutional beliefs, it keeps the ordinary political goal family (`ClaimOffice` / `SupportCandidateForOffice`) but only when consultable record evidence makes the branch actionable.
+2. If the relevant record is at a remote location, the plan search produces a prerequisite chain inside the political plan: `Travel(to record place) → ConsultRecord → PoliticalAction`.
+3. `ConsultRecord` is registered as a `PlannerOpKind` with `may_appear_mid_plan: true` — it serves as a prerequisite step in multi-step plans, not as a standalone ranked goal family.
 4. `prerequisite_places()` for political goals returns the record's home place when the agent's institutional belief is `Unknown`.
 
 ## Phased Delivery (Reassessment Addition)
@@ -488,10 +488,10 @@ This spec is delivered in two phases:
 - `InstitutionalBeliefRead` derivation helpers on `AgentBeliefStore`
 - `PerAgentBeliefView` institutional methods backed by belief store (not live world)
 - `PlanningSnapshot` + `PlanningState` institutional belief fields
-- Candidate generation emits `ConsultRecord` when beliefs are `Unknown`, suppresses political action when `Conflicted`
-- `GoalKindTag::ConsultRecord` + `PlannerOpKind::ConsultRecord` with S12 integration
-- Ranking reduces motive for Conflicted beliefs
-- Failure handling adds `BlockingFact::InstitutionalBeliefStale` / `InstitutionalBeliefConflicted`
+- Candidate generation keeps ordinary political goal families, requires consultable-record evidence when beliefs are `Unknown`, and suppresses institution-sensitive action when beliefs are `Conflicted`
+- `PlannerOpKind::ConsultRecord` integrates with S12 as a mid-plan prerequisite step under political goals
+- Ranking continues to score only the surviving political goals after candidate-generation gating
+- Shared start-failure recovery remains generic; stale political retries are prevented by refreshed institutional beliefs and candidate omission on the next tick rather than new `BlockingFact` variants
 - Live helper seam removed (Principle 26)
 - Golden tests updated + new institutional belief scenarios
 
@@ -617,16 +617,15 @@ No remote institutional belief may appear without a witness, report, or consulte
 | File | Change |
 |------|--------|
 | `crates/worldwake-core/src/belief.rs` | add `believed_office_holder()`, `believed_factions_of()`, etc. derivation helpers |
-| `crates/worldwake-core/src/blocked_intent.rs` | add `BlockingFact::InstitutionalBeliefStale`, `InstitutionalBeliefConflicted` |
 | `crates/worldwake-sim/src/per_agent_belief_view.rs` | back institutional methods with belief store (replace `self.world.*` reads) |
 | `crates/worldwake-ai/src/planning_snapshot.rs` | add `actor_institutional_beliefs` field |
 | `crates/worldwake-ai/src/planning_state.rs` | add `institutional_belief_overrides`, implement institutional methods |
-| `crates/worldwake-ai/src/candidate_generation.rs` | emit `ConsultRecord` when Unknown, suppress when Conflicted |
-| `crates/worldwake-ai/src/goal_model.rs` | add `GoalKindTag::ConsultRecord`, implement `GoalKindPlannerExt` |
+| `crates/worldwake-ai/src/candidate_generation.rs` | gate ordinary political goals on institutional belief reads; require consultable-record evidence when `Unknown`, suppress when `Conflicted` |
+| `crates/worldwake-ai/src/goal_model.rs` | keep political goal families and integrate `ConsultRecord` as a prerequisite planning step |
 | `crates/worldwake-ai/src/planner_ops.rs` | add `PlannerOpKind::ConsultRecord` |
-| `crates/worldwake-ai/src/ranking.rs` | consume certainty/conflict, add ConsultRecord priority |
+| `crates/worldwake-ai/src/ranking.rs` | continue ranking surviving political goals after candidate-generation gating; no standalone consult-record ranking surface |
 | `crates/worldwake-ai/src/search.rs` | register ConsultRecord planner op, S12 prerequisite chains |
-| `crates/worldwake-ai/src/failure_handling.rs` | handle stale/conflicted beliefs as failure triggers |
+| `crates/worldwake-ai/src/failure_handling.rs` | preserve shared start-failure recovery for stale political starts; no institutional-specific blocker taxonomy |
 | `crates/worldwake-ai/tests/golden_offices.rs` | update existing + add institutional belief scenarios |
 
 ## Spec References
