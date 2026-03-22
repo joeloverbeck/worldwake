@@ -4,13 +4,13 @@
 **Scope**: `crates/worldwake-ai/tests/golden_*.rs`
 **Purpose**: Quick-reference coverage status for planning new spec coverage. For detailed scenario descriptions, see [golden-e2e-scenarios.md](golden-e2e-scenarios.md).
 **Conventions**: For assertion patterns and trace usage, see [golden-e2e-testing.md](golden-e2e-testing.md).
-**Inventory source**: The canonical mechanical inventory now lives in [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) and is regenerated/validated with `python3 scripts/golden_inventory.py --write --check-docs`. That command cross-checks the current `golden_*.rs` declarations against `cargo test -p worldwake-ai -- --list`.
+**Inventory source**: The canonical mechanical inventory now lives in [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md), and the canonical source-declared scenario-id map now lives in [generated/golden-scenario-map.md](generated/golden-scenario-map.md). Regenerate/validate both with `python3 scripts/golden_inventory.py --write --check-docs`. That command cross-checks the current `golden_*.rs` declarations against compiled `cargo test -p worldwake-ai --test ... -- --list` output.
 
 ---
 
 ## File Layout
 
-See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for the current per-file counts and the full `golden_*` name inventory. Keep this dashboard focused on coverage interpretation rather than duplicating the mechanical inventory by hand.
+See [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) for the current per-file counts and the full `golden_*` name inventory. See [generated/golden-scenario-map.md](generated/golden-scenario-map.md) for the live source-declared scenario identifiers, titles, and owning test blocks. Keep this dashboard focused on coverage interpretation rather than duplicating the mechanical inventory by hand.
 
 ---
 

@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 141
+- Total `golden_*` tests: 145
 
 ## Per-File Inventory
 
@@ -18,7 +18,7 @@ Do not hand-edit it.
 | `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 4 |
 | `golden_emergent.rs` | 24 |
-| `golden_offices.rs` | 13 |
+| `golden_offices.rs` | 17 |
 | `golden_production.rs` | 21 |
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 4 |
@@ -132,6 +132,10 @@ Do not hand-edit it.
 - `golden_travel_to_distant_jurisdiction_for_claim`
 - `golden_information_locality_for_political_facts`
 - `golden_information_locality_for_political_facts_replays_deterministically`
+- `golden_remote_record_consultation_political_action`
+- `golden_remote_record_consultation_political_action_replays_deterministically`
+- `golden_knowledge_asymmetry_race_informed_wins_office`
+- `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
 - `golden_survival_pressure_suppresses_political_goals`
 - `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 - `golden_faction_eligibility_filters_office_claim`
