@@ -535,8 +535,8 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
-        OfficeData, Permille, Seed, Tick, UtilityProfile, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        OfficeData, Permille, RecordData, RecordKind, Seed, Tick, UtilityProfile,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, DeterministicRng, ForceCandidateTrace, OfficeAvailabilityPhase,
@@ -594,6 +594,33 @@ mod tests {
         .unwrap();
     }
 
+    fn create_record(
+        txn: &mut WorldTxn<'_>,
+        place: EntityId,
+        issuer: EntityId,
+        kind: RecordKind,
+    ) -> EntityId {
+        txn.create_record(RecordData {
+            record_kind: kind,
+            home_place: place,
+            issuer,
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap()
+    }
+
+    fn record_at_place(world: &World, place: EntityId, kind: RecordKind) -> RecordData {
+        world
+            .query_record_data()
+            .find_map(|(_, record)| {
+                (record.home_place == place && record.record_kind == kind).then_some(record.clone())
+            })
+            .expect("fixture should provision the requested record")
+    }
+
     struct Fixture {
         world: World,
         place: EntityId,
@@ -620,7 +647,6 @@ mod tests {
                 }
                 txn.add_member(candidate_a, faction).unwrap();
                 txn.add_member(candidate_b, faction).unwrap();
-                txn.assign_office(office, holder).unwrap();
                 txn.set_component_office_data(
                     office,
                     OfficeData {
@@ -635,6 +661,9 @@ mod tests {
                     },
                 )
                 .unwrap();
+                let _ = create_record(&mut txn, place, holder, RecordKind::OfficeRegister);
+                let _ = create_record(&mut txn, place, holder, RecordKind::SupportLedger);
+                txn.assign_office(office, holder).unwrap();
                 txn.set_component_utility_profile(holder, UtilityProfile::default())
                     .unwrap();
                 txn.set_component_utility_profile(candidate_a, UtilityProfile::default())
@@ -705,6 +734,9 @@ mod tests {
         let office_data = fx.world.get_component_office_data(fx.office).unwrap();
         assert_eq!(office_data.vacancy_since, Some(Tick(3)));
         assert_eq!(fx.world.office_holder(fx.office), None);
+        let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        assert_eq!(register.entries.len(), 2);
+        assert_eq!(register.entries[1].supersedes, Some(register.entries[0].entry_id));
         let record = event_log
             .get(event_log.events_by_tag(EventTag::Political)[0])
             .unwrap();
@@ -820,6 +852,9 @@ mod tests {
         run_succession(&mut fx.world, &mut event_log, 6);
 
         assert_eq!(fx.world.office_holder(fx.office), Some(fx.candidate_a));
+        let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
+        assert_eq!(register.entries.len(), 3);
+        assert_eq!(register.entries[2].supersedes, Some(register.entries[1].entry_id));
         assert_eq!(
             fx.world
                 .get_component_office_data(fx.office)

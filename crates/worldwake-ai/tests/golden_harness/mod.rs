@@ -20,9 +20,10 @@ use worldwake_core::{
     EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
     FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
     MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource, Permille, PrototypePlace,
-    Quantity, RecipeId, RelationDelta, RelationValue, ResourceSource, Seed, StateDelta,
-    SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    Quantity, RecipeId, RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource,
+    Seed, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
+    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+    WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -638,6 +639,24 @@ pub fn seed_office(
         },
     )
     .unwrap();
+    for kind in [RecordKind::OfficeRegister, RecordKind::SupportLedger] {
+        let exists = txn.query_record_data().any(|(_, record)| {
+            record.record_kind == kind && record.home_place == jurisdiction
+        });
+        if !exists {
+            let _ = txn
+                .create_record(RecordData {
+                    record_kind: kind,
+                    home_place: jurisdiction,
+                    issuer: jurisdiction,
+                    consultation_ticks: 4,
+                    max_entries_per_consult: 6,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                })
+                .unwrap();
+        }
+    }
     commit_txn(txn, event_log);
     office
 }

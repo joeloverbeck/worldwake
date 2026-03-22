@@ -1,8 +1,9 @@
 use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
-    EntityId, EntityKind, EventId, InstitutionalBeliefKey, LotOperation, Permille, Quantity,
-    RecordData, RecordEntryId, ReservationId, Tick, TickRange, UniqueItemKind, World, WorldError,
+    EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LotOperation,
+    Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId, Tick, TickRange,
+    UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
@@ -725,10 +726,15 @@ impl<'w> WorldTxn<'w> {
         candidate: EntityId,
     ) -> Result<(), WorldError> {
         let before = self.staged_world.support_declaration(supporter, office);
+        let record_update =
+            self.prepare_support_declaration_record_update(office, supporter, candidate, before)?;
         self.staged_world
             .declare_support(supporter, office, candidate)?;
         let after = self.staged_world.support_declaration(supporter, office);
         self.push_support_declaration_delta(supporter, office, before, after);
+        if before != after {
+            self.apply_record_update(record_update)?;
+        }
         Ok(())
     }
 
@@ -758,9 +764,10 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn assign_office(&mut self, office: EntityId, holder: EntityId) -> Result<(), WorldError> {
-        let before = self.staged_world.office_holder(office);
+        let before = self.staged_world.authoritative_office_holder(office);
+        let record_update = self.prepare_office_holder_record_update(office, Some(holder), before)?;
         self.staged_world.assign_office(office, holder)?;
-        let after = self.staged_world.office_holder(office);
+        let after = self.staged_world.authoritative_office_holder(office);
         self.push_single_target_relation_delta(
             office,
             before,
@@ -768,13 +775,17 @@ impl<'w> WorldTxn<'w> {
             RelationKind::OfficeHolder,
             |office, holder| RelationValue::OfficeHolder { office, holder },
         );
+        if before != after {
+            self.apply_record_update(record_update)?;
+        }
         Ok(())
     }
 
     pub fn vacate_office(&mut self, office: EntityId) -> Result<(), WorldError> {
-        let before = self.staged_world.office_holder(office);
+        let before = self.staged_world.authoritative_office_holder(office);
+        let record_update = self.prepare_office_holder_record_update(office, None, before)?;
         self.staged_world.vacate_office(office)?;
-        let after = self.staged_world.office_holder(office);
+        let after = self.staged_world.authoritative_office_holder(office);
         self.push_single_target_relation_delta(
             office,
             before,
@@ -782,6 +793,9 @@ impl<'w> WorldTxn<'w> {
             RelationKind::OfficeHolder,
             |office, holder| RelationValue::OfficeHolder { office, holder },
         );
+        if before != after {
+            self.apply_record_update(record_update)?;
+        }
         Ok(())
     }
 
@@ -1489,6 +1503,153 @@ impl<'w> WorldTxn<'w> {
                 }));
         }
     }
+
+    fn prepare_office_holder_record_update(
+        &self,
+        office: EntityId,
+        holder: Option<EntityId>,
+        before: Option<EntityId>,
+    ) -> Result<Option<PendingRecordUpdate>, WorldError> {
+        if before == holder {
+            return Ok(None);
+        }
+        let Some(office_data) = self.get_component_office_data(office) else {
+            return Ok(None);
+        };
+        let claim = InstitutionalClaim::OfficeHolder {
+            office,
+            holder,
+            effective_tick: self.tick,
+        };
+        let record = self.require_unique_record_at_place(
+            office_data.jurisdiction,
+            RecordKind::OfficeRegister,
+        )?;
+        let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
+            matches!(
+                existing,
+                InstitutionalClaim::OfficeHolder {
+                    office: existing_office,
+                    ..
+                } if *existing_office == office
+            )
+        })?;
+        Ok(Some(PendingRecordUpdate {
+            record,
+            claim,
+            superseded_entry,
+        }))
+    }
+
+    fn prepare_support_declaration_record_update(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+        candidate: EntityId,
+        before: Option<EntityId>,
+    ) -> Result<Option<PendingRecordUpdate>, WorldError> {
+        if before == Some(candidate) {
+            return Ok(None);
+        }
+        let office_data = self
+            .get_component_office_data(office)
+            .ok_or(WorldError::ComponentNotFound {
+                entity: office,
+                component_type: "OfficeData",
+            })?;
+        let claim = InstitutionalClaim::SupportDeclaration {
+            office,
+            supporter,
+            candidate: Some(candidate),
+            effective_tick: self.tick,
+        };
+        let record = self.require_unique_record_at_place(
+            office_data.jurisdiction,
+            RecordKind::SupportLedger,
+        )?;
+        let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
+            matches!(
+                existing,
+                InstitutionalClaim::SupportDeclaration {
+                    office: existing_office,
+                    supporter: existing_supporter,
+                    ..
+                } if *existing_office == office && *existing_supporter == supporter
+            )
+        })?;
+        Ok(Some(PendingRecordUpdate {
+            record,
+            claim,
+            superseded_entry,
+        }))
+    }
+
+    fn apply_record_update(&mut self, update: Option<PendingRecordUpdate>) -> Result<(), WorldError> {
+        let Some(update) = update else {
+            return Ok(());
+        };
+        if let Some(entry_id) = update.superseded_entry {
+            let _ = self.supersede_record_entry(update.record, entry_id, update.claim)?;
+        } else {
+            let _ = self.append_record_entry(update.record, update.claim)?;
+        }
+        Ok(())
+    }
+
+    fn require_unique_record_at_place(
+        &self,
+        place: EntityId,
+        kind: RecordKind,
+    ) -> Result<EntityId, WorldError> {
+        let matches = self
+            .query_record_data()
+            .filter_map(|(entity, record)| {
+                (record.home_place == place && record.record_kind == kind).then_some(entity)
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => Err(WorldError::InvalidOperation(format!(
+                "missing {kind:?} record at place {place:?}"
+            ))),
+            [record] => Ok(*record),
+            _ => Err(WorldError::InvalidOperation(format!(
+                "multiple {kind:?} records at place {place:?}"
+            ))),
+        }
+    }
+
+    fn find_unique_active_record_entry(
+        &self,
+        record: EntityId,
+        predicate: impl Fn(&InstitutionalClaim) -> bool,
+    ) -> Result<Option<RecordEntryId>, WorldError> {
+        let record_data = self
+            .get_component_record_data(record)
+            .ok_or(WorldError::ComponentNotFound {
+                entity: record,
+                component_type: "RecordData",
+            })?;
+        let matches = record_data
+            .active_entries()
+            .into_iter()
+            .filter(|entry| predicate(&entry.claim))
+            .map(|entry| entry.entry_id)
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => Ok(None),
+            [entry_id] => Ok(Some(*entry_id)),
+            _ => Err(WorldError::InvalidOperation(format!(
+                "multiple active record entries matched in record {record:?}"
+            ))),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct PendingRecordUpdate {
+    record: EntityId,
+    claim: InstitutionalClaim,
+    superseded_entry: Option<RecordEntryId>,
 }
 
 impl Deref for WorldTxn<'_> {
@@ -1709,6 +1870,49 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn create_record_at_place(
+        world: &mut World,
+        tick: u64,
+        place: EntityId,
+        issuer: EntityId,
+        kind: RecordKind,
+    ) -> EntityId {
+        world
+            .create_record(
+                RecordData {
+                    record_kind: kind,
+                    home_place: place,
+                    issuer,
+                    consultation_ticks: 4,
+                    max_entries_per_consult: 6,
+                    entries: Vec::new(),
+                    next_entry_id: 0,
+                },
+                Tick(tick),
+            )
+            .unwrap()
+    }
+
+    fn configure_institutional_office(
+        world: &mut World,
+        office: EntityId,
+        place: EntityId,
+    ) {
+        world
+            .insert_component_office_data(
+                office,
+                OfficeData {
+                    title: "Chair".to_string(),
+                    jurisdiction: place,
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: Some(Tick(1)),
+                },
+            )
+            .unwrap();
     }
 
     macro_rules! define_txn_simple_set_component_kinds {
@@ -2534,6 +2738,7 @@ mod tests {
     #[test]
     fn support_declaration_wrappers_record_add_overwrite_and_clear_deltas() {
         let mut world = World::new(test_topology()).unwrap();
+        let place = entity(5);
         let supporter = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
@@ -2544,50 +2749,98 @@ mod tests {
         let candidate_b = world
             .create_agent("Cato", ControlSource::Human, Tick(4))
             .unwrap();
+        configure_institutional_office(&mut world, office, place);
+        let support_ledger =
+            create_record_at_place(&mut world, 1, place, supporter, RecordKind::SupportLedger);
 
         let mut add_txn = new_txn(&mut world);
         add_txn
             .declare_support(supporter, office, candidate_a)
             .unwrap();
-        assert_eq!(
-            add_txn.deltas(),
-            &[StateDelta::Relation(RelationDelta::Added {
+        assert!(add_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
                 relation_kind: RelationKind::SupportDeclaration,
                 relation: RelationValue::SupportDeclaration {
-                    supporter,
-                    office,
-                    candidate: candidate_a,
+                    supporter: actual_supporter,
+                    office: actual_office,
+                    candidate: actual_candidate,
                 },
-            })]
-        );
+            }) if *actual_supporter == supporter
+                && *actual_office == office
+                && *actual_candidate == candidate_a
+        )));
+        assert!(add_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::RecordData,
+                ..
+            }) if *entity == support_ledger
+        )));
         commit_txn(add_txn);
+        let after_add = world.get_component_record_data(support_ledger).unwrap();
+        assert_eq!(after_add.entries.len(), 1);
+        assert_eq!(
+            after_add.entries[0].claim,
+            InstitutionalClaim::SupportDeclaration {
+                office,
+                supporter,
+                candidate: Some(candidate_a),
+                effective_tick: Tick(9),
+            }
+        );
 
         let mut overwrite_txn = new_txn(&mut world);
         overwrite_txn
             .declare_support(supporter, office, candidate_b)
             .unwrap();
-        assert_eq!(
-            overwrite_txn.deltas(),
-            &[
-                StateDelta::Relation(RelationDelta::Removed {
+        assert!(overwrite_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Removed {
                     relation_kind: RelationKind::SupportDeclaration,
                     relation: RelationValue::SupportDeclaration {
-                        supporter,
-                        office,
-                        candidate: candidate_a,
+                        supporter: actual_supporter,
+                        office: actual_office,
+                        candidate: actual_candidate,
                     },
-                }),
-                StateDelta::Relation(RelationDelta::Added {
+                }) if *actual_supporter == supporter
+                    && *actual_office == office
+                    && *actual_candidate == candidate_a
+        )));
+        assert!(overwrite_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Relation(RelationDelta::Added {
                     relation_kind: RelationKind::SupportDeclaration,
                     relation: RelationValue::SupportDeclaration {
-                        supporter,
-                        office,
-                        candidate: candidate_b,
+                        supporter: actual_supporter,
+                        office: actual_office,
+                        candidate: actual_candidate,
                     },
-                }),
-            ]
-        );
+                }) if *actual_supporter == supporter
+                    && *actual_office == office
+                    && *actual_candidate == candidate_b
+        )));
+        assert!(overwrite_txn.deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Component(ComponentDelta::Set {
+                entity,
+                component_kind: ComponentKind::RecordData,
+                ..
+            }) if *entity == support_ledger
+        )));
         commit_txn(overwrite_txn);
+        let after_overwrite = world.get_component_record_data(support_ledger).unwrap();
+        assert_eq!(after_overwrite.entries.len(), 2);
+        assert_eq!(after_overwrite.entries[1].supersedes, Some(RecordEntryId(0)));
+        assert_eq!(
+            after_overwrite
+                .active_entries()
+                .into_iter()
+                .map(|entry| entry.entry_id)
+                .collect::<Vec<_>>(),
+            vec![RecordEntryId(1)]
+        );
 
         let mut clear_txn = new_txn(&mut world);
         clear_txn
@@ -2604,6 +2857,88 @@ mod tests {
                 },
             })]
         );
+    }
+
+    #[test]
+    fn office_assignment_records_register_entries_atomically() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(5);
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let office = world.create_office("Chair", Tick(2)).unwrap();
+        configure_institutional_office(&mut world, office, place);
+        let register =
+            create_record_at_place(&mut world, 1, place, holder, RecordKind::OfficeRegister);
+
+        let mut assign_txn = new_txn(&mut world);
+        assign_txn.assign_office(office, holder).unwrap();
+        commit_txn(assign_txn);
+
+        let after_assign = world.get_component_record_data(register).unwrap();
+        assert_eq!(after_assign.entries.len(), 1);
+        assert_eq!(
+            after_assign.entries[0].claim,
+            InstitutionalClaim::OfficeHolder {
+                office,
+                holder: Some(holder),
+                effective_tick: Tick(9),
+            }
+        );
+        assert_eq!(world.office_holder(office), Some(holder));
+
+        let mut vacate_txn = new_txn(&mut world);
+        vacate_txn.vacate_office(office).unwrap();
+        commit_txn(vacate_txn);
+
+        let after_vacate = world.get_component_record_data(register).unwrap();
+        assert_eq!(after_vacate.entries.len(), 2);
+        assert_eq!(after_vacate.entries[1].supersedes, Some(RecordEntryId(0)));
+        assert_eq!(
+            after_vacate.entries[1].claim,
+            InstitutionalClaim::OfficeHolder {
+                office,
+                holder: None,
+                effective_tick: Tick(9),
+            }
+        );
+        assert_eq!(
+            after_vacate
+                .active_entries()
+                .into_iter()
+                .map(|entry| entry.entry_id)
+                .collect::<Vec<_>>(),
+            vec![RecordEntryId(1)]
+        );
+        assert_eq!(world.office_holder(office), None);
+    }
+
+    #[test]
+    fn institutional_mutation_requires_matching_record() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(5);
+        let supporter = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let candidate = world
+            .create_agent("Bram", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let office = world.create_office("Chair", Tick(3)).unwrap();
+        configure_institutional_office(&mut world, office, place);
+
+        let mut support_txn = new_txn(&mut world);
+        let support_err = support_txn
+            .declare_support(supporter, office, candidate)
+            .unwrap_err();
+        assert!(matches!(support_err, WorldError::InvalidOperation(_)));
+        assert_eq!(support_txn.deltas(), &[]);
+        assert_eq!(world.support_declaration(supporter, office), None);
+
+        let mut office_txn = new_txn(&mut world);
+        let office_err = office_txn.assign_office(office, candidate).unwrap_err();
+        assert!(matches!(office_err, WorldError::InvalidOperation(_)));
+        assert_eq!(office_txn.deltas(), &[]);
+        assert_eq!(world.office_holder(office), None);
     }
 
     #[test]

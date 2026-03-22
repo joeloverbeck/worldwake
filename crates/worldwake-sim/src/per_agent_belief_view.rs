@@ -874,9 +874,9 @@ mod tests {
         BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
         CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
         FactionPurpose, MerchandiseProfile, OfficeData, PerceptionProfile, Permille, Quantity,
-        RecipientKnowledgeStatus, ResourceSource, SuccessionLaw, TellMemoryKey, Tick,
-        ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        RecordData, RecordKind, RecipientKnowledgeStatus, ResourceSource, SuccessionLaw,
+        TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -938,6 +938,25 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         )
+    }
+
+    fn create_record(
+        txn: &mut WorldTxn<'_>,
+        place: worldwake_core::EntityId,
+        issuer: worldwake_core::EntityId,
+        kind: RecordKind,
+    ) {
+        let _ = txn
+            .create_record(RecordData {
+                record_kind: kind,
+                home_place: place,
+                issuer,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
     }
 
     fn commit_txn(txn: WorldTxn<'_>) {
@@ -1657,10 +1676,6 @@ mod tests {
             txn.set_ground_location(holder, place).unwrap();
             txn.add_member(agent, faction).unwrap();
             txn.add_member(holder, faction).unwrap();
-            txn.set_loyalty(agent, holder, Permille::new(620).unwrap())
-                .unwrap();
-            txn.assign_office(office, holder).unwrap();
-            txn.declare_support(agent, office, holder).unwrap();
             txn.set_component_office_data(
                 office,
                 OfficeData {
@@ -1675,6 +1690,12 @@ mod tests {
                 },
             )
             .unwrap();
+            create_record(&mut txn, place, agent, RecordKind::OfficeRegister);
+            create_record(&mut txn, place, agent, RecordKind::SupportLedger);
+            txn.set_loyalty(agent, holder, Permille::new(620).unwrap())
+                .unwrap();
+            txn.assign_office(office, holder).unwrap();
+            txn.declare_support(agent, office, holder).unwrap();
             txn.set_component_faction_data(
                 faction,
                 FactionData {
@@ -1962,6 +1983,7 @@ mod tests {
                 },
             )
             .unwrap();
+            create_record(&mut txn, place, agent, RecordKind::SupportLedger);
             txn.declare_support(agent, office, holder).unwrap();
             txn.declare_support(other, office, holder).unwrap();
             commit_txn(txn);

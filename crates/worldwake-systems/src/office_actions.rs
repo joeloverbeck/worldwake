@@ -781,8 +781,8 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
         CauseRef, CombatProfile, CommodityKind, ControlSource, EligibilityRule, EntityId, EventLog,
-        EventTag, EventView, OfficeData, Permille, Quantity, Seed, SuccessionLaw, Tick,
-        UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        EventTag, EventView, OfficeData, Permille, Quantity, RecordData, RecordKind, Seed,
+        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
@@ -828,6 +828,33 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let ids = register_office_actions(&mut defs, &mut handlers);
         (defs, handlers, ids)
+    }
+
+    fn create_record(
+        txn: &mut WorldTxn<'_>,
+        place: EntityId,
+        issuer: EntityId,
+        kind: RecordKind,
+    ) -> EntityId {
+        txn.create_record(RecordData {
+            record_kind: kind,
+            home_place: place,
+            issuer,
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap()
+    }
+
+    fn record_at_place(world: &World, place: EntityId, kind: RecordKind) -> RecordData {
+        world
+            .query_record_data()
+            .find_map(|(_, record)| {
+                (record.home_place == place && record.record_kind == kind).then_some(record.clone())
+            })
+            .expect("fixture should provision the requested record")
     }
 
     struct SocialFixture {
@@ -885,6 +912,8 @@ mod tests {
                     },
                 )
                 .unwrap();
+                let _ = create_record(&mut txn, place, actor, RecordKind::OfficeRegister);
+                let _ = create_record(&mut txn, place, actor, RecordKind::SupportLedger);
                 txn.add_member(candidate, faction).unwrap();
                 txn.set_component_utility_profile(
                     target,
@@ -1432,12 +1461,17 @@ mod tests {
             fx.world.support_declaration(fx.actor, fx.office),
             Some(fx.candidate)
         );
+        let after_first = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
+        assert_eq!(after_first.entries.len(), 1);
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, ids[2], &second, 7, 4);
         assert_eq!(
             fx.world.support_declaration(fx.actor, fx.office),
             Some(second_candidate)
         );
+        let after_second = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
+        assert_eq!(after_second.entries.len(), 2);
+        assert_eq!(after_second.entries[1].supersedes, Some(after_second.entries[0].entry_id));
     }
 
     #[test]
