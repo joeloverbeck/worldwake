@@ -26,6 +26,7 @@ The current architecture has a narrow runtime seam where AI reads live office/fa
 12. Additional live-code clarification after ticket `-006`: witness acquisition now exists in `crates/worldwake-systems/src/perception.rs`, so the remaining architecture gap is no longer acquisition for visible political events; it is the AI-side cutover off the live helper seam.
 13. Additional live-code clarification after ticket `-008`: Tell now relays institutional claims for entity subjects through conversation memory into `institutional_beliefs`, so social institutional propagation is no longer the blocker. The remaining gap is removal of the AI-side live helper seam and migration of remaining political callers/goldens onto the belief-backed path.
 14. Mismatch + correction: this ticket should not invent autonomous consult behavior during cutover. It should assume `-011` and `-012` are complete first, then remove the live helper seam and migrate goldens onto the new belief/consult substrate.
+15. Additional architectural note: the seam is not only the `PerAgentBeliefView` implementation. `crates/worldwake-sim/src/belief_view.rs` still exposes trait methods named `office_holder`, `factions_of`, `support_declaration`, and `support_declarations_for_office`. After all AI callers migrate, this ticket should either delete those public-institutional trait methods or narrow them so the old omniscient query shape cannot be reintroduced through another runtime belief-view implementation.
 
 ## Architecture Check
 
@@ -88,6 +89,12 @@ Also verify the legacy planning snapshot fields are gone:
 - `actor_support_declarations`
 - `office_support_declarations`
 
+Also verify the legacy trait seam is gone or intentionally narrowed:
+- `fn office_holder(` in `crates/worldwake-sim/src/belief_view.rs`
+- `fn factions_of(` in `crates/worldwake-sim/src/belief_view.rs`
+- `fn support_declaration(` in `crates/worldwake-sim/src/belief_view.rs`
+- `fn support_declarations_for_office(` in `crates/worldwake-sim/src/belief_view.rs`
+
 ## Files to Touch
 
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — replace live reads with belief store reads)
@@ -116,7 +123,8 @@ Also verify the legacy planning snapshot fields are gone:
 5. New golden test: agent with Unknown belief seeks ConsultRecord before political action
 6. Workspace grep for live institutional reads in AI modules returns zero hits
 7. `PerAgentBeliefView` institutional methods return belief-derived results, not live truth, for office holder, faction membership, and support declarations
-8. Existing suite: `cargo test --workspace`
+8. The old trait-level institutional helper seam in `crates/worldwake-sim/src/belief_view.rs` is removed or narrowed so omniscient public-institutional reads cannot be reintroduced accidentally
+9. Existing suite: `cargo test --workspace`
 
 ### Invariants
 

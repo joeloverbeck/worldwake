@@ -24,6 +24,7 @@ The AI candidate generation layer must emit `GoalKind::ConsultRecord` candidates
 10. ConsultRecord candidates should only be emitted when: (a) the agent has a plausible political goal, (b) the required institutional belief is Unknown, (c) a record of the right kind is known to exist. This prevents agents from randomly consulting records they have no use for.
 11. Mismatch + correction: current code in `crates/worldwake-ai/src/candidate_generation.rs` still calls `ctx.view.office_holder()` and `ctx.view.support_declaration()` in the political candidate path. This ticket should migrate those candidate-generation reads onto the new institutional-belief-backed planning/snapshot queries as soon as tickets `-009` and `-010` land; it must not add more logic on top of the legacy live-helper path.
 12. Additional live-code clarification after ticket `-008`: Tell-side institutional propagation for entity subjects now exists, so the remaining blocker here is no longer "can institutional facts arrive socially?" It is "does candidate generation consume the new institutional-belief substrate instead of the live helper seam?"
+13. Additional migration note: once ticket `-010` lands, this ticket should treat `PlanningSnapshot` / `PlanningState` as the only acceptable institutional read surface for political candidate generation. Do not retain `GoalBeliefView::office_holder()` / `support_declaration()` as fallback reads for "transitional" behavior; ticket `-014` owns the final trait-seam deletion, but this ticket should stop consuming it.
 
 ## Architecture Check
 
@@ -92,6 +93,7 @@ A function that, given an `InstitutionalBeliefKey` that is `Unknown`, looks up w
 1. No political candidate generated when required institutional belief is Unknown or Conflicted
 2. ConsultRecord candidates only emitted when a relevant record is known to exist
 3. Candidate generation reads institutional beliefs from PlanningSnapshot, not live world
+4. Candidate generation does not add any new dependence on legacy institutional methods on `GoalBeliefView`
 
 ## Test Plan
 

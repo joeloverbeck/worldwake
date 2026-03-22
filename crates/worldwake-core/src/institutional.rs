@@ -408,7 +408,7 @@ mod tests {
 
         match support_claim {
             InstitutionalClaim::SupportDeclaration { candidate, .. } => {
-                assert_eq!(candidate, None)
+                assert_eq!(candidate, None);
             }
             other => panic!("expected support declaration claim, got {other:?}"),
         }

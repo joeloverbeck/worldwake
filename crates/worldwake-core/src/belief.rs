@@ -2,11 +2,11 @@
 
 use crate::{
     BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, Tick,
-    WorkstationTag, World, Wound,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
+    Quantity, ResourceSource, Tick, WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Per-agent subjective view of observed entities and social evidence.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -235,6 +235,97 @@ impl AgentBeliefStore {
             .collect()
     }
 
+    #[must_use]
+    pub fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::OfficeHolder {
+                    office: claim_office,
+                    holder,
+                    ..
+                } if *claim_office == office => Some(*holder),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::FactionMembersOf { faction })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::FactionMembership {
+                    faction: claim_faction,
+                    member: claim_member,
+                    active,
+                    ..
+                } if *claim_faction == faction && *claim_member == member => Some(*active),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::SupportFor { supporter, office })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::SupportDeclaration {
+                    office: claim_office,
+                    supporter: claim_supporter,
+                    candidate,
+                    ..
+                } if *claim_office == office && *claim_supporter == supporter => Some(*candidate),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        self.institutional_beliefs
+            .iter()
+            .filter_map(|(key, _)| match *key {
+                InstitutionalBeliefKey::SupportFor {
+                    supporter,
+                    office: belief_office,
+                } if belief_office == office => Some(supporter),
+                _ => None,
+            })
+            .filter_map(|supporter| {
+                let read = self.believed_support_declaration(office, supporter);
+                match read {
+                    InstitutionalBeliefRead::Unknown => None,
+                    _ => Some((supporter, read)),
+                }
+            })
+            .collect()
+    }
+
     fn enforce_institutional_capacity(&mut self, profile: &PerceptionProfile) {
         let capacity = profile.institutional_memory_capacity as usize;
         if capacity == 0 {
@@ -282,6 +373,32 @@ impl AgentBeliefStore {
 }
 
 impl Component for AgentBeliefStore {}
+
+fn derive_institutional_read<'a, T>(
+    beliefs: impl IntoIterator<Item = BelievedInstitutionalClaimRef<'a>>,
+    extract: impl Fn(&InstitutionalClaim) -> Option<T>,
+) -> InstitutionalBeliefRead<T>
+where
+    T: Copy + Ord,
+{
+    let values = beliefs
+        .into_iter()
+        .filter_map(|belief| extract(&belief.claim))
+        .collect::<BTreeSet<_>>();
+
+    match values.len() {
+        0 => InstitutionalBeliefRead::Unknown,
+        1 => InstitutionalBeliefRead::Certain(
+            *values
+                .iter()
+                .next()
+                .expect("single-value institutional belief read should contain a value"),
+        ),
+        _ => InstitutionalBeliefRead::Conflicted(values.into_iter().collect()),
+    }
+}
+
+type BelievedInstitutionalClaimRef<'a> = &'a BelievedInstitutionalClaim;
 
 /// Snapshot of what an agent believes about a specific entity.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -683,9 +800,9 @@ mod tests {
     };
     use crate::{
         build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
-        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, Permille, Quantity, Tick, World, Wound, WoundCause, WoundId,
-        WoundList,
+        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
+        Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -833,6 +950,47 @@ mod tests {
             source,
             learned_tick: Tick(learned_tick),
             learned_at: Some(entity(9)),
+        }
+    }
+
+    fn membership_belief(
+        faction: u32,
+        member: u32,
+        active: bool,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::FactionMembership {
+                faction: entity(faction),
+                member: entity(member),
+                active,
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(11)),
+        }
+    }
+
+    fn support_belief(
+        office: u32,
+        supporter: u32,
+        candidate: Option<u32>,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office: entity(office),
+                supporter: entity(supporter),
+                candidate: candidate.map(entity),
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(12),
+                entry_id: crate::RecordEntryId(learned_tick),
+            },
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(13)),
         }
     }
 
@@ -1037,6 +1195,177 @@ mod tests {
         );
 
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn believed_office_holder_returns_unknown_when_absent() {
+        let store = AgentBeliefStore::new();
+
+        assert_eq!(
+            store.believed_office_holder(entity(70)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_collapses_agreeing_claims_and_preserves_vacancy() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(71);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![
+                office_holder_belief(
+                    71,
+                    None,
+                    InstitutionalKnowledgeSource::WitnessedEvent,
+                    4,
+                ),
+                office_holder_belief(
+                    71,
+                    None,
+                    InstitutionalKnowledgeSource::Report {
+                        from: entity(72),
+                        chain_len: 1,
+                    },
+                    7,
+                ),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_returns_conflicted_for_distinct_holders() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(73);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            vec![
+                office_holder_belief(73, Some(74), InstitutionalKnowledgeSource::WitnessedEvent, 5),
+                office_holder_belief(
+                    73,
+                    Some(75),
+                    InstitutionalKnowledgeSource::SelfDeclaration,
+                    8,
+                ),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_office_holder(office),
+            InstitutionalBeliefRead::Conflicted(vec![Some(entity(74)), Some(entity(75))])
+        );
+    }
+
+    #[test]
+    fn believed_membership_filters_to_the_queried_member() {
+        let mut store = AgentBeliefStore::new();
+        let faction = entity(80);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionMembersOf { faction },
+            vec![
+                membership_belief(80, 81, true, 3),
+                membership_belief(80, 82, false, 4),
+                membership_belief(80, 81, true, 6),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_membership(faction, entity(81)),
+            InstitutionalBeliefRead::Certain(true)
+        );
+        assert_eq!(
+            store.believed_membership(faction, entity(82)),
+            InstitutionalBeliefRead::Certain(false)
+        );
+        assert_eq!(
+            store.believed_membership(faction, entity(83)),
+            InstitutionalBeliefRead::Unknown
+        );
+    }
+
+    #[test]
+    fn believed_membership_returns_conflicted_for_same_member_with_distinct_values() {
+        let mut store = AgentBeliefStore::new();
+        let faction = entity(84);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionMembersOf { faction },
+            vec![membership_belief(84, 85, true, 2), membership_belief(84, 85, false, 5)],
+        );
+
+        assert_eq!(
+            store.believed_membership(faction, entity(85)),
+            InstitutionalBeliefRead::Conflicted(vec![false, true])
+        );
+    }
+
+    #[test]
+    fn believed_support_declaration_ignores_malformed_claims_under_matching_key() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(90);
+        let supporter = entity(91);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor { supporter, office },
+            vec![
+                office_holder_belief(
+                    90,
+                    Some(99),
+                    InstitutionalKnowledgeSource::WitnessedEvent,
+                    2,
+                ),
+                support_belief(90, 91, Some(92), 6),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_support_declaration(office, supporter),
+            InstitutionalBeliefRead::Certain(Some(entity(92)))
+        );
+    }
+
+    #[test]
+    fn believed_support_declarations_for_office_groups_reads_by_supporter() {
+        let mut store = AgentBeliefStore::new();
+        let office = entity(100);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(101),
+                office,
+            },
+            vec![support_belief(100, 101, Some(103), 3)],
+        );
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(102),
+                office,
+            },
+            vec![support_belief(100, 102, Some(104), 4), support_belief(100, 102, None, 7)],
+        );
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::SupportFor {
+                supporter: entity(105),
+                office: entity(106),
+            },
+            vec![support_belief(106, 105, Some(107), 5)],
+        );
+
+        assert_eq!(
+            store.believed_support_declarations_for_office(office),
+            vec![
+                (
+                    entity(101),
+                    InstitutionalBeliefRead::Certain(Some(entity(103))),
+                ),
+                (
+                    entity(102),
+                    InstitutionalBeliefRead::Conflicted(vec![None, Some(entity(104))]),
+                ),
+            ]
+        );
     }
 
     #[test]

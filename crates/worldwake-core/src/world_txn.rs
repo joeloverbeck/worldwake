@@ -2736,6 +2736,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn support_declaration_wrappers_record_add_overwrite_and_clear_deltas() {
         let mut world = World::new(test_topology()).unwrap();
         let place = entity(5);
