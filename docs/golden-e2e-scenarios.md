@@ -684,15 +684,15 @@ Every active golden test uses the real AI loop (`AgentTickDriver` + `AutonomousC
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 **File**: `golden_offices.rs` | **Test**: `golden_threaten_with_courage_diversity`
-**Systems exercised**: Threaten (courage comparison → yield/resist), Succession (support counting, coalition majority, installation), AI (candidate generation for ClaimOffice, coalition-aware GOAP planning with Threaten + DeclareSupport, SupportCandidateForOffice from threat-induced loyalty), Agent diversity (Principle 20)
+**Systems exercised**: Threaten (courage comparison → yield/resist), AI political follow-through (ClaimOffice, DeclareSupport, SupportCandidateForOffice availability), Agent diversity (Principle 20)
 **Setup**: Vacant office (Support law, period=5). Agent A (attack_skill=pm(800), enterprise_weight=pm(900)) at VillageSquare. Agent B (courage=pm(200), social_weight=pm(600)) at VillageSquare — should yield. Agent C (courage=pm(900), social_weight=pm(600)) at VillageSquare — should resist. Agent D (competitor, enterprise_weight=pm(800)) at OrchardFarm — already self-declared support, creates contested scenario. D placed at different location so planner cannot target D with Threaten.
 **Emergent behavior proven**:
-- A generates ClaimOffice goal. DeclareSupport alone would tie with D (ProgressBarrier). Coalition-aware planner finds Threaten(B) viable (800 > 200) but not Threaten(C) (800 < 900).
-- A threatens B → B yields → loyalty increase. B autonomously generates SupportCandidateForOffice(A).
-- A's coalition (self + B = 2) exceeds D's (self = 1). Succession system installs A.
+- A generates ClaimOffice goal. Coalition-aware planner finds Threaten(B) viable (800 > 200) but not Threaten(C) (800 < 900).
+- A threatens B → B yields → loyalty increase. B autonomously generates `SupportCandidateForOffice(A)`.
+- A still follows through with `declare_support` for self after opening the coercive branch.
 - C does not gain loyalty to A (high courage prevents yield). Agent diversity: same Threaten action, different courage → divergent outcomes.
 **Foundation alignment**: Principle 20 (agent diversity — per-agent courage produces divergent behavioral outcomes), Principle 10 (belief-only planning), Principle 1 (maximal emergence — threat → yield → loyalty → support is emergent, not scripted).
-**Cross-system chain**: AI goal → coalition-aware planner Threaten op → courage comparison → yield/resist divergence → loyalty increase → target AI SupportCandidateForOffice → DeclareSupport → support counting → decisive installation.
+**Cross-system chain**: AI goal → coalition-aware planner Threaten op → courage comparison → yield/resist divergence → loyalty increase → target AI `SupportCandidateForOffice` availability → `declare_support` follow-through.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 **File**: `golden_offices.rs` | **Test**: `golden_travel_to_distant_jurisdiction_for_claim`

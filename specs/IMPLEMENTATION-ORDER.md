@@ -156,6 +156,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 **Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
   - needs E14, E15, E16
+  - ✅ completed: AI no longer reads live office/faction/support helper seams; political goldens now rely on institutional beliefs or consultation-owned setup
 
 **Step 13**:
 - **E16b**: Force Legitimacy & Jurisdiction Control
@@ -173,7 +174,7 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - [x] Redundant Tell suppression uses explicit conversation memory rather than same-place listener-knowledge shortcuts
 - [x] Political planning gives explicit `Bribe`/`Threaten` outcomes instead of falling through unchanged planning state
 - [x] Political golden coverage proves claim, coalition, threat, travel, eligibility, suppression, force-succession, and locality scenarios
-- [ ] Institutional facts propagate through records and consultation rather than live helper shortcuts
+- [x] Institutional facts propagate through records and consultation rather than live helper shortcuts
 - [ ] Force succession uses explicit contest/control state rather than presence-only installation
 - [ ] All FND-02 tickets verified closed
 - [ ] T10: Belief isolation — agent does not react to unseen theft, death, or camp migration
@@ -226,7 +227,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
-| `E16c-institutional-beliefs-and-record-consultation.md` | 3 | 12 | E14, E15, E16 |
 | `E16b-force-legitimacy-and-jurisdiction-control.md` | 3 | 13 | E16, E16c, E14, E15 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |

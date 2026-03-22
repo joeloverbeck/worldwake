@@ -6,6 +6,7 @@ use crate::{
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
+    institutional_queries::consulted_office_holder_read_for_record_data,
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
@@ -13,7 +14,7 @@ use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
     EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
     InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecipientKnowledgeStatus,
-    RecordData, RecordKind, Tick,
+    RecordKind, Tick,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
@@ -375,7 +376,7 @@ fn known_consultable_office_register(
         .find_map(|(record, record_data)| {
             (record_data.record_kind == RecordKind::OfficeRegister
                 && !matches!(
-                    consulted_office_holder_read_for_record(&record_data, office),
+                    consulted_office_holder_read_for_record_data(&record_data, office),
                     InstitutionalBeliefRead::Unknown
                 ))
             .then(|| {
@@ -384,39 +385,6 @@ fn known_consultable_office_register(
                 evidence
             })
         })
-}
-
-fn consulted_office_holder_read_for_record(
-    record_data: &RecordData,
-    office: EntityId,
-) -> InstitutionalBeliefRead<Option<EntityId>> {
-    let mut holders = BTreeSet::new();
-    for entry in record_data
-        .entries_newest_first()
-        .take(record_data.max_entries_per_consult as usize)
-    {
-        if let worldwake_core::InstitutionalClaim::OfficeHolder {
-            office: entry_office,
-            holder,
-            ..
-        } = entry.claim
-        {
-            if entry_office == office {
-                holders.insert(holder);
-            }
-        }
-    }
-
-    match holders.len() {
-        0 => InstitutionalBeliefRead::Unknown,
-        1 => InstitutionalBeliefRead::Certain(
-            *holders
-                .iter()
-                .next()
-                .expect("single office-holder belief must exist"),
-        ),
-        _ => InstitutionalBeliefRead::Conflicted(holders.into_iter().collect()),
-    }
 }
 
 fn support_declaration_conflicted(
@@ -594,10 +562,14 @@ fn candidate_is_eligible(
 ) -> bool {
     view.entity_kind(candidate) == Some(EntityKind::Agent)
         && view.is_alive(candidate)
-        && office_data
-            .eligibility_rules
-            .iter()
-            .all(|rule| matches!(rule, EligibilityRule::FactionMember(faction) if view.factions_of(candidate).contains(faction)))
+        && office_data.eligibility_rules.iter().all(|rule| {
+            matches!(
+                rule,
+                EligibilityRule::FactionMember(faction)
+                    if view.believed_membership(*faction, candidate)
+                        == InstitutionalBeliefRead::Certain(true)
+            )
+        })
 }
 
 fn emit_engage_hostile_goals(
@@ -2100,10 +2072,6 @@ mod tests {
             self.office_data.get(&office).cloned()
         }
 
-        fn office_holder(&self, office: EntityId) -> Option<EntityId> {
-            self.office_holders.get(&office).copied()
-        }
-
         fn believed_office_holder(
             &self,
             office: EntityId,
@@ -2114,19 +2082,24 @@ mod tests {
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
-        fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-            self.factions_by_member
+        fn believed_membership(
+            &self,
+            faction: EntityId,
+            member: EntityId,
+        ) -> InstitutionalBeliefRead<bool> {
+            if self
+                .factions_by_member
                 .get(&member)
-                .cloned()
-                .unwrap_or_default()
+                .is_some_and(|factions| factions.contains(&faction))
+            {
+                InstitutionalBeliefRead::Certain(true)
+            } else {
+                InstitutionalBeliefRead::Unknown
+            }
         }
 
         fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
             self.loyalties.get(&(subject, target)).copied()
-        }
-
-        fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-            self.support_declarations.get(&(supporter, office)).copied()
         }
 
         fn believed_support_declaration(

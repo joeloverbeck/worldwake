@@ -13,6 +13,7 @@ pub mod failure_handling;
 pub mod goal_explanation;
 pub mod goal_model;
 pub mod goal_policy;
+mod institutional_queries;
 mod goal_switching;
 pub mod interrupts;
 mod journey_switch_policy;

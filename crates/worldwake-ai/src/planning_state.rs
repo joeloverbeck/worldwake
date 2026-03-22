@@ -143,6 +143,25 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn effective_support_declaration(
+        &self,
+        supporter: EntityId,
+        office: EntityId,
+    ) -> Option<EntityId> {
+        self.support_declaration_overrides
+            .get(&(supporter, office))
+            .copied()
+            .flatten()
+            .or_else(|| {
+                self.snapshot
+                    .base_support_declarations_for_office(office)
+                    .iter()
+                    .find(|(base_supporter, _)| *base_supporter == supporter)
+                    .map(|(_, candidate)| *candidate)
+            })
+    }
+
+    #[must_use]
     pub fn believed_support_declarations_for_office(
         &self,
         office: EntityId,
@@ -1459,23 +1478,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
         PlanningState::record_data(self, record)
     }
 
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        if supporter != self.snapshot.actor() {
-            return None;
-        }
-
-        self.support_declaration_overrides
-            .get(&(supporter, office))
-            .copied()
-            .flatten()
-            .or_else(|| {
-                self.snapshot
-                    .actor_support_declarations
-                    .get(&office)
-                    .copied()
-            })
-    }
-
     fn believed_office_holder(
         &self,
         office: EntityId,
@@ -1604,7 +1606,6 @@ mod tests {
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
-        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
@@ -1645,7 +1646,6 @@ mod tests {
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 courages: BTreeMap::new(),
-                support_declarations: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
             }
@@ -1880,13 +1880,6 @@ mod tests {
 
         fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
             self.consultation_speed_factors.get(&agent).copied()
-        }
-
-        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-            self.support_declarations
-                .get(&office)
-                .cloned()
-                .unwrap_or_default()
         }
 
         fn believed_office_holder(
@@ -3142,11 +3135,14 @@ mod tests {
     #[test]
     fn institutional_belief_overrides_do_not_touch_world_state_support_overrides() {
         let (mut view, actor, rival, supporter_a, _supporter_b, office) = support_test_setup();
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
-        let mut state = PlanningState::new(&snapshot).with_support_declaration(supporter_a, office, rival);
+        let mut state =
+            PlanningState::new(&snapshot).with_support_declaration(supporter_a, office, rival);
         state.override_support_declaration_belief(
             office,
             supporter_a,
@@ -3154,8 +3150,8 @@ mod tests {
         );
 
         assert_eq!(
-            RuntimeBeliefView::support_declaration(&state, supporter_a, office),
-            None
+            state.effective_support_declaration(supporter_a, office),
+            Some(rival)
         );
         assert_eq!(state.test_support_override(supporter_a, office), Some(rival));
         assert_eq!(
@@ -3216,9 +3212,14 @@ mod tests {
     #[test]
     fn hypothetical_support_count_base_only() {
         let (mut view, actor, _rival, supporter_a, supporter_b, office) = support_test_setup();
-        // supporter_a → actor, supporter_b → actor
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor), (supporter_b, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         let state = PlanningState::new(&snapshot);
@@ -3229,9 +3230,14 @@ mod tests {
     #[test]
     fn hypothetical_support_count_with_override_changing_existing() {
         let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
-        // Base: both support actor
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor), (supporter_b, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         // Override: supporter_b now supports rival
@@ -3245,9 +3251,10 @@ mod tests {
     #[test]
     fn hypothetical_support_count_with_purely_hypothetical_new_declaration() {
         let (mut view, actor, _rival, supporter_a, supporter_b, office) = support_test_setup();
-        // Base: only supporter_a supports actor
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         // Hypothetical: supporter_b (not in base) now also supports actor
@@ -3260,10 +3267,17 @@ mod tests {
     #[test]
     fn has_support_majority_true_when_strictly_more() {
         let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
-        // actor has 2, rival has 1
-        view.support_declarations.insert(
-            office,
-            vec![(supporter_a, actor), (supporter_b, actor), (rival, rival)],
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, rival),
+            InstitutionalBeliefRead::Certain(Some(rival)),
         );
 
         let snapshot = build_support_snapshot(&view, actor, office);
@@ -3276,9 +3290,14 @@ mod tests {
     #[test]
     fn has_support_majority_false_on_tie() {
         let (mut view, actor, rival, supporter_a, supporter_b, office) = support_test_setup();
-        // actor has 1, rival has 1
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor), (supporter_b, rival)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
+        view.support_declaration_beliefs.insert(
+            (office, supporter_b),
+            InstitutionalBeliefRead::Certain(Some(rival)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         let state = PlanningState::new(&snapshot);
@@ -3300,9 +3319,10 @@ mod tests {
     #[test]
     fn has_support_majority_true_sole_candidate_with_one_support() {
         let (mut view, actor, _rival, supporter_a, _supporter_b, office) = support_test_setup();
-        // Only one declaration, no competitors
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor)]);
+        view.support_declaration_beliefs.insert(
+            (office, supporter_a),
+            InstitutionalBeliefRead::Certain(Some(actor)),
+        );
 
         let snapshot = build_support_snapshot(&view, actor, office);
         let state = PlanningState::new(&snapshot);

@@ -4,6 +4,7 @@ use crate::{
     },
     derive_danger_pressure,
     enterprise::restock_gap_at_destination,
+    institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
     PlanningState,
@@ -262,40 +263,12 @@ fn consulted_office_holder_read_for_record(
     record: EntityId,
     office: EntityId,
 ) -> InstitutionalBeliefRead<Option<EntityId>> {
-    let Some(record_data) = state.record_data(record) else {
-        return InstitutionalBeliefRead::Unknown;
-    };
-    if record_data.record_kind != RecordKind::OfficeRegister {
-        return InstitutionalBeliefRead::Unknown;
-    }
-
-    let mut holders = BTreeSet::new();
-    for entry in record_data
-        .entries_newest_first()
-        .take(record_data.max_entries_per_consult as usize)
-    {
-        if let worldwake_core::InstitutionalClaim::OfficeHolder {
-            office: entry_office,
-            holder,
-            ..
-        } = entry.claim
-        {
-            if entry_office == office {
-                holders.insert(holder);
-            }
-        }
-    }
-
-    match holders.len() {
-        0 => InstitutionalBeliefRead::Unknown,
-        1 => InstitutionalBeliefRead::Certain(
-            *holders
-                .iter()
-                .next()
-                .expect("single office-holder belief must exist"),
-        ),
-        _ => InstitutionalBeliefRead::Conflicted(holders.into_iter().collect()),
-    }
+    state
+        .record_data(record)
+        .as_ref()
+        .map_or(InstitutionalBeliefRead::Unknown, |record_data| {
+            consulted_office_holder_read_for_record_data(record_data, office)
+        })
 }
 
 fn office_register_for_goal(
@@ -805,7 +778,7 @@ impl GoalKindPlannerExt for GoalKind {
                 .all(|commodity| state.commodity_quantity(*corpse, commodity) == Quantity(0)),
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
-                state.support_declaration(actor, *office) == Some(*candidate)
+                state.effective_support_declaration(actor, *office) == Some(*candidate)
             }
             GoalKind::ClaimOffice { office } => state.has_support_majority(*office, actor),
             GoalKind::ProduceCommodity { .. }
@@ -1889,7 +1862,8 @@ mod tests {
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
-        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
+        support_declaration_beliefs:
+            BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
     }
 
@@ -2178,22 +2152,6 @@ mod tests {
             estimate_duration_from_beliefs(self, actor, duration, targets, payload)
         }
 
-        fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-            self.support_declarations.get(&office).and_then(|decls| {
-                decls
-                    .iter()
-                    .find(|(s, _)| *s == supporter)
-                    .map(|(_, candidate)| *candidate)
-            })
-        }
-
-        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-            self.support_declarations
-                .get(&office)
-                .cloned()
-                .unwrap_or_default()
-        }
-
         fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
             self.record_data.get(&record).cloned()
         }
@@ -2210,6 +2168,29 @@ mod tests {
 
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data_map.get(&office).cloned()
+        }
+
+        fn believed_support_declaration(
+            &self,
+            office: EntityId,
+            supporter: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.support_declaration_beliefs
+                .get(&(office, supporter))
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+
+        fn believed_support_declarations_for_office(
+            &self,
+            office: EntityId,
+        ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+            self.support_declaration_beliefs
+                .iter()
+                .filter_map(|(&(belief_office, supporter), read)| {
+                    (belief_office == office).then_some((supporter, read.clone()))
+                })
+                .collect()
         }
     }
 
@@ -4375,8 +4356,12 @@ mod tests {
                     view.entities_at.get_mut(&town).unwrap().push(candidate);
                 }
             }
-            view.support_declarations
-                .insert(office, support_declarations);
+            for (supporter, candidate) in support_declarations {
+                view.support_declaration_beliefs.insert(
+                    (office, supporter),
+                    InstitutionalBeliefRead::Certain(Some(candidate)),
+                );
+            }
         }
 
         let mut evidence = BTreeSet::new();
@@ -4502,8 +4487,10 @@ mod tests {
         view.entities_at
             .insert(town, vec![actor, candidate, office]);
         // Actor already declared support for candidate
-        view.support_declarations
-            .insert(office, vec![(actor, candidate)]);
+        view.support_declaration_beliefs.insert(
+            (office, actor),
+            InstitutionalBeliefRead::Certain(Some(candidate)),
+        );
 
         let snapshot = build_planning_snapshot(
             &view,
@@ -4618,8 +4605,10 @@ mod tests {
             .insert((actor, CommodityKind::Coin), Quantity(5));
 
         // Rival has self-declared support — creates competition
-        view.support_declarations
-            .insert(office, vec![(rival, rival)]);
+        view.support_declaration_beliefs.insert(
+            (office, rival),
+            InstitutionalBeliefRead::Certain(Some(rival)),
+        );
 
         // Target has high courage — Threaten won't work (default attack_skill=620)
         view.courage_values
@@ -4700,8 +4689,10 @@ mod tests {
             .insert(target, Permille::new(100).unwrap());
 
         // Rival has self-declared support — creates competition
-        view.support_declarations
-            .insert(office, vec![(rival, rival)]);
+        view.support_declaration_beliefs.insert(
+            (office, rival),
+            InstitutionalBeliefRead::Certain(Some(rival)),
+        );
 
         set_office_jurisdiction(&mut view, office, town);
         view.office_holder_beliefs
@@ -4782,8 +4773,10 @@ mod tests {
             .insert(target, Permille::new(500).unwrap());
 
         // Rival has self-declared support — creates competition
-        view.support_declarations
-            .insert(office, vec![(rival, rival)]);
+        view.support_declaration_beliefs.insert(
+            (office, rival),
+            InstitutionalBeliefRead::Certain(Some(rival)),
+        );
 
         set_office_jurisdiction(&mut view, office, town);
         view.office_holder_beliefs
@@ -4877,8 +4870,10 @@ mod tests {
             .insert((actor, CommodityKind::Coin), Quantity(5));
 
         // Rival has self-declared support — creates competition
-        view.support_declarations
-            .insert(office, vec![(rival, rival)]);
+        view.support_declaration_beliefs.insert(
+            (office, rival),
+            InstitutionalBeliefRead::Certain(Some(rival)),
+        );
 
         set_office_jurisdiction(&mut view, office, town);
         view.office_holder_beliefs

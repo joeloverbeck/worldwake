@@ -134,6 +134,8 @@ New golden scenarios should usually add a deterministic replay companion test un
 
 When a golden scenario is intended to prove one specific causal branch, document the scenario-isolation choice explicitly if the current architecture lawfully permits competing affordances that could also satisfy local needs or planner branching.
 
+For political goldens under E16c, seed office-holder, faction-membership, and support-declaration knowledge through the institutional belief substrate or record consultation. Do not rebuild removed live-helper assumptions in test setup just to preserve an older political outcome.
+
 State all of the following in the owning ticket/spec:
 
 1. the intended branch or invariant under test

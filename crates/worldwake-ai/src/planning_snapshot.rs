@@ -203,11 +203,9 @@ pub struct PlanningSnapshot {
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
     pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
-    pub(crate) actor_support_declarations: BTreeMap<EntityId, EntityId>,
     pub(crate) actor_office_holder_beliefs: BTreeMap<EntityId, SupportBeliefRead>,
-    /// Base support declarations per office: (supporter, candidate) pairs.
-    /// Captured at snapshot build time from belief view.
-    pub(crate) office_support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
+    /// Baseline believed-certain support declarations per office: (supporter, candidate) pairs.
+    pub(crate) office_certain_support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
     /// Belief-derived support declaration reads per office.
     pub(crate) office_support_declaration_beliefs:
         BTreeMap<EntityId, OfficeSupportBeliefReads>,
@@ -278,26 +276,29 @@ impl PlanningSnapshot {
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
             actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
-            actor_support_declarations: included_entities
-                .iter()
-                .copied()
-                .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
-                .filter_map(|office| {
-                    view.support_declaration(actor, office)
-                        .map(|candidate| (office, candidate))
-                })
-                .collect(),
             actor_office_holder_beliefs: included_entities
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
                 .map(|office| (office, view.believed_office_holder(office)))
                 .collect(),
-            office_support_declarations: included_entities
+            office_certain_support_declarations: included_entities
                 .iter()
                 .copied()
                 .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
-                .map(|office| (office, view.support_declarations_for_office(office)))
+                .map(|office| {
+                    let declarations = view
+                        .believed_support_declarations_for_office(office)
+                        .into_iter()
+                        .filter_map(|(supporter, read)| match read {
+                            InstitutionalBeliefRead::Certain(Some(candidate)) => {
+                                Some((supporter, candidate))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    (office, declarations)
+                })
                 .collect(),
             office_support_declaration_beliefs: included_entities
                 .iter()
@@ -332,7 +333,7 @@ impl PlanningSnapshot {
         &self,
         office: EntityId,
     ) -> &[(EntityId, EntityId)] {
-        self.office_support_declarations
+        self.office_certain_support_declarations
             .get(&office)
             .map_or(&[], std::vec::Vec::as_slice)
     }
@@ -712,7 +713,6 @@ mod tests {
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
-        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<EntityId, Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>>,
@@ -735,7 +735,6 @@ mod tests {
                 tell_profiles: BTreeMap::new(),
                 told_beliefs: BTreeMap::new(),
                 confidence_policies: BTreeMap::new(),
-                support_declarations: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
             }
@@ -990,13 +989,6 @@ mod tests {
             place: EntityId,
         ) -> Vec<(EntityId, NonZeroU32)> {
             self.adjacent.get(&place).cloned().unwrap_or_default()
-        }
-
-        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-            self.support_declarations
-                .get(&office)
-                .cloned()
-                .unwrap_or_default()
         }
 
         fn believed_office_holder(
@@ -1503,7 +1495,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_captures_office_support_declarations() {
+    fn snapshot_captures_belief_backed_certain_support_declarations() {
         let actor = entity(1);
         let supporter_a = entity(2);
         let supporter_b = entity(3);
@@ -1528,9 +1520,17 @@ mod tests {
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
 
-        // supporter_a supports actor, supporter_b supports actor
-        view.support_declarations
-            .insert(office, vec![(supporter_a, actor), (supporter_b, actor)]);
+        view.support_declaration_beliefs.insert(
+            office,
+            vec![
+                (supporter_a, InstitutionalBeliefRead::Certain(Some(actor))),
+                (supporter_b, InstitutionalBeliefRead::Certain(Some(actor))),
+                (
+                    entity(999),
+                    InstitutionalBeliefRead::Conflicted(vec![Some(actor), None]),
+                ),
+            ],
+        );
 
         let mut evidence = BTreeSet::new();
         evidence.insert(office);

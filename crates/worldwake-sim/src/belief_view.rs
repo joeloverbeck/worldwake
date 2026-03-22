@@ -119,10 +119,6 @@ pub trait GoalBeliefView {
         let _ = office;
         None
     }
-    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
-        let _ = office;
-        None
-    }
     fn believed_office_holder(
         &self,
         office: EntityId,
@@ -130,16 +126,16 @@ pub trait GoalBeliefView {
         let _ = office;
         InstitutionalBeliefRead::Unknown
     }
-    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-        let _ = member;
-        Vec::new()
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        let _ = (faction, member);
+        InstitutionalBeliefRead::Unknown
     }
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
         let _ = (subject, target);
-        None
-    }
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        let _ = (supporter, office);
         None
     }
     fn believed_support_declaration(
@@ -149,10 +145,6 @@ pub trait GoalBeliefView {
     ) -> InstitutionalBeliefRead<Option<EntityId>> {
         let _ = (office, supporter);
         InstitutionalBeliefRead::Unknown
-    }
-    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-        let _ = office;
-        Vec::new()
     }
     fn believed_support_declarations_for_office(
         &self,
@@ -302,10 +294,6 @@ pub trait RuntimeBeliefView {
         let _ = office;
         None
     }
-    fn office_holder(&self, office: EntityId) -> Option<EntityId> {
-        let _ = office;
-        None
-    }
     fn believed_office_holder(
         &self,
         office: EntityId,
@@ -313,16 +301,16 @@ pub trait RuntimeBeliefView {
         let _ = office;
         InstitutionalBeliefRead::Unknown
     }
-    fn factions_of(&self, member: EntityId) -> Vec<EntityId> {
-        let _ = member;
-        Vec::new()
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        let _ = (faction, member);
+        InstitutionalBeliefRead::Unknown
     }
     fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
         let _ = (subject, target);
-        None
-    }
-    fn support_declaration(&self, supporter: EntityId, office: EntityId) -> Option<EntityId> {
-        let _ = (supporter, office);
         None
     }
     fn believed_support_declaration(
@@ -332,10 +320,6 @@ pub trait RuntimeBeliefView {
     ) -> InstitutionalBeliefRead<Option<EntityId>> {
         let _ = (office, supporter);
         InstitutionalBeliefRead::Unknown
-    }
-    fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-        let _ = office;
-        Vec::new()
     }
     fn believed_support_declarations_for_office(
         &self,
@@ -699,13 +683,6 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::office_data(self, office)
             }
 
-            fn office_holder(
-                &self,
-                office: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::office_holder(self, office)
-            }
-
             fn believed_office_holder(
                 &self,
                 office: worldwake_core::EntityId,
@@ -713,11 +690,12 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::believed_office_holder(self, office)
             }
 
-            fn factions_of(
+            fn believed_membership(
                 &self,
+                faction: worldwake_core::EntityId,
                 member: worldwake_core::EntityId,
-            ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::factions_of(self, member)
+            ) -> worldwake_core::InstitutionalBeliefRead<bool> {
+                $crate::RuntimeBeliefView::believed_membership(self, faction, member)
             }
 
             fn loyalty_to(
@@ -728,27 +706,12 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::loyalty_to(self, subject, target)
             }
 
-            fn support_declaration(
-                &self,
-                supporter: worldwake_core::EntityId,
-                office: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::support_declaration(self, supporter, office)
-            }
-
             fn believed_support_declaration(
                 &self,
                 office: worldwake_core::EntityId,
                 supporter: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
                 $crate::RuntimeBeliefView::believed_support_declaration(self, office, supporter)
-            }
-
-            fn support_declarations_for_office(
-                &self,
-                office: worldwake_core::EntityId,
-            ) -> Vec<(worldwake_core::EntityId, worldwake_core::EntityId)> {
-                $crate::RuntimeBeliefView::support_declarations_for_office(self, office)
             }
 
             fn believed_support_declarations_for_office(

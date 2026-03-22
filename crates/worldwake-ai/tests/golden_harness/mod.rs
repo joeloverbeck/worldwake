@@ -315,6 +315,88 @@ pub fn seed_office_holder_belief(
     commit_txn(txn, event_log);
 }
 
+pub fn seed_faction_membership_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    faction: EntityId,
+    member: EntityId,
+    active: bool,
+    learned_tick: Tick,
+    source: InstitutionalKnowledgeSource,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::FactionMembersOf { faction },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::FactionMembership {
+                faction,
+                member,
+                active,
+                effective_tick: learned_tick,
+            },
+            source,
+            learned_tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, learned_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep institutional belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn seed_support_declaration_belief(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    office: EntityId,
+    supporter: EntityId,
+    candidate: Option<EntityId>,
+    learned_tick: Tick,
+    source: InstitutionalKnowledgeSource,
+    learned_at: Option<EntityId>,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let profile = world
+        .get_component_perception_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    store.record_institutional_belief(
+        InstitutionalBeliefKey::SupportFor { supporter, office },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office,
+                supporter,
+                candidate,
+                effective_tick: learned_tick,
+            },
+            source,
+            learned_tick,
+            learned_at,
+        },
+        &profile,
+    );
+
+    let mut txn = new_txn(world, learned_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden harness should keep institutional belief stores writable");
+    commit_txn(txn, event_log);
+}
+
 pub fn seed_told_belief_memory(
     world: &mut World,
     event_log: &mut EventLog,

@@ -846,7 +846,6 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         office_data: BTreeMap<EntityId, worldwake_core::OfficeData>,
-        support_declarations: BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
         office_holder_beliefs: BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
@@ -1070,12 +1069,6 @@ mod tests {
         }
         fn office_data(&self, office: EntityId) -> Option<worldwake_core::OfficeData> {
             self.office_data.get(&office).cloned()
-        }
-        fn support_declarations_for_office(&self, office: EntityId) -> Vec<(EntityId, EntityId)> {
-            self.support_declarations
-                .get(&office)
-                .cloned()
-                .unwrap_or_default()
         }
         fn believed_office_holder(
             &self,

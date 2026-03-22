@@ -1,4 +1,4 @@
-**Status**: PENDING (reassessed 2026-03-21)
+**Status**: ✅ COMPLETED
 
 # E16c: Institutional Beliefs & Record Consultation
 
@@ -634,3 +634,16 @@ No remote institutional belief may appear without a witness, report, or consulte
 - [E16b-force-legitimacy-and-jurisdiction-control.md](/home/joeloverbeck/projects/worldwake/specs/E16b-force-legitimacy-and-jurisdiction-control.md)
 - [E17-crime-theft-justice.md](/home/joeloverbeck/projects/worldwake/specs/E17-crime-theft-justice.md)
 - [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)
+
+## Outcome
+
+- Outcome amended: 2026-03-22
+- Completion date: 2026-03-22
+- What changed: institutional claim propagation, witness/report storage, record consultation, and AI-side institutional belief reads are all live. The remaining live office/faction/support helper seam was removed from the AI/runtime boundary, planner support baselines now come from institutional belief reads, office-register interpretation is centralized, and the remaining planner-local support accessor was renamed to `effective_support_declaration` to keep the planner overlay surface semantically distinct from deleted live institutional helpers.
+- Deviations from original plan: the final cutover landed through targeted seam removal and focused/golden migration rather than a wholesale rewrite of every political golden around consultation. Existing explicit-belief goldens were kept where they already matched the architecture.
+- Verification results:
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-sim`
+  - `cargo clippy --workspace`
+  - `cargo test --workspace`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
