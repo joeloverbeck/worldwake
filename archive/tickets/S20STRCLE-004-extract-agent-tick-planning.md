@@ -1,6 +1,6 @@
 # S20STRCLE-004: Extract agent_tick/planning.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -90,3 +90,10 @@ Move the listed functions. Add necessary `use` imports.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Extracted 12 planning-related functions from `agent_tick/mod.rs` into new `agent_tick/planning.rs`. Updated `mod.rs` imports and test module imports accordingly. Cleaned up unused imports that moved with the functions.
+- **Deviations**: None. All 12 functions moved as specified. Line numbers in the ticket were stale (shifted by prior S20STRCLE-001/002/003 work) but function names and signatures matched exactly.
+- **Verification**: `cargo test -p worldwake-ai` — 21 tests pass (unchanged from baseline). `cargo clippy -p worldwake-ai` — zero warnings.
