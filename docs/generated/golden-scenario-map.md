@@ -8,275 +8,849 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 33
-- Files contributing scenario metadata: 6
-- `golden_*` tests associated with scenario blocks: 86
+- Scenario blocks with explicit metadata: 45
+- Files contributing scenario metadata: 9
+- `golden_*` tests associated with scenario blocks: 119
 
 ## Scenario Inventory
 
 | Scenario | Title | File | Primary tests | Replay tests |
 |----------|-------|------|---------------|--------------|
 | `1` | Goal Invalidation by Another Agent | `golden_ai_decisions.rs:17` | `golden_goal_invalidation_by_another_agent` | — |
-| `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:103` | `golden_priority_based_interrupt` | — |
-| `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:197` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
-| `7` | Deprivation Cascade | `golden_ai_decisions.rs:272` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
-| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1434` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
+| `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:118` | `golden_priority_based_interrupt` | — |
+| `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:227` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
+| `7` | Deprivation Cascade | `golden_ai_decisions.rs:316` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
+| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1491` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
 | `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:714` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
-| `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:790` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
-| `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:865` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
-| `2c-invalidation` | Care goal invalidates when patient self-heals | `golden_care.rs:956` | `golden_care_goal_invalidation_when_patient_heals`<br>`golden_care_pre_start_wound_disappearance_records_blocker` | `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`<br>`golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically` |
-| `8` | Death Cascade and Opportunistic Loot | `golden_combat.rs:1606` | `golden_death_cascade_and_opportunistic_loot`<br>`golden_loot_suppressed_under_self_care_pressure`<br>`golden_death_while_traveling`<br>`golden_combat_between_living_agents`<br>`golden_seed_sensitivity_living_combat_different_outcomes` | `golden_death_cascade_and_opportunistic_loot_replays_deterministically`<br>`golden_loot_suppressed_under_self_care_pressure_replays_deterministically`<br>`golden_death_while_traveling_replays_deterministically`<br>`golden_combat_between_living_agents_replays_deterministically` |
-| `S03a` | Multi-Corpse Loot Binding (S03 — matches_binding) | `golden_combat.rs:1716` | `golden_multi_corpse_loot_binding` | `golden_multi_corpse_loot_binding_replays_deterministically` |
-| `S03b` | Bury Suppressed Under Stress (S02 — evaluate_suppression) | `golden_combat.rs:1899` | `golden_bury_suppressed_under_stress` | `golden_bury_suppressed_under_stress_replays_deterministically` |
-| `S03c` | Suppression Then Binding Combined (S02 + S03) | `golden_combat.rs:2059` | `golden_suppression_then_binding_combined`<br>`golden_action_trace_records_loot_lifecycle` | `golden_suppression_then_binding_combined_replays_deterministically` |
+| `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:804` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
+| `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:892` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
+| `2c-invalidation` | Care goal invalidates when patient self-heals | `golden_care.rs:999` | `golden_care_goal_invalidation_when_patient_heals`<br>`golden_care_pre_start_wound_disappearance_records_blocker` | `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`<br>`golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically` |
+| `8b` | Corpse Burial | `golden_combat.rs:702` | `golden_bury_corpse` | — |
+| `7f` | ReduceDanger Defensive Mitigation | `golden_combat.rs:1393` | `golden_reduce_danger_defensive_mitigation`<br>`golden_defend_replans_after_finite_stance_expires`<br>`golden_defend_changed_conditions` | `golden_defend_changed_conditions_replays_deterministically` |
+| `7g` | Wound Bleed, Clotting, and Natural Recovery | `golden_combat.rs:1613` | `golden_wound_bleed_clotting_natural_recovery` | `golden_wound_bleed_clotting_natural_recovery_replays_deterministically` |
+| `30` | Recovery-Aware Priority Boost Eats Before Wash | `golden_combat.rs:1649` | `golden_recovery_aware_boost_eats_before_wash` | `golden_recovery_aware_boost_eats_before_wash_replays_deterministically` |
+| `8` | Death Cascade and Opportunistic Loot | `golden_combat.rs:1686` | `golden_death_cascade_and_opportunistic_loot` | `golden_death_cascade_and_opportunistic_loot_replays_deterministically` |
+| `8c` | Loot Suppression Under Self-Care Pressure | `golden_combat.rs:1739` | `golden_loot_suppressed_under_self_care_pressure` | `golden_loot_suppressed_under_self_care_pressure_replays_deterministically` |
+| `8d` | Death While Traveling | `golden_combat.rs:1776` | `golden_death_while_traveling` | `golden_death_while_traveling_replays_deterministically` |
+| `7c` | Hostility-Driven Living Combat | `golden_combat.rs:1812` | `golden_combat_between_living_agents`<br>`golden_seed_sensitivity_living_combat_different_outcomes` | `golden_combat_between_living_agents_replays_deterministically` |
+| `S03a` | Multi-Corpse Loot Binding | `golden_combat.rs:1870` | `golden_multi_corpse_loot_binding` | `golden_multi_corpse_loot_binding_replays_deterministically` |
+| `S03b` | Bury Suppressed Under Stress | `golden_combat.rs:2068` | `golden_bury_suppressed_under_stress` | `golden_bury_suppressed_under_stress_replays_deterministically` |
+| `S03c` | Suppression Then Binding Combined | `golden_combat.rs:2243` | `golden_suppression_then_binding_combined`<br>`golden_action_trace_records_loot_lifecycle` | `golden_suppression_then_binding_combined_replays_deterministically` |
 | `6` | Deterministic Replay Fidelity | `golden_determinism.rs:135` | `golden_deterministic_replay_fidelity`<br>`golden_save_load_round_trip_under_ai` | — |
-| `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:182` | `golden_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
-| `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:29` | `golden_simple_office_claim_via_declare_support` | — |
-| `11b` | Deterministic Replay | `golden_offices.rs:142` | — | `golden_simple_office_claim_deterministic_replay` |
-| `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:171` | `golden_competing_claims_with_loyal_supporter` | — |
-| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:428` | `golden_bribe_support_coalition` | — |
-| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:641` | `golden_threaten_with_courage_diversity` | — |
-| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:938` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
-| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1043` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
-| `33` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1247` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
-| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1538` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
-| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1895` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
-| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2090` | `golden_faction_eligibility_filters_office_claim` | — |
-| `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2242` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
-| `20` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2617` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
-| `21` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2874` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
+| `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:198` | `golden_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
+| `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
+| `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
+| `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
+| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:391` | `golden_bribe_support_coalition` | — |
+| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:608` | `golden_threaten_with_courage_diversity` | — |
+| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:903` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
+| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1016` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
+| `33` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1232` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
+| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1530` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
+| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1894` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
+| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2096` | `golden_faction_eligibility_filters_office_claim` | — |
+| `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2257` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
+| `20` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2640` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
+| `21` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2905` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
 | `3` | Resource Contention with Conservation | `golden_production.rs:2183` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_grant_expiry_before_intended_action`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_facility_queue_patience_timeout_replays_deterministically` |
-| `4` | Materialization Barrier Chain | `golden_production.rs:2488` | `golden_materialization_barrier_chain` | — |
-| `6b` | Multi-Recipe Craft Path | `golden_production.rs:2574` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically` |
-| `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:2717` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
+| `4` | Materialization Barrier Chain | `golden_production.rs:2502` | `golden_materialization_barrier_chain` | — |
+| `6b` | Multi-Recipe Craft Path | `golden_production.rs:2602` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically` |
+| `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:2759` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
+| `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:344` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
+| `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1572` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically` |
+| `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:881` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
+| `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:916` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
+| `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:951` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
 - Source: `golden_ai_decisions.rs:17`
+- Systems: Needs, Production, Travel, AI
+- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+- ActionDomains: Needs, Travel, Production
+- Places: VillageSquare, OrchardFarm
 - Primary tests: `golden_goal_invalidation_by_another_agent`
 - Replay tests: None
 - All tests: `golden_goal_invalidation_by_another_agent`
 
+**Setup**: Two critically hungry agents at Village Square. Alice has 1 bread. Orchard Farm has apples.
+
+**Proves**: Alice eats bread (ConsumeOwnedCommodity). Bob travels to Orchard Farm to harvest (AcquireCommodity with travel sub-plan). Conservation: bread lots never increase.
+
+**Cross-system chain**: Needs pressure -> goal generation -> plan search -> action execution -> resource consumption.
+
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:103`
+- Source: `golden_ai_decisions.rs:118`
+- Systems: Needs, AI
+- GoalKinds: ConsumeOwnedCommodity, Sleep
+- ActionDomains: Needs
+- Places: VillageSquare
+- Principles: none specific
 - Primary tests: `golden_priority_based_interrupt`
 - Replay tests: None
 - All tests: `golden_priority_based_interrupt`
 
+**Setup**: Agent with high fatigue (pm(800)), low hunger (pm(300)), fast hunger metabolism (pm(50)/tick). Has 2 bread.
+
+**Proves**: Agent starts sleeping. Metabolism drives hunger past critical (pm(900)). AI interrupts sleep and switches to eating.
+
+**Cross-system chain**: Metabolism tick -> need escalation -> interrupt evaluation -> goal switch -> action termination -> new action start.
+
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:197`
+- Source: `golden_ai_decisions.rs:227`
+- Systems: Production, AI
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production
+- Places: OrchardFarm
 - Primary tests: `golden_blocked_intent_memory_with_ttl_expiry`
 - Replay tests: None
 - All tests: `golden_blocked_intent_memory_with_ttl_expiry`
 
+**Setup**: Agent at Orchard Farm, critically hungry. ResourceSource depleted but regenerates at 1/5 ticks.
+
+**Proves**: Depleted source blocks harvest. Resource regeneration restores apples over time. Agent eventually harvests.
+
+**Cross-system chain**: Depleted resource -> failed plan -> resource regeneration ticks -> successful harvest.
+
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:272`
+- Source: `golden_ai_decisions.rs:316`
+- Systems: Needs, AI
+- GoalKinds: ConsumeOwnedCommodity
+- ActionDomains: Needs
+- Places: VillageSquare
 - Primary tests: `golden_deprivation_cascade`, `golden_thirst_driven_acquisition`, `golden_wash_action`, `golden_three_way_need_competition`, `golden_bladder_relief_with_travel`, `golden_goal_switching_during_multi_leg_travel`, `golden_multi_hop_travel_plan`, `golden_spatial_multi_hop_plan`
 - Replay tests: `golden_spatial_multi_hop_plan_replays_deterministically`
 - All tests: `golden_deprivation_cascade`, `golden_thirst_driven_acquisition`, `golden_wash_action`, `golden_three_way_need_competition`, `golden_bladder_relief_with_travel`, `golden_goal_switching_during_multi_leg_travel`, `golden_multi_hop_travel_plan`, `golden_spatial_multi_hop_plan`, `golden_spatial_multi_hop_plan_replays_deterministically`
 
+**Setup**: Agent starts pm(0) hunger, fast metabolism (pm(20)/tick), has 1 bread.
+
+**Proves**: Metabolism pushes hunger upward. When crossing low threshold (pm(250)), AI generates consume goal. Agent eats.
+
+**Cross-system chain**: Metabolism system -> state change -> AI threshold detection -> goal generation -> plan -> action.
+
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1434`
+- Source: `golden_ai_decisions.rs:1491`
+- Systems: Needs, Enterprise, AI, Travel, Production
+- GoalKinds: ConsumeOwnedCommodity, RestockCommodity
+- ActionDomains: Needs, Travel, Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 20
 - Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`
 - Replay tests: None
 - All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`
 
+**Setup**: Two agents with identical initial conditions but divergent UtilityProfile weights. HungerDriven: critically hungry, hunger_weight=pm(800), enterprise_weight=pm(100), has bread. EnterpriseDriven: no hunger, hunger_weight=pm(100), enterprise_weight=pm(900), MerchandiseProfile(Apple).
+
+**Proves**: HungerDriven eats locally. EnterpriseDriven leaves to pursue enterprise restock. Same world, different first choices from UtilityProfile weight divergence (Principle 20).
+
+**Cross-system chain**: UtilityProfile weights -> divergent candidate ranking -> HungerDriven selects ConsumeOwnedCommodity vs EnterpriseDriven selects RestockCommodity.
+
 ### Scenario 2c-self: Wounded agent self-treats with medicine
 
 - Source: `golden_care.rs:714`
+- Systems: AI, Care, Combat
+- GoalKinds: TreatWounds(self)
+- ActionDomains: Care
+- Places: VillageSquare
+- Principles: 7
 - Primary tests: `golden_self_care_with_medicine`
 - Replay tests: `golden_self_care_with_medicine_replays_deterministically`
 - All tests: `golden_self_care_with_medicine`, `golden_self_care_with_medicine_replays_deterministically`
 
+**Setup**: Single wounded agent with own Medicine(1) at VillageSquare.
+
+**Proves**: Self-care is lawful. Agent emits TreatWounds{patient: self}, consumes medicine, and reduces wound load.
+
+**Cross-system chain**: Wound state -> TreatWounds{self} goal -> heal action -> medicine consumed -> wound severity reduced.
+
 ### Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
 
-- Source: `golden_care.rs:790`
+- Source: `golden_care.rs:804`
+- Systems: AI, Care, Transport, Combat
+- GoalKinds: TreatWounds(self)
+- ActionDomains: Care, Transport
+- Places: VillageSquare
 - Primary tests: `golden_self_care_acquires_ground_medicine`
 - Replay tests: `golden_self_care_acquires_ground_medicine_replays_deterministically`
 - All tests: `golden_self_care_acquires_ground_medicine`, `golden_self_care_acquires_ground_medicine_replays_deterministically`
 
+**Setup**: Wounded agent with no medicine. Ground Medicine(1) at same place.
+
+**Proves**: Agent picks up ground medicine and self-treats. Self-care acquisition path works through planner resolve of pick_up before heal.
+
+**Cross-system chain**: Wound state -> TreatWounds{self} goal -> pick_up ground medicine -> heal action -> wound reduced.
+
 ### Scenario 2c-report: Indirect wound report does NOT trigger care goal
 
-- Source: `golden_care.rs:865`
+- Source: `golden_care.rs:892`
+- Systems: AI, Care, Perception
+- GoalKinds: TreatWounds(other)
+- ActionDomains: Care
+- Places: VillageSquare, OrchardFarm
+- Principles: 7
 - Primary tests: `golden_indirect_report_does_not_trigger_care`
 - Replay tests: `golden_indirect_report_does_not_trigger_care_replays_deterministically`
 - All tests: `golden_indirect_report_does_not_trigger_care`, `golden_indirect_report_does_not_trigger_care_replays_deterministically`
 
+**Setup**: Observer at VillageSquare with Medicine(1). Wounded patient at OrchardFarm. Observer has Report-sourced wound belief only.
+
+**Proves**: Report-sourced beliefs do NOT trigger TreatWounds — only DirectObservation does (Principle 7 locality). Observer does not consume medicine or travel to patient.
+
+**Cross-system chain**: Report belief about wounds -> direct-observation gate rejects -> no TreatWounds candidate generated -> medicine unconsumed.
+
 ### Scenario 2c-invalidation: Care goal invalidates when patient self-heals
 
-- Source: `golden_care.rs:956`
+- Source: `golden_care.rs:999`
+- Systems: AI, Care, Combat
+- GoalKinds: TreatWounds(other), TreatWounds(self)
+- ActionDomains: Care
+- Places: VillageSquare
 - Primary tests: `golden_care_goal_invalidation_when_patient_heals`, `golden_care_pre_start_wound_disappearance_records_blocker`
 - Replay tests: `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`, `golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically`
 - All tests: `golden_care_goal_invalidation_when_patient_heals`, `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`, `golden_care_pre_start_wound_disappearance_records_blocker`, `golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically`
 
+**Setup**: Patient with Medicine(1) and healer without medicine, co-located. Patient can self-treat.
+
+**Proves**: Patient self-heals. Healer's TreatWounds{patient} goal is satisfied when patient pain reaches zero. Healer never acquires medicine. Also proves pre-start wound disappearance -> StartFailed + blocked intent.
+
+**Cross-system chain**: Patient self-treats -> pain zero -> healer goal satisfied and drops. Or: healer selects TreatWounds -> wounds disappear -> StartFailed -> blocked-intent memory.
+
+### Scenario 8b: Corpse Burial
+
+- Source: `golden_combat.rs:702`
+- Systems: AI, Corpse, Conservation
+- GoalKinds: BuryCorpse
+- ActionDomains: Corpse
+- Places: VillageSquare
+- Principles: Conservation, Unique Location
+- Primary tests: `golden_bury_corpse`
+- Replay tests: None
+- All tests: `golden_bury_corpse`
+
+**Setup**: Dead agent and living burier at VillageSquare with GravePlot facility. No competing pressure.
+
+**Proves**: BuryCorpse emitted through AI. Burial creates grave container. Corpse in containment, no longer loot-targetable.
+
+**Cross-system chain**: Local corpse + grave plot -> BuryCorpse goal -> bury action -> containment-based inaccessibility.
+
+### Scenario 7f: ReduceDanger Defensive Mitigation
+
+- Source: `golden_combat.rs:1393`
+- Systems: AI, Combat, Conservation
+- GoalKinds: ReduceDanger, EngageHostile
+- ActionDomains: Combat
+- Places: VillageSquare
+- Principles: Belief-Only Planning, Agent Symmetry
+- Primary tests: `golden_reduce_danger_defensive_mitigation`, `golden_defend_replans_after_finite_stance_expires`, `golden_defend_changed_conditions`
+- Replay tests: `golden_defend_changed_conditions_replays_deterministically`
+- All tests: `golden_reduce_danger_defensive_mitigation`, `golden_defend_replans_after_finite_stance_expires`, `golden_defend_changed_conditions`, `golden_defend_changed_conditions_replays_deterministically`
+
+**Setup**: Two sated agents. Attacker hostile, defender purely reactive (no outgoing hostility).
+
+**Proves**: Attacker opens combat via EngageHostile. Defender observes live attack pressure and enters ReduceDanger (defend stance), not proactive EngageHostile.
+
+**Cross-system chain**: Outgoing hostility -> attack action -> danger signal -> ReduceDanger -> defensive mitigation.
+
+### Scenario 7g: Wound Bleed, Clotting, and Natural Recovery
+
+- Source: `golden_combat.rs:1613`
+- Systems: Combat, Needs
+- GoalKinds: (none direct)
+- ActionDomains: Combat
+- Places: VillageSquare
+- Principles: Concrete State Over Abstract Scores, Feedback Dampening
+- Primary tests: `golden_wound_bleed_clotting_natural_recovery`
+- Replay tests: `golden_wound_bleed_clotting_natural_recovery_replays_deterministically`
+- All tests: `golden_wound_bleed_clotting_natural_recovery`, `golden_wound_bleed_clotting_natural_recovery_replays_deterministically`
+
+**Setup**: Sated agent with one injected bleeding wound (severity pm(50), bleed_rate pm(100)).
+
+**Proves**: Wound progresses through authoritative combat tick. Severity rises while bleeding. Recovery doesn't begin until bleed_rate=0. Once clotted and physiology below thresholds, severity falls and wound pruned.
+
+**Cross-system chain**: Wound state -> combat-system bleed progression -> natural clotting -> physiology-gated recovery -> wound pruning.
+
+### Scenario 30: Recovery-Aware Priority Boost Eats Before Wash
+
+- Source: `golden_combat.rs:1649`
+- Systems: AI, Needs, Combat
+- GoalKinds: ConsumeOwnedCommodity, Wash
+- ActionDomains: Needs
+- Places: VillageSquare
+- Principles: Concrete State Over Abstract Scores, Maximal Emergence
+- Primary tests: `golden_recovery_aware_boost_eats_before_wash`
+- Replay tests: `golden_recovery_aware_boost_eats_before_wash_replays_deterministically`
+- All tests: `golden_recovery_aware_boost_eats_before_wash`, `golden_recovery_aware_boost_eats_before_wash_replays_deterministically`
+
+**Setup**: Agent with clotted wound, hunger=High, dirtiness=High, bread and water. Wash has higher initial motive score. Recovery-aware promotion lifts eat to Critical.
+
+**Proves**: Recovery-aware promotion lifts eat from High to Critical over wash. Eating drops hunger below recovery gate. Wound severity begins decreasing through natural recovery.
+
+**Cross-system chain**: Clotted wound + High hunger -> recovery-aware promotion -> eat over wash -> hunger relief opens recovery gate -> wound severity reduction.
+
 ### Scenario 8: Death Cascade and Opportunistic Loot
 
-- Source: `golden_combat.rs:1606`
-- Primary tests: `golden_death_cascade_and_opportunistic_loot`, `golden_loot_suppressed_under_self_care_pressure`, `golden_death_while_traveling`, `golden_combat_between_living_agents`, `golden_seed_sensitivity_living_combat_different_outcomes`
-- Replay tests: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`, `golden_loot_suppressed_under_self_care_pressure_replays_deterministically`, `golden_death_while_traveling_replays_deterministically`, `golden_combat_between_living_agents_replays_deterministically`
-- All tests: `golden_death_cascade_and_opportunistic_loot`, `golden_death_cascade_and_opportunistic_loot_replays_deterministically`, `golden_loot_suppressed_under_self_care_pressure`, `golden_loot_suppressed_under_self_care_pressure_replays_deterministically`, `golden_death_while_traveling`, `golden_death_while_traveling_replays_deterministically`, `golden_combat_between_living_agents`, `golden_seed_sensitivity_living_combat_different_outcomes`, `golden_combat_between_living_agents_replays_deterministically`
+- Source: `golden_combat.rs:1686`
+- Systems: Needs, Combat, Corpse, Conservation
+- GoalKinds: LootCorpse
+- ActionDomains: Corpse
+- Places: VillageSquare
+- Principles: Conservation, Append-Only Event Log
+- Primary tests: `golden_death_cascade_and_opportunistic_loot`
+- Replay tests: `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
+- All tests: `golden_death_cascade_and_opportunistic_loot`, `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
 
-### Scenario S03a: Multi-Corpse Loot Binding (S03 — matches_binding)
+**Setup**: Fragile victim (wound_capacity pm(200), existing starvation wound) with 5 coins. Healthy Looter co-located.
 
-- Source: `golden_combat.rs:1716`
+**Proves**: Victim dies from deprivation. Looter opportunistically loots within 100 ticks. Coin conservation holds.
+
+**Cross-system chain**: Metabolism -> deprivation -> wound infliction -> death -> corpse -> loot goal -> loot action.
+
+### Scenario 8c: Loot Suppression Under Self-Care Pressure
+
+- Source: `golden_combat.rs:1739`
+- Systems: Needs, AI, Corpse, Conservation
+- GoalKinds: LootCorpse, ConsumeOwnedCommodity
+- ActionDomains: Corpse, Needs
+- Places: VillageSquare
+- Principles: Conservation, Maximal Emergence
+- Primary tests: `golden_loot_suppressed_under_self_care_pressure`
+- Replay tests: `golden_loot_suppressed_under_self_care_pressure_replays_deterministically`
+- All tests: `golden_loot_suppressed_under_self_care_pressure`, `golden_loot_suppressed_under_self_care_pressure_replays_deterministically`
+
+**Setup**: Hungry scavenger (pm(800)) with bread, co-located corpse with coins.
+
+**Proves**: While hunger >= High, scavenger never gains corpse coins. Eats first. After hunger relief, loots corpse. Conservation holds.
+
+**Cross-system chain**: High hunger + corpse -> loot suppression -> eat -> hunger relief -> suppression lift -> loot.
+
+### Scenario 8d: Death While Traveling
+
+- Source: `golden_combat.rs:1776`
+- Systems: Needs, AI, Travel, Combat, Conservation
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Needs
+- Places: BanditCamp, ForestPath
+- Principles: Conservation, Unique Location
+- Primary tests: `golden_death_while_traveling`
+- Replay tests: `golden_death_while_traveling_replays_deterministically`
+- All tests: `golden_death_while_traveling`, `golden_death_while_traveling_replays_deterministically`
+
+**Setup**: Fragile traveler at BanditCamp with critical hunger, 5 coins. Dies before reaching food source.
+
+**Proves**: Traveler enters multi-hop travel. Dies from deprivation before destination. Body at concrete intermediate place (ForestPath), not destination. Coin conservation holds.
+
+**Cross-system chain**: Hunger -> distant acquire -> travel departure -> deprivation -> death at intermediate place.
+
+### Scenario 7c: Hostility-Driven Living Combat
+
+- Source: `golden_combat.rs:1812`
+- Systems: AI, Combat, Conservation
+- GoalKinds: EngageHostile
+- ActionDomains: Combat
+- Places: VillageSquare
+- Principles: Conservation, Determinism
+- Primary tests: `golden_combat_between_living_agents`, `golden_seed_sensitivity_living_combat_different_outcomes`
+- Replay tests: `golden_combat_between_living_agents_replays_deterministically`
+- All tests: `golden_combat_between_living_agents`, `golden_seed_sensitivity_living_combat_different_outcomes`, `golden_combat_between_living_agents_replays_deterministically`
+
+**Setup**: Two sated agents with concrete hostility relation. Stronger attacker; both carry coin.
+
+**Proves**: Attacker generates hostile-engagement goal. Defender responds through live combat loop. Wounds inflicted. Seed sensitivity produces different outcomes. Conservation holds.
+
+**Cross-system chain**: Hostility -> hostile-engagement goal -> attack action -> wound infliction -> defender response.
+
+### Scenario S03a: Multi-Corpse Loot Binding
+
+- Source: `golden_combat.rs:1870`
+- Systems: AI, Corpse, Conservation
+- GoalKinds: LootCorpse
+- ActionDomains: Corpse
+- Places: VillageSquare
+- Principles: Conservation, Determinism
 - Primary tests: `golden_multi_corpse_loot_binding`
 - Replay tests: `golden_multi_corpse_loot_binding_replays_deterministically`
 - All tests: `golden_multi_corpse_loot_binding`, `golden_multi_corpse_loot_binding_replays_deterministically`
 
-### Scenario S03b: Bury Suppressed Under Stress (S02 — evaluate_suppression)
+**Setup**: Two dead agents (CorpseA with Coin(5), CorpseB with Bread(3)) and sated Looter.
 
-- Source: `golden_combat.rs:1899`
+**Proves**: LootCorpse for both corpses. matches_binding filters to selected target. Sequential looting. Conservation holds.
+
+**Cross-system chain**: LootCorpse candidates -> ranking -> matches_binding -> sequential loot -> both looted.
+
+### Scenario S03b: Bury Suppressed Under Stress
+
+- Source: `golden_combat.rs:2068`
+- Systems: Needs, AI, Corpse, Production
+- GoalKinds: BuryCorpse, ConsumeOwnedCommodity
+- ActionDomains: Corpse, Needs
+- Places: VillageSquare
+- Principles: Maximal Emergence, Concrete State Over Abstract Scores
 - Primary tests: `golden_bury_suppressed_under_stress`
 - Replay tests: `golden_bury_suppressed_under_stress_replays_deterministically`
 - All tests: `golden_bury_suppressed_under_stress`, `golden_bury_suppressed_under_stress_replays_deterministically`
 
-### Scenario S03c: Suppression Then Binding Combined (S02 + S03)
+**Setup**: Dead agent with GravePlot. Burier with hunger=pm(800) (>= High=pm(750)) and Bread(1).
 
-- Source: `golden_combat.rs:2059`
+**Proves**: Hunger >= High suppresses BuryCorpse. Agent eats. Hunger drops, suppression lifts. Agent buries corpse.
+
+**Cross-system chain**: High hunger -> BuryCorpse suppression -> eat -> hunger relief -> suppression lift -> burial.
+
+### Scenario S03c: Suppression Then Binding Combined
+
+- Source: `golden_combat.rs:2243`
+- Systems: Needs, AI, Corpse, Conservation
+- GoalKinds: LootCorpse, ConsumeOwnedCommodity
+- ActionDomains: Corpse, Needs
+- Places: VillageSquare
+- Principles: Conservation, Maximal Emergence
 - Primary tests: `golden_suppression_then_binding_combined`, `golden_action_trace_records_loot_lifecycle`
 - Replay tests: `golden_suppression_then_binding_combined_replays_deterministically`
 - All tests: `golden_suppression_then_binding_combined`, `golden_suppression_then_binding_combined_replays_deterministically`, `golden_action_trace_records_loot_lifecycle`
 
+**Setup**: Two corpses (Coin(5), Coin(3)), hungry scavenger (pm(800)) with Bread(1).
+
+**Proves**: Hunger suppresses both LootCorpse goals. Eats first. Suppression lifts. matches_binding selects correct target. Sequential loot. Conservation holds.
+
+**Cross-system chain**: High hunger -> loot suppression -> eat -> relief -> matches_binding -> sequential loot.
+
 ### Scenario 6: Deterministic Replay Fidelity
 
 - Source: `golden_determinism.rs:135`
+- Systems: All
+- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+- ActionDomains: Needs, Production, Travel
+- Places: VillageSquare, OrchardFarm
 - Primary tests: `golden_deterministic_replay_fidelity`, `golden_save_load_round_trip_under_ai`
 - Replay tests: None
 - All tests: `golden_deterministic_replay_fidelity`, `golden_save_load_round_trip_under_ai`
 
+**Setup**: Two hungry agents at Village Square. Alice has bread. Orchard Farm has apples. Run 50 ticks with same seed twice. Includes save/load round-trip test at tick 20 with resumed AI controller.
+
+**Proves**: Identical seeds produce identical StateHash for world and event log. Full-stack determinism (ChaCha8Rng, BTreeMap ordering, no floats). Save/load round-trip preserves scheduler, RNG, and controller state.
+
+**Cross-system chain**: Full simulation -> identical world/event-log hashes across runs. Save at tick 20 -> load -> fresh AI controller -> identical continuation.
+
 ### Scenario S02: World Runs Without Observers (Principle 6)
 
-- Source: `golden_determinism.rs:182`
+- Source: `golden_determinism.rs:198`
+- Systems: Needs, Production, Travel, Enterprise, Trade, AI, Conservation
+- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume), RestockCommodity
+- ActionDomains: Needs, Production, Travel
+- Places: VillageSquare, OrchardFarm, GeneralStore
+- Principles: 6
 - Primary tests: `golden_world_runs_without_observers`
 - Replay tests: `golden_world_runs_without_observers_replays_deterministically`
 - All tests: `golden_world_runs_without_observers`, `golden_world_runs_without_observers_replays_deterministically`
 
+**Setup**: Four agents across three places for 200 ticks under full AI loop. Farmer (hungry, orchard), Merchant (enterprise-focused, MerchandiseProfile), Villager (hungry+thirsty, bread+water), Wanderer (thirsty+fatigued).
+
+**Proves**: World hash differs from initial after 200 ticks. Event log grows by 20+ events. No deaths. Per-tick conservation for Bread, Water, Coin. At least one transit and one consumption. 200-tick multi-agent determinism.
+
+**Cross-system chain**: Needs -> AI -> action, Production -> harvest, Travel -> movement, Enterprise -> restock. Conservation across 200 ticks of multi-system interaction. Proves Principle 6 (world runs without observers).
+
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
-- Source: `golden_offices.rs:29`
+- Source: `golden_offices.rs:28`
+- Systems: Succession, AI, Political actions
+- GoalKinds: ClaimOffice
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 10, 20
 - Primary tests: `golden_simple_office_claim_via_declare_support`
 - Replay tests: None
 - All tests: `golden_simple_office_claim_via_declare_support`
 
+**Setup**: Single sated agent at VillageSquare with enterprise_weight=pm(800). Vacant office (Support law, period=5, no eligibility).
+
+**Proves**: Agent autonomously generates ClaimOffice from enterprise_weight and believed vacant office. GOAP plans DeclareSupport(self). After succession period, succession_system installs agent as holder.
+
+**Cross-system chain**: Enterprise weight -> ClaimOffice candidate -> DeclareSupport plan -> action execution -> succession resolution -> office installation.
+
 ### Scenario 11b: Deterministic Replay
 
-- Source: `golden_offices.rs:142`
+- Source: `golden_offices.rs:152`
+- Systems: Succession, AI, Political actions
+- GoalKinds: ClaimOffice
+- Places: VillageSquare
 - Primary tests: None
 - Replay tests: `golden_simple_office_claim_deterministic_replay`
 - All tests: `golden_simple_office_claim_deterministic_replay`
 
+**Setup**: Same as Scenario 11, run twice with identical seed.
+
+**Proves**: Two runs with the same seed produce identical world and event-log hashes. World state differs from initial.
+
 ### Scenario 12: Competing Claims with Loyal Supporter
 
-- Source: `golden_offices.rs:171`
+- Source: `golden_offices.rs:190`
+- Systems: Succession, AI, Political actions
+- GoalKinds: ClaimOffice, SupportCandidateForOffice
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 10, 20
 - Primary tests: `golden_competing_claims_with_loyal_supporter`
 - Replay tests: None
 - All tests: `golden_competing_claims_with_loyal_supporter`
 
+**Setup**: Three agents at VillageSquare. A and B with enterprise_weight=pm(800). C with enterprise_weight=0, social_weight=pm(600), loyalty to A at pm(650). Vacant office (Support law, period=5).
+
+**Proves**: A and B generate ClaimOffice. C's ClaimOffice is zero-motive filtered (enterprise_weight=0); C generates SupportCandidateForOffice(A) from loyalty. A gets 2 declarations (self + C), B gets 1. Succession installs A.
+
+**Cross-system chain**: Loyalty -> SupportCandidateForOffice candidate -> zero-motive ClaimOffice filtering -> DeclareSupport plan -> multi-agent declarations -> support counting -> decisive installation.
+
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:428`
+- Source: `golden_offices.rs:391`
+- Systems: Bribe, Succession, AI, Conservation
+- GoalKinds: ClaimOffice, SupportCandidateForOffice
+- ActionDomains: Generic
+- Places: VillageSquare, OrchardFarm
+- Principles: 1, 10
 - Primary tests: `golden_bribe_support_coalition`
 - Replay tests: None
 - All tests: `golden_bribe_support_coalition`
 
+**Setup**: A with enterprise_weight=pm(900) holds 5 bread. B at jurisdiction, no loyalty. C (competitor) at OrchardFarm with pre-declared self-support. Wider beam_width=16 for branchy adjacency graph.
+
+**Proves**: DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread transfer). B's loyalty increases and B generates SupportCandidateForOffice(A). A's coalition (2) beats C (1). Conservation: bread total unchanged.
+
+**Cross-system chain**: AI goal -> coalition-aware planner Bribe op -> commodity transfer -> conservation -> loyalty increase -> target SupportCandidateForOffice -> DeclareSupport -> support counting -> decisive installation.
+
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:641`
+- Source: `golden_offices.rs:608`
+- Systems: Threaten, Succession, AI
+- GoalKinds: ClaimOffice, SupportCandidateForOffice
+- ActionDomains: Generic
+- Places: VillageSquare, OrchardFarm
+- Principles: 1, 10, 20
 - Primary tests: `golden_threaten_with_courage_diversity`
 - Replay tests: None
 - All tests: `golden_threaten_with_courage_diversity`
 
+**Setup**: A with attack_skill=pm(800), enterprise_weight=pm(900). B with courage=pm(200) (yields). C with courage=pm(900) (resists). D at OrchardFarm (not co-located, not threatenable) with pre-declared support.
+
+**Proves**: Same Threaten action, different courage -> divergent outcomes (Principle 20). Threaten(B) viable (800 > 200), Threaten(C) not (800 < 900). B yields -> loyalty increase -> SupportCandidateForOffice(A). Stops short of asserting office winner; invariant is courage-diverse coercion.
+
+**Cross-system chain**: AI goal -> coalition-aware planner Threaten op -> courage comparison -> yield/resist divergence -> loyalty increase -> target AI SupportCandidateForOffice -> DeclareSupport follow-through.
+
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:938`
+- Source: `golden_offices.rs:903`
+- Systems: Travel, Succession, AI, Political actions
+- GoalKinds: ClaimOffice
+- ActionDomains: Travel, Generic
+- Places: VillageSquare, BanditCamp, ForestPath, NorthCrossroads
+- Principles: 1, 7, 8, 10
 - Primary tests: `golden_travel_to_distant_jurisdiction_for_claim`
 - Replay tests: None
 - All tests: `golden_travel_to_distant_jurisdiction_for_claim`
 
+**Setup**: Single sated agent at BanditCamp (3 hops / 12 travel ticks from VillageSquare). enterprise_weight=pm(800). Vacant office at VillageSquare.
+
+**Proves**: Agent generates ClaimOffice from beliefs about a remote vacant office. Planner identifies co-location precondition (Principle 7). Plans multi-hop Travel + DeclareSupport. Succession installs agent after travel + period.
+
+**Cross-system chain**: AI goal from remote belief -> multi-hop travel planning -> sequential travel execution -> arrival at jurisdiction -> DeclareSupport -> succession resolution -> office installation.
+
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1043`
+- Source: `golden_offices.rs:1016`
+- Systems: AI, Travel, Succession, Political actions, Perception
+- GoalKinds: ClaimOffice
+- ActionDomains: Travel, Generic
+- Places: VillageSquare, BanditCamp
+- Principles: 7, 10, 13
 - Primary tests: `golden_information_locality_for_political_facts`
 - Replay tests: `golden_information_locality_for_political_facts_replays_deterministically`
 - All tests: `golden_information_locality_for_political_facts`, `golden_information_locality_for_political_facts_replays_deterministically`
 
+**Setup**: Vacant office at VillageSquare. Ambitious agent at BanditCamp with no belief about the office. Report-sourced belief injected after initial phase.
+
+**Proves**: Without office belief, agent never generates ClaimOffice or begins travel (Principle 7 locality). After explicit Report belief update, ordinary office-planning appears: ClaimOffice, travel, DeclareSupport, installation.
+
+**Cross-system chain**: No office belief -> no political candidate generation -> explicit reported belief update -> ClaimOffice candidate -> travel to jurisdiction -> DeclareSupport -> succession resolution.
+
 ### Scenario 33: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1247`
+- Source: `golden_offices.rs:1232`
+- Systems: AI, Travel, ConsultRecord, Succession, Political actions
+- GoalKinds: ClaimOffice
+- ActionDomains: Travel, Generic
+- Places: OrchardFarm, RulersHall, VillageSquare, EastFieldTrail, SouthGate
+- Principles: 7, 8, 12, 24
 - Primary tests: `golden_remote_record_consultation_political_action`
 - Replay tests: `golden_remote_record_consultation_political_action_replays_deterministically`
 - All tests: `golden_remote_record_consultation_political_action`, `golden_remote_record_consultation_political_action_replays_deterministically`
 
+**Setup**: Claimant at OrchardFarm with unknown office-holder belief. Office at VillageSquare but vacancy entry only in remote OfficeRegister at RulersHall.
+
+**Proves**: ClaimOffice generated despite unknown office-holder belief. Selected plan routes to RulersHall first for consult_record, then returns for DeclareSupport. Institutional belief transitions Unknown -> Certain(None) via RecordConsultation. Distinct from S15 (known vacancy) and S16 (no belief).
+
+**Cross-system chain**: Unknown office-holder belief + known remote register -> ClaimOffice candidate -> travel to RulersHall -> consult_record -> institutional belief update -> return to VillageSquare -> DeclareSupport -> succession installation.
+
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1538`
+- Source: `golden_offices.rs:1530`
+- Systems: AI, ConsultRecord, Succession, Political actions
+- GoalKinds: ClaimOffice
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 8, 12, 20, 24
 - Primary tests: `golden_knowledge_asymmetry_race_informed_wins_office`
 - Replay tests: `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
 - All tests: `golden_knowledge_asymmetry_race_informed_wins_office`, `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
 
+**Setup**: Two co-located claimants at VillageSquare. Informed claimant has Certain(None) office-holder belief. Uninformed must consult local register (consultation_ticks=12, speed_factor=pm(500) -> 6 ticks).
+
+**Proves**: Both generate ClaimOffice at tick 0. Informed selects direct DeclareSupport; uninformed selects ConsultRecord -> DeclareSupport. Informed commits declare_support first. Uninformed loses succession window. Competitive outcome emerges from knowledge state + duration cost (Principle 20).
+
+**Cross-system chain**: Same office + same ambition + different belief certainty -> informed direct DeclareSupport vs uninformed consult_record duration -> succession installs informed claimant first.
+
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1895`
+- Source: `golden_offices.rs:1894`
+- Systems: Needs, AI, Succession, Political actions
+- GoalKinds: ClaimOffice, ConsumeOwnedCommodity
+- ActionDomains: Needs, Generic
+- Places: VillageSquare
+- Principles: 10, 20, 24
 - Primary tests: `golden_survival_pressure_suppresses_political_goals`
 - Replay tests: `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 - All tests: `golden_survival_pressure_suppresses_political_goals`, `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 
+**Setup**: Agent at VillageSquare with enterprise_weight=pm(800), 1 bread, hunger exactly at High threshold. Vacant office (Support law, period=5).
+
+**Proves**: ClaimOffice exists but shared self-care suppression defers it while hunger >= High. Agent commits eat first. After hunger relief, DeclareSupport proceeds normally and succession installs agent as holder.
+
+**Cross-system chain**: Believed vacant office + enterprise motive -> ClaimOffice candidate -> shared self-care suppression -> eat commit -> suppression lift -> DeclareSupport -> succession installation.
+
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2090`
+- Source: `golden_offices.rs:2096`
+- Systems: Factions, Succession, AI, Political actions
+- GoalKinds: ClaimOffice
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 10, 20, 24
 - Primary tests: `golden_faction_eligibility_filters_office_claim`
 - Replay tests: None
 - All tests: `golden_faction_eligibility_filters_office_claim`
 
+**Setup**: Vacant office with EligibilityRule::FactionMember(faction). A is a member, B is not. Both sated, colocated, politically ambitious.
+
+**Proves**: Eligibility filtering at candidate generation, not action-time rejection. B never generates ClaimOffice in decision traces. Only A commits DeclareSupport and becomes office holder.
+
+**Cross-system chain**: Faction membership + believed vacant office -> AI eligibility gate on ClaimOffice -> only lawful claimant plans DeclareSupport -> succession installs eligible holder.
+
 ### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 
-- Source: `golden_offices.rs:2242`
+- Source: `golden_offices.rs:2257`
+- Systems: AI, Force-claim actions, Force-control succession
+- GoalKinds: ClaimOffice
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 3, 8, 10, 24
 - Primary tests: `golden_force_claim_ai_installation`
 - Replay tests: `golden_force_claim_ai_installation_replays_deterministically`
 - All tests: `golden_force_claim_ai_installation`, `golden_force_claim_ai_installation_replays_deterministically`
 
+**Setup**: Vacant Force-law office at VillageSquare. Single ambitious eligible agent with ordinary office knowledge.
+
+**Proves**: AI generates ClaimOffice and selects press_force_claim plan (not DeclareSupport). Agent becomes office_controller, then installs as holder only after uncontested hold delay. No declare_support commits occur.
+
+**Cross-system chain**: Believed vacant Force-law office -> ClaimOffice candidate -> press_force_claim execution -> controller establishment -> uncontested hold delay -> office installation.
+
 ### Scenario 20: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2617`
+- Source: `golden_offices.rs:2640`
+- Systems: Force-claim actions, Force-control succession
+- GoalKinds: ClaimOffice
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 3, 8, 24
 - Primary tests: `golden_contested_force_claim_resolves_after_yield`
 - Replay tests: `golden_contested_force_claim_resolves_after_yield_replays_deterministically`
 - All tests: `golden_contested_force_claim_resolves_after_yield`, `golden_contested_force_claim_resolves_after_yield_replays_deterministically`
 
+**Setup**: Two human-controlled claimants publicly press force claims on same vacant Force-law office in same tick.
+
+**Proves**: Concurrent claims produce contested state, blocking installation. yield_force_claim is the explicit resolution path. After yield, remaining claimant becomes uncontested controller and installs after hold delay.
+
+**Cross-system chain**: Two press_force_claim commits -> contested state -> one yield -> sole controller established -> delayed installation.
+
 ### Scenario 21: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2874`
+- Source: `golden_offices.rs:2905`
+- Systems: Force-control succession, Tell, Perception
+- GoalKinds: ClaimOffice, ShareBelief
+- ActionDomains: Generic, Social
+- Places: VillageSquare, GeneralStore
+- Principles: 7, 10, 13, 24
 - Primary tests: `golden_force_control_locality_requires_tell`
 - Replay tests: `golden_force_control_locality_requires_tell_replays_deterministically`
 - All tests: `golden_force_control_locality_requires_tell`, `golden_force_control_locality_requires_tell_replays_deterministically`
 
+**Setup**: Claimant publicly establishes force control at VillageSquare with same-place witness. Remote listener at GeneralStore.
+
+**Proves**: Same-place witness acquires ForceControllerOf belief from public event. Remote agent does not learn the fact from world existence alone (Principle 7). A committed tell relays the belief to the remote listener.
+
+**Cross-system chain**: Public force-control event -> witness institutional belief update -> remote ignorance preserved -> tell commit -> remote belief update.
+
 ### Scenario 3: Resource Contention with Conservation
 
 - Source: `golden_production.rs:2183`
+- Systems: Needs, Production, Travel, Conservation
+- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+- ActionDomains: Needs, Production, Travel
+- Places: VillageSquare, OrchardFarm
 - Primary tests: `golden_resource_contention_with_conservation`, `golden_resource_exhaustion_race`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback`, `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_dead_agent_pruned_from_facility_queue`, `golden_facility_queue_patience_timeout`, `golden_grant_expiry_before_intended_action`, `golden_materialized_output_ownership_prevents_theft`
 - Replay tests: `golden_facility_queue_patience_timeout_replays_deterministically`
 - All tests: `golden_resource_contention_with_conservation`, `golden_resource_exhaustion_race`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback`, `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_dead_agent_pruned_from_facility_queue`, `golden_facility_queue_patience_timeout`, `golden_facility_queue_patience_timeout_replays_deterministically`, `golden_grant_expiry_before_intended_action`, `golden_materialized_output_ownership_prevents_theft`
 
+**Setup**: Two critically hungry agents at Village Square. Alice has 1 bread. Orchard Farm has apples.
+
+**Proves**: Both agents act concurrently. Commodity totals never increase. Per-tick conservation enforced.
+
+**Cross-system chain**: Concurrent hunger pressure -> goal generation -> action execution -> conservation verification.
+
 ### Scenario 4: Materialization Barrier Chain
 
-- Source: `golden_production.rs:2488`
+- Source: `golden_production.rs:2502`
+- Systems: Production, Transport, Needs, AI
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Transport, Needs
+- Places: OrchardFarm
 - Primary tests: `golden_materialization_barrier_chain`
 - Replay tests: None
 - All tests: `golden_materialization_barrier_chain`
 
+**Setup**: Agent at Orchard Farm, critically hungry, no food. OrchardRow with 20 apples.
+
+**Proves**: Harvest -> ground lots materialize -> replan -> pick-up -> replan -> eat. Longest emergent chain. Conservation: never exceeds 20.
+
+**Cross-system chain**: Harvest -> materialization on ground -> replan -> pick-up -> replan -> eat.
+
 ### Scenario 6b: Multi-Recipe Craft Path
 
-- Source: `golden_production.rs:2574`
+- Source: `golden_production.rs:2602`
+- Systems: Production, Transport, Needs, AI
+- GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
+- ActionDomains: Production, Transport, Needs
+- Places: VillageSquare
 - Primary tests: `golden_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input`, `golden_multi_recipe_craft_path`, `golden_capacity_constrained_ground_lot_pickup`
 - Replay tests: `golden_remote_acquire_commodity_recipe_input_replays_deterministically`, `golden_resource_exhaustion_race_replays_deterministically`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`, `golden_exclusive_queue_contention_replays_deterministically`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
 - All tests: `golden_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input_replays_deterministically`, `golden_multi_recipe_craft_path`, `golden_capacity_constrained_ground_lot_pickup`, `golden_resource_exhaustion_race_replays_deterministically`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`, `golden_exclusive_queue_contention_replays_deterministically`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
 
+**Setup**: Agent with 1 firewood, knows 3 recipes. Mill workstation at Village Square.
+
+**Proves**: Selects bake bread recipe. Crafting consumes firewood, produces bread. Agent eats. Conservation verified.
+
+**Cross-system chain**: Recipe selection -> craft action -> output materialization -> replan -> eat.
+
 ### Scenario 3f: Faction-Owned Production — Member vs Outsider
 
-- Source: `golden_production.rs:2717`
+- Source: `golden_production.rs:2759`
+- Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Travel, Transport, Needs
+- Places: OrchardFarm, VillageSquare
+- Principles: (faction institutional delegation)
 - Primary tests: `golden_faction_ownership_producer_owner_delegation`
 - Replay tests: `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
 - All tests: `golden_faction_ownership_producer_owner_delegation`, `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
+
+**Setup**: Faction-owned orchard at Orchard Farm (ProducerOwner policy). Member Kael and outsider Wren both hungry. Fallback Actor-policy orchard at Village Square.
+
+**Proves**: Harvest output owned by faction. Member picks up via institutional delegation. Outsider blocked, replans to fallback. Conservation holds.
+
+**Cross-system chain**: ProducerOwner policy -> faction-owned output -> member pickup / outsider blocked -> outsider travel + fallback -> hunger relief for both.
+
+### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
+
+- Source: `golden_social.rs:344`
+- Systems: Perception, Conversation memory, Tell, AI, Travel
+- GoalKinds: ShareBelief, ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+- ActionDomains: Social, Needs, Travel
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 20
+- Primary tests: `golden_agent_autonomously_tells_colocated_peer`, `golden_rumor_chain_degrades_through_three_agents`, `golden_stale_belief_travel_reobserve_replan`, `golden_skeptical_listener_rejects_told_belief`, `golden_bystander_sees_telling_but_gets_no_belief`, `golden_entity_missing_discovery_does_not_teleport_belief`, `golden_survival_needs_suppress_social_goals`, `golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`, `golden_agent_retells_after_subject_belief_changes`, `golden_agent_retells_after_conversation_memory_expiry`, `golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`, `golden_chain_length_filtering_stops_gossip`, `golden_agent_diversity_in_social_behavior`, `golden_rumor_leads_to_wasted_trip_then_discovery`
+- Replay tests: None
+- All tests: `golden_agent_autonomously_tells_colocated_peer`, `golden_rumor_chain_degrades_through_three_agents`, `golden_stale_belief_travel_reobserve_replan`, `golden_skeptical_listener_rejects_told_belief`, `golden_bystander_sees_telling_but_gets_no_belief`, `golden_entity_missing_discovery_does_not_teleport_belief`, `golden_survival_needs_suppress_social_goals`, `golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`, `golden_agent_retells_after_subject_belief_changes`, `golden_agent_retells_after_conversation_memory_expiry`, `golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`, `golden_chain_length_filtering_stops_gossip`, `golden_agent_diversity_in_social_behavior`, `golden_rumor_leads_to_wasted_trip_then_discovery`
+
+**Setup**: Fourteen focused scenarios: autonomous tell, survival suppression, 3-agent relay chains, stale belief replan, skeptical listener rejection, bystander witnessing, entity-missing discovery, told-memory suppression, re-tell after belief change, re-tell after memory expiry, decision-trace social re-enablement, chain-length filtering, social_weight diversity, and rumor -> wasted-trip -> discovery lifecycle.
+
+**Proves**: Speakers autonomously select ShareBelief and relay information. Hunger suppresses gossip. Relay chains degrade provenance. Told-memory suppresses unchanged repeats. Belief change or expiry re-enables telling. Chain-length filtering prevents infinite gossip. social_weight diversity (Principle 20) produces distinct social behavior including zero-motive filtering. Bystanders witness without receiving belief content (Principle 7).
+
+**Cross-system chain**: Belief + conversation memory -> ShareBelief candidate -> Tell -> report propagation -> listener replan. Resend lifecycle: Tell -> told-memory -> omission -> belief change or expiry -> re-enable -> second Tell.
+
+### Scenario 2d-craft: Merchant Restock via Prerequisite-Aware Craft
+
+- Source: `golden_supply_chain.rs:1572`
+- Systems: Enterprise, Travel, Production, AI, Conservation
+- GoalKinds: RestockCommodity
+- ActionDomains: Production, Travel, Transport
+- Places: GeneralStore, OrchardFarm
+- Primary tests: `golden_merchant_restocks_via_prerequisite_aware_craft`, `golden_stale_prerequisite_belief_discovery_replan`
+- Replay tests: `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`, `golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`
+- All tests: `golden_merchant_restocks_via_prerequisite_aware_craft`, `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`, `golden_stale_prerequisite_belief_discovery_replan`, `golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`
+
+**Setup**: Merchant at General Store advertising bread, zero stock, remembered demand. Remote firewood at Orchard Farm, local mill. Test-local recipe registry for Harvest Firewood and Bake Bread.
+
+**Proves**: RestockCommodity{Bread} from concrete demand. Tick-0 traces show prerequisite-aware spatial guidance toward Orchard Farm. Full chain: travel -> harvest remote firewood -> return -> craft Bake Bread -> bread stock at home market.
+
+**Cross-system chain**: Demand memory -> restock signal -> prerequisite-aware route to remote input -> harvest/pickup -> return -> local craft -> bread at home market.
+
+### Scenario 2b: Buyer-Driven Trade Acquisition
+
+- Source: `golden_trade.rs:881`
+- Systems: Needs, AI, Trade, Conservation
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Trade, Needs
+- Places: VillageSquare
+- Primary tests: `golden_buyer_driven_trade_acquisition`
+- Replay tests: `golden_buyer_driven_trade_acquisition_replays_deterministically`
+- All tests: `golden_buyer_driven_trade_acquisition`, `golden_buyer_driven_trade_acquisition_replays_deterministically`
+
+**Setup**: Hungry buyer and sated seller co-located at VillageSquare. Seller advertises bread via MerchandiseProfile; buyer holds coins.
+
+**Proves**: Buyer generates AcquireCommodity from hunger. Planner resolves through local trade barrier. Trade transfers bread and coins. Buyer consumes acquired bread. Bread and coin conservation holds.
+
+**Cross-system chain**: Need pressure -> seller discovery via MerchandiseProfile -> planner trade barrier -> trade valuation/exchange -> consumption.
+
+### Scenario 2d: Merchant Restock and Return to Home Market
+
+- Source: `golden_trade.rs:916`
+- Systems: Enterprise, Travel, Production, Transport, Conservation
+- GoalKinds: RestockCommodity, MoveCargo
+- ActionDomains: Production, Travel, Transport
+- Places: GeneralStore, OrchardFarm
+- Primary tests: `golden_merchant_restock_return_stock`
+- Replay tests: `golden_merchant_restock_return_stock_replays_deterministically`
+- All tests: `golden_merchant_restock_return_stock`, `golden_merchant_restock_return_stock_replays_deterministically`
+
+**Setup**: Merchant at General Store with MerchandiseProfile(Apple), zero stock, remembered unmet demand. Orchard Farm has apple ResourceSource.
+
+**Proves**: Merchant generates RestockCommodity{Apple} from concrete demand. Travels to Orchard Farm, harvests, returns stock to General Store. Destination-local controlled stock satisfies restock delivery.
+
+**Cross-system chain**: Demand memory -> enterprise restock signal -> multi-leg travel -> harvest/materialization -> cargo return to home market.
+
+### Scenario 27: Local Trade Start Failure Recovers via Production Fallback
+
+- Source: `golden_trade.rs:951`
+- Systems: AI, Trade, Production, Travel, Conservation
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Trade, Production, Travel, Needs
+- Places: VillageSquare, OrchardFarm
+- Primary tests: `golden_local_trade_start_failure_recovers_via_production_fallback`
+- Replay tests: `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically`
+- All tests: `golden_local_trade_start_failure_recovers_via_production_fallback`, `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically`
+
+**Setup**: Two hungry buyers target one edible stock unit. Loser records StartFailed on stale trade start.
+
+**Proves**: Losing buyer records lawful StartFailed. Next AI tick clears stale local trade branch. Recovery through distant production fallback.
+
+**Cross-system chain**: Two buyers -> stale trade start -> StartFailed -> next AI tick clears branch -> travel to remote production -> harvest -> eat.

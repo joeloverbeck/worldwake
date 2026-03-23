@@ -31,6 +31,7 @@ pub mod input_queue;
 pub mod institutional_knowledge_trace;
 pub mod interrupt_abort;
 pub mod per_agent_belief_view;
+pub mod perception_trace;
 pub mod politics_trace;
 pub mod recipe_def;
 pub mod recipe_registry;
@@ -99,6 +100,7 @@ pub use institutional_knowledge_trace::{
 };
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
+pub use perception_trace::{PerceptionTraceEvent, PerceptionTraceSink};
 pub use politics_trace::{
     ForceCandidateTrace, ForceInstallationDeferralReason, OfficeAvailabilityPhase,
     OfficeSuccessionOutcome, OfficeSuccessionTrace,

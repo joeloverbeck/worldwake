@@ -3,7 +3,8 @@ use crate::{
     get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
     ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
     ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
-    InstitutionalKnowledgeTraceSink, PoliticalTraceSink, RecipeRegistry, RequestBindingKind,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry,
+    RequestBindingKind,
     RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceEvent,
     RequestResolutionTraceSink, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
     TickInputError, TickInputProducer, TickOutcome,
@@ -24,6 +25,7 @@ pub struct TickStepServices<'a> {
     pub action_trace: Option<&'a mut ActionTraceSink>,
     pub request_resolution_trace: Option<&'a mut RequestResolutionTraceSink>,
     pub politics_trace: Option<&'a mut PoliticalTraceSink>,
+    pub perception_trace: Option<&'a mut PerceptionTraceSink>,
     pub institutional_knowledge_trace: Option<&'a mut InstitutionalKnowledgeTraceSink>,
 }
 
@@ -767,6 +769,7 @@ fn run_systems(
             active_actions: runtime.scheduler.active_actions(),
             action_defs: services.action_defs,
             politics_trace: services.politics_trace.as_deref_mut(),
+            perception_trace: services.perception_trace.as_deref_mut(),
             tick,
             system_id,
         })
@@ -1179,6 +1182,7 @@ mod tests {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         }
     }
@@ -1312,6 +1316,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1367,6 +1372,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1424,6 +1430,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1499,6 +1506,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1580,6 +1588,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1664,6 +1673,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1768,6 +1778,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1837,6 +1848,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: Some(&mut request_trace),
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -1914,6 +1926,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2022,6 +2035,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2051,6 +2065,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2151,6 +2166,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2246,6 +2262,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2343,6 +2360,7 @@ mod tests {
                 action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2418,6 +2436,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2477,6 +2496,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2535,6 +2555,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2594,6 +2615,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2677,6 +2699,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2717,6 +2740,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2768,6 +2792,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2822,6 +2847,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2884,6 +2910,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2910,6 +2937,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2967,6 +2995,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )
@@ -2986,6 +3015,7 @@ mod tests {
                 action_trace: None,
                 request_resolution_trace: None,
                 politics_trace: None,
+                perception_trace: None,
                 institutional_knowledge_trace: None,
             },
         )

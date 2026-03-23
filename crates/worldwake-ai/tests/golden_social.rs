@@ -340,6 +340,34 @@ fn seed_subject_belief_change(fixture: &mut SocialRetellFixture, available_quant
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, Conversation memory, Tell, AI, Travel
+// GoalKinds: ShareBelief, ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+// ActionDomains: Social, Needs, Travel
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 20
+//
+// Setup: Fourteen focused scenarios: autonomous tell, survival suppression,
+//   3-agent relay chains, stale belief replan, skeptical listener rejection,
+//   bystander witnessing, entity-missing discovery, told-memory suppression,
+//   re-tell after belief change, re-tell after memory expiry, decision-trace
+//   social re-enablement, chain-length filtering, social_weight diversity,
+//   and rumor -> wasted-trip -> discovery lifecycle.
+//
+// Proves: Speakers autonomously select ShareBelief and relay information.
+//   Hunger suppresses gossip. Relay chains degrade provenance. Told-memory
+//   suppresses unchanged repeats. Belief change or expiry re-enables telling.
+//   Chain-length filtering prevents infinite gossip. social_weight diversity
+//   (Principle 20) produces distinct social behavior including zero-motive
+//   filtering. Bystanders witness without receiving belief content (Principle 7).
+//
+// Chain: Belief + conversation memory -> ShareBelief candidate -> Tell ->
+//   report propagation -> listener replan. Resend lifecycle: Tell -> told-memory
+//   -> omission -> belief change or expiry -> re-enable -> second Tell.
+
 #[allow(clippy::too_many_lines)]
 fn run_autonomous_tell_scenario(
     seed: Seed,

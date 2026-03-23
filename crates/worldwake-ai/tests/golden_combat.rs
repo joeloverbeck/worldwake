@@ -698,6 +698,25 @@ fn run_death_and_loot_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 8b: Corpse Burial
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Corpse, Conservation
+// GoalKinds: BuryCorpse
+// ActionDomains: Corpse
+// Places: VillageSquare
+// Principles: Conservation, Unique Location
+//
+// Setup: Dead agent and living burier at VillageSquare with GravePlot
+//   facility. No competing pressure.
+//
+// Proves: BuryCorpse emitted through AI. Burial creates grave container.
+//   Corpse in containment, no longer loot-targetable.
+//
+// Chain: Local corpse + grave plot -> BuryCorpse goal -> bury action
+//   -> containment-based inaccessibility.
+
 #[test]
 fn golden_bury_corpse() {
     let mut h = GoldenHarness::new(Seed([14; 32]));
@@ -1370,6 +1389,26 @@ fn run_living_combat_scenario(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 7f: ReduceDanger Defensive Mitigation
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Combat, Conservation
+// GoalKinds: ReduceDanger, EngageHostile
+// ActionDomains: Combat
+// Places: VillageSquare
+// Principles: Belief-Only Planning, Agent Symmetry
+//
+// Setup: Two sated agents. Attacker hostile, defender purely reactive
+//   (no outgoing hostility).
+//
+// Proves: Attacker opens combat via EngageHostile. Defender observes live
+//   attack pressure and enters ReduceDanger (defend stance), not proactive
+//   EngageHostile.
+//
+// Chain: Outgoing hostility -> attack action -> danger signal
+//   -> ReduceDanger -> defensive mitigation.
+
 #[test]
 fn golden_reduce_danger_defensive_mitigation() {
     let (mut h, attacker, defender, initial_coin_total) =
@@ -1570,6 +1609,26 @@ fn golden_defend_changed_conditions_replays_deterministically() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 7g: Wound Bleed, Clotting, and Natural Recovery
+// ---------------------------------------------------------------------------
+//
+// Systems: Combat, Needs
+// GoalKinds: (none direct)
+// ActionDomains: Combat
+// Places: VillageSquare
+// Principles: Concrete State Over Abstract Scores, Feedback Dampening
+//
+// Setup: Sated agent with one injected bleeding wound (severity pm(50),
+//   bleed_rate pm(100)).
+//
+// Proves: Wound progresses through authoritative combat tick. Severity rises
+//   while bleeding. Recovery doesn't begin until bleed_rate=0. Once clotted
+//   and physiology below thresholds, severity falls and wound pruned.
+//
+// Chain: Wound state -> combat-system bleed progression -> natural clotting
+//   -> physiology-gated recovery -> wound pruning.
+
 #[test]
 fn golden_wound_bleed_clotting_natural_recovery() {
     let _ = run_wound_bleed_clotting_natural_recovery_scenario(Seed([27; 32]));
@@ -1585,6 +1644,27 @@ fn golden_wound_bleed_clotting_natural_recovery_replays_deterministically() {
         "wound bleed/clot/recovery scenario should replay deterministically"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 30: Recovery-Aware Priority Boost Eats Before Wash
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Combat
+// GoalKinds: ConsumeOwnedCommodity, Wash
+// ActionDomains: Needs
+// Places: VillageSquare
+// Principles: Concrete State Over Abstract Scores, Maximal Emergence
+//
+// Setup: Agent with clotted wound, hunger=High, dirtiness=High, bread and
+//   water. Wash has higher initial motive score. Recovery-aware promotion
+//   lifts eat to Critical.
+//
+// Proves: Recovery-aware promotion lifts eat from High to Critical over wash.
+//   Eating drops hunger below recovery gate. Wound severity begins decreasing
+//   through natural recovery.
+//
+// Chain: Clotted wound + High hunger -> recovery-aware promotion -> eat over
+//   wash -> hunger relief opens recovery gate -> wound severity reduction.
 
 #[test]
 fn golden_recovery_aware_boost_eats_before_wash() {
@@ -1605,6 +1685,21 @@ fn golden_recovery_aware_boost_eats_before_wash_replays_deterministically() {
 // ---------------------------------------------------------------------------
 // Scenario 8: Death Cascade and Opportunistic Loot
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, Combat, Corpse, Conservation
+// GoalKinds: LootCorpse
+// ActionDomains: Corpse
+// Places: VillageSquare
+// Principles: Conservation, Append-Only Event Log
+//
+// Setup: Fragile victim (wound_capacity pm(200), existing starvation wound)
+//   with 5 coins. Healthy Looter co-located.
+//
+// Proves: Victim dies from deprivation. Looter opportunistically loots within
+//   100 ticks. Coin conservation holds.
+//
+// Chain: Metabolism -> deprivation -> wound infliction -> death -> corpse
+//   -> loot goal -> loot action.
 
 #[test]
 fn golden_death_cascade_and_opportunistic_loot() {
@@ -1640,6 +1735,25 @@ fn golden_death_cascade_and_opportunistic_loot_replays_deterministically() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 8c: Loot Suppression Under Self-Care Pressure
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Corpse, Conservation
+// GoalKinds: LootCorpse, ConsumeOwnedCommodity
+// ActionDomains: Corpse, Needs
+// Places: VillageSquare
+// Principles: Conservation, Maximal Emergence
+//
+// Setup: Hungry scavenger (pm(800)) with bread, co-located corpse with
+//   coins.
+//
+// Proves: While hunger >= High, scavenger never gains corpse coins. Eats
+//   first. After hunger relief, loots corpse. Conservation holds.
+//
+// Chain: High hunger + corpse -> loot suppression -> eat -> hunger relief
+//   -> suppression lift -> loot.
+
 #[test]
 fn golden_loot_suppressed_under_self_care_pressure() {
     let _ = run_loot_suppressed_under_self_care_scenario(Seed([29; 32]));
@@ -1658,6 +1772,26 @@ fn golden_loot_suppressed_under_self_care_pressure_replays_deterministically() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 8d: Death While Traveling
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Travel, Combat, Conservation
+// GoalKinds: AcquireCommodity(SelfConsume)
+// ActionDomains: Travel, Needs
+// Places: BanditCamp, ForestPath
+// Principles: Conservation, Unique Location
+//
+// Setup: Fragile traveler at BanditCamp with critical hunger, 5 coins.
+//   Dies before reaching food source.
+//
+// Proves: Traveler enters multi-hop travel. Dies from deprivation before
+//   destination. Body at concrete intermediate place (ForestPath), not
+//   destination. Coin conservation holds.
+//
+// Chain: Hunger -> distant acquire -> travel departure -> deprivation
+//   -> death at intermediate place.
+
 #[test]
 fn golden_death_while_traveling() {
     let _ = run_death_while_traveling_scenario(Seed([12; 32]));
@@ -1673,6 +1807,26 @@ fn golden_death_while_traveling_replays_deterministically() {
         "death-while-traveling scenario should replay deterministically"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 7c: Hostility-Driven Living Combat
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Combat, Conservation
+// GoalKinds: EngageHostile
+// ActionDomains: Combat
+// Places: VillageSquare
+// Principles: Conservation, Determinism
+//
+// Setup: Two sated agents with concrete hostility relation. Stronger
+//   attacker; both carry coin.
+//
+// Proves: Attacker generates hostile-engagement goal. Defender responds
+//   through live combat loop. Wounds inflicted. Seed sensitivity produces
+//   different outcomes. Conservation holds.
+//
+// Chain: Hostility -> hostile-engagement goal -> attack action
+//   -> wound infliction -> defender response.
 
 #[test]
 fn golden_combat_between_living_agents() {
@@ -1713,8 +1867,23 @@ fn golden_combat_between_living_agents_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario S03a: Multi-Corpse Loot Binding (S03 — matches_binding)
+// Scenario S03a: Multi-Corpse Loot Binding
 // ---------------------------------------------------------------------------
+//
+// Systems: AI, Corpse, Conservation
+// GoalKinds: LootCorpse
+// ActionDomains: Corpse
+// Places: VillageSquare
+// Principles: Conservation, Determinism
+//
+// Setup: Two dead agents (CorpseA with Coin(5), CorpseB with Bread(3))
+//   and sated Looter.
+//
+// Proves: LootCorpse for both corpses. matches_binding filters to selected
+//   target. Sequential looting. Conservation holds.
+//
+// Chain: LootCorpse candidates -> ranking -> matches_binding -> sequential
+//   loot -> both looted.
 
 fn build_multi_corpse_loot_binding_scenario(
     seed: Seed,
@@ -1896,8 +2065,23 @@ fn golden_multi_corpse_loot_binding_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario S03b: Bury Suppressed Under Stress (S02 — evaluate_suppression)
+// Scenario S03b: Bury Suppressed Under Stress
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Corpse, Production
+// GoalKinds: BuryCorpse, ConsumeOwnedCommodity
+// ActionDomains: Corpse, Needs
+// Places: VillageSquare
+// Principles: Maximal Emergence, Concrete State Over Abstract Scores
+//
+// Setup: Dead agent with GravePlot. Burier with hunger=pm(800)
+//   (>= High=pm(750)) and Bread(1).
+//
+// Proves: Hunger >= High suppresses BuryCorpse. Agent eats. Hunger drops,
+//   suppression lifts. Agent buries corpse.
+//
+// Chain: High hunger -> BuryCorpse suppression -> eat -> hunger relief
+//   -> suppression lift -> burial.
 
 fn build_bury_suppressed_under_stress_scenario(
     seed: Seed,
@@ -2056,8 +2240,24 @@ fn golden_bury_suppressed_under_stress_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario S03c: Suppression Then Binding Combined (S02 + S03)
+// Scenario S03c: Suppression Then Binding Combined
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Corpse, Conservation
+// GoalKinds: LootCorpse, ConsumeOwnedCommodity
+// ActionDomains: Corpse, Needs
+// Places: VillageSquare
+// Principles: Conservation, Maximal Emergence
+//
+// Setup: Two corpses (Coin(5), Coin(3)), hungry scavenger (pm(800))
+//   with Bread(1).
+//
+// Proves: Hunger suppresses both LootCorpse goals. Eats first. Suppression
+//   lifts. matches_binding selects correct target. Sequential loot.
+//   Conservation holds.
+//
+// Chain: High hunger -> loot suppression -> eat -> relief
+//   -> matches_binding -> sequential loot.
 
 fn build_suppression_then_binding_scenario(
     seed: Seed,

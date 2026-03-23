@@ -28,10 +28,21 @@ use worldwake_sim::{
 // Scenario 11: Simple Office Claim via DeclareSupport
 // ---------------------------------------------------------------------------
 //
-// Setup: Single sated agent at VillageSquare with high enterprise_weight.
-// Vacant office (Support law, period=5, no eligibility rules) at VillageSquare.
-// Agent generates ClaimOffice -> plans DeclareSupport(self) -> executes ->
-// after succession period, succession_system installs agent as holder.
+// Systems: Succession, AI, Political actions
+// GoalKinds: ClaimOffice
+// ActionDomains: Generic
+// Places: VillageSquare
+// Principles: 10, 20
+//
+// Setup: Single sated agent at VillageSquare with enterprise_weight=pm(800).
+//   Vacant office (Support law, period=5, no eligibility).
+//
+// Proves: Agent autonomously generates ClaimOffice from enterprise_weight
+//   and believed vacant office. GOAP plans DeclareSupport(self). After
+//   succession period, succession_system installs agent as holder.
+//
+// Chain: Enterprise weight -> ClaimOffice candidate -> DeclareSupport plan
+//   -> action execution -> succession resolution -> office installation.
 
 fn build_simple_office_claim_scenario(
     seed: Seed,
@@ -140,6 +151,15 @@ fn golden_simple_office_claim_via_declare_support() {
 // ---------------------------------------------------------------------------
 // Scenario 11b: Deterministic Replay
 // ---------------------------------------------------------------------------
+//
+// Systems: Succession, AI, Political actions
+// GoalKinds: ClaimOffice
+// Places: VillageSquare
+//
+// Setup: Same as Scenario 11, run twice with identical seed.
+//
+// Proves: Two runs with the same seed produce identical world and
+//   event-log hashes. World state differs from initial.
 
 #[test]
 fn golden_simple_office_claim_deterministic_replay() {
@@ -170,13 +190,23 @@ fn golden_simple_office_claim_deterministic_replay() {
 // Scenario 12: Competing Claims with Loyal Supporter
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office (Support law, period=5). Agents A and B both eligible
-// with high enterprise_weight. Agent C has loyalty to A and social_weight > 0
-// but enterprise_weight=0 (so ClaimOffice gets zero-motive filtered and C
-// generates SupportCandidateForOffice(A) instead).
+// Systems: Succession, AI, Political actions
+// GoalKinds: ClaimOffice, SupportCandidateForOffice
+// ActionDomains: Generic
+// Places: VillageSquare
+// Principles: 10, 20
 //
-// Expected: A declares for self, B declares for self, C supports A.
-// A gets 2 declarations (self + C), B gets 1. succession_system installs A.
+// Setup: Three agents at VillageSquare. A and B with enterprise_weight=pm(800).
+//   C with enterprise_weight=0, social_weight=pm(600), loyalty to A at pm(650).
+//   Vacant office (Support law, period=5).
+//
+// Proves: A and B generate ClaimOffice. C's ClaimOffice is zero-motive filtered
+//   (enterprise_weight=0); C generates SupportCandidateForOffice(A) from loyalty.
+//   A gets 2 declarations (self + C), B gets 1. Succession installs A.
+//
+// Chain: Loyalty -> SupportCandidateForOffice candidate -> zero-motive ClaimOffice
+//   filtering -> DeclareSupport plan -> multi-agent declarations -> support
+//   counting -> decisive installation.
 
 fn social_supporter_utility(social: Permille) -> UtilityProfile {
     UtilityProfile {
@@ -361,20 +391,24 @@ fn golden_competing_claims_with_loyal_supporter() {
 // Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office (Support law, period=5). Agent A eligible with high
-// enterprise_weight, holds 5 bread. Agent B at jurisdiction, no initial
-// loyalty to A. Agent C (competitor) at jurisdiction has already self-declared
-// support for own office claim.
+// Systems: Bribe, Succession, AI, Conservation
+// GoalKinds: ClaimOffice, SupportCandidateForOffice
+// ActionDomains: Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 1, 10
 //
-// The competitor ensures that DeclareSupport alone from A would produce a tie
-// (ProgressBarrier), motivating the planner to select Bribe to build a
-// winning coalition (GoalSatisfied).
+// Setup: A with enterprise_weight=pm(900) holds 5 bread. B at jurisdiction,
+//   no loyalty. C (competitor) at OrchardFarm with pre-declared self-support.
+//   Wider beam_width=16 for branchy adjacency graph.
 //
-// Expected: A generates ClaimOffice. Planner finds Bribe(B, bread) +
-// DeclareSupport(self) because DeclareSupport alone ties with competitor C.
-// A bribes B (all 5 bread transfer). B's loyalty increases. B generates
-// SupportCandidateForOffice(A) and declares support. A's coalition
-// (self + B = 2) exceeds C's (self = 1). Politics system installs A.
+// Proves: DeclareSupport alone would tie with C (ProgressBarrier). Coalition-aware
+//   planner finds Bribe(B, bread) + DeclareSupport(self). A bribes B (full 5 bread
+//   transfer). B's loyalty increases and B generates SupportCandidateForOffice(A).
+//   A's coalition (2) beats C (1). Conservation: bread total unchanged.
+//
+// Chain: AI goal -> coalition-aware planner Bribe op -> commodity transfer ->
+//   conservation -> loyalty increase -> target SupportCandidateForOffice ->
+//   DeclareSupport -> support counting -> decisive installation.
 
 #[test]
 #[allow(clippy::too_many_lines)]
@@ -574,26 +608,24 @@ fn golden_bribe_support_coalition() {
 // Scenario 14: Threaten with Courage Diversity (Principle 20)
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office (Support law, period=5). Agent A eligible with high
-// enterprise_weight and attack_skill=pm(800). Agent B at jurisdiction with
-// courage=pm(200) (should yield — 800 > 200). Agent C at jurisdiction with
-// courage=pm(900) (should resist — 800 < 900). Agent D (competitor) at
-// ORCHARD_FARM (not co-located), has already self-declared support for own
-// office claim.
+// Systems: Threaten, Succession, AI
+// GoalKinds: ClaimOffice, SupportCandidateForOffice
+// ActionDomains: Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 1, 10, 20
 //
-// D is placed at a different location so the planner cannot target D with
-// Threaten (not co-located), forcing the planner to consider B and C only.
-// D's pre-declared support still counts (declarations are relation-based).
+// Setup: A with attack_skill=pm(800), enterprise_weight=pm(900). B with
+//   courage=pm(200) (yields). C with courage=pm(900) (resists). D at
+//   OrchardFarm (not co-located, not threatenable) with pre-declared support.
 //
-// Expected: A generates ClaimOffice. Planner finds Threaten(B) viable
-// (800 > 200) but not Threaten(C) (800 < 900). A threatens B -> B yields ->
-// loyalty increase and B starts generating SupportCandidateForOffice(A).
-// A declares for self. C has hostility toward A or is unaffected.
+// Proves: Same Threaten action, different courage -> divergent outcomes
+//   (Principle 20). Threaten(B) viable (800 > 200), Threaten(C) not (800 < 900).
+//   B yields -> loyalty increase -> SupportCandidateForOffice(A). Stops short
+//   of asserting office winner; invariant is courage-diverse coercion.
 //
-// This scenario intentionally stops short of asserting the final office winner.
-// Coalition winner selection is a separate ranking concern once multiple
-// support paths remain live; the invariant here is courage-diverse coercion and
-// the downstream opening of a support path for the yielding target.
+// Chain: AI goal -> coalition-aware planner Threaten op -> courage comparison
+//   -> yield/resist divergence -> loyalty increase -> target AI
+//   SupportCandidateForOffice -> DeclareSupport follow-through.
 
 fn combat_profile_with_attack_skill(attack_skill: Permille) -> CombatProfile {
     CombatProfile::new(
@@ -871,14 +903,22 @@ fn golden_threaten_with_courage_diversity() {
 // Scenario 15: Travel to Distant Jurisdiction for Office Claim
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office at VillageSquare (Support law, period=5, no eligibility).
-// Single sated agent starts at BanditCamp (3 hops away: BanditCamp → ForestPath
-// → NorthCrossroads → VillageSquare, 12 travel ticks total).
-// Agent has beliefs about the vacant office. enterprise_weight=pm(800).
+// Systems: Travel, Succession, AI, Political actions
+// GoalKinds: ClaimOffice
+// ActionDomains: Travel, Generic
+// Places: VillageSquare, BanditCamp, ForestPath, NorthCrossroads
+// Principles: 1, 7, 8, 10
 //
-// Expected: Agent generates ClaimOffice → plans multi-hop Travel + DeclareSupport
-// → traverses the 3-hop route → arrives at VillageSquare → declares support →
-// installed as holder after succession period.
+// Setup: Single sated agent at BanditCamp (3 hops / 12 travel ticks from
+//   VillageSquare). enterprise_weight=pm(800). Vacant office at VillageSquare.
+//
+// Proves: Agent generates ClaimOffice from beliefs about a remote vacant office.
+//   Planner identifies co-location precondition (Principle 7). Plans multi-hop
+//   Travel + DeclareSupport. Succession installs agent after travel + period.
+//
+// Chain: AI goal from remote belief -> multi-hop travel planning -> sequential
+//   travel execution -> arrival at jurisdiction -> DeclareSupport -> succession
+//   resolution -> office installation.
 
 #[test]
 fn golden_travel_to_distant_jurisdiction_for_claim() {
@@ -976,10 +1016,22 @@ fn golden_travel_to_distant_jurisdiction_for_claim() {
 // Scenario 16: Political Office Facts Remain Local Until Belief Update
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office at VillageSquare (Support law, period=5, no eligibility).
-// Single politically ambitious agent starts at BanditCamp with no belief about
-// the office. After an explicit reported belief update, the agent should begin
-// the normal ClaimOffice -> travel -> declare_support -> succession path.
+// Systems: AI, Travel, Succession, Political actions, Perception
+// GoalKinds: ClaimOffice
+// ActionDomains: Travel, Generic
+// Places: VillageSquare, BanditCamp
+// Principles: 7, 10, 13
+//
+// Setup: Vacant office at VillageSquare. Ambitious agent at BanditCamp with
+//   no belief about the office. Report-sourced belief injected after initial phase.
+//
+// Proves: Without office belief, agent never generates ClaimOffice or begins
+//   travel (Principle 7 locality). After explicit Report belief update, ordinary
+//   office-planning appears: ClaimOffice, travel, DeclareSupport, installation.
+//
+// Chain: No office belief -> no political candidate generation -> explicit
+//   reported belief update -> ClaimOffice candidate -> travel to jurisdiction
+//   -> DeclareSupport -> succession resolution.
 
 #[allow(clippy::too_many_lines)]
 fn run_information_locality_for_political_facts(seed: Seed) -> (StateHash, StateHash) {
@@ -1180,16 +1232,23 @@ fn golden_information_locality_for_political_facts_replays_deterministically() {
 // Scenario 33: Remote Record Travel + Consultation + Political Action
 // ---------------------------------------------------------------------------
 //
-// Setup: Single sated claimant starts at OrchardFarm with high enterprise
-// weight. The office is vacant at VillageSquare, but the vacancy entry exists
-// only in a remote OfficeRegister at RulersHall. The claimant knows about the
-// office and the remote record entity, but has no seeded institutional belief
-// about the office holder.
+// Systems: AI, Travel, ConsultRecord, Succession, Political actions
+// GoalKinds: ClaimOffice
+// ActionDomains: Travel, Generic
+// Places: OrchardFarm, RulersHall, VillageSquare, EastFieldTrail, SouthGate
+// Principles: 7, 8, 12, 24
 //
-// Expected: ClaimOffice remains the selected goal, the initial selected plan is
-// Travel(RulersHall) -> ConsultRecord(remote record) -> Travel(VillageSquare)
-// -> DeclareSupport(self), consult_record commits before declare_support, and
-// succession installs the claimant as office holder.
+// Setup: Claimant at OrchardFarm with unknown office-holder belief. Office at
+//   VillageSquare but vacancy entry only in remote OfficeRegister at RulersHall.
+//
+// Proves: ClaimOffice generated despite unknown office-holder belief. Selected
+//   plan routes to RulersHall first for consult_record, then returns for
+//   DeclareSupport. Institutional belief transitions Unknown -> Certain(None)
+//   via RecordConsultation. Distinct from S15 (known vacancy) and S16 (no belief).
+//
+// Chain: Unknown office-holder belief + known remote register -> ClaimOffice
+//   candidate -> travel to RulersHall -> consult_record -> institutional belief
+//   update -> return to VillageSquare -> DeclareSupport -> succession installation.
 
 fn build_remote_record_consultation_political_action_scenario(
     seed: Seed,
@@ -1471,17 +1530,24 @@ fn golden_remote_record_consultation_political_action_replays_deterministically(
 // Scenario 34: Knowledge Asymmetry Race
 // ---------------------------------------------------------------------------
 //
-// Setup: Two sated claimants start co-located at VillageSquare with high
-// enterprise weight. Both know about the same vacant office. Only the
-// uninformed claimant needs to consult the local office register because the
-// informed claimant already has Certain(None) office-holder belief.
+// Systems: AI, ConsultRecord, Succession, Political actions
+// GoalKinds: ClaimOffice
+// ActionDomains: Generic
+// Places: VillageSquare
+// Principles: 8, 12, 20, 24
 //
-// Expected: both claimants generate ClaimOffice, but the informed claimant
-// selects direct DeclareSupport while the uninformed claimant selects
-// ConsultRecord -> DeclareSupport. Because the record's consultation duration
-// is authoritatively raised to 12 ticks and both agents use
-// consultation_speed_factor=pm(500), the uninformed claimant spends 6 ticks
-// consulting and loses the initial support-law succession window.
+// Setup: Two co-located claimants at VillageSquare. Informed claimant has
+//   Certain(None) office-holder belief. Uninformed must consult local register
+//   (consultation_ticks=12, speed_factor=pm(500) -> 6 ticks).
+//
+// Proves: Both generate ClaimOffice at tick 0. Informed selects direct
+//   DeclareSupport; uninformed selects ConsultRecord -> DeclareSupport.
+//   Informed commits declare_support first. Uninformed loses succession window.
+//   Competitive outcome emerges from knowledge state + duration cost (Principle 20).
+//
+// Chain: Same office + same ambition + different belief certainty -> informed
+//   direct DeclareSupport vs uninformed consult_record duration -> succession
+//   installs informed claimant first.
 
 #[allow(clippy::too_many_lines)]
 fn build_knowledge_asymmetry_race_scenario(
@@ -1828,15 +1894,22 @@ fn golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministicall
 // Scenario 17: Survival Pressure Suppresses Political Goals
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office at VillageSquare (Support law, period=5). Single agent
-// at VillageSquare has high enterprise_weight, a belief about the vacant
-// office, and 1 owned bread. Hunger starts exactly at the agent's High
-// threshold, so ClaimOffice is generated but suppressed by shared goal-policy
-// evaluation until self-care pressure is relieved.
+// Systems: Needs, AI, Succession, Political actions
+// GoalKinds: ClaimOffice, ConsumeOwnedCommodity
+// ActionDomains: Needs, Generic
+// Places: VillageSquare
+// Principles: 10, 20, 24
 //
-// Expected: Agent commits eat before any declare_support commit. Hunger drops
-// below the High threshold before declare_support commits. Once suppression
-// lifts, the agent declares support for self and is later installed as holder.
+// Setup: Agent at VillageSquare with enterprise_weight=pm(800), 1 bread,
+//   hunger exactly at High threshold. Vacant office (Support law, period=5).
+//
+// Proves: ClaimOffice exists but shared self-care suppression defers it while
+//   hunger >= High. Agent commits eat first. After hunger relief, DeclareSupport
+//   proceeds normally and succession installs agent as holder.
+//
+// Chain: Believed vacant office + enterprise motive -> ClaimOffice candidate
+//   -> shared self-care suppression -> eat commit -> suppression lift ->
+//   DeclareSupport -> succession installation.
 
 fn build_survival_pressure_suppresses_political_goals_scenario(
     seed: Seed,
@@ -2023,13 +2096,22 @@ fn golden_survival_pressure_suppresses_political_goals_replays_deterministically
 // Scenario 18: Faction Eligibility Filters Office Claim
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office at VillageSquare (Support law, period=5) restricted by
-// EligibilityRule::FactionMember(faction). Agent A belongs to the faction and
-// Agent B does not. Both are sated, colocated, politically ambitious, and
-// have direct beliefs about the office.
+// Systems: Factions, Succession, AI, Political actions
+// GoalKinds: ClaimOffice
+// ActionDomains: Generic
+// Places: VillageSquare
+// Principles: 10, 20, 24
 //
-// Expected: A generates ClaimOffice and is installed. B never generates
-// ClaimOffice and never commits declare_support.
+// Setup: Vacant office with EligibilityRule::FactionMember(faction). A is a
+//   member, B is not. Both sated, colocated, politically ambitious.
+//
+// Proves: Eligibility filtering at candidate generation, not action-time
+//   rejection. B never generates ClaimOffice in decision traces. Only A
+//   commits DeclareSupport and becomes office holder.
+//
+// Chain: Faction membership + believed vacant office -> AI eligibility gate
+//   on ClaimOffice -> only lawful claimant plans DeclareSupport -> succession
+//   installs eligible holder.
 
 #[test]
 #[allow(clippy::too_many_lines)]
@@ -2175,14 +2257,22 @@ fn golden_faction_eligibility_filters_office_claim() {
 // Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 // ---------------------------------------------------------------------------
 //
-// Setup: Vacant office at VillageSquare using `SuccessionLaw::Force`. A single
-// ambitious eligible agent has ordinary office knowledge and must discover the
-// real `ClaimOffice -> PressForceClaim -> controller hold -> installation`
-// path through AI planning.
+// Systems: AI, Force-claim actions, Force-control succession
+// GoalKinds: ClaimOffice
+// ActionDomains: Generic
+// Places: VillageSquare
+// Principles: 3, 8, 10, 24
 //
-// Expected: The agent generates `ClaimOffice`, commits `press_force_claim`,
-// never commits `declare_support`, becomes force controller first, and is only
-// installed after the uncontested hold delay.
+// Setup: Vacant Force-law office at VillageSquare. Single ambitious eligible
+//   agent with ordinary office knowledge.
+//
+// Proves: AI generates ClaimOffice and selects press_force_claim plan (not
+//   DeclareSupport). Agent becomes office_controller, then installs as holder
+//   only after uncontested hold delay. No declare_support commits occur.
+//
+// Chain: Believed vacant Force-law office -> ClaimOffice candidate ->
+//   press_force_claim execution -> controller establishment -> uncontested
+//   hold delay -> office installation.
 
 fn build_force_claim_ai_installation_scenario(
     seed: Seed,
@@ -2550,13 +2640,21 @@ fn golden_force_claim_ai_installation_replays_deterministically() {
 // Scenario 20: Contested Force Claim Resolves Only After Yield
 // ---------------------------------------------------------------------------
 //
-// Setup: Two local human-controlled claimants publicly press force claims on
-// the same office in the same tick. The office must remain contested until one
-// claimant explicitly yields.
+// Systems: Force-claim actions, Force-control succession
+// GoalKinds: ClaimOffice
+// ActionDomains: Generic
+// Places: VillageSquare
+// Principles: 3, 8, 24
 //
-// Expected: no controller or installation while both claims remain active;
-// after `yield_force_claim`, the remaining claimant becomes controller and
-// later installs after the hold delay.
+// Setup: Two human-controlled claimants publicly press force claims on same
+//   vacant Force-law office in same tick.
+//
+// Proves: Concurrent claims produce contested state, blocking installation.
+//   yield_force_claim is the explicit resolution path. After yield, remaining
+//   claimant becomes uncontested controller and installs after hold delay.
+//
+// Chain: Two press_force_claim commits -> contested state -> one yield ->
+//   sole controller established -> delayed installation.
 
 fn build_contested_force_claim_resolution_scenario(
     seed: Seed,
@@ -2807,12 +2905,21 @@ fn golden_contested_force_claim_resolves_after_yield_replays_deterministically()
 // Scenario 21: Force Control Knowledge Stays Local Until Tell
 // ---------------------------------------------------------------------------
 //
-// Setup: A same-place witness observes a public force claim and later carries
-// that force-control belief to an adjacent remote listener.
+// Systems: Force-control succession, Tell, Perception
+// GoalKinds: ClaimOffice, ShareBelief
+// ActionDomains: Generic, Social
+// Places: VillageSquare, GeneralStore
+// Principles: 7, 10, 13, 24
 //
-// Expected: the witness learns `ForceControllerOf { office }` from the local
-// event, the remote listener remains ignorant until a committed `tell`, and
-// the listener then receives the relayed force-control claim.
+// Setup: Claimant publicly establishes force control at VillageSquare with
+//   same-place witness. Remote listener at GeneralStore.
+//
+// Proves: Same-place witness acquires ForceControllerOf belief from public
+//   event. Remote agent does not learn the fact from world existence alone
+//   (Principle 7). A committed tell relays the belief to the remote listener.
+//
+// Chain: Public force-control event -> witness institutional belief update
+//   -> remote ignorance preserved -> tell commit -> remote belief update.
 
 #[allow(clippy::too_many_lines)]
 fn build_force_control_locality_and_tell_scenario(

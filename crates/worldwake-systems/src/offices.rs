@@ -24,6 +24,7 @@ pub fn succession_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         active_actions: _active_actions,
         action_defs: _action_defs,
         mut politics_trace,
+        perception_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -1074,6 +1075,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Politics,
         })
@@ -1096,6 +1098,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: Some(trace),
+            perception_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Politics,
         })
@@ -2300,6 +2303,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(3),
             system_id: SystemId::Politics,
         })

@@ -8,20 +8,23 @@ import re
 import subprocess
 import sys
 from collections import OrderedDict
-from typing import Iterable, NamedTuple
+from dataclasses import dataclass, field
+from typing import Iterable
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TESTS_DIR = ROOT / "crates" / "worldwake-ai" / "tests"
 OUTPUT_PATH = ROOT / "docs" / "generated" / "golden-e2e-inventory.md"
 SCENARIO_OUTPUT_PATH = ROOT / "docs" / "generated" / "golden-scenario-map.md"
+COVERAGE_OUTPUT_PATH = ROOT / "docs" / "generated" / "golden-coverage-matrix.md"
 DOCS_TO_VALIDATE = (
     ROOT / "docs" / "golden-e2e-coverage.md",
-    ROOT / "docs" / "golden-e2e-scenarios.md",
     ROOT / "docs" / "golden-e2e-testing.md",
 )
 
 SOURCE_TEST_RE = re.compile(r"(?m)^fn (golden_[a-z0-9_]+)\s*\(")
-SCENARIO_HEADER_RE = re.compile(r"^// Scenario (?P<identifier>[A-Za-z0-9-]+): (?P<title>.+)$")
+SCENARIO_HEADER_RE = re.compile(
+    r"^// Scenario (?P<identifier>[A-Za-z0-9_-]+)(?::| —) (?P<title>.+)$"
+)
 DOC_TEST_REF_RE = re.compile(r"`(golden_[a-z0-9_]+)`")
 RUNNING_GOLDEN_BINARY_RE = re.compile(r"^\s*Running tests/(golden_[^ ]+\.rs) ")
 RUNNING_ANY_BINARY_RE = re.compile(r"^\s*Running ")
@@ -30,13 +33,34 @@ REPLAY_TEST_RE = re.compile(
     r"_(?:replays_deterministically|deterministic_replay)$"
 )
 
+# Structured metadata keys within scenario comment blocks.
+METADATA_KEYS = (
+    "Systems",
+    "GoalKinds",
+    "ActionDomains",
+    "Places",
+    "Principles",
+    "Setup",
+    "Proves",
+    "Chain",
+)
+STRUCTURED_KEY_RE = re.compile(
+    r"^//\s+(?P<key>" + "|".join(METADATA_KEYS) + r"):\s*(?P<value>.*)$"
+)
+# Continuation: 3+ spaces after // (not a new key, not a separator).
+CONTINUATION_RE = re.compile(r"^//\s{3,}(?P<value>\S.*)$")
+# Blank or separator lines within scenario comment blocks.
+BLANK_OR_SEP_RE = re.compile(r"^//\s*$|^// -{3,}$")
 
-class ScenarioEntry(NamedTuple):
+
+@dataclass
+class ScenarioEntry:
     identifier: str
     title: str
     file_name: str
     line_number: int
     tests: tuple[str, ...]
+    metadata: dict[str, str] = field(default_factory=dict)
 
     @property
     def primary_tests(self) -> tuple[str, ...]:
@@ -61,9 +85,12 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
         current_title: str | None = None
         current_line_number: int | None = None
         current_tests: list[str] = []
+        current_metadata: dict[str, str] = {}
+        current_key: str | None = None
 
         def finish_current() -> None:
-            nonlocal current_identifier, current_title, current_line_number, current_tests
+            nonlocal current_identifier, current_title, current_line_number
+            nonlocal current_tests, current_metadata, current_key
             if current_identifier is None:
                 return
             scenarios.append(
@@ -73,12 +100,15 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
                     file_name=path.name,
                     line_number=current_line_number or 1,
                     tests=tuple(current_tests),
+                    metadata=dict(current_metadata),
                 )
             )
             current_identifier = None
             current_title = None
             current_line_number = None
             current_tests = []
+            current_metadata = {}
+            current_key = None
 
         for line_number, raw_line in enumerate(path.read_text().splitlines(), start=1):
             header_match = SCENARIO_HEADER_RE.match(raw_line)
@@ -92,8 +122,37 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
             if current_identifier is None:
                 continue
 
+            # Try structured metadata key.
+            key_match = STRUCTURED_KEY_RE.match(raw_line)
+            if key_match:
+                current_key = key_match.group("key")
+                value = key_match.group("value").strip()
+                current_metadata[current_key] = value
+                continue
+
+            # Try continuation of current key.
+            if current_key is not None:
+                cont_match = CONTINUATION_RE.match(raw_line)
+                if cont_match:
+                    prev = current_metadata.get(current_key, "")
+                    current_metadata[current_key] = (
+                        prev + " " + cont_match.group("value").strip()
+                    ).strip()
+                    continue
+
+            # Blank/separator lines don't reset the current key.
+            if BLANK_OR_SEP_RE.match(raw_line):
+                continue
+
+            # Non-metadata comment line (e.g. old-style prose) — reset key.
+            if raw_line.startswith("//"):
+                current_key = None
+                continue
+
+            # Test function.
             test_match = SOURCE_TEST_RE.match(raw_line)
             if test_match:
+                current_key = None
                 current_tests.append(test_match.group(1))
 
         finish_current()
@@ -251,6 +310,11 @@ def render_inventory_markdown(inventory: OrderedDict[str, list[str]]) -> str:
     return "\n".join(lines)
 
 
+def _split_csv(value: str) -> list[str]:
+    """Split a comma-separated metadata value into trimmed, non-empty items."""
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def render_scenario_markdown(scenarios: list[ScenarioEntry]) -> str:
     contributing_files = len({scenario.file_name for scenario in scenarios})
     total_tests = sum(len(scenario.tests) for scenario in scenarios)
@@ -291,23 +355,98 @@ def render_scenario_markdown(scenarios: list[ScenarioEntry]) -> str:
                 f"### Scenario {scenario.identifier}: {scenario.title}",
                 "",
                 f"- Source: `{scenario.file_name}:{scenario.line_number}`",
-                f"- Primary tests: "
-                + (
-                    ", ".join(f"`{name}`" for name in scenario.primary_tests)
-                    if scenario.primary_tests
-                    else "None"
-                ),
-                f"- Replay tests: "
-                + (
-                    ", ".join(f"`{name}`" for name in scenario.replay_tests)
-                    if scenario.replay_tests
-                    else "None"
-                ),
-                "- All tests: " + ", ".join(f"`{name}`" for name in scenario.tests),
             ]
         )
+        # Render structured metadata if present.
+        for key in ("Systems", "GoalKinds", "ActionDomains", "Places", "Principles"):
+            if key in scenario.metadata:
+                lines.append(f"- {key}: {scenario.metadata[key]}")
+        lines.append(
+            "- Primary tests: "
+            + (
+                ", ".join(f"`{name}`" for name in scenario.primary_tests)
+                if scenario.primary_tests
+                else "None"
+            )
+        )
+        lines.append(
+            "- Replay tests: "
+            + (
+                ", ".join(f"`{name}`" for name in scenario.replay_tests)
+                if scenario.replay_tests
+                else "None"
+            )
+        )
+        lines.append("- All tests: " + ", ".join(f"`{name}`" for name in scenario.tests))
+        # Render prose metadata if present.
+        for key, heading in (
+            ("Setup", "Setup"),
+            ("Proves", "Proves"),
+            ("Chain", "Cross-system chain"),
+        ):
+            if key in scenario.metadata:
+                lines.extend(["", f"**{heading}**: {scenario.metadata[key]}"])
 
     lines.append("")
+    return "\n".join(lines)
+
+
+def render_coverage_matrix_markdown(scenarios: list[ScenarioEntry]) -> str:
+    """Render a coverage matrix derived from structured scenario metadata."""
+    # Collect per-key mappings: value -> list of scenario identifiers.
+    matrix_keys = (
+        ("GoalKinds", "GoalKind Coverage"),
+        ("ActionDomains", "ActionDomain Coverage"),
+        ("Systems", "Systems Exercised"),
+        ("Places", "Topology Coverage"),
+        ("Principles", "Foundation Principles Tested"),
+    )
+    coverage: dict[str, dict[str, list[str]]] = {
+        key: {} for key, _ in matrix_keys
+    }
+
+    annotated_count = 0
+    for scenario in scenarios:
+        if not scenario.metadata:
+            continue
+        annotated_count += 1
+        for key, _ in matrix_keys:
+            if key not in scenario.metadata:
+                continue
+            for item in _split_csv(scenario.metadata[key]):
+                coverage[key].setdefault(item, []).append(scenario.identifier)
+
+    lines = [
+        "# Generated Golden Coverage Matrix",
+        "",
+        "This file is generated by `python3 scripts/golden_inventory.py --write --check-docs`.",
+        "Do not hand-edit it.",
+        "",
+        f"Derived from structured metadata annotations in {annotated_count} of {len(scenarios)} scenario blocks.",
+        f"Scenarios without annotations are not reflected here.",
+        "",
+    ]
+
+    for key, heading in matrix_keys:
+        data = coverage[key]
+        lines.extend([f"## {heading}", ""])
+        if not data:
+            lines.extend(["No annotations yet.", ""])
+            continue
+        col_name = key.rstrip("s") if key != "Systems" else "System"
+        if key == "Places":
+            col_name = "Place"
+        lines.extend(
+            [
+                f"| {col_name} | Scenarios |",
+                "|" + "-" * (len(col_name) + 2) + "|-----------|",
+            ]
+        )
+        for item in sorted(data):
+            scenario_ids = ", ".join(sorted(data[item]))
+            lines.append(f"| {item} | {scenario_ids} |")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -318,6 +457,8 @@ def validate_doc_test_references(
     valid_tests = set(flatten_inventory(inventory))
     errors: list[str] = []
     for doc_path in docs:
+        if not doc_path.exists():
+            continue
         refs = DOC_TEST_REF_RE.findall(doc_path.read_text())
         missing = sorted({name for name in refs if name not in valid_tests})
         if missing:
@@ -366,10 +507,12 @@ def main() -> int:
 
     markdown = render_inventory_markdown(source_inventory)
     scenario_markdown = render_scenario_markdown(source_scenarios)
+    coverage_markdown = render_coverage_matrix_markdown(source_scenarios)
     if args.write:
         OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
         OUTPUT_PATH.write_text(markdown)
         SCENARIO_OUTPUT_PATH.write_text(scenario_markdown)
+        COVERAGE_OUTPUT_PATH.write_text(coverage_markdown)
 
     if errors:
         for error in errors:
@@ -387,6 +530,8 @@ def main() -> int:
         print(markdown)
         print()
         print(scenario_markdown)
+        print()
+        print(coverage_markdown)
     return 0
 
 

@@ -16,6 +16,21 @@ use worldwake_sim::ActionTraceKind;
 // ---------------------------------------------------------------------------
 // Scenario 1: Goal Invalidation by Another Agent
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, Production, Travel, AI
+// GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+// ActionDomains: Needs, Travel, Production
+// Places: VillageSquare, OrchardFarm
+//
+// Setup: Two critically hungry agents at Village Square. Alice has 1 bread.
+//   Orchard Farm has apples.
+//
+// Proves: Alice eats bread (ConsumeOwnedCommodity). Bob travels to Orchard
+//   Farm to harvest (AcquireCommodity with travel sub-plan). Conservation:
+//   bread lots never increase.
+//
+// Chain: Needs pressure -> goal generation -> plan search -> action execution
+//   -> resource consumption.
 
 #[test]
 fn golden_goal_invalidation_by_another_agent() {
@@ -102,6 +117,21 @@ fn golden_goal_invalidation_by_another_agent() {
 // ---------------------------------------------------------------------------
 // Scenario 2: Priority-Based Interrupt
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: ConsumeOwnedCommodity, Sleep
+// ActionDomains: Needs
+// Places: VillageSquare
+// Principles: none specific
+//
+// Setup: Agent with high fatigue (pm(800)), low hunger (pm(300)), fast hunger
+//   metabolism (pm(50)/tick). Has 2 bread.
+//
+// Proves: Agent starts sleeping. Metabolism drives hunger past critical
+//   (pm(900)). AI interrupts sleep and switches to eating.
+//
+// Chain: Metabolism tick -> need escalation -> interrupt evaluation -> goal
+//   switch -> action termination -> new action start.
 
 #[test]
 fn golden_priority_based_interrupt() {
@@ -196,6 +226,20 @@ fn golden_priority_based_interrupt() {
 // ---------------------------------------------------------------------------
 // Scenario 5: Blocked Intent Memory with TTL Expiry
 // ---------------------------------------------------------------------------
+//
+// Systems: Production, AI
+// GoalKinds: AcquireCommodity(SelfConsume)
+// ActionDomains: Production
+// Places: OrchardFarm
+//
+// Setup: Agent at Orchard Farm, critically hungry. ResourceSource depleted but
+//   regenerates at 1/5 ticks.
+//
+// Proves: Depleted source blocks harvest. Resource regeneration restores
+//   apples over time. Agent eventually harvests.
+//
+// Chain: Depleted resource -> failed plan -> resource regeneration ticks
+//   -> successful harvest.
 
 #[test]
 fn golden_blocked_intent_memory_with_ttl_expiry() {
@@ -271,6 +315,19 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
 // ---------------------------------------------------------------------------
 // Scenario 7: Deprivation Cascade
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: ConsumeOwnedCommodity
+// ActionDomains: Needs
+// Places: VillageSquare
+//
+// Setup: Agent starts pm(0) hunger, fast metabolism (pm(20)/tick), has 1 bread.
+//
+// Proves: Metabolism pushes hunger upward. When crossing low threshold
+//   (pm(250)), AI generates consume goal. Agent eats.
+//
+// Chain: Metabolism system -> state change -> AI threshold detection -> goal
+//   generation -> plan -> action.
 
 #[test]
 fn golden_deprivation_cascade() {
@@ -1433,6 +1490,26 @@ fn assert_spatial_multi_hop_execution_outcomes(
 // ---------------------------------------------------------------------------
 // Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, Enterprise, AI, Travel, Production
+// GoalKinds: ConsumeOwnedCommodity, RestockCommodity
+// ActionDomains: Needs, Travel, Production
+// Places: VillageSquare, OrchardFarm
+// Principles: 20
+//
+// Setup: Two agents with identical initial conditions but divergent
+//   UtilityProfile weights. HungerDriven: critically hungry,
+//   hunger_weight=pm(800), enterprise_weight=pm(100), has bread.
+//   EnterpriseDriven: no hunger, hunger_weight=pm(100),
+//   enterprise_weight=pm(900), MerchandiseProfile(Apple).
+//
+// Proves: HungerDriven eats locally. EnterpriseDriven leaves to pursue
+//   enterprise restock. Same world, different first choices from
+//   UtilityProfile weight divergence (Principle 20).
+//
+// Chain: UtilityProfile weights -> divergent candidate ranking ->
+//   HungerDriven selects ConsumeOwnedCommodity vs EnterpriseDriven
+//   selects RestockCommodity.
 
 #[test]
 #[allow(clippy::too_many_lines)]

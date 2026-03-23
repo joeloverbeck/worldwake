@@ -153,6 +153,29 @@ For social goldens, also document subject choice explicitly. Agent subjects can 
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 When a focused planning test is specifically about a planner failure boundary, assert the exact failure mode your scenario is meant to prove instead of only asserting "no plan". Use `BudgetExhausted`, `FrontierExhausted`, or another concrete planner-owned boundary as appropriate. Generic non-success is too weak because it also matches unrelated earlier contract breaks.
 
+## Belief Seeding After Political State Changes
+
+Politics runs before Perception in the tick loop (`system_manifest.rs`). When an agent is co-located during a political state transition (e.g., controller establishment, contested state activation), Perception projects the political event into the agent's institutional belief store in the same tick.
+
+If a test later seeds a *different* institutional belief for the same key (e.g., seeding `contested: true` after the agent already perceived `controller: Some(A), contested: false`), the two observations coexist and `believed_force_controller` returns `Conflicted` instead of `Certain`.
+
+**When the seeded belief agrees** with what perception projected (e.g., Suite 11 seeds the same controller perception already recorded), no conflict arises — both observations collapse to `Certain`.
+
+**When the seeded belief disagrees** (e.g., Suite 12 seeds a contested state that contradicts the earlier uncontested observation), clear the stale entry before seeding:
+
+```rust
+let mut store = h.world.get_component_agent_belief_store(agent).cloned().unwrap();
+store.institutional_beliefs.remove(
+    &InstitutionalBeliefKey::ForceControllerOf { office },
+);
+let mut txn = new_txn(&mut h.world, tick.0);
+txn.set_component_agent_belief_store(agent, store).unwrap();
+commit_txn(txn, &mut h.event_log);
+// Now seed_force_controller_belief will produce a clean Certain read.
+```
+
+This is not a hack — it models the agent updating their belief to newer information. The alternative (issuing all claims simultaneously) avoids intermediate observations but prevents testing sequential state transitions.
+
 ## Prototype World Topology Reference
 
 The prototype world (`build_prototype_world`) defines directed travel edges between places. When issuing a human `RequestAction` for travel, the target must be a **directly adjacent** place — there is no multi-hop resolution for human inputs. The travel action's `TargetAdjacentToActor(0)` precondition will reject non-adjacent targets with a `StartFailed`.
@@ -214,3 +237,82 @@ Typical verification sequence:
 5. repo verification baseline via `scripts/verify.sh`
 
 If a stricter lint or broader suite is required, state that explicitly in the ticket.
+
+## Scenario Metadata Authoring
+
+Every `// Scenario` block in `golden_*.rs` should include structured metadata
+that the generator (`scripts/golden_inventory.py`) extracts into documentation.
+
+### Required Format
+
+Place structured keys after the scenario header, within the same `//` comment
+block, before the first `fn` definition:
+
+    // ---------------------------------------------------------------------------
+    // Scenario XX: Short Descriptive Title
+    // ---------------------------------------------------------------------------
+    //
+    // Systems: Needs, AI, Travel
+    // GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+    // ActionDomains: Needs, Travel, Production
+    // Places: VillageSquare, OrchardFarm
+    // Principles: 3, 7, 20
+    //
+    // Setup: Brief description of the initial world state and agent
+    //   configuration. Focus on what makes this scenario unique.
+    //
+    // Proves: What emergent behavior does this scenario demonstrate?
+    //   State the architectural claim, not just "agent does X". Each
+    //   point should name what system interaction is being proven.
+    //
+    // Chain: The cross-system causal chain from trigger to outcome.
+    //   Use arrows: pressure -> goal -> plan -> action -> consequence.
+
+### Key Reference
+
+| Key | Content | Format |
+|-----|---------|--------|
+| Systems | Which system modules are exercised | Comma-separated |
+| GoalKinds | Which GoalKind variants are tested | Comma-separated, with qualifiers in parens |
+| ActionDomains | Which ActionDomain values are covered | Comma-separated |
+| Places | Which prototype topology places are used | Comma-separated |
+| Principles | Which Foundation Principles are tested | Comma-separated numbers |
+| Setup | Initial world state description | Free-form prose, multi-line via indented continuation |
+| Proves | What emergent behavior is demonstrated | Free-form prose, multi-line |
+| Chain | Cross-system causal chain | Free-form prose with `->` arrows |
+
+### Prose Standard
+
+- **Setup**: What makes this scenario's initial state unique? Name concrete
+  values (pm(800), Quantity(4)) when they are load-bearing for the scenario.
+- **Proves**: What architectural claim does this scenario lock down? Frame each
+  point as "X proves Y" rather than "agent does Z". Focus on cross-system
+  emergence, not single-system behavior.
+- **Chain**: Trace the causal chain from trigger to final outcome using arrows.
+  Name system boundaries when crossing them.
+
+Keep each field concise — 1-4 lines.
+
+### Multi-Line Continuation
+
+Continue a key's value by indenting the next `//` line with 3+ spaces:
+
+    // Setup: Hungry agent at Village Square with no food.
+    //   Orchard Farm has apples via OrchardRow + ResourceSource.
+    //   The shortest route requires 3 travel legs.
+
+### Header Placement
+
+The `// Scenario` header must be placed near the `fn golden_*` test functions
+it covers, not near builder functions hundreds of lines away. The parser
+associates `fn golden_*` names with the most recent `// Scenario` header.
+
+### Regenerating Docs
+
+After editing scenario metadata, run:
+
+    python3 scripts/golden_inventory.py --write --check-docs
+
+This regenerates `docs/generated/golden-scenario-map.md`,
+`docs/generated/golden-e2e-inventory.md`, and
+`docs/generated/golden-coverage-matrix.md`. Commit all three.

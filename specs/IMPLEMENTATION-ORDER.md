@@ -77,6 +77,15 @@ Established the delivered office-record golden coverage and closed the documenta
 ### E16b: Force Legitimacy & Jurisdiction Control — COMPLETED
 Replaced the thin E16 force-succession shortcut with explicit jurisdiction-control state: public claims, contested control, uncontested hold periods, and eventual installation into office. Force succession now arises from concrete local state (claims, contests, hold durations) rather than a hidden timing heuristic, with proper information paths for coups and recognition.
 
+### S16b (golden): Force-Legitimacy Emergence Golden E2E Suites — COMPLETED
+3 cross-system golden tests in `golden_emergent.rs` proving E16b's force-legitimacy mechanisms participate in emergent multi-system chains: Suite 10 (controller departure enables rival claim), Suite 11 (force claim creates hostility witnessed and propagated), Suite 12 (contested force state propagates through belief system). All 6 tests (3 main + 3 replay) pass with deterministic replay.
+
+### S20: AI Pipeline Structural Cleanup — COMPLETED
+Split `agent_tick.rs` (~6124 lines) into `agent_tick/` directory with 7 sub-modules (mod, observation, candidates, active_action, planning, execution, journey) plus dedicated test module. Split `search.rs` (~5880 lines) into `search/` directory with 5 sub-modules (mod, frontier, heuristic, transition, candidates) plus dedicated test module. Pure refactoring with zero behavioral change — all 304 golden tests passed unchanged.
+
+### S26: Planner Conformance Tests — COMPLETED
+32 conformance tests comparing planner hypothetical transitions against authoritative handler outcomes for each action family: needs (eat, drink, sleep, relieve, wash), transport (pick_up, put_down), production (harvest, craft — no-op coverage gaps documented), movement (travel), economy (trade — no-op gap), combat (attack — no-op gap, loot, heal, bury), and political (declare_support, press_force_claim, queue_for_facility). One minor production accessor added (`PlanningState::homeostatic_needs_for`). 3 of 6 political tests deferred (consult_record, bribe, threaten).
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -91,6 +100,7 @@ S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 ✅ (planner prerequisite-aware search heuristic completed)
 E16c ──→ S13 (political emergence golden coverage needs institutional beliefs)
+E16b, E16c ──→ S16b-golden ✅ (force-legitimacy emergence golden suites completed)
 E16c ──→ S19 ✅ (institutional record consultation golden coverage completed)
 S15 ✅ (cross-system start-failure emergence golden coverage)
 S16 ✅ (S09 behavioral golden validation coverage)
@@ -118,6 +128,16 @@ S10 (no unmet deps — E11 trade + E14 perception both completed; can be schedul
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
 E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
 E18, E19, E20 ──→ E22 (integration tests need everything)
+
+S20 ✅ (structural cleanup completed — groundwork for S21–S28)
+S26 ✅ (planner conformance tests completed — 32 tests across all action families)
+S20 ✅ ──→ S21 (promote causal runtime state — benefits from cleaner agent_tick.rs)
+S20 ✅ ──→ S23 (refined blocked intents — benefits from cleaner code surface)
+S21 ──→ S22 (generalized intention frames — needs state promoted first)
+S21 ──→ S24 (typed invalidation domains — replaces dirty field in restructured runtime)
+S21 ──→ S28 (knowledge-path traces — authoritative belief sources make traces meaningful)
+S20 ✅, S23 ──→ S25 (feasibility sketching — needs cleaner search + refined blockers)
+S22, S23 ──→ S27 (expectation-violation goals — needs intention frames + refined blockers)
 ```
 
 ---
@@ -175,6 +195,8 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - **S13**: Political Emergence Golden E2E Suites
   - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
+- **S16b-golden**: Force-Legitimacy Emergence Golden E2E Suites — ✅ COMPLETED
+  - 3 golden suites proving force-legitimacy participates in emergent multi-system chains (controller departure, hostility propagation, contested state propagation)
 
 #### Phase 3 Gate
 - [ ] `OmniscientBeliefView` fully replaced — no code path uses it
@@ -189,6 +211,45 @@ E18, E19, E20 ──→ E22 (integration tests need everything)
 - [ ] T10: Belief isolation — agent does not react to unseen theft, death, or camp migration
 - [ ] T11: Office uniqueness
 - [ ] T25: Unseen crime discovery
+
+---
+
+### Phase 3+: AI Architecture Overhaul
+
+**Step 13.5 Wave 0** (parallel, no deps) — ✅ COMPLETED:
+- **S20**: AI Pipeline Structural Cleanup — ✅ COMPLETED
+  - split `agent_tick.rs` and `search.rs` into modular sub-directories with dedicated test modules
+- **S26**: Planner Conformance Tests — ✅ COMPLETED
+  - 32 conformance tests comparing planner transitions against handler outcomes for all action families
+  - one minor production accessor (`PlanningState::homeostatic_needs_for`)
+
+**Step 13.5 Wave 1** (parallel, after S20):
+- **S21**: Promote Causal Runtime State
+  - moves journey commitment, facility queue intents, active goal from `AgentDecisionRuntime` into authoritative world components
+  - fixes FOUNDATIONS P11/P16/P19 violations (save/load loses commitments)
+  - needs S20
+- **S23**: Refined Blocked Intents
+  - compound-keyed blocker records (goal + target + place), proactive state-change clearing, short Unknown TTL
+  - needs S20
+
+**Step 13.5 Wave 2** (parallel, after S21):
+- **S22**: Generalized Intention Frames
+  - replaces travel-specific journey commitment with general intention frame model (assumptions, suspension/resume, patience)
+  - needs S21
+- **S24**: Typed Invalidation Domains
+  - replaces `dirty: bool` with `DirtyReasons` bitflag set for typed replan triggers
+  - needs S21
+- **S25**: Feasibility Sketching
+  - cheap feasibility pre-check before GOAP search budget allocation
+  - needs S20, S23
+- **S28**: Knowledge-Path Traces
+  - extends decision traces with belief provenance (which observations/reports justified each goal)
+  - needs S21
+
+**Step 13.5 Wave 3** (after S22 + S23):
+- **S27**: Expectation-Violation Goals
+  - new goal source family triggered by belief-vs-observation mismatch (FOUNDATIONS P15)
+  - needs S22, S23
 
 ---
 
@@ -237,6 +298,15 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
+| ~~`S20-structural-cleanup.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
+| ~~`S26-planner-conformance-tests.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
+| `S21-promote-causal-runtime-state.md` | 3+ | 13.5 W1 | S20 |
+| `S23-refined-blocked-intents.md` | 3+ | 13.5 W1 | S20 |
+| `S22-generalized-intention-frames.md` | 3+ | 13.5 W2 | S21 |
+| `S24-typed-invalidation-domains.md` | 3+ | 13.5 W2 | S21 |
+| `S25-feasibility-sketching.md` | 3+ | 13.5 W2 | S20, S23 |
+| `S28-knowledge-path-traces.md` | 3+ | 13.5 W2 | S21 |
+| `S27-expectation-violation-goals.md` | 3+ | 13.5 W3 | S22, S23 |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, S02 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
@@ -265,6 +335,7 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19 | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19 complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
+| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S26 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

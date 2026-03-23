@@ -134,6 +134,22 @@ fn run_save_load_roundtrip_scenario(seed: Seed) -> GoldenHarness {
 // ---------------------------------------------------------------------------
 // Scenario 6: Deterministic Replay Fidelity
 // ---------------------------------------------------------------------------
+//
+// Systems: All
+// GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
+// ActionDomains: Needs, Production, Travel
+// Places: VillageSquare, OrchardFarm
+//
+// Setup: Two hungry agents at Village Square. Alice has bread. Orchard Farm
+//   has apples. Run 50 ticks with same seed twice. Includes save/load
+//   round-trip test at tick 20 with resumed AI controller.
+//
+// Proves: Identical seeds produce identical StateHash for world and event
+//   log. Full-stack determinism (ChaCha8Rng, BTreeMap ordering, no floats).
+//   Save/load round-trip preserves scheduler, RNG, and controller state.
+//
+// Chain: Full simulation -> identical world/event-log hashes across runs.
+//   Save at tick 20 -> load -> fresh AI controller -> identical continuation.
 
 #[test]
 fn golden_deterministic_replay_fidelity() {
@@ -181,6 +197,24 @@ fn golden_save_load_round_trip_under_ai() {
 // ---------------------------------------------------------------------------
 // Scenario S02: World Runs Without Observers (Principle 6)
 // ---------------------------------------------------------------------------
+//
+// Systems: Needs, Production, Travel, Enterprise, Trade, AI, Conservation
+// GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume), RestockCommodity
+// ActionDomains: Needs, Production, Travel
+// Places: VillageSquare, OrchardFarm, GeneralStore
+// Principles: 6
+//
+// Setup: Four agents across three places for 200 ticks under full AI loop.
+//   Farmer (hungry, orchard), Merchant (enterprise-focused, MerchandiseProfile),
+//   Villager (hungry+thirsty, bread+water), Wanderer (thirsty+fatigued).
+//
+// Proves: World hash differs from initial after 200 ticks. Event log grows
+//   by 20+ events. No deaths. Per-tick conservation for Bread, Water, Coin.
+//   At least one transit and one consumption. 200-tick multi-agent determinism.
+//
+// Chain: Needs -> AI -> action, Production -> harvest, Travel -> movement,
+//   Enterprise -> restock. Conservation across 200 ticks of multi-system
+//   interaction. Proves Principle 6 (world runs without observers).
 
 #[allow(clippy::too_many_lines)]
 fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {

@@ -12,6 +12,7 @@ pub fn resource_regeneration_system(ctx: SystemExecutionContext<'_>) -> Result<(
         active_actions: _active_actions,
         action_defs: _action_defs,
         politics_trace: _,
+        perception_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -220,6 +221,7 @@ mod tests {
             active_actions,
             action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Production,
         }
@@ -400,6 +402,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(8),
             system_id: SystemId::Trade,
         })

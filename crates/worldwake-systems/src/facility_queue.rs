@@ -17,6 +17,7 @@ pub fn facility_queue_system(ctx: SystemExecutionContext<'_>) -> Result<(), Syst
         active_actions,
         action_defs,
         politics_trace: _,
+        perception_trace: _,
         tick,
         system_id: _system_id,
     } = ctx;
@@ -457,6 +458,7 @@ mod tests {
             active_actions,
             action_defs: defs,
             politics_trace: None,
+            perception_trace: None,
             tick: Tick(tick),
             system_id: SystemId::FacilityQueue,
         })
