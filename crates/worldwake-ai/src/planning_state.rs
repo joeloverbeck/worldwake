@@ -642,6 +642,17 @@ impl<'snapshot> PlanningState<'snapshot> {
         self
     }
 
+    /// Read homeostatic needs for `agent` with overrides applied.
+    #[must_use]
+    pub fn homeostatic_needs_for(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        self.needs_overrides.get(&agent).copied().or_else(|| {
+            self.snapshot
+                .entities
+                .get(&agent)
+                .and_then(|snapshot| snapshot.homeostatic_needs)
+        })
+    }
+
     #[must_use]
     pub fn with_commodity_quantity(
         mut self,
