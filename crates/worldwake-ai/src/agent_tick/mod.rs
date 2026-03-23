@@ -1,4 +1,5 @@
 mod active_action;
+mod execution;
 mod observation;
 mod planning;
 use active_action::{
@@ -8,6 +9,11 @@ use active_action::{
 use observation::{
     reconcile_in_flight_state, refresh_runtime_for_read_phase,
     update_runtime_observation_snapshot, InFlightReconciliation, ReadPhaseContext,
+};
+use execution::{
+    apply_step_materialization_bindings, committed_action_for_step, current_step,
+    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_blocked_memory,
+    plan_finished,
 };
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, plans_as_options,
@@ -20,9 +26,8 @@ use crate::decision_trace::{
     PlanningPipelineTrace, SelectionTrace,
 };
 use crate::{
-    authoritative_target, build_semantics_table, resolve_planning_targets_with,
-    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot,
-    PlannedStep, PlannerOpSemantics, PlanningBudget,
+    authoritative_target, build_semantics_table, AgentDecisionRuntime, JourneyClearReason,
+    JourneyCommitmentState, JourneyRuntimeSnapshot, PlannedStep, PlannerOpSemantics, PlanningBudget,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -30,10 +35,9 @@ use worldwake_core::{
     Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
-    CommitOutcome, CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
-    RecipeRegistry, ReplanNeeded, RuntimeBeliefView, Scheduler,
-    TickInputError,
+    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
+    PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
+    Scheduler, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -458,85 +462,6 @@ fn process_agent(
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn enqueue_valid_step_or_handle_failure(
-    ctx: &mut AgentTickContext<'_>,
-    runtime: &mut AgentDecisionRuntime,
-    blocked_memory: &mut BlockedIntentMemory,
-    agent: EntityId,
-    tick: Tick,
-    original_blocked: &BlockedIntentMemory,
-    step: &PlannedStep,
-    valid: bool,
-) -> Result<(), TickInputError> {
-    if !valid {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
-        if handle_recoverable_travel_step_blockage(
-            &view,
-            runtime,
-            blocked_memory,
-            agent,
-            step,
-            tick,
-            ctx.budget,
-        ) {
-            return Ok(());
-        }
-        return handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None);
-    }
-
-    let Some(targets) = resolve_step_targets(runtime, step) else {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
-        if handle_recoverable_travel_step_blockage(
-            &view,
-            runtime,
-            blocked_memory,
-            agent,
-            step,
-            tick,
-            ctx.budget,
-        ) {
-            return finalize_agent_tick(
-                ctx.world,
-                ctx.event_log,
-                ctx.scheduler,
-                ctx.action_defs,
-                agent,
-                tick,
-                original_blocked,
-                blocked_memory,
-                runtime,
-            );
-        }
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None)?;
-        return finalize_agent_tick(
-            ctx.world,
-            ctx.event_log,
-            ctx.scheduler,
-            ctx.action_defs,
-            agent,
-            tick,
-            original_blocked,
-            blocked_memory,
-            runtime,
-        );
-    };
-
-    let _ = ctx.scheduler.input_queue_mut().enqueue(
-        tick,
-        InputKind::RequestAction {
-            actor: agent,
-            def_id: step.def_id,
-            targets,
-            payload_override: step.payload_override.clone(),
-            mode: worldwake_sim::ActionRequestMode::BestEffort,
-            provenance: worldwake_sim::RequestProvenance::AiPlan,
-        },
-    );
-    runtime.step_in_flight = true;
-    Ok(())
-}
-
 fn abandon_expired_facility_queues(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
@@ -609,34 +534,6 @@ fn abandon_expired_facility_queues_with_limit(
 }
 
 
-#[allow(clippy::too_many_arguments)]
-fn finalize_agent_tick(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    scheduler: &Scheduler,
-    action_defs: &worldwake_sim::ActionDefRegistry,
-    agent: EntityId,
-    tick: Tick,
-    original_blocked: &BlockedIntentMemory,
-    blocked_memory: &BlockedIntentMemory,
-    runtime: &mut AgentDecisionRuntime,
-) -> Result<(), TickInputError> {
-    persist_blocked_memory(
-        world,
-        event_log,
-        agent,
-        tick,
-        original_blocked,
-        blocked_memory,
-    )?;
-    {
-        // Snapshot the post-mutation world state before ending the tick.
-        let view = runtime_belief_view(agent, world, scheduler, action_defs);
-        update_runtime_observation_snapshot(&view, agent, runtime);
-    }
-    Ok(())
-}
-
 fn update_journey_fields_for_adopted_plan(
     runtime: &mut AgentDecisionRuntime,
     selected_plan: &crate::PlannedPlan,
@@ -667,7 +564,7 @@ fn update_journey_fields_for_adopted_plan(
     runtime.consecutive_blocked_leg_ticks = 0;
 }
 
-fn handle_recoverable_travel_step_blockage(
+pub(super) fn handle_recoverable_travel_step_blockage(
     view: &dyn RuntimeBeliefView,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
@@ -722,121 +619,6 @@ fn blocked_leg_target(step: &PlannedStep) -> Option<EntityId> {
     step.targets.first().copied().and_then(authoritative_target)
 }
 
-fn resolve_step_targets(
-    runtime: &AgentDecisionRuntime,
-    step: &PlannedStep,
-) -> Option<Vec<EntityId>> {
-    resolve_planning_targets_with(&step.targets, |id| {
-        runtime.materialization_bindings.resolve(id)
-    })
-}
-
-pub(super) fn committed_action_for_step<'a>(
-    step: &PlannedStep,
-    committed_actions: &'a [CommittedAction],
-) -> Option<&'a CommittedAction> {
-    if committed_actions.len() != 1 {
-        return None;
-    }
-    let committed = &committed_actions[0];
-    (committed.def_id == step.def_id).then_some(committed)
-}
-
-pub(super) fn apply_step_materialization_bindings(
-    runtime: &mut AgentDecisionRuntime,
-    step: &PlannedStep,
-    outcome: &CommitOutcome,
-) -> Result<(), ()> {
-    use std::collections::BTreeSet;
-
-    let tags = step
-        .expected_materializations
-        .iter()
-        .map(|expected| expected.tag)
-        .chain(outcome.materializations.iter().map(|actual| actual.tag))
-        .collect::<BTreeSet<_>>();
-    let mut newly_bound_entities = BTreeSet::new();
-
-    for tag in tags {
-        let expected = step
-            .expected_materializations
-            .iter()
-            .filter(|expected| expected.tag == tag)
-            .collect::<Vec<_>>();
-        let actual = outcome
-            .materializations
-            .iter()
-            .filter(|materialization| materialization.tag == tag)
-            .collect::<Vec<_>>();
-        if expected.len() != actual.len() {
-            return Err(());
-        }
-
-        for (expected, actual) in expected.into_iter().zip(actual.into_iter()) {
-            if !newly_bound_entities.insert(actual.entity) {
-                return Err(());
-            }
-            if let Some(existing) = runtime
-                .materialization_bindings
-                .resolve(expected.hypothetical_id)
-            {
-                if existing != actual.entity {
-                    return Err(());
-                }
-                continue;
-            }
-            runtime
-                .materialization_bindings
-                .bind(expected.hypothetical_id, actual.entity);
-        }
-    }
-
-    Ok(())
-}
-
-pub(super) fn persist_blocked_memory(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    agent: EntityId,
-    tick: Tick,
-    before: &BlockedIntentMemory,
-    after: &BlockedIntentMemory,
-) -> Result<(), TickInputError> {
-    let existing = world.get_component_blocked_intent_memory(agent);
-    if existing == Some(after)
-        || (existing.is_none() && before == after && after.intents.is_empty())
-    {
-        return Ok(());
-    }
-
-    let mut txn = WorldTxn::new(
-        world,
-        tick,
-        CauseRef::SystemTick(tick),
-        Some(agent),
-        None,
-        VisibilitySpec::Hidden,
-        WitnessData::default(),
-    );
-    txn.set_component_blocked_intent_memory(agent, after.clone())
-        .map_err(|error| TickInputError::new(error.to_string()))?;
-    let _ = txn.commit(event_log);
-    Ok(())
-}
-
-pub(super) fn current_step(runtime: &AgentDecisionRuntime) -> Option<&PlannedStep> {
-    runtime
-        .current_plan
-        .as_ref()
-        .and_then(|plan| plan.steps.get(runtime.current_step_index))
-}
-
-pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
-    runtime.current_plan.as_ref().is_some_and(|plan| {
-        runtime.current_step_index >= plan.steps.len() && !runtime.step_in_flight
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::observation::{
@@ -846,11 +628,12 @@ mod tests {
     use super::planning::{
         determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
     };
+    use super::execution::resolve_step_targets;
     use super::{
         abandon_expired_facility_queues_with_limit, advance_completed_step,
         apply_step_materialization_bindings, committed_action_for_step,
         effective_goal_switch_margin, handle_recoverable_travel_step_blockage,
-        persist_blocked_memory, plan_and_validate_next_step_traced, resolve_step_targets,
+        persist_blocked_memory, plan_and_validate_next_step_traced,
         update_journey_fields_for_adopted_plan, AgentTickDriver,
     };
     use crate::PlanningBudget;

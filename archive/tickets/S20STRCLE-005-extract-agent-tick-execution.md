@@ -1,6 +1,6 @@
 # S20STRCLE-005: Extract agent_tick/execution.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -82,3 +82,10 @@ Move the listed functions. Add necessary `use` imports.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Created `crates/worldwake-ai/src/agent_tick/execution.rs` containing 8 functions extracted from `agent_tick/mod.rs`: `enqueue_valid_step_or_handle_failure`, `finalize_agent_tick`, `resolve_step_targets`, `committed_action_for_step`, `apply_step_materialization_bindings`, `persist_blocked_memory`, `current_step`, `plan_finished`. Updated `mod.rs` with `mod execution;` and explicit re-exports. Cleaned up unused imports in `mod.rs`.
+- **Deviations**: `handle_recoverable_travel_step_blockage` was made `pub(super)` (from private) so `execution.rs` could call it — minimal visibility change consistent with the sub-module pattern. `resolve_step_targets` is imported via `super::execution::resolve_step_targets` in tests rather than re-exported from `mod.rs`, to avoid an unused-import warning in non-test builds.
+- **Verification**: `cargo test -p worldwake-ai` — 21/21 pass. `cargo clippy -p worldwake-ai` — zero warnings.
