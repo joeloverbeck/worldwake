@@ -1,4 +1,5 @@
 mod active_action;
+mod candidates;
 mod execution;
 mod journey;
 mod observation;
@@ -18,6 +19,7 @@ use execution::{
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_blocked_memory,
     plan_finished,
 };
+use candidates::abandon_expired_facility_queues;
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, plans_as_options,
     summarize_ranked_goal, summarize_step,
@@ -33,9 +35,7 @@ use crate::{
     PlanningBudget,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{
-    ActionDefId, CauseRef, ControlSource, EntityId, Tick, VisibilitySpec, WitnessData, WorldTxn,
-};
+use worldwake_core::{ActionDefId, ControlSource, EntityId, Tick};
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
     PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -451,77 +451,6 @@ fn process_agent(
     }))
 }
 
-fn abandon_expired_facility_queues(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    agent: EntityId,
-    tick: Tick,
-) -> Result<bool, TickInputError> {
-    let limit = {
-        let view = PerAgentBeliefView::from_world(agent, world);
-        let Some(limit) = view.facility_queue_patience_ticks(agent) else {
-            return Ok(false);
-        };
-        limit
-    };
-
-    abandon_expired_facility_queues_with_limit(world, event_log, agent, tick, limit)
-}
-
-fn abandon_expired_facility_queues_with_limit(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    agent: EntityId,
-    tick: Tick,
-    limit: std::num::NonZeroU32,
-) -> Result<bool, TickInputError> {
-    let expired_facilities = {
-        let view = PerAgentBeliefView::from_world(agent, world);
-        let Some(place) = view.effective_place(agent) else {
-            return Ok(false);
-        };
-
-        view.entities_at(place)
-            .into_iter()
-            .filter(|facility| view.has_exclusive_facility_policy(*facility))
-            .filter(|facility| {
-                view.facility_grant(*facility)
-                    .is_none_or(|grant| grant.actor != agent)
-            })
-            .filter(|facility| {
-                view.facility_queue_join_tick(*facility, agent)
-                    .is_some_and(|queued_at| tick >= queued_at + u64::from(limit.get()))
-            })
-            .collect::<Vec<_>>()
-    };
-
-    let mut changed = false;
-    for facility in expired_facilities {
-        let Some(mut queue) = world.get_component_facility_use_queue(facility).cloned() else {
-            continue;
-        };
-        if !queue.remove_actor(agent) {
-            continue;
-        }
-
-        let mut txn = WorldTxn::new(
-            world,
-            tick,
-            CauseRef::SystemTick(tick),
-            None,
-            world.effective_place(facility),
-            VisibilitySpec::SamePlace,
-            WitnessData::default(),
-        );
-        txn.set_component_facility_use_queue(facility, queue)
-            .map_err(|error| TickInputError::new(error.to_string()))?;
-        let _ = txn.commit(event_log);
-        changed = true;
-    }
-
-    Ok(changed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::observation::{
@@ -532,8 +461,9 @@ mod tests {
         determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
     };
     use super::execution::resolve_step_targets;
+    use super::candidates::abandon_expired_facility_queues_with_limit;
     use super::{
-        abandon_expired_facility_queues_with_limit, advance_completed_step,
+        advance_completed_step,
         apply_step_materialization_bindings, committed_action_for_step,
         effective_goal_switch_margin, handle_recoverable_travel_step_blockage,
         persist_blocked_memory, plan_and_validate_next_step_traced,

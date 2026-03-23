@@ -1,6 +1,6 @@
 # S20STRCLE-007: Extract agent_tick/candidates.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -75,3 +75,10 @@ Move the listed functions. Add necessary `use` imports.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Created `crates/worldwake-ai/src/agent_tick/candidates.rs` with `abandon_expired_facility_queues()` and `abandon_expired_facility_queues_with_limit()`. Updated `agent_tick/mod.rs` with `mod candidates;` declaration, selective import, removed moved function bodies, and cleaned up unused imports (`CauseRef`, `VisibilitySpec`, `WitnessData`, `WorldTxn`). Updated test imports to reference `super::candidates::abandon_expired_facility_queues_with_limit`.
+- **Deviations**: Used targeted `use candidates::abandon_expired_facility_queues;` instead of `use candidates::*;` (ticket said wildcard, but selective import is cleaner and passes clippy). Functions made `pub(super)` instead of private to allow cross-module access within `agent_tick/`.
+- **Verification**: `cargo test -p worldwake-ai` — 21 passed, 0 failed. `cargo clippy -p worldwake-ai` — no warnings.
