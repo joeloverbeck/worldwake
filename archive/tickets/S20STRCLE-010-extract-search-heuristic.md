@@ -1,6 +1,6 @@
 # S20STRCLE-010: Extract search/heuristic.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -79,3 +79,10 @@ Move the listed functions and structs. Import `SearchNode` and other shared type
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Extracted `compute_heuristic()`, `CombinedRelevantPlaces`, `combined_relevant_places()`, `root_node()`, and `prune_travel_away_from_goal()` from `search/mod.rs` into new `search/heuristic.rs` with `pub(super)` visibility. Updated `mod.rs` with `mod heuristic;` and explicit use import. Removed stale `use crate::goal_model::trace_prerequisite_guidance;` import from `mod.rs`.
+- **Deviations**: Ticket suggested `use heuristic::*;` but clippy's `wildcard_imports` lint (enabled via `pedantic`) required explicit imports instead.
+- **Verification**: `cargo test -p worldwake-ai` — 21 tests pass. `cargo clippy -p worldwake-ai` — clean.
