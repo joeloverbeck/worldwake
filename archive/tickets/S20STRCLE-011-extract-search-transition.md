@@ -1,6 +1,6 @@
 # S20STRCLE-011: Extract search/transition.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -77,3 +77,10 @@ Move the listed functions. Import `SearchNode`, `SearchCandidate`, and other sha
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Extracted `build_successor`, `build_successor_detailed`, `terminal_kind`, and helper `root_candidate_payload_error` from `search/mod.rs` into new `search/transition.rs`. Cleaned up unused imports in `mod.rs` (`apply_hypothetical_transition`, `PlannerOpKind`; moved `compute_heuristic` behind `#[cfg(test)]`).
+- **Deviations**: Also extracted `root_candidate_payload_error` (private helper called only by `build_successor_detailed`) — natural co-location. Used selective `use transition::{build_successor_detailed};` instead of `use transition::*;` for clarity.
+- **Verification**: `cargo test -p worldwake-ai` — 21 tests pass. `cargo clippy -p worldwake-ai` — zero warnings.
