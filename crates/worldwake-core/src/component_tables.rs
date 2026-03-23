@@ -10,6 +10,7 @@ use crate::{
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
     institutional::RecordData,
+    intention::{ActiveGoal, FacilityQueueIntents, JourneyCommitment},
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},

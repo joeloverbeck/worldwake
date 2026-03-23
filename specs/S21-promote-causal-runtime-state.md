@@ -21,7 +21,7 @@ Phase 3+: AI Architecture Overhaul (post-E13, Wave 1)
 
 ## FOUNDATIONS Alignment
 
-- **P11** (save/load must not change world meaning): Currently violated. `from_simulation_state` at `golden_harness/mod.rs:1170` creates `AgentTickDriver::new(PlanningBudget::default())`, discarding all per-agent runtime state. A mid-journey agent loses its travel commitment and may thrash or re-derive a different plan after reload.
+- **P11** (save/load must not change world meaning): Currently violated. `from_simulation_state` at `golden_harness/mod.rs:1169` creates `AgentTickDriver::new(PlanningBudget::default())`, discarding all per-agent runtime state. A mid-journey agent loses its travel commitment and may thrash or re-derive a different plan after reload.
 - **P16** (memories and commitments are world state): Journey commitments and facility queue positions are causally relevant state that affects future decisions across multiple ticks. They must be representable, inspectable, and persistent.
 - **P19** (intentions are revisable commitments): The intention to continue a journey or wait for a facility must be inspectable world state, not hidden runtime magic. Other systems should in principle be able to observe that an agent is committed to a journey.
 
@@ -117,7 +117,7 @@ pub struct JourneyCommitment {
 }
 ```
 
-Note: `JourneyCommitmentState` already exists in `decision_runtime.rs` and must be moved to `worldwake-core` (since components live in core). The enum is trivial (`Active | Suspended`) and already derives the necessary traits.
+Note: `JourneyCommitmentState` already exists in `decision_runtime.rs` and must be moved to `worldwake-core` (since components live in core). The enum is trivial (`Active | Suspended`) but currently derives only `Copy, Clone, Debug, Default, Eq, PartialEq`. It must gain `Serialize, Deserialize` when moved to core, since it will be serialized as part of the `JourneyCommitment` component in `ComponentTables`.
 
 ### `FacilityQueueIntents`
 
@@ -132,16 +132,16 @@ pub struct FacilityQueueIntents {
 }
 ```
 
-Note: `QueuedFacilityIntent` currently lives in `decision_runtime.rs` and must also be moved to `worldwake-core`.
+Note: `QueuedFacilityIntent` currently lives in `decision_runtime.rs` and currently derives only `Clone, Copy, Debug, Eq, PartialEq`. It must gain `Serialize, Deserialize` when moved to `worldwake-core`, since it will be serialized as part of the `FacilityQueueIntents` component in `ComponentTables`. Its fields (`GoalKey` and `ActionDefId`) already derive `Serialize, Deserialize`, so no transitive changes are needed.
 
 ## Type Relocation
 
 The following types must move from `worldwake-ai::decision_runtime` to `worldwake-core` so that the new components can reference them without creating a circular dependency:
 
-| Type | Current Location | New Location |
-|---|---|---|
-| `JourneyCommitmentState` | `worldwake-ai::decision_runtime` | `worldwake-core` (new module or existing `goal.rs`) |
-| `QueuedFacilityIntent` | `worldwake-ai::decision_runtime` | `worldwake-core` (new module or existing `goal.rs`) |
+| Type | Current Location | New Location | Derives to Add |
+|---|---|---|---|
+| `JourneyCommitmentState` | `worldwake-ai::decision_runtime` | `worldwake-core` (new module or existing `goal.rs`) | `Serialize, Deserialize` |
+| `QueuedFacilityIntent` | `worldwake-ai::decision_runtime` | `worldwake-core` (new module or existing `goal.rs`) | `Serialize, Deserialize` |
 
 `JourneyPlanRelation`, `JourneyClearReason`, `JourneyRuntimeSnapshot`, and `MaterializationBindings` remain in `worldwake-ai` since they are not needed by core components.
 
@@ -152,25 +152,62 @@ The following types must move from `worldwake-ai::decision_runtime` to `worldwak
 3. **Migrate reads**: In the AI crate, replace `runtime.journey_committed_goal` etc. with `world.get_component_journey_commitment(agent)` (or the WorldTxn equivalent).
 4. **Migrate writes**: Replace `runtime.journey_committed_goal = Some(...)` etc. with `txn.set_component_journey_commitment(agent, JourneyCommitment { ... })`. Journey clearing becomes `txn.clear_component_journey_commitment(agent)`.
 5. **Remove promoted fields**: Delete the promoted fields from `AgentDecisionRuntime`. Update `Default` impl and all tests in `decision_runtime.rs`.
-6. **Update helper methods**: Methods like `has_journey_commitment()`, `clear_journey_commitment()`, `classify_journey_plan_relation()` move to free functions or trait extension methods that take `Option<&JourneyCommitment>` instead of `&self`.
-7. **Verify save/load**: The new components are automatically serialized as part of `World` (via `ComponentTables`), so `save_to_bytes`/`load_from_bytes` preserves them without additional work.
+6. **Update helper methods**: Methods on `AgentDecisionRuntime` split into categories based on what state they access:
+
+   **Component-only** (take `Option<&JourneyCommitment>` only):
+   - `has_journey_commitment()` -- checks committed_goal and destination presence
+   - `journey_committed_destination()` -- reads destination from component
+
+   **Cross-state** (take BOTH `Option<&JourneyCommitment>` AND ephemeral runtime fields):
+   - `has_active_journey_travel(Option<&JourneyCommitment>, Option<&PlannedPlan>, usize) -> bool` -- reads commitment state from component AND checks `current_plan`/`current_step_index` from runtime for remaining travel steps and destination matching
+   - `journey_runtime_snapshot(Option<&JourneyCommitment>, &AgentDecisionRuntime) -> JourneyRuntimeSnapshot` -- builds snapshot from component fields (destination, state, established_at, last_progress_tick, consecutive_blocked_ticks) AND runtime fields (current_plan for active_plan_destination, current_step_index for remaining_travel_steps)
+
+   **Plan-comparison** (component + plan parameter):
+   - `classify_journey_plan_relation(Option<&JourneyCommitment>, &PlannedPlan) -> JourneyPlanRelation` -- reads commitment from component, compares against plan argument (already a parameter)
+
+   **Runtime-only** (no change needed):
+   - `remaining_travel_steps()` -- reads only `current_plan`/`current_step_index`, stays on runtime
+
+   **Write-through-txn**:
+   - `clear_journey_commitment` becomes `txn.clear_component_journey_commitment(agent)` at call sites
+   - `last_journey_clear_reason` update stays on `AgentDecisionRuntime` (diagnostic field, not promoted)
+
+7. **Bump SAVE_FORMAT_VERSION**: In `crates/worldwake-sim/src/save_load.rs`, change `SAVE_FORMAT_VERSION` from `4` to `5`. Adding three new component types to `ComponentTables` changes the serialized representation of `World`, making v4 saves incompatible with v5. Existing version-check tests use relative values (`SAVE_FORMAT_VERSION + 1`) and will continue to work.
+8. **Verify save/load**: The new components are automatically serialized as part of `World` (via `ComponentTables`), so `save_to_bytes`/`load_from_bytes` preserves them without additional work.
+
+## Component Delta Implications
+
+When journey commitment, active goal, or facility queue state becomes a component, all writes go through `WorldTxn` which records `ComponentDelta` entries in the event log. This means every goal adoption, journey commitment set/clear, and facility intent change will appear as a delta in committed events. This is a net positive:
+
+- **Debuggability (P27)**: Journey commitment transitions are now visible in the event log, making it straightforward to trace why an agent abandoned or established a journey.
+- **Replay fidelity**: Component deltas participate in canonical state hashing, so journey state is included in deterministic replay verification.
+- **No performance concern**: These writes happen at most once per agent per tick (goal switching) or a few times per journey lifecycle (commitment set/clear). The delta volume is negligible.
 
 ## Tickets
 
 ### S21-001: Define and register ActiveGoal, JourneyCommitment, FacilityQueueIntents components
 
 - Move `JourneyCommitmentState` and `QueuedFacilityIntent` from `worldwake-ai::decision_runtime` to `worldwake-core`
+- Add `Serialize, Deserialize` derives to `JourneyCommitmentState` and `QueuedFacilityIntent` during the move
 - Define `ActiveGoal`, `JourneyCommitment`, `FacilityQueueIntents` structs in `worldwake-core`
 - Add `impl Component for ...` (or equivalent macro registration)
 - Register all three in `component_schema.rs` and `component_tables.rs`, restricted to `EntityKind::Agent`
 - Re-export moved types from `worldwake-ai` to avoid breaking downstream imports during migration
+- Bump `SAVE_FORMAT_VERSION` from `4` to `5` in `crates/worldwake-sim/src/save_load.rs`
 - Verify: `cargo build --workspace`
 
 ### S21-002: Migrate journey commitment fields from runtime to JourneyCommitment component
 
 - Replace all reads of `runtime.journey_committed_goal`, `runtime.journey_committed_destination`, `runtime.journey_commitment_state`, `runtime.journey_established_at`, `runtime.journey_last_progress_tick`, `runtime.consecutive_blocked_leg_ticks` with `world.get_component_journey_commitment(agent)` (or WorldTxn reads)
 - Replace all writes with `txn.set_component_journey_commitment(agent, ...)` or `txn.clear_component_journey_commitment(agent)`
-- Refactor `has_journey_commitment()`, `clear_journey_commitment()`, `clear_journey_commitment_with_reason()`, `has_active_journey_travel()`, `remaining_travel_steps()`, `journey_runtime_snapshot()`, `journey_committed_destination()`, `classify_journey_plan_relation()` to work with `Option<&JourneyCommitment>` instead of `&AgentDecisionRuntime` fields
+- Refactor journey helper methods as free functions with explicit parameters:
+  - **Component-only**: `has_journey_commitment(Option<&JourneyCommitment>) -> bool`, `journey_committed_destination(Option<&JourneyCommitment>) -> Option<EntityId>`
+  - **Cross-state**: `has_active_journey_travel(Option<&JourneyCommitment>, Option<&PlannedPlan>, usize) -> bool` (reads commitment from component, plan/step_index from runtime)
+  - **Cross-state**: `journey_runtime_snapshot(Option<&JourneyCommitment>, &AgentDecisionRuntime) -> JourneyRuntimeSnapshot` (commitment fields from component, plan-derived fields from runtime)
+  - **Plan-comparison**: `classify_journey_plan_relation(Option<&JourneyCommitment>, &PlannedPlan) -> JourneyPlanRelation` (commitment from component, plan is already a parameter)
+  - **Runtime-only**: `remaining_travel_steps(&AgentDecisionRuntime) -> usize` (reads only current_plan + current_step_index, stays on runtime)
+  - **Write-through-txn**: `clear_journey_commitment` becomes `txn.clear_component_journey_commitment(agent)` at call sites; `last_journey_clear_reason` update remains on `AgentDecisionRuntime` (diagnostic field, not promoted)
+- Update all call-site files: `agent_tick/active_action.rs`, `agent_tick/journey.rs`, `agent_tick/mod.rs`, `agent_tick/planning.rs`, `agent_tick/tests.rs`, `planner_ops.rs`, `failure_handling.rs`, `interrupts.rs`, `plan_selection.rs`
 - Remove the six journey fields from `AgentDecisionRuntime`
 - Update unit tests in `decision_runtime.rs`
 - Verify: `cargo test -p worldwake-ai` -- all golden tests pass
@@ -200,7 +237,12 @@ The following types must move from `worldwake-ai::decision_runtime` to `worldwak
   - An agent with an `ActiveGoal` before save still has the same `ActiveGoal` after load
   - An agent mid-journey before save still has the same `JourneyCommitment` after load (destination, state, established_at all match)
   - An agent with `FacilityQueueIntents` before save still has the same intents after load
-- The scenario must create a situation where at least one agent has an active journey at the save boundary (tick 20). This may require adjusting the scenario topology or tick count.
+- The scenario must create a situation where at least one agent has an active journey at the save boundary. Concrete strategy:
+  - Use a multi-place topology with a travel edge of sufficient duration (e.g., 5+ ticks) so that the agent is mid-travel at save time
+  - Place a goal-satisfying resource at a remote place so the agent must travel to reach it
+  - Choose the save tick to fall within the travel duration window (verify via action trace or `agent_active_action_name` that the agent is executing a travel action at that tick)
+  - After load, assert: `JourneyCommitment` component is present with matching `destination`, `state == Active`, `established_at` matches pre-save value
+  - Also verify the agent does NOT re-plan from scratch (it should continue its journey, not start over). This can be checked by confirming the agent reaches the destination within the expected remaining ticks, not the full journey duration.
 - Verify: `cargo test -p worldwake-ai --test golden_determinism`
 
 ### S21-006: Workspace verification and cleanup
@@ -210,6 +252,8 @@ The following types must move from `worldwake-ai::decision_runtime` to `worldwak
 - Verify deterministic replay still produces identical hashes (the `golden_deterministic_replay_fidelity` test)
 - Remove any temporary re-exports added in S21-001 if they are no longer needed
 - Verify the `agent_decision_runtime_is_not_registered_as_a_component` test still passes (AgentDecisionRuntime itself remains unregistered)
+- Verify `SAVE_FORMAT_VERSION == 5` in `save_load.rs` and that the `load_rejects_wrong_version` test passes
+- Verify that `save_to_bytes_roundtrip_preserves_full_nondefault_state` passes (exercises the new component serialization through `ComponentTables`)
 
 ## FND-01 Section H Analysis
 

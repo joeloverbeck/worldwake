@@ -1,12 +1,13 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, AgentBeliefStore, AgentData,
+    component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
     ComponentTables, ComponentValue, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue, FactionData,
-    HomeostaticNeeds, InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
+    FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+    JourneyCommitment, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
     PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
     Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick,

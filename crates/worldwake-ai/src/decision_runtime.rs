@@ -4,12 +4,7 @@ use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, Quantity, Tick, UniqueItemKind, Wound,
 };
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub enum JourneyCommitmentState {
-    #[default]
-    Active,
-    Suspended,
-}
+pub use worldwake_core::{JourneyCommitmentState, QueuedFacilityIntent};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum JourneyPlanRelation {
@@ -45,12 +40,6 @@ pub struct JourneyRuntimeSnapshot {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MaterializationBindings {
     pub hypothetical_to_authoritative: BTreeMap<HypotheticalEntityId, EntityId>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct QueuedFacilityIntent {
-    pub goal_key: GoalKey,
-    pub intended_action: ActionDefId,
 }
 
 impl MaterializationBindings {

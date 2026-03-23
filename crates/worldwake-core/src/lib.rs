@@ -47,6 +47,7 @@ pub mod factions;
 pub mod goal;
 pub mod ids;
 pub mod institutional;
+pub mod intention;
 pub mod items;
 pub mod load;
 pub mod needs;
@@ -111,6 +112,10 @@ pub use institutional::{
     BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
+};
+pub use intention::{
+    ActiveGoal, FacilityQueueIntents, JourneyCommitment, JourneyCommitmentState,
+    QueuedFacilityIntent,
 };
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
