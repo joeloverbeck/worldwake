@@ -30,8 +30,10 @@ pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginS
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation,
-    JourneyRuntimeSnapshot, MaterializationBindings, QueuedFacilityIntent,
+    classify_journey_plan_relation, has_active_journey_travel, has_journey_commitment,
+    journey_committed_destination, journey_runtime_snapshot, AgentDecisionRuntime,
+    JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation, JourneyRuntimeSnapshot,
+    MaterializationBindings, QueuedFacilityIntent,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,

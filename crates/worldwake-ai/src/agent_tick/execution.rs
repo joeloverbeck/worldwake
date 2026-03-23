@@ -13,6 +13,7 @@ use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickIn
 pub(super) fn enqueue_valid_step_or_handle_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<worldwake_core::JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     tick: Tick,
@@ -22,31 +23,37 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
 ) -> Result<(), TickInputError> {
     if !valid {
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
-        if handle_recoverable_travel_step_blockage(
+        let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
             &view,
+            jc.as_ref(),
             runtime,
             blocked_memory,
             agent,
             step,
             tick,
             ctx.budget,
-        ) {
+        );
+        *jc = updated_jc;
+        if handled {
             return Ok(());
         }
-        return handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None);
+        return handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, step, None);
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
-        if handle_recoverable_travel_step_blockage(
+        let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
             &view,
+            jc.as_ref(),
             runtime,
             blocked_memory,
             agent,
             step,
             tick,
             ctx.budget,
-        ) {
+        );
+        *jc = updated_jc;
+        if handled {
             return finalize_agent_tick(
                 ctx.world,
                 ctx.event_log,
@@ -59,7 +66,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 runtime,
             );
         }
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, step, None)?;
+        handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, step, None)?;
         return finalize_agent_tick(
             ctx.world,
             ctx.event_log,
@@ -214,6 +221,41 @@ pub(super) fn persist_blocked_memory(
     );
     txn.set_component_blocked_intent_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+/// Persist the journey commitment component to the world, producing a
+/// `ComponentDelta` in the event log. Follows the same diff-and-commit
+/// pattern as `persist_blocked_memory`.
+pub(super) fn persist_journey_commitment(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: Option<&worldwake_core::JourneyCommitment>,
+    after: Option<&worldwake_core::JourneyCommitment>,
+) -> Result<(), TickInputError> {
+    if before == after {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    if let Some(commitment) = after {
+        txn.set_component_journey_commitment(agent, *commitment)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+    } else {
+        txn.clear_component_journey_commitment(agent)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+    }
     let _ = txn.commit(event_log);
     Ok(())
 }

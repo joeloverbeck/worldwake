@@ -1,4 +1,5 @@
 use crate::{
+    classify_journey_plan_relation,
     goal_policy::{goal_family_policy, FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{compare_goal_switch, GoalSwitchKind},
     journey_switch_policy::compare_relation_aware_goal_switch,
@@ -6,7 +7,7 @@ use crate::{
     PlannedPlan, RankedGoal,
 };
 use std::collections::BTreeMap;
-use worldwake_core::Permille;
+use worldwake_core::{JourneyCommitment, Permille};
 use worldwake_sim::Interruptibility;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -28,6 +29,7 @@ pub enum InterruptTrigger {
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_interrupt(
     runtime: &AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     current_action_interruptibility: Interruptibility,
     ranked_candidates: &[RankedGoal],
     planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
@@ -55,6 +57,7 @@ pub fn evaluate_interrupt(
         Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
         Interruptibility::FreelyInterruptible => interrupt_freely(
             runtime,
+            jc,
             challenger,
             ranked_candidates,
             planned_candidates,
@@ -78,8 +81,10 @@ fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn interrupt_freely(
     runtime: &AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     challenger: &RankedGoal,
     ranked_candidates: &[RankedGoal],
     planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
@@ -104,6 +109,7 @@ fn interrupt_freely(
 
     if let Some((challenger, switch_kind)) = relation_aware_interrupt_candidate(
         runtime,
+        jc,
         ranked_candidates,
         planned_candidates,
         current_class,
@@ -156,8 +162,10 @@ fn interrupt_freely(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn relation_aware_interrupt_candidate<'a>(
     runtime: &AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     ranked_candidates: &'a [RankedGoal],
     planned_candidates: Option<&'a [(GoalKey, Option<PlannedPlan>)]>,
     current_class: GoalPriorityClass,
@@ -179,7 +187,7 @@ fn relation_aware_interrupt_candidate<'a>(
         let Some(plan) = planned_by_goal.get(&challenger.grounded.key) else {
             continue;
         };
-        let relation = runtime.classify_journey_plan_relation(plan);
+        let relation = classify_journey_plan_relation(jc, plan);
         let Some(switch_kind) = compare_relation_aware_goal_switch(
             current_class,
             current_motive,
@@ -305,6 +313,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::NonInterruptible,
             &challengers,
             None,
@@ -329,6 +338,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
             None,
@@ -358,6 +368,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
             None,
@@ -377,6 +388,7 @@ mod tests {
         };
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::InterruptibleWithPenalty,
             &[ranked(current_goal, GoalPriorityClass::Medium, 100)],
             None,
@@ -412,6 +424,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
             None,
@@ -443,6 +456,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::FreelyInterruptible,
             &challengers,
             None,
@@ -462,10 +476,19 @@ mod tests {
 
     #[test]
     fn freely_interruptible_requires_margin_for_same_class_switch() {
+        use worldwake_core::{JourneyCommitment, JourneyCommitmentState, Tick};
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         };
+        let jc = Some(JourneyCommitment {
+            committed_goal: GoalKey::from(current_goal),
+            destination: entity(1),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        });
         let runtime = AgentDecisionRuntime {
             current_goal: Some(GoalKey::from(current_goal)),
             current_plan: Some(PlannedPlan::new(
@@ -481,8 +504,6 @@ mod tests {
                 }],
                 crate::PlanTerminalKind::GoalSatisfied,
             )),
-            journey_committed_goal: Some(GoalKey::from(current_goal)),
-            journey_committed_destination: Some(entity(1)),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
@@ -513,6 +534,7 @@ mod tests {
         assert_eq!(
             evaluate_interrupt(
                 &runtime,
+                jc.as_ref(),
                 Interruptibility::FreelyInterruptible,
                 &below_margin,
                 None,
@@ -526,6 +548,7 @@ mod tests {
         assert_eq!(
             evaluate_interrupt(
                 &runtime,
+                jc.as_ref(),
                 Interruptibility::FreelyInterruptible,
                 &at_margin,
                 None,
@@ -583,6 +606,7 @@ mod tests {
                     },
                     GoalPriorityClass::Background,
                 ),
+                None,
                 Interruptibility::FreelyInterruptible,
                 &no_pressure,
                 None,
@@ -603,6 +627,7 @@ mod tests {
                     },
                     GoalPriorityClass::Medium,
                 ),
+                None,
                 Interruptibility::FreelyInterruptible,
                 &blocked_by_hunger,
                 None,
@@ -631,6 +656,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Low),
+            None,
             Interruptibility::FreelyInterruptible,
             &challengers,
             None,
@@ -645,6 +671,7 @@ mod tests {
 
     #[test]
     fn higher_effective_margin_raises_interrupt_switch_threshold() {
+        use worldwake_core::{JourneyCommitment, JourneyCommitmentState, Tick};
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -653,6 +680,14 @@ mod tests {
         let challenger_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+        });
+        let jc = Some(JourneyCommitment {
+            committed_goal: current_goal_key,
+            destination: entity(1),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
         });
         let runtime = AgentDecisionRuntime {
             current_goal: Some(current_goal_key),
@@ -669,8 +704,6 @@ mod tests {
                 }],
                 crate::PlanTerminalKind::GoalSatisfied,
             )),
-            journey_committed_goal: Some(current_goal_key),
-            journey_committed_destination: Some(entity(1)),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
@@ -705,6 +738,7 @@ mod tests {
 
         let conservative = evaluate_interrupt(
             &runtime,
+            jc.as_ref(),
             Interruptibility::FreelyInterruptible,
             &challengers,
             Some(&planned_candidates),
@@ -715,6 +749,7 @@ mod tests {
         );
         let permissive = evaluate_interrupt(
             &runtime,
+            jc.as_ref(),
             Interruptibility::FreelyInterruptible,
             &challengers,
             Some(&planned_candidates),
@@ -752,6 +787,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Background),
+            None,
             Interruptibility::FreelyInterruptible,
             &challengers,
             None,
@@ -783,6 +819,7 @@ mod tests {
         ];
         let decision_free = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::FreelyInterruptible,
             &challengers_higher,
             None,
@@ -805,6 +842,7 @@ mod tests {
         ];
         let decision_penalty = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers_critical,
             None,
@@ -819,6 +857,7 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     #[test]
     fn journey_interrupt_allows_detour_without_route_margin_when_plan_is_local() {
+        use worldwake_core::{JourneyCommitment, JourneyCommitmentState, Tick};
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -830,6 +869,14 @@ mod tests {
         let abandon_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+        });
+        let jc = Some(JourneyCommitment {
+            committed_goal: committed_goal,
+            destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
         });
         let runtime = AgentDecisionRuntime {
             current_goal: Some(committed_goal),
@@ -846,8 +893,6 @@ mod tests {
                 }],
                 crate::PlanTerminalKind::GoalSatisfied,
             )),
-            journey_committed_goal: Some(committed_goal),
-            journey_committed_destination: Some(destination),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -913,6 +958,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime,
+            jc.as_ref(),
             Interruptibility::FreelyInterruptible,
             &challengers,
             Some(&planned_candidates),
