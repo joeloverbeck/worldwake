@@ -1,6 +1,6 @@
 # S20STRCLE-009: Extract search/frontier.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -77,3 +77,10 @@ Move `FrontierEntry`, its trait impls, and `compare_search_nodes()`. Import `Sea
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Created `crates/worldwake-ai/src/search/frontier.rs` with `FrontierEntry` struct, its `PartialEq`/`Eq`/`PartialOrd`/`Ord` impls, `new()`/`into_node()` methods, and `compare_search_nodes()`. Updated `search/mod.rs` with `mod frontier;` declaration and explicit imports; removed moved items and unused `std::cmp::Ordering` import.
+- **Deviations**: Used explicit import `use frontier::{compare_search_nodes, FrontierEntry};` instead of `use frontier::*;` to satisfy `clippy::wildcard_imports` lint.
+- **Verification**: `cargo test -p worldwake-ai` — 21 tests pass. `cargo clippy -p worldwake-ai` — clean.

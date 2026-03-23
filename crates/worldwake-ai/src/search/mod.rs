@@ -1,3 +1,5 @@
+mod frontier;
+
 use crate::goal_model::trace_prerequisite_guidance;
 use crate::goal_model::GoalPayloadOverrideError;
 use crate::planner_ops::planner_only_candidates;
@@ -6,7 +8,7 @@ use crate::{
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
     PlanningSnapshot, PlanningState,
 };
-use std::cmp::Ordering;
+use frontier::{compare_search_nodes, FrontierEntry};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{ActionDefId, EntityId, GoalKind};
 use worldwake_sim::{
@@ -26,10 +28,6 @@ struct SearchNode<'snapshot> {
     heuristic_ticks: u32,
 }
 
-struct FrontierEntry<'snapshot> {
-    node: SearchNode<'snapshot>,
-}
-
 #[derive(Clone)]
 struct SearchCandidate {
     def_id: ActionDefId,
@@ -38,36 +36,6 @@ struct SearchCandidate {
     payload_override: Option<ActionPayload>,
     planner_only: bool,
     trace_index: Option<usize>,
-}
-
-impl<'snapshot> FrontierEntry<'snapshot> {
-    fn new(node: SearchNode<'snapshot>) -> Self {
-        Self { node }
-    }
-
-    fn into_node(self) -> SearchNode<'snapshot> {
-        self.node
-    }
-}
-
-impl PartialEq for FrontierEntry<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        compare_search_nodes(&self.node, &other.node) == Ordering::Equal
-    }
-}
-
-impl Eq for FrontierEntry<'_> {}
-
-impl PartialOrd for FrontierEntry<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for FrontierEntry<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        compare_search_nodes(&other.node, &self.node)
-    }
 }
 
 /// Outcome of a plan search for one goal.
@@ -919,20 +887,6 @@ fn search_candidate_from_planner(
 
 fn unsupported_goal(goal: &GoalKind) -> bool {
     matches!(goal, GoalKind::SellCommodity { .. })
-}
-
-fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
-    let left_f = left
-        .total_estimated_ticks
-        .saturating_add(left.heuristic_ticks);
-    let right_f = right
-        .total_estimated_ticks
-        .saturating_add(right.heuristic_ticks);
-    left_f
-        .cmp(&right_f)
-        .then_with(|| left.total_estimated_ticks.cmp(&right.total_estimated_ticks))
-        .then_with(|| left.steps.len().cmp(&right.steps.len()))
-        .then_with(|| left.steps.cmp(&right.steps))
 }
 
 fn terminal_kind(
