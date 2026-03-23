@@ -1,6 +1,6 @@
 # S21-002: Migrate journey commitment fields from runtime to JourneyCommitment component
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — AI crate runtime reads/writes migrated to World/WorldTxn component access
@@ -12,7 +12,7 @@ Six journey-related fields on `AgentDecisionRuntime` are causally relevant (affe
 
 ## Assumption Reassessment (2026-03-23)
 
-1. Journey fields to promote are at `decision_runtime.rs` lines 81–86: `journey_committed_goal`, `journey_committed_destination`, `journey_commitment_state`, `journey_established_at`, `journey_last_progress_tick`, `consecutive_blocked_leg_ticks`.
+1. Journey fields to promote are at `decision_runtime.rs` lines 70–75: `journey_committed_goal`, `journey_committed_destination`, `journey_commitment_state`, `journey_established_at`, `journey_last_progress_tick`, `consecutive_blocked_leg_ticks`.
 2. Read sites confirmed via grep `journey_committed` in AI crate:
    - `agent_tick/journey.rs` (lines 21–49, 51–100) — primary journey management
    - `agent_tick/active_action.rs` — journey state checks during active action handling
@@ -136,3 +136,10 @@ Tests that construct `AgentDecisionRuntime` with journey fields must either:
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Removed 6 journey fields from `AgentDecisionRuntime`. Created 5 free functions (`has_journey_commitment`, `journey_committed_destination`, `has_active_journey_travel`, `journey_runtime_snapshot`, `classify_journey_plan_relation`). Added `persist_journey_commitment` helper using WorldTxn (produces `ComponentDelta` in event log). Threaded `Option<JourneyCommitment>` through the entire agent_tick pipeline. Updated 12 source files (706 insertions, 477 deletions).
+- **Deviations**: `update_journey_fields_for_adopted_plan` renamed to `update_journey_for_adopted_plan` and changed to return `Option<JourneyCommitment>` rather than mutating runtime fields. `handle_recoverable_travel_step_blockage` returns `(bool, Option<JourneyCommitment>)` tuple instead of just `bool`. `advance_completed_step` returns `Option<JourneyCommitment>`. All functions that previously read/wrote runtime journey fields now take `Option<&JourneyCommitment>` or `&mut Option<JourneyCommitment>` parameters. `planner_ops.rs` was confirmed to have no journey references and was not touched (corrected in ticket reassessment).
+- **Verification**: `cargo test -p worldwake-ai` 32 passed. `cargo test --workspace` 2400+ passed. `cargo clippy --workspace` zero warnings. Zero occurrences of `runtime.journey_committed_*` in codebase. Golden test hashes unchanged.
