@@ -3434,7 +3434,7 @@ mod tests {
             "crates/worldwake-ai/src/planning_state.rs",
             "crates/worldwake-ai/src/pressure.rs",
             "crates/worldwake-ai/src/ranking.rs",
-            "crates/worldwake-ai/src/search.rs",
+            "crates/worldwake-ai/src/search/mod.rs",
         ];
 
         for relative in modules {

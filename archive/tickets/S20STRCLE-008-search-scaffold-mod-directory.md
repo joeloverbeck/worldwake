@@ -1,6 +1,6 @@
 # S20STRCLE-008: Scaffold search/ module directory
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -73,3 +73,10 @@ No code changes inside the file. No changes to `lib.rs`.
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
 3. `cargo build --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Moved `crates/worldwake-ai/src/search.rs` → `crates/worldwake-ai/src/search/mod.rs`. Updated one path literal in `agent_tick/mod.rs:3437` (architectural test `belief_read_modules_do_not_depend_on_world_directly` that reads source files by path).
+- **Deviations**: The architectural test in `agent_tick/mod.rs` hardcoded the path `search.rs` and needed updating to `search/mod.rs`. Not anticipated in the ticket's "no code changes" claim, but unavoidable — the test reads source files literally.
+- **Verification**: `cargo test -p worldwake-ai` — 826 pass, 0 fail. `cargo clippy -p worldwake-ai` — clean. `cargo build --workspace` — clean.
