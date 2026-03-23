@@ -1,8 +1,11 @@
 use crate::{
-    authoritative_target, AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState,
-    JourneyRuntimeSnapshot, PlannedStep, PlanningBudget,
+    authoritative_target, classify_journey_plan_relation, has_active_journey_travel,
+    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot,
+    PlannedStep, PlanningBudget,
 };
-use worldwake_core::{BlockedIntent, BlockedIntentMemory, EntityId, Permille, Tick};
+use worldwake_core::{
+    BlockedIntent, BlockedIntentMemory, EntityId, JourneyCommitment, Permille, Tick,
+};
 use worldwake_sim::RuntimeBeliefView;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -18,61 +21,92 @@ pub struct JourneyDebugSnapshot {
     pub switch_margin_source: JourneySwitchMarginSource,
 }
 
-pub(super) fn update_journey_fields_for_adopted_plan(
-    runtime: &mut AgentDecisionRuntime,
+/// Updates the journey commitment for a newly adopted plan.
+///
+/// Returns the updated commitment (or `None` if it was cleared).
+pub(super) fn update_journey_for_adopted_plan(
+    jc: Option<&JourneyCommitment>,
     selected_plan: &crate::PlannedPlan,
     tick: Tick,
-) {
-    let relation = runtime.classify_journey_plan_relation(selected_plan);
+    runtime: &mut AgentDecisionRuntime,
+) -> Option<JourneyCommitment> {
+    let relation = classify_journey_plan_relation(jc, selected_plan);
 
     if relation == crate::JourneyPlanRelation::SuspendsCommitment {
-        runtime.journey_commitment_state = JourneyCommitmentState::Suspended;
-        return;
+        return jc.map(|c| JourneyCommitment {
+            state: JourneyCommitmentState::Suspended,
+            ..*c
+        });
     }
 
     let Some(destination) = selected_plan.terminal_travel_destination() else {
-        runtime.clear_journey_commitment_with_reason(JourneyClearReason::LostTravelPlan);
-        return;
+        if jc.is_some() {
+            runtime.last_journey_clear_reason = Some(JourneyClearReason::LostTravelPlan);
+        }
+        return None;
     };
 
     let same_commitment = relation == crate::JourneyPlanRelation::RefreshesCommitment;
-    runtime.journey_committed_goal = Some(selected_plan.goal);
-    runtime.journey_committed_destination = Some(destination);
-    runtime.journey_commitment_state = JourneyCommitmentState::Active;
-    if runtime.journey_established_at.is_some() && same_commitment {
-        return;
+
+    if same_commitment {
+        if let Some(existing) = jc {
+            return Some(JourneyCommitment {
+                committed_goal: selected_plan.goal,
+                destination,
+                state: JourneyCommitmentState::Active,
+                ..*existing
+            });
+        }
     }
 
-    runtime.journey_established_at = Some(tick);
-    runtime.journey_last_progress_tick = None;
-    runtime.consecutive_blocked_leg_ticks = 0;
+    Some(JourneyCommitment {
+        committed_goal: selected_plan.goal,
+        destination,
+        state: JourneyCommitmentState::Active,
+        established_at: tick,
+        last_progress_tick: None,
+        consecutive_blocked_leg_ticks: 0,
+    })
 }
 
+/// Handles a blocked travel step during an active journey. Returns `true`
+/// if the blockage was handled (caller should not fall through to generic
+/// failure handling).
+///
+/// Returns `(handled, updated_commitment)`. When `handled` is true, the
+/// caller should use `updated_commitment` as the new journey state.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_recoverable_travel_step_blockage(
     view: &dyn RuntimeBeliefView,
+    jc: Option<&JourneyCommitment>,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     step: &PlannedStep,
     tick: Tick,
     budget: &PlanningBudget,
-) -> bool {
-    if step.op_kind != crate::PlannerOpKind::Travel || !runtime.has_active_journey_travel() {
-        return false;
+) -> (bool, Option<JourneyCommitment>) {
+    if step.op_kind != crate::PlannerOpKind::Travel
+        || !has_active_journey_travel(
+            jc,
+            runtime.current_plan.as_ref(),
+            runtime.current_step_index,
+        )
+    {
+        return (false, jc.copied());
     }
 
-    runtime.consecutive_blocked_leg_ticks = runtime
+    let commitment = jc.expect("active journey travel requires a commitment");
+    let new_blocked = commitment
         .consecutive_blocked_leg_ticks
         .checked_add(1)
         .expect("consecutive blocked leg ticks overflowed");
 
     let patience_exhausted = view
         .travel_disposition_profile(agent)
-        .is_some_and(|profile| {
-            runtime.consecutive_blocked_leg_ticks >= profile.blocked_leg_patience_ticks.get()
-        });
+        .is_some_and(|profile| new_blocked >= profile.blocked_leg_patience_ticks.get());
 
-    if patience_exhausted {
+    let updated_commitment = if patience_exhausted {
         let goal_key = runtime.current_goal.unwrap_or_else(|| {
             runtime
                 .current_plan
@@ -89,14 +123,20 @@ pub(super) fn handle_recoverable_travel_step_blockage(
             observed_tick: tick,
             expires_tick: tick + u64::from(budget.structural_block_ticks),
         });
-        runtime.clear_journey_commitment_with_reason(JourneyClearReason::PatienceExhausted);
-    }
+        runtime.last_journey_clear_reason = Some(JourneyClearReason::PatienceExhausted);
+        None
+    } else {
+        Some(JourneyCommitment {
+            consecutive_blocked_leg_ticks: new_blocked,
+            ..*commitment
+        })
+    };
 
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.materialization_bindings.clear();
     runtime.dirty = true;
-    true
+    (true, updated_commitment)
 }
 
 fn blocked_leg_target(step: &PlannedStep) -> Option<EntityId> {

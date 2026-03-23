@@ -1,15 +1,17 @@
 use crate::{
-    goal_switching::GoalSwitchKind, journey_switch_policy::compare_relation_aware_goal_switch,
-    AgentDecisionRuntime, GoalKey, GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
+    classify_journey_plan_relation, goal_switching::GoalSwitchKind,
+    journey_switch_policy::compare_relation_aware_goal_switch, AgentDecisionRuntime, GoalKey,
+    GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use worldwake_core::Permille;
+use worldwake_core::{JourneyCommitment, Permille};
 
 pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
     current: &AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     default_switch_margin: Permille,
     journey_switch_margin: Permille,
 ) -> Option<PlannedPlan> {
@@ -48,7 +50,7 @@ pub fn select_best_plan(
     };
 
     for (challenger_class, challenger_motive, challenger_plan) in available {
-        let relation = current.classify_journey_plan_relation(&challenger_plan);
+        let relation = classify_journey_plan_relation(jc, &challenger_plan);
         if relation == JourneyPlanRelation::RefreshesCommitment
             || challenger_plan.goal == current_plan.goal
         {
@@ -104,7 +106,7 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::ActionDefId;
-    use worldwake_core::{CommodityKind, EntityId, Permille};
+    use worldwake_core::{CommodityKind, EntityId, JourneyCommitment, JourneyCommitmentState, Permille, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -179,6 +181,7 @@ mod tests {
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -233,6 +236,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -268,6 +272,7 @@ mod tests {
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -276,6 +281,7 @@ mod tests {
             &candidates,
             &plans,
             &AgentDecisionRuntime::default(),
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -338,6 +344,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -376,6 +383,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -416,6 +424,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -452,6 +461,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -498,11 +508,17 @@ mod tests {
             (current_goal, Some(current_plan.clone())),
             (challenger_goal, Some(challenger_plan.clone())),
         ];
+        let jc = Some(JourneyCommitment {
+            committed_goal: current_goal,
+            destination: entity(1),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        });
         let runtime = AgentDecisionRuntime {
             current_goal: Some(current_goal),
             current_plan: Some(current_plan),
-            journey_committed_goal: Some(current_goal),
-            journey_committed_destination: Some(entity(1)),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
@@ -512,6 +528,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            jc.as_ref(),
             default_switch_margin(),
             Permille::new(400).unwrap(),
         )
@@ -520,6 +537,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            jc.as_ref(),
             default_switch_margin(),
             Permille::new(300).unwrap(),
         )
@@ -573,6 +591,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            None,
             default_switch_margin(),
             default_switch_margin(),
         )
@@ -658,11 +677,17 @@ mod tests {
             (detour_goal, Some(detour_plan.clone())),
             (committed_goal, Some(current_plan.clone())),
         ];
+        let jc = Some(JourneyCommitment {
+            committed_goal: committed_goal,
+            destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        });
         let runtime = AgentDecisionRuntime {
             current_goal: Some(committed_goal),
             current_plan: Some(current_plan),
-            journey_committed_goal: Some(committed_goal),
-            journey_committed_destination: Some(destination),
             ..AgentDecisionRuntime::default()
         };
 
@@ -670,6 +695,7 @@ mod tests {
             &candidates,
             &plans,
             &runtime,
+            jc.as_ref(),
             default_switch_margin(),
             route_switch_margin(),
         )

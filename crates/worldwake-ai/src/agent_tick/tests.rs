@@ -12,13 +12,13 @@
         apply_step_materialization_bindings, committed_action_for_step,
         effective_goal_switch_margin, handle_recoverable_travel_step_blockage,
         persist_blocked_memory, plan_and_validate_next_step_traced,
-        update_journey_fields_for_adopted_plan, AgentTickDriver,
+        update_journey_for_adopted_plan, AgentTickDriver,
     };
     use crate::PlanningBudget;
     use crate::{
         build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtyReason,
-        ExpectedMaterialization, GoalKey, GoalKind, JourneyCommitmentState,
-        JourneySwitchMarginSource, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        ExpectedMaterialization, GoalKey, GoalKind, JourneySwitchMarginSource,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef, QueuedFacilityIntent, RankedGoal, RankedGoalProvenance,
         SelectedPlanReplacementKind,
     };
@@ -32,12 +32,13 @@
         CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-        RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
-        TellProfile, Tick, ToldBeliefMemory, Topology, TravelDispositionProfile, TravelEdge,
-        TravelEdgeId, UniqueItemKind, UtilityProfile, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        HomeostaticNeeds, JourneyCommitment, JourneyCommitmentState, KnownRecipes, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent, PerceptionProfile,
+        PerceptionSource, Permille, Place, Quantity, RecipeId, RecipientKnowledgeStatus,
+        ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
+        Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
+        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -1135,47 +1136,32 @@
         };
         let budget = PlanningBudget::default();
         let view = PerAgentBeliefView::from_world(actor, &world);
-        let active_journey = crate::AgentDecisionRuntime {
-            current_plan: Some(PlannedPlan::new(
-                GoalKey::from(GoalKind::Sleep),
-                vec![travel_step(1, place)],
-                PlanTerminalKind::GoalSatisfied,
-            )),
-            journey_committed_goal: Some(GoalKey::from(GoalKind::Sleep)),
-            journey_committed_destination: Some(place),
-            journey_established_at: Some(Tick(7)),
-            ..crate::AgentDecisionRuntime::default()
-        };
-        let planless_commitment = crate::AgentDecisionRuntime {
-            journey_committed_goal: Some(GoalKey::from(GoalKind::Sleep)),
-            journey_committed_destination: Some(place),
-            journey_established_at: Some(Tick(7)),
-            ..crate::AgentDecisionRuntime::default()
-        };
-        let not_a_journey = crate::AgentDecisionRuntime {
-            current_plan: Some(PlannedPlan::new(
-                GoalKey::from(GoalKind::Sleep),
-                vec![barrier_step()],
-                PlanTerminalKind::GoalSatisfied,
-            )),
-            journey_established_at: Some(Tick(7)),
-            ..crate::AgentDecisionRuntime::default()
-        };
+        let jc_active = Some(JourneyCommitment {
+            committed_goal: GoalKey::from(GoalKind::Sleep),
+            destination: place,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(7),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        });
 
         assert_eq!(
-            effective_goal_switch_margin(&view, actor, &active_journey, &budget),
+            effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget),
             Permille::new(300).unwrap()
         );
+        // Planless commitment (same jc, no plan on runtime) still has route margin.
         assert_eq!(
-            effective_goal_switch_margin(&view, actor, &planless_commitment, &budget),
+            effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget),
             Permille::new(300).unwrap()
         );
+        // No commitment => budget default.
         assert_eq!(
-            effective_goal_switch_margin(&view, actor, &not_a_journey, &budget),
+            effective_goal_switch_margin(&view, actor, None, &budget),
             budget.switch_margin_permille
         );
+        // Unknown agent => budget default (no TravelDispositionProfile).
         assert_eq!(
-            effective_goal_switch_margin(&view, entity(999), &active_journey, &budget,),
+            effective_goal_switch_margin(&view, entity(999), jc_active.as_ref(), &budget),
             budget.switch_margin_permille
         );
     }
@@ -1395,10 +1381,12 @@
             [harness.orchard_farm],
         );
         let semantics = build_semantics_table(&harness.defs);
+        let mut jc = None;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
             &harness.scheduler,
             &mut runtime,
+            &mut jc,
             harness.actor,
             std::slice::from_ref(&goal),
             &blocked,
@@ -1567,6 +1555,22 @@
             commit_txn(txn);
             actor
         };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_journey_commitment(
+                actor,
+                JourneyCommitment {
+                    committed_goal: GoalKey::from(GoalKind::Sleep),
+                    destination: place,
+                    state: JourneyCommitmentState::Active,
+                    established_at: Tick(7),
+                    last_progress_tick: None,
+                    consecutive_blocked_leg_ticks: 0,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
         let mut driver = AgentTickDriver::new(PlanningBudget::default());
         driver.runtime_by_agent.insert(
             actor,
@@ -1576,9 +1580,6 @@
                     vec![travel_step(1, place)],
                     PlanTerminalKind::GoalSatisfied,
                 )),
-                journey_committed_goal: Some(GoalKey::from(GoalKind::Sleep)),
-                journey_committed_destination: Some(place),
-                journey_established_at: Some(Tick(7)),
                 ..crate::AgentDecisionRuntime::default()
             },
         );
@@ -1649,39 +1650,39 @@
         );
         let mut runtime = crate::AgentDecisionRuntime::default();
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
+        let jc = update_journey_for_adopted_plan(None, &plan, Tick(9), &mut runtime);
 
-        assert_eq!(runtime.journey_committed_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_destination, Some(destination));
-        assert_eq!(runtime.journey_established_at, Some(Tick(9)));
-        assert_eq!(runtime.journey_last_progress_tick, None);
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        let jc = jc.expect("should create a new journey commitment");
+        assert_eq!(jc.committed_goal, goal);
+        assert_eq!(jc.destination, destination);
+        assert_eq!(jc.established_at, Tick(9));
+        assert_eq!(jc.last_progress_tick, None);
+        assert_eq!(jc.consecutive_blocked_leg_ticks, 0);
     }
 
     #[test]
     fn non_travel_plan_adoption_suspends_journey_commitment() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let plan = PlannedPlan::new(goal, vec![barrier_step()], PlanTerminalKind::GoalSatisfied);
-        let mut runtime = crate::AgentDecisionRuntime {
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(entity(12)),
-            journey_established_at: Some(Tick(3)),
-            journey_last_progress_tick: Some(Tick(7)),
+        let existing_jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination: entity(12),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(3),
+            last_progress_tick: Some(Tick(7)),
             consecutive_blocked_leg_ticks: 2,
-            ..crate::AgentDecisionRuntime::default()
-        };
+        });
+        let mut runtime = crate::AgentDecisionRuntime::default();
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
+        let jc = update_journey_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
 
-        assert_eq!(runtime.journey_committed_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_destination, Some(entity(12)));
-        assert_eq!(
-            runtime.journey_commitment_state,
-            JourneyCommitmentState::Suspended
-        );
-        assert_eq!(runtime.journey_established_at, Some(Tick(3)));
-        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(7)));
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 2);
+        let jc = jc.expect("should preserve commitment in suspended state");
+        assert_eq!(jc.committed_goal, goal);
+        assert_eq!(jc.destination, entity(12));
+        assert_eq!(jc.state, JourneyCommitmentState::Suspended);
+        assert_eq!(jc.established_at, Tick(3));
+        assert_eq!(jc.last_progress_tick, Some(Tick(7)));
+        assert_eq!(jc.consecutive_blocked_leg_ticks, 2);
         assert_eq!(runtime.last_journey_clear_reason, None);
     }
 
@@ -1694,27 +1695,28 @@
             vec![travel_step(1, destination), barrier_step()],
             PlanTerminalKind::GoalSatisfied,
         );
+        let existing_jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(4),
+            last_progress_tick: Some(Tick(6)),
+            consecutive_blocked_leg_ticks: 3,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(destination),
-            journey_established_at: Some(Tick(4)),
-            journey_last_progress_tick: Some(Tick(6)),
-            consecutive_blocked_leg_ticks: 3,
             ..crate::AgentDecisionRuntime::default()
         };
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
+        let jc = update_journey_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
 
-        assert_eq!(runtime.journey_committed_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_destination, Some(destination));
-        assert_eq!(
-            runtime.journey_commitment_state,
-            JourneyCommitmentState::Active
-        );
-        assert_eq!(runtime.journey_established_at, Some(Tick(4)));
-        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(6)));
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 3);
+        let jc = jc.expect("should preserve commitment");
+        assert_eq!(jc.committed_goal, goal);
+        assert_eq!(jc.destination, destination);
+        assert_eq!(jc.state, JourneyCommitmentState::Active);
+        assert_eq!(jc.established_at, Tick(4));
+        assert_eq!(jc.last_progress_tick, Some(Tick(6)));
+        assert_eq!(jc.consecutive_blocked_leg_ticks, 3);
     }
 
     #[test]
@@ -1727,32 +1729,41 @@
             vec![travel_step(1, new_destination), barrier_step()],
             PlanTerminalKind::GoalSatisfied,
         );
+        let existing_jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination: original_destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(4),
+            last_progress_tick: Some(Tick(6)),
+            consecutive_blocked_leg_ticks: 3,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(original_destination),
-            journey_established_at: Some(Tick(4)),
-            journey_last_progress_tick: Some(Tick(6)),
-            consecutive_blocked_leg_ticks: 3,
             ..crate::AgentDecisionRuntime::default()
         };
 
-        update_journey_fields_for_adopted_plan(&mut runtime, &plan, Tick(9));
+        let jc = update_journey_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
 
-        assert_eq!(runtime.journey_committed_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_destination, Some(new_destination));
-        assert_eq!(
-            runtime.journey_commitment_state,
-            JourneyCommitmentState::Active
-        );
-        assert_eq!(runtime.journey_established_at, Some(Tick(9)));
-        assert_eq!(runtime.journey_last_progress_tick, None);
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        let jc = jc.expect("should restart commitment with new destination");
+        assert_eq!(jc.committed_goal, goal);
+        assert_eq!(jc.destination, new_destination);
+        assert_eq!(jc.state, JourneyCommitmentState::Active);
+        assert_eq!(jc.established_at, Tick(9));
+        assert_eq!(jc.last_progress_tick, None);
+        assert_eq!(jc.consecutive_blocked_leg_ticks, 0);
     }
 
     #[test]
     fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
         let goal = GoalKey::from(GoalKind::Sleep);
+        let jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination: entity(11),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 5,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
@@ -1761,18 +1772,15 @@
                 PlanTerminalKind::GoalSatisfied,
             )),
             current_step_index: 0,
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(entity(11)),
-            journey_established_at: Some(Tick(1)),
-            consecutive_blocked_leg_ticks: 5,
             ..crate::AgentDecisionRuntime::default()
         };
 
-        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(9));
+        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Travel, Tick(9));
 
         assert_eq!(runtime.current_step_index, 1);
-        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(9)));
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        let updated_jc = updated_jc.expect("journey commitment should persist");
+        assert_eq!(updated_jc.last_progress_tick, Some(Tick(9)));
+        assert_eq!(updated_jc.consecutive_blocked_leg_ticks, 0);
     }
 
     #[test]
@@ -1802,33 +1810,40 @@
             actor
         };
         let view = PerAgentBeliefView::from_world(actor, &world);
+        let jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination: entity(11),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(2),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 1,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(plan.clone()),
             current_step_index: 0,
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(entity(11)),
-            journey_established_at: Some(Tick(2)),
-            consecutive_blocked_leg_ticks: 1,
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         };
         let mut blocked_memory = BlockedIntentMemory::default();
 
-        assert!(handle_recoverable_travel_step_blockage(
+        let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
             &view,
+            jc.as_ref(),
             &mut runtime,
             &mut blocked_memory,
             actor,
             &step,
             Tick(9),
             &PlanningBudget::default(),
-        ));
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 2);
+        );
+        assert!(handled);
+        let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
+        assert_eq!(updated_jc.consecutive_blocked_leg_ticks, 2);
         assert!(runtime.dirty);
         assert_eq!(runtime.current_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_destination, Some(entity(11)));
+        assert_eq!(updated_jc.committed_goal, goal);
+        assert_eq!(updated_jc.destination, entity(11));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(blocked_memory.intents.is_empty());
@@ -1866,39 +1881,40 @@
             actor
         };
         let view = PerAgentBeliefView::from_world(actor, &world);
+        let jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(2),
+            last_progress_tick: Some(Tick(4)),
+            consecutive_blocked_leg_ticks: 1,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(plan),
             current_step_index: 0,
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(destination),
-            journey_established_at: Some(Tick(2)),
-            journey_last_progress_tick: Some(Tick(4)),
-            consecutive_blocked_leg_ticks: 1,
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         };
         let mut blocked_memory = BlockedIntentMemory::default();
         let budget = PlanningBudget::default();
 
-        assert!(handle_recoverable_travel_step_blockage(
+        let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
             &view,
+            jc.as_ref(),
             &mut runtime,
             &mut blocked_memory,
             actor,
             &step,
             Tick(9),
             &budget,
-        ));
+        );
+        assert!(handled);
         assert_eq!(runtime.current_goal, Some(goal));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(runtime.dirty);
-        assert_eq!(runtime.journey_committed_goal, None);
-        assert_eq!(runtime.journey_committed_destination, None);
-        assert_eq!(runtime.journey_established_at, None);
-        assert_eq!(runtime.journey_last_progress_tick, None);
-        assert_eq!(runtime.consecutive_blocked_leg_ticks, 0);
+        assert!(updated_jc.is_none(), "patience exhaustion should clear commitment");
         assert_eq!(
             runtime.last_journey_clear_reason,
             Some(crate::JourneyClearReason::PatienceExhausted)
@@ -1977,17 +1993,20 @@
     #[test]
     fn dead_ai_agent_is_skipped_by_ai_driver() {
         let mut harness = Harness::new(ControlSource::Ai);
-        harness.driver.runtime_by_agent.insert(
-            harness.actor,
-            crate::AgentDecisionRuntime {
-                journey_committed_goal: Some(GoalKey::from(GoalKind::Sleep)),
-                journey_committed_destination: Some(entity(11)),
-                journey_established_at: Some(Tick(1)),
-                ..crate::AgentDecisionRuntime::default()
-            },
-        );
         {
             let mut txn = new_txn(&mut harness.world, 2);
+            txn.set_component_journey_commitment(
+                harness.actor,
+                JourneyCommitment {
+                    committed_goal: GoalKey::from(GoalKind::Sleep),
+                    destination: entity(11),
+                    state: JourneyCommitmentState::Active,
+                    established_at: Tick(1),
+                    last_progress_tick: None,
+                    consecutive_blocked_leg_ticks: 0,
+                },
+            )
+            .unwrap();
             txn.set_component_dead_at(harness.actor, worldwake_core::DeadAt(Tick(2)))
                 .unwrap();
             let _ = txn.commit(&mut harness.event_log);
@@ -2016,6 +2035,14 @@
             purpose: CommodityPurpose::SelfConsume,
         });
         let destination = entity(11);
+        let jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
@@ -2024,22 +2051,20 @@
                 PlanTerminalKind::ProgressBarrier,
             )),
             current_step_index: 0,
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(destination),
-            journey_established_at: Some(Tick(1)),
             step_in_flight: false,
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         };
 
-        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(4));
+        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(runtime.current_goal, Some(goal));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
-        assert_eq!(runtime.journey_committed_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_destination, Some(destination));
-        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(4)));
+        let updated_jc = updated_jc.expect("journey commitment should persist through progress barrier");
+        assert_eq!(updated_jc.committed_goal, goal);
+        assert_eq!(updated_jc.destination, destination);
+        assert_eq!(updated_jc.last_progress_tick, Some(Tick(4)));
         assert!(runtime.dirty);
         assert!(runtime
             .materialization_bindings
@@ -2057,6 +2082,14 @@
             commodity: CommodityKind::Water,
         });
         let destination = entity(11);
+        let jc = Some(JourneyCommitment {
+            committed_goal: committed_goal,
+            destination,
+            state: JourneyCommitmentState::Suspended,
+            established_at: Tick(1),
+            last_progress_tick: Some(Tick(3)),
+            consecutive_blocked_leg_ticks: 0,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(detour_goal),
             current_plan: Some(PlannedPlan::new(
@@ -2073,29 +2106,22 @@
                 PlanTerminalKind::GoalSatisfied,
             )),
             current_step_index: 0,
-            journey_committed_goal: Some(committed_goal),
-            journey_committed_destination: Some(destination),
-            journey_commitment_state: JourneyCommitmentState::Suspended,
-            journey_established_at: Some(Tick(1)),
-            journey_last_progress_tick: Some(Tick(3)),
             step_in_flight: false,
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         };
 
-        advance_completed_step(&mut runtime, PlannerOpKind::Consume, Tick(4));
+        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Consume, Tick(4));
 
         assert_eq!(runtime.current_goal, None);
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
-        assert_eq!(runtime.journey_committed_goal, Some(committed_goal));
-        assert_eq!(runtime.journey_committed_destination, Some(destination));
-        assert_eq!(
-            runtime.journey_commitment_state,
-            JourneyCommitmentState::Active
-        );
-        assert_eq!(runtime.journey_established_at, Some(Tick(1)));
-        assert_eq!(runtime.journey_last_progress_tick, Some(Tick(3)));
+        let updated_jc = updated_jc.expect("commitment should be reactivated after detour");
+        assert_eq!(updated_jc.committed_goal, committed_goal);
+        assert_eq!(updated_jc.destination, destination);
+        assert_eq!(updated_jc.state, JourneyCommitmentState::Active);
+        assert_eq!(updated_jc.established_at, Tick(1));
+        assert_eq!(updated_jc.last_progress_tick, Some(Tick(3)));
         assert_eq!(runtime.last_journey_clear_reason, None);
         assert!(runtime.dirty);
     }
@@ -2104,6 +2130,14 @@
     fn goal_completion_records_goal_satisfied_clear_reason() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let destination = entity(11);
+        let jc = Some(JourneyCommitment {
+            committed_goal: goal,
+            destination,
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        });
         let mut runtime = crate::AgentDecisionRuntime {
             current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
@@ -2112,20 +2146,16 @@
                 PlanTerminalKind::GoalSatisfied,
             )),
             current_step_index: 0,
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(destination),
-            journey_established_at: Some(Tick(1)),
             ..crate::AgentDecisionRuntime::default()
         };
 
-        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(4));
+        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(
             runtime.last_journey_clear_reason,
             Some(crate::JourneyClearReason::GoalSatisfied)
         );
-        assert_eq!(runtime.journey_committed_goal, None);
-        assert_eq!(runtime.journey_committed_destination, None);
+        assert!(updated_jc.is_none(), "goal satisfied should clear journey commitment");
     }
 
     #[test]
@@ -2268,7 +2298,7 @@
         )
         .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime, PlannerOpKind::MoveCargo, Tick(3));
+        advance_completed_step(&mut runtime, None, PlannerOpKind::MoveCargo, Tick(3));
 
         assert_eq!(runtime.current_step_index, 1);
         assert_eq!(
@@ -2280,7 +2310,7 @@
         apply_step_materialization_bindings(&mut runtime, &plan.steps[1], &CommitOutcome::empty())
             .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime, PlannerOpKind::Travel, Tick(4));
+        advance_completed_step(&mut runtime, None, PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(runtime.current_step_index, 2);
         assert_eq!(
@@ -2292,7 +2322,7 @@
         apply_step_materialization_bindings(&mut runtime, &plan.steps[2], &CommitOutcome::empty())
             .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime, PlannerOpKind::MoveCargo, Tick(5));
+        advance_completed_step(&mut runtime, None, PlannerOpKind::MoveCargo, Tick(5));
 
         assert!(runtime.current_plan.is_none());
         assert!(!runtime.step_in_flight);
@@ -2402,10 +2432,12 @@
             false,
         )
         .ranked;
+        let mut jc = None;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
             &harness.scheduler,
             runtime,
+            &mut jc,
             harness.actor,
             &ranked,
             &blocked,
@@ -2474,7 +2506,7 @@
         )
         .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(runtime, PlannerOpKind::MoveCargo, Tick(2));
+        advance_completed_step(runtime, None, PlannerOpKind::MoveCargo, Tick(2));
         assert_eq!(runtime.current_goal, Some(expected_goal));
 
         let ranked_after_pickup = refresh_runtime_for_read_phase(
@@ -2496,10 +2528,12 @@
         )
         .ranked;
         assert!(runtime.dirty);
+        let mut jc2 = None;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
             &harness.scheduler,
             runtime,
+            &mut jc2,
             harness.actor,
             &ranked_after_pickup,
             &blocked,
@@ -3475,11 +3509,13 @@
             false,
         );
         let previous_goal = runtime.current_goal;
+        let mut jc = None;
         let (_, initial_valid, initial_continued, _, initial_selection) =
             plan_and_validate_next_step_traced(
                 &harness.world,
                 &harness.scheduler,
                 runtime,
+                &mut jc,
                 harness.actor,
                 &initial_read.ranked,
                 &blocked,
@@ -3554,11 +3590,13 @@
         );
 
         let previous_goal = runtime.current_goal;
+        let mut jc2 = None;
         let (continued_step, continued_valid, plan_continued, _, continuation_selection) =
             plan_and_validate_next_step_traced(
                 &harness.world,
                 &harness.scheduler,
                 runtime,
+                &mut jc2,
                 harness.actor,
                 &continuation_read.ranked,
                 &blocked,

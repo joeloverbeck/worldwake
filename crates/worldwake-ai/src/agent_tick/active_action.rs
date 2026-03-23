@@ -1,19 +1,20 @@
-use worldwake_core::{BlockedIntentMemory, CauseRef, EntityId, Permille, Tick};
+use worldwake_core::{BlockedIntentMemory, CauseRef, EntityId, JourneyCommitment, Permille, Tick};
 use worldwake_sim::{
-    ActionHandlerRegistry, PerAgentBeliefView, RuntimeBeliefView,
-    SchedulerActionRuntime, TickInputError,
+    ActionHandlerRegistry, PerAgentBeliefView, RuntimeBeliefView, SchedulerActionRuntime,
+    TickInputError,
 };
 
 use crate::failure_handling::ExecutionFailure;
 use crate::{
-    evaluate_interrupt, handle_plan_failure, AgentDecisionRuntime, DecisionContext,
-    InterruptDecision, JourneyClearReason, JourneyCommitmentState, PlanFailureContext,
-    PlanTerminalKind, PlannedStep, PlanningBudget, RankedGoal,
+    classify_journey_plan_relation, evaluate_interrupt, handle_plan_failure, has_journey_commitment,
+    AgentDecisionRuntime, DecisionContext, InterruptDecision, JourneyClearReason,
+    JourneyCommitmentState, PlanFailureContext, PlanTerminalKind, PlannedStep, PlanningBudget,
+    RankedGoal,
 };
 
 use super::{
-    build_candidate_plans, persist_blocked_memory, plans_as_options,
-    AgentTickContext, JourneySwitchMarginSource,
+    build_candidate_plans, persist_blocked_memory, plans_as_options, AgentTickContext,
+    JourneySwitchMarginSource,
 };
 use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
 
@@ -32,6 +33,7 @@ pub(super) fn active_action_for_agent(
 pub(super) fn handle_active_action_phase(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
@@ -52,7 +54,7 @@ pub(super) fn handle_active_action_phase(
         .current_plan
         .as_ref()
         .is_some_and(|plan| runtime.current_step_index < plan.steps.len());
-    let planned_candidates = runtime.has_journey_commitment().then(|| {
+    let planned_candidates = has_journey_commitment(jc.as_ref()).then(|| {
         build_candidate_plans(
             ctx.world,
             ctx.scheduler,
@@ -72,6 +74,7 @@ pub(super) fn handle_active_action_phase(
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
     let decision = evaluate_interrupt(
         runtime,
+        jc.as_ref(),
         interruptibility,
         ranked_candidates,
         planned_as_options.as_deref(),
@@ -102,6 +105,7 @@ pub(super) fn handle_active_action_phase(
         reconcile_in_flight_state(
             ctx,
             runtime,
+            jc,
             blocked_memory,
             None,
             agent,
@@ -119,19 +123,19 @@ pub(super) fn handle_active_action_phase(
 pub(super) fn effective_goal_switch_margin(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    runtime: &AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     budget: &PlanningBudget,
 ) -> Permille {
-    goal_switch_margin_details(view, agent, runtime, budget).0
+    goal_switch_margin_details(view, agent, jc, budget).0
 }
 
 pub(super) fn goal_switch_margin_details(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    runtime: &AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     budget: &PlanningBudget,
 ) -> (Permille, JourneySwitchMarginSource) {
-    if runtime.has_journey_commitment() {
+    if has_journey_commitment(jc) {
         if let Some(profile) = view.travel_disposition_profile(agent) {
             return (
                 profile.route_replan_margin,
@@ -146,19 +150,26 @@ pub(super) fn goal_switch_margin_details(
     )
 }
 
+/// Advance the step index after a completed step. Returns the updated
+/// journey commitment (or `None` if it was cleared).
 pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
+    jc: Option<&JourneyCommitment>,
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
-) {
+) -> Option<JourneyCommitment> {
     let completed_plan_relation = runtime
         .current_plan
         .as_ref()
-        .map(|plan| runtime.classify_journey_plan_relation(plan));
+        .map(|plan| classify_journey_plan_relation(jc, plan));
+
+    let mut updated_jc = jc.copied();
 
     if completed_op_kind == crate::PlannerOpKind::Travel {
-        runtime.journey_last_progress_tick = Some(tick);
-        runtime.consecutive_blocked_leg_ticks = 0;
+        if let Some(ref mut c) = updated_jc {
+            c.last_progress_tick = Some(tick);
+            c.consecutive_blocked_leg_ticks = 0;
+        }
     }
 
     runtime.current_step_index = runtime
@@ -167,10 +178,10 @@ pub(super) fn advance_completed_step(
         .expect("agent decision runtime step index overflowed");
 
     let Some(plan) = runtime.current_plan.as_ref() else {
-        return;
+        return updated_jc;
     };
     if runtime.current_step_index < plan.steps.len() {
-        return;
+        return updated_jc;
     }
 
     match plan.terminal_kind {
@@ -183,9 +194,15 @@ pub(super) fn advance_completed_step(
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
             if completed_plan_relation == Some(crate::JourneyPlanRelation::SuspendsCommitment) {
-                runtime.journey_commitment_state = JourneyCommitmentState::Active;
+                if let Some(ref mut c) = updated_jc {
+                    c.state = JourneyCommitmentState::Active;
+                }
             } else {
-                runtime.clear_journey_commitment_with_reason(JourneyClearReason::GoalSatisfied);
+                if updated_jc.is_some() {
+                    runtime.last_journey_clear_reason =
+                        Some(JourneyClearReason::GoalSatisfied);
+                }
+                updated_jc = None;
             }
             runtime.current_goal = None;
             runtime.current_plan = None;
@@ -194,11 +211,14 @@ pub(super) fn advance_completed_step(
             runtime.materialization_bindings.clear();
         }
     }
+
+    updated_jc
 }
 
 pub(super) fn handle_current_step_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     step: &PlannedStep,
@@ -226,6 +246,7 @@ pub(super) fn handle_current_step_failure(
             current_tick: tick,
         },
         runtime,
+        jc,
         blocked_memory,
         budget,
     );

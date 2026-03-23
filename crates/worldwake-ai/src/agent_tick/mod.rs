@@ -5,7 +5,7 @@ mod journey;
 mod observation;
 mod planning;
 pub use journey::{JourneyDebugSnapshot, JourneySwitchMarginSource};
-use journey::{handle_recoverable_travel_step_blockage, update_journey_fields_for_adopted_plan};
+use journey::{handle_recoverable_travel_step_blockage, update_journey_for_adopted_plan};
 use active_action::{
     active_action_for_agent, advance_completed_step, effective_goal_switch_margin,
     goal_switch_margin_details, handle_active_action_phase, handle_current_step_failure,
@@ -17,7 +17,7 @@ use observation::{
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_blocked_memory,
-    plan_finished,
+    persist_journey_commitment, plan_finished,
 };
 use candidates::abandon_expired_facility_queues;
 use planning::{
@@ -31,8 +31,8 @@ use crate::decision_trace::{
     PlanningPipelineTrace, SelectionTrace,
 };
 use crate::{
-    build_semantics_table, AgentDecisionRuntime, JourneyClearReason, PlannerOpSemantics,
-    PlanningBudget,
+    build_semantics_table, journey_runtime_snapshot, AgentDecisionRuntime, JourneyClearReason,
+    PlannerOpSemantics, PlanningBudget,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, ControlSource, EntityId, Tick};
@@ -104,11 +104,12 @@ impl AgentTickDriver {
         agent: EntityId,
     ) -> Option<JourneyDebugSnapshot> {
         let runtime = self.runtime_by_agent.get(&agent)?;
+        let jc = world.get_component_journey_commitment(agent);
         let view = PerAgentBeliefView::from_world(agent, world);
         let (effective_switch_margin, switch_margin_source) =
-            goal_switch_margin_details(&view, agent, runtime, &self.budget);
+            goal_switch_margin_details(&view, agent, jc, &self.budget);
         Some(JourneyDebugSnapshot {
-            runtime: runtime.journey_runtime_snapshot(),
+            runtime: journey_runtime_snapshot(jc, runtime),
             effective_switch_margin,
             switch_margin_source,
         })
@@ -141,7 +142,6 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) budget: &'a PlanningBudget,
     pub(super) tick: Tick,
 }
-
 
 impl AutonomousController for AgentTickDriver {
     fn name(&self) -> &'static str {
@@ -219,6 +219,9 @@ fn process_agent(
         .get_component_utility_profile(agent)
         .cloned()
         .unwrap_or_default();
+    // Read journey commitment from authoritative component.
+    let original_jc = ctx.world.get_component_journey_commitment(agent).copied();
+    let mut current_jc = original_jc;
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
@@ -227,7 +230,10 @@ fn process_agent(
     {
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
         if view.is_dead(agent) || !view.is_alive(agent) {
-            runtime.clear_journey_commitment_with_reason(JourneyClearReason::Death);
+            if current_jc.is_some() {
+                runtime.last_journey_clear_reason = Some(JourneyClearReason::Death);
+                current_jc = None;
+            }
             runtime.current_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
@@ -235,6 +241,14 @@ fn process_agent(
             runtime.dirty = false;
             runtime.materialization_bindings.clear();
             update_runtime_observation_snapshot(&view, agent, runtime);
+            persist_journey_commitment(
+                ctx.world,
+                ctx.event_log,
+                agent,
+                tick,
+                original_jc.as_ref(),
+                current_jc.as_ref(),
+            )?;
             return Ok(tracing.then_some(AgentDecisionTrace {
                 agent,
                 tick,
@@ -246,6 +260,7 @@ fn process_agent(
     reconcile_in_flight_state(
         ctx,
         runtime,
+        &mut current_jc,
         &mut blocked_memory,
         active_action.as_ref(),
         agent,
@@ -279,8 +294,9 @@ fn process_agent(
     let ranked_candidates = read_result.ranked;
     let active_action = active_action_for_agent(ctx, agent);
     let journey_switch_margin = {
+        let jc = ctx.world.get_component_journey_commitment(agent);
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
-        effective_goal_switch_margin(&view, agent, runtime, budget)
+        effective_goal_switch_margin(&view, agent, jc, budget)
     };
     let default_switch_margin = budget.switch_margin_permille;
 
@@ -289,6 +305,7 @@ fn process_agent(
         let interrupt_decision = handle_active_action_phase(
             ctx,
             runtime,
+            &mut current_jc,
             &mut blocked_memory,
             agent,
             &ranked_candidates,
@@ -335,6 +352,7 @@ fn process_agent(
                 ctx.world,
                 ctx.scheduler,
                 runtime,
+                &mut current_jc,
                 agent,
                 &ranked_candidates,
                 &blocked_memory,
@@ -374,6 +392,7 @@ fn process_agent(
             let exec_result = enqueue_valid_step_or_handle_failure(
                 ctx,
                 runtime,
+                &mut current_jc,
                 &mut blocked_memory,
                 agent,
                 tick,
@@ -432,6 +451,14 @@ fn process_agent(
     };
 
     // ── Finalize (runs for both paths) ──
+    persist_journey_commitment(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        tick,
+        original_jc.as_ref(),
+        current_jc.as_ref(),
+    )?;
     finalize_agent_tick(
         ctx.world,
         ctx.event_log,

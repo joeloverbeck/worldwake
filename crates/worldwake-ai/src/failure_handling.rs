@@ -4,7 +4,7 @@ use crate::{
 };
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, GoalKey, GoalKind,
-    Quantity, Tick,
+    JourneyCommitment, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -30,11 +30,15 @@ pub struct PlanFailureContext<'a> {
 pub fn handle_plan_failure(
     context: &PlanFailureContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     budget: &PlanningBudget,
 ) {
     runtime.current_plan = None;
-    runtime.clear_journey_commitment_with_reason(JourneyClearReason::PlanFailed);
+    if jc.is_some() {
+        runtime.last_journey_clear_reason = Some(JourneyClearReason::PlanFailed);
+    }
+    *jc = None;
     runtime.materialization_bindings.clear();
 
     let blocking_fact = derive_blocking_fact(
@@ -724,9 +728,9 @@ mod tests {
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
         DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound,
+        InTransitOnEdge, JourneyCommitment, JourneyCommitmentState, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1097,13 +1101,21 @@ mod tests {
                 vec![step],
                 PlanTerminalKind::ProgressBarrier,
             )),
-            journey_committed_goal: Some(goal),
-            journey_committed_destination: Some(entity(99)),
-            journey_established_at: Some(Tick(10)),
             dirty: false,
             last_priority_class: None,
             ..AgentDecisionRuntime::default()
         }
+    }
+
+    fn jc_for_goal(goal: GoalKey) -> Option<JourneyCommitment> {
+        Some(JourneyCommitment {
+            committed_goal: goal,
+            destination: entity(99),
+            state: JourneyCommitmentState::Active,
+            established_at: Tick(10),
+            last_progress_tick: None,
+            consecutive_blocked_leg_ticks: 0,
+        })
     }
 
     #[test]
@@ -1123,6 +1135,7 @@ mod tests {
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = jc_for_goal(goal);
         let mut blocked = BlockedIntentMemory::default();
 
         handle_plan_failure(
@@ -1135,6 +1148,7 @@ mod tests {
                 current_tick: Tick(20),
             },
             &mut runtime,
+            &mut jc,
             &mut blocked,
             &PlanningBudget::default(),
         );
@@ -1142,9 +1156,7 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert!(runtime.dirty);
         assert_eq!(runtime.current_goal, Some(goal));
-        assert_eq!(runtime.journey_committed_goal, None);
-        assert_eq!(runtime.journey_committed_destination, None);
-        assert_eq!(runtime.journey_established_at, None);
+        assert!(jc.is_none());
         assert!(blocked.is_blocked(&goal, Tick(20)));
         assert_eq!(blocked.intents.len(), 1);
         assert_eq!(
@@ -1388,6 +1400,7 @@ mod tests {
             )),
         };
         let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = jc_for_goal(goal);
         let mut blocked = BlockedIntentMemory::default();
         let budget = PlanningBudget::default();
 
@@ -1401,6 +1414,7 @@ mod tests {
                 current_tick: Tick(20),
             },
             &mut runtime,
+            &mut jc,
             &mut blocked,
             &budget,
         );

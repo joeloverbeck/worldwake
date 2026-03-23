@@ -11,10 +11,10 @@ use crate::{
     PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, BlockedIntentMemory, Permille, Tick};
+use worldwake_core::{ActionDefId, BlockedIntentMemory, JourneyCommitment, Permille, Tick};
 use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, Scheduler};
 
-use super::{current_step, runtime_belief_view, update_journey_fields_for_adopted_plan};
+use super::{current_step, runtime_belief_view, update_journey_for_adopted_plan};
 
 /// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
 pub(super) fn summarize_step(
@@ -231,6 +231,7 @@ pub(super) fn plan_and_validate_next_step(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<JourneyCommitment>,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
@@ -247,12 +248,6 @@ pub(super) fn plan_and_validate_next_step(
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     if runtime.dirty {
-        // Plan continuation: when SnapshotChanged is the only dirty reason,
-        // the agent has a current plan, AND the current goal is still the
-        // top-ranked candidate, revalidate the next step instead of running
-        // the full plan search. This prevents budget exhaustion at hub nodes
-        // in multi-agent scenarios while still allowing goal switches when a
-        // higher-priority goal emerges (e.g., critical thirst).
         if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
@@ -273,8 +268,6 @@ pub(super) fn plan_and_validate_next_step(
                     }
                 }
             }
-            // Fall through to full replanning if goal changed, step invalid,
-            // or no current step.
         }
 
         let plans = build_candidate_plans(
@@ -298,12 +291,13 @@ pub(super) fn plan_and_validate_next_step(
             ranked_candidates,
             &plans_options,
             runtime,
+            jc.as_ref(),
             default_switch_margin,
             journey_switch_margin,
         ) {
             runtime.materialization_bindings.clear();
             runtime.current_goal = Some(selected_plan.goal);
-            update_journey_fields_for_adopted_plan(runtime, &selected_plan, tick);
+            *jc = update_journey_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -312,7 +306,10 @@ pub(super) fn plan_and_validate_next_step(
                 .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
                 .map(|candidate| candidate.priority_class);
         } else {
-            runtime.clear_journey_commitment_with_reason(JourneyClearReason::LostTravelPlan);
+            if jc.is_some() {
+                runtime.last_journey_clear_reason = Some(JourneyClearReason::LostTravelPlan);
+            }
+            *jc = None;
             runtime.materialization_bindings.clear();
             runtime.current_goal = None;
             runtime.current_plan = None;
@@ -355,6 +352,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<JourneyCommitment>,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
@@ -381,6 +379,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             world,
             scheduler,
             runtime,
+            jc,
             agent,
             ranked_candidates,
             blocked_memory,
@@ -394,8 +393,6 @@ pub(super) fn plan_and_validate_next_step_traced(
             dirty_reasons,
             recipe_registry,
         );
-        // In the non-traced path we cannot distinguish plan continuation from
-        // non-dirty, but the boolean is only used for trace output.
         return (step, valid, false, None, None);
     }
 
@@ -415,10 +412,6 @@ pub(super) fn plan_and_validate_next_step_traced(
     let mut plan_continued = false;
 
     if runtime.dirty {
-        // Plan continuation: when SnapshotChanged is the only dirty reason,
-        // the agent has a current plan, AND the current goal is still the
-        // top-ranked candidate, revalidate the next step instead of running
-        // the full plan search.
         if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
@@ -457,8 +450,6 @@ pub(super) fn plan_and_validate_next_step_traced(
                     }
                 }
             }
-            // Fall through to full replanning if goal changed, step invalid,
-            // or no current step.
         }
 
         let plans = build_candidate_plans(
@@ -477,7 +468,6 @@ pub(super) fn plan_and_validate_next_step_traced(
             true,
         );
 
-        // Populate PlanSearchTrace from search results.
         for (goal_key, result, rejections, expansions) in &plans {
             plan_search_trace.attempts.push(plan_search_result_to_trace(
                 *goal_key,
@@ -495,6 +485,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             ranked_candidates,
             &plans_options,
             runtime,
+            jc.as_ref(),
             default_switch_margin,
             journey_switch_margin,
         ) {
@@ -519,10 +510,8 @@ pub(super) fn plan_and_validate_next_step_traced(
             selection_trace.plan_replacement =
                 summarize_plan_replacement(runtime, selected_goal, &selected_plan, action_defs);
 
-            // Detect goal switch.
             if let Some(prev) = previous_goal {
                 if prev != selected_goal {
-                    // Determine switch kind from ranking comparison.
                     let prev_rank = ranked_candidates.iter().find(|c| c.grounded.key == prev);
                     let new_rank = ranked_candidates
                         .iter()
@@ -543,7 +532,7 @@ pub(super) fn plan_and_validate_next_step_traced(
 
             runtime.materialization_bindings.clear();
             runtime.current_goal = Some(selected_plan.goal);
-            update_journey_fields_for_adopted_plan(runtime, &selected_plan, tick);
+            *jc = update_journey_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -552,7 +541,10 @@ pub(super) fn plan_and_validate_next_step_traced(
                 .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
                 .map(|candidate| candidate.priority_class);
         } else {
-            runtime.clear_journey_commitment_with_reason(JourneyClearReason::LostTravelPlan);
+            if jc.is_some() {
+                runtime.last_journey_clear_reason = Some(JourneyClearReason::LostTravelPlan);
+            }
+            *jc = None;
             runtime.materialization_bindings.clear();
             runtime.current_goal = None;
             runtime.current_plan = None;

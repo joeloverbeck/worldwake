@@ -197,6 +197,7 @@ pub(super) fn handle_facility_queue_transitions(
 pub(super) fn reconcile_in_flight_state(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<worldwake_core::JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
@@ -219,6 +220,7 @@ pub(super) fn reconcile_in_flight_state(
         handle_current_step_failure(
             ctx,
             runtime,
+            jc,
             blocked_memory,
             agent,
             &step,
@@ -231,6 +233,7 @@ pub(super) fn reconcile_in_flight_state(
         handle_current_step_failure(
             ctx,
             runtime,
+            jc,
             blocked_memory,
             agent,
             &step,
@@ -241,17 +244,17 @@ pub(super) fn reconcile_in_flight_state(
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, &step, None)?;
         return Ok(());
     };
     reconcile_committed_facility_queue_intents(runtime, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, &step, None)?;
         return Ok(());
     }
 
     runtime.step_in_flight = false;
-    advance_completed_step(runtime, step.op_kind, ctx.tick);
+    *jc = advance_completed_step(runtime, jc.as_ref(), step.op_kind, ctx.tick);
     Ok(())
 }
 
