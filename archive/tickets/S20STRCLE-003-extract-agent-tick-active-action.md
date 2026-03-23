@@ -1,6 +1,6 @@
 # S20STRCLE-003: Extract agent_tick/active_action.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -89,3 +89,10 @@ Move the listed functions. Add necessary `use` imports.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Created `crates/worldwake-ai/src/agent_tick/active_action.rs` with 6 extracted functions (`active_action_for_agent`, `handle_active_action_phase`, `effective_goal_switch_margin`, `goal_switch_margin_details`, `advance_completed_step`, `handle_current_step_failure`). Updated `mod.rs` with module declaration, re-imports, and promoted `build_candidate_plans`, `plans_as_options`, `persist_blocked_memory` to `pub(super)` for cross-module access. Cleaned up unused imports.
+- **Deviations**: None. Line numbers had shifted from prior S20STRCLE-001/002 extractions but all functions were present with identical signatures.
+- **Verification**: `cargo test -p worldwake-ai` — 21 passed, 0 failed. `cargo clippy -p worldwake-ai` — 0 warnings.
