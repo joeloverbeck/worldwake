@@ -1,6 +1,6 @@
 # S20STRCLE-002: Extract agent_tick/observation.rs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -98,3 +98,10 @@ Move the listed functions and structs into this new file. Add necessary `use` im
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: Created `crates/worldwake-ai/src/agent_tick/observation.rs` with 3 structs and 12 functions extracted from `agent_tick/mod.rs`. Made 7 internal functions and `AgentTickContext` `pub(super)` so the submodule can call them. Updated test imports to reference `super::observation::` for moved items. Cleaned up unused imports in `mod.rs`.
+- **Deviations**: Used `super::observation::` imports in tests instead of re-exporting through `mod.rs`, to avoid clippy `wildcard_imports` and unused-import warnings on items only referenced in `#[cfg(test)]` blocks.
+- **Verification**: `cargo test -p worldwake-ai` — 21 tests passed. `cargo clippy -p worldwake-ai` — zero warnings.

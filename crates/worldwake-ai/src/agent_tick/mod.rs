@@ -1,4 +1,9 @@
-use crate::candidate_generation::generate_candidates_with_travel_horizon;
+mod observation;
+use observation::{
+    reconcile_in_flight_state, refresh_runtime_for_read_phase,
+    update_runtime_observation_snapshot, InFlightReconciliation, ReadPhaseContext,
+};
+
 use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateTrace,
     DecisionOutcome, DecisionTraceSink, DirtyReason, ExecutionFailureReason, ExecutionTrace,
@@ -11,21 +16,20 @@ use crate::failure_handling::ExecutionFailure;
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
-    build_semantics_table, clear_resolved_blockers, evaluate_interrupt, handle_plan_failure,
-    rank_candidates, resolve_planning_targets_with, revalidate_next_step, search_plan,
-    select_best_plan, AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, InterruptDecision,
+    build_semantics_table, evaluate_interrupt, handle_plan_failure,
+    resolve_planning_targets_with, revalidate_next_step, search_plan,
+    select_best_plan, AgentDecisionRuntime, DecisionContext, InterruptDecision,
     JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot, PlanFailureContext,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget,
-    QueuedFacilityIntent, RankedGoal,
+    RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CauseRef, CommodityKind,
-    ControlSource, EntityId, Permille, Quantity, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
-    WorldTxn,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, CauseRef, ControlSource, EntityId, Permille,
+    Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, ActionStartFailure, AutonomousController, AutonomousControllerContext,
+    ActionHandlerRegistry, AutonomousController, AutonomousControllerContext,
     CommitOutcome, CommittedAction, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
     RecipeRegistry, ReplanNeeded, RuntimeBeliefView, Scheduler, SchedulerActionRuntime,
     TickInputError,
@@ -117,7 +121,7 @@ impl AgentTickDriver {
     }
 }
 
-fn runtime_belief_view<'a>(
+pub(super) fn runtime_belief_view<'a>(
     agent: EntityId,
     world: &'a worldwake_core::World,
     scheduler: &'a Scheduler,
@@ -131,34 +135,19 @@ fn runtime_belief_view<'a>(
     )
 }
 
-struct AgentTickContext<'a> {
-    world: &'a mut worldwake_core::World,
-    event_log: &'a mut worldwake_core::EventLog,
-    scheduler: &'a mut Scheduler,
-    rng: &'a mut worldwake_sim::DeterministicRng,
-    action_defs: &'a worldwake_sim::ActionDefRegistry,
-    action_handlers: &'a ActionHandlerRegistry,
-    recipe_registry: &'a RecipeRegistry,
-    semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
-    budget: &'a PlanningBudget,
-    tick: Tick,
+pub(super) struct AgentTickContext<'a> {
+    pub(super) world: &'a mut worldwake_core::World,
+    pub(super) event_log: &'a mut worldwake_core::EventLog,
+    pub(super) scheduler: &'a mut Scheduler,
+    pub(super) rng: &'a mut worldwake_sim::DeterministicRng,
+    pub(super) action_defs: &'a worldwake_sim::ActionDefRegistry,
+    pub(super) action_handlers: &'a ActionHandlerRegistry,
+    pub(super) recipe_registry: &'a RecipeRegistry,
+    pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    pub(super) budget: &'a PlanningBudget,
+    pub(super) tick: Tick,
 }
 
-#[derive(Clone, Copy)]
-struct ReadPhaseContext<'a> {
-    recipe_registry: &'a RecipeRegistry,
-    utility: &'a worldwake_core::UtilityProfile,
-    tick: Tick,
-    travel_horizon: u8,
-    structural_block_ticks: u32,
-}
-
-#[derive(Clone, Copy)]
-struct InFlightReconciliation<'a> {
-    replan_signals: &'a [&'a ReplanNeeded],
-    start_failures: &'a [ActionStartFailure],
-    committed_actions: &'a [CommittedAction],
-}
 
 impl AutonomousController for AgentTickDriver {
     fn name(&self) -> &'static str {
@@ -746,160 +735,6 @@ fn abandon_expired_facility_queues_with_limit(
     }
 
     Ok(changed)
-}
-
-/// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
-struct ReadPhaseResult {
-    ranked: Vec<RankedGoal>,
-    dirty_reasons: Vec<DirtyReason>,
-    /// Generated candidate keys (before ranking filter).
-    generated_keys: Vec<worldwake_core::GoalKey>,
-    /// Typed candidate-evidence provenance keyed by generated goal.
-    candidate_evidence: Vec<crate::CandidateEvidenceTrace>,
-    /// Goals suppressed by situational conditions.
-    suppressed: Vec<worldwake_core::GoalKey>,
-    /// Goals with zero motive score.
-    zero_motive: Vec<worldwake_core::GoalKey>,
-    /// Political goals omitted before emission due to hard gates.
-    omitted_political: Vec<crate::PoliticalCandidateOmission>,
-    /// Social goals omitted before emission due to resend suppression.
-    omitted_social: Vec<crate::SocialCandidateOmission>,
-    /// Shared decision context built once from beliefs for ranking + interrupts.
-    decision_context: DecisionContext,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn refresh_runtime_for_read_phase(
-    world: &worldwake_core::World,
-    scheduler: &Scheduler,
-    action_defs: &worldwake_sim::ActionDefRegistry,
-    runtime: &mut AgentDecisionRuntime,
-    blocked_memory: &mut BlockedIntentMemory,
-    agent: EntityId,
-    replan_signals: &[&ReplanNeeded],
-    phase: ReadPhaseContext<'_>,
-    _tracing: bool,
-) -> ReadPhaseResult {
-    // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs);
-    let before = blocked_memory.clone();
-    let queue_transition_changed =
-        handle_facility_queue_transitions(&view, runtime, blocked_memory, agent, phase.tick, phase);
-    clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
-    let blocked_changed_from_cleanup = *blocked_memory != before;
-    let snapshot_changed =
-        observation_snapshot_changed(&view, agent, runtime, phase.recipe_registry);
-    let queue_patience_exhausted = facility_queue_patience_exhausted(&view, agent, phase.tick);
-
-    // Decompose dirty-flag into individual reasons for tracing.
-    let mut dirty_reasons = Vec::new();
-    if runtime.current_plan.is_none() {
-        dirty_reasons.push(DirtyReason::NoPlan);
-    }
-    if plan_finished(runtime) {
-        dirty_reasons.push(DirtyReason::PlanFinished);
-    }
-    if !replan_signals.is_empty() {
-        dirty_reasons.push(DirtyReason::ReplanSignal);
-    }
-    if queue_transition_changed {
-        dirty_reasons.push(DirtyReason::QueueTransition);
-    }
-    if blocked_changed_from_cleanup {
-        dirty_reasons.push(DirtyReason::BlockerCleanup);
-    }
-    if snapshot_changed {
-        dirty_reasons.push(DirtyReason::SnapshotChanged);
-    }
-    if queue_patience_exhausted {
-        dirty_reasons.push(DirtyReason::QueuePatienceExhausted);
-    }
-
-    // Preserve original boolean behavior exactly.
-    runtime.dirty = runtime.dirty || !dirty_reasons.is_empty();
-
-    let candidates = generate_candidates_with_travel_horizon(
-        &view,
-        agent,
-        blocked_memory,
-        phase.recipe_registry,
-        phase.tick,
-        phase.travel_horizon,
-    );
-    let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
-    let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
-    let dc = crate::build_decision_context(&view, agent);
-    let outcome = rank_candidates(
-        &candidates.candidates,
-        &view,
-        agent,
-        phase.tick,
-        phase.utility,
-        phase.recipe_registry,
-        &dc,
-    );
-
-    ReadPhaseResult {
-        ranked: outcome.ranked,
-        dirty_reasons,
-        generated_keys,
-        candidate_evidence,
-        suppressed: outcome.suppressed,
-        zero_motive: outcome.zero_motive,
-        omitted_political: candidates.diagnostics.omitted_political,
-        omitted_social: candidates.diagnostics.omitted_social,
-        decision_context: dc,
-    }
-}
-
-fn handle_facility_queue_transitions(
-    view: &dyn RuntimeBeliefView,
-    runtime: &mut AgentDecisionRuntime,
-    blocked_memory: &mut BlockedIntentMemory,
-    agent: EntityId,
-    tick: Tick,
-    phase: ReadPhaseContext<'_>,
-) -> bool {
-    let previous_place = runtime.last_effective_place;
-    let current_place = view.effective_place(agent);
-    let current_signature = facility_access_signature(view, agent);
-    let current_by_facility = current_signature
-        .iter()
-        .copied()
-        .map(|(facility, queued, grant)| (facility, (queued, grant)))
-        .collect::<BTreeMap<_, _>>();
-    let mut changed = false;
-
-    for (facility, was_queued, previous_grant) in runtime.last_facility_access_signature.clone() {
-        let current = current_by_facility.get(&facility).copied();
-        let now_queued = current.is_some_and(|(queued, _)| queued);
-        let now_granted = current.and_then(|(_, grant)| grant);
-
-        if was_queued && !now_queued && now_granted.is_none() {
-            if previous_place == current_place {
-                if let Some(intent) = runtime.queued_facility_intents.remove(&facility) {
-                    blocked_memory.record(BlockedIntent {
-                        goal_key: intent.goal_key,
-                        blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                        related_entity: Some(facility),
-                        related_place: current_place,
-                        related_action: Some(intent.intended_action),
-                        observed_tick: tick,
-                        expires_tick: tick + u64::from(phase.structural_block_ticks),
-                    });
-                    changed = true;
-                }
-            } else if runtime.queued_facility_intents.remove(&facility).is_some() {
-                changed = true;
-            }
-        }
-
-        if previous_grant.is_some() && now_granted.is_none() {
-            changed |= runtime.queued_facility_intents.remove(&facility).is_some();
-        }
-    }
-
-    changed
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1536,133 +1371,7 @@ fn finalize_agent_tick(
     Ok(())
 }
 
-fn reconcile_in_flight_state(
-    ctx: &mut AgentTickContext<'_>,
-    runtime: &mut AgentDecisionRuntime,
-    blocked_memory: &mut BlockedIntentMemory,
-    active_action: Option<&worldwake_sim::ActionInstance>,
-    agent: EntityId,
-    reconciliation: InFlightReconciliation<'_>,
-) -> Result<(), TickInputError> {
-    if !runtime.step_in_flight {
-        return Ok(());
-    }
-    if active_action.is_some() {
-        return Ok(());
-    }
-
-    let failed_signal = reconciliation.replan_signals.first().copied();
-    let Some(step) = current_step(runtime).cloned() else {
-        runtime.step_in_flight = false;
-        return Ok(());
-    };
-
-    if let Some(signal) = failed_signal {
-        handle_current_step_failure(
-            ctx,
-            runtime,
-            blocked_memory,
-            agent,
-            &step,
-            Some(ExecutionFailure::Replan(signal)),
-        )?;
-        return Ok(());
-    }
-
-    if let Some(start_failure) = matching_start_failure(&step, reconciliation.start_failures) {
-        handle_current_step_failure(
-            ctx,
-            runtime,
-            blocked_memory,
-            agent,
-            &step,
-            Some(ExecutionFailure::Start(start_failure)),
-        )?;
-        return Ok(());
-    }
-
-    let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
-    else {
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
-        return Ok(());
-    };
-    reconcile_committed_facility_queue_intents(runtime, &step);
-    if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        handle_current_step_failure(ctx, runtime, blocked_memory, agent, &step, None)?;
-        return Ok(());
-    }
-
-    runtime.step_in_flight = false;
-    advance_completed_step(runtime, step.op_kind, ctx.tick);
-    Ok(())
-}
-
-fn matching_start_failure<'a>(
-    step: &PlannedStep,
-    start_failures: &'a [ActionStartFailure],
-) -> Option<&'a ActionStartFailure> {
-    start_failures
-        .iter()
-        .find(|failure| failure.def_id == step.def_id)
-}
-
-fn reconcile_committed_facility_queue_intents(
-    runtime: &mut AgentDecisionRuntime,
-    step: &PlannedStep,
-) {
-    let Some(facility) = step.targets.first().copied().and_then(authoritative_target) else {
-        return;
-    };
-
-    match step.op_kind {
-        crate::PlannerOpKind::QueueForFacilityUse => {
-            let Some(goal_key) = runtime
-                .current_goal
-                .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
-            else {
-                return;
-            };
-            let Some(payload) = step
-                .payload_override
-                .as_ref()
-                .and_then(worldwake_sim::ActionPayload::as_queue_for_facility_use)
-            else {
-                return;
-            };
-            runtime.queued_facility_intents.insert(
-                facility,
-                QueuedFacilityIntent {
-                    goal_key,
-                    intended_action: payload.intended_action,
-                },
-            );
-        }
-        crate::PlannerOpKind::Harvest | crate::PlannerOpKind::Craft => {
-            runtime.queued_facility_intents.remove(&facility);
-        }
-        crate::PlannerOpKind::Travel
-        | crate::PlannerOpKind::Sleep
-        | crate::PlannerOpKind::Relieve
-        | crate::PlannerOpKind::Trade
-        | crate::PlannerOpKind::Consume
-        | crate::PlannerOpKind::Wash
-        | crate::PlannerOpKind::Heal
-        | crate::PlannerOpKind::MoveCargo
-        | crate::PlannerOpKind::Loot
-        | crate::PlannerOpKind::Bury
-        | crate::PlannerOpKind::Tell
-        | crate::PlannerOpKind::ConsultRecord
-        | crate::PlannerOpKind::Attack
-        | crate::PlannerOpKind::Defend
-        | crate::PlannerOpKind::Bribe
-        | crate::PlannerOpKind::Threaten
-        | crate::PlannerOpKind::DeclareSupport
-        | crate::PlannerOpKind::PressForceClaim
-        | crate::PlannerOpKind::YieldForceClaim => {}
-    }
-}
-
-fn advance_completed_step(
+pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
@@ -1712,7 +1421,7 @@ fn advance_completed_step(
     }
 }
 
-fn handle_current_step_failure(
+pub(super) fn handle_current_step_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     blocked_memory: &mut BlockedIntentMemory,
@@ -1851,7 +1560,7 @@ fn resolve_step_targets(
     })
 }
 
-fn committed_action_for_step<'a>(
+pub(super) fn committed_action_for_step<'a>(
     step: &PlannedStep,
     committed_actions: &'a [CommittedAction],
 ) -> Option<&'a CommittedAction> {
@@ -1862,7 +1571,7 @@ fn committed_action_for_step<'a>(
     (committed.def_id == step.def_id).then_some(committed)
 }
 
-fn apply_step_materialization_bindings(
+pub(super) fn apply_step_materialization_bindings(
     runtime: &mut AgentDecisionRuntime,
     step: &PlannedStep,
     outcome: &CommitOutcome,
@@ -1944,162 +1653,32 @@ fn persist_blocked_memory(
     Ok(())
 }
 
-fn current_step(runtime: &AgentDecisionRuntime) -> Option<&PlannedStep> {
+pub(super) fn current_step(runtime: &AgentDecisionRuntime) -> Option<&PlannedStep> {
     runtime
         .current_plan
         .as_ref()
         .and_then(|plan| plan.steps.get(runtime.current_step_index))
 }
 
-fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
+pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
     runtime.current_plan.as_ref().is_some_and(|plan| {
         runtime.current_step_index >= plan.steps.len() && !runtime.step_in_flight
     })
 }
 
-fn observation_snapshot_changed(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-    runtime: &AgentDecisionRuntime,
-    recipe_registry: &RecipeRegistry,
-) -> bool {
-    let current_commodity_signature = commodity_signature(view, agent);
-    let commodity_filter = runtime
-        .current_goal
-        .map(|goal| goal.kind.relevant_observed_commodities(recipe_registry))
-        .or_else(|| {
-            runtime.current_plan.as_ref().map(|plan| {
-                plan.goal
-                    .kind
-                    .relevant_observed_commodities(recipe_registry)
-            })
-        });
-    runtime.last_effective_place != view.effective_place(agent)
-        || runtime.last_needs != view.homeostatic_needs(agent)
-        || runtime.last_wounds != view.wounds(agent)
-        || filtered_commodity_signature(
-            &runtime.last_commodity_signature,
-            commodity_filter.as_ref(),
-        ) != filtered_commodity_signature(
-            &current_commodity_signature,
-            commodity_filter.as_ref(),
-        )
-        || runtime.last_unique_item_signature != unique_item_signature(view, agent)
-        || runtime.last_facility_access_signature != facility_access_signature(view, agent)
-}
-
-fn update_runtime_observation_snapshot(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-    runtime: &mut AgentDecisionRuntime,
-) {
-    runtime.last_effective_place = view.effective_place(agent);
-    runtime.last_needs = view.homeostatic_needs(agent);
-    runtime.last_wounds = view.wounds(agent);
-    runtime.last_commodity_signature = commodity_signature(view, agent);
-    runtime.last_unique_item_signature = unique_item_signature(view, agent);
-    runtime.last_facility_access_signature = facility_access_signature(view, agent);
-}
-
-fn facility_access_signature(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-) -> Vec<(EntityId, bool, Option<ActionDefId>)> {
-    let Some(place) = view.effective_place(agent) else {
-        return Vec::new();
-    };
-
-    view.entities_at(place)
-        .into_iter()
-        .filter(|entity| view.has_exclusive_facility_policy(*entity))
-        .filter_map(|facility| {
-            let queued = view.facility_queue_position(facility, agent).is_some();
-            let matching_grant = view
-                .facility_grant(facility)
-                .and_then(|grant| (grant.actor == agent).then_some(grant.intended_action));
-            (queued || matching_grant.is_some()).then_some((facility, queued, matching_grant))
-        })
-        .collect()
-}
-
-fn facility_queue_patience_exhausted(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-    tick: Tick,
-) -> bool {
-    let Some(limit) = view.facility_queue_patience_ticks(agent) else {
-        return false;
-    };
-    let Some(place) = view.effective_place(agent) else {
-        return false;
-    };
-
-    view.entities_at(place).into_iter().any(|facility| {
-        if !view.has_exclusive_facility_policy(facility) {
-            return false;
-        }
-        if view
-            .facility_grant(facility)
-            .is_some_and(|grant| grant.actor == agent)
-        {
-            return false;
-        }
-        view.facility_queue_join_tick(facility, agent)
-            .is_some_and(|queued_at| tick >= queued_at + u64::from(limit.get()))
-    })
-}
-
-fn commodity_signature(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-) -> Vec<(CommodityKind, Quantity)> {
-    CommodityKind::ALL
-        .into_iter()
-        .filter_map(|commodity| {
-            let quantity = view.commodity_quantity(agent, commodity);
-            (quantity > Quantity(0)).then_some((commodity, quantity))
-        })
-        .collect()
-}
-
-fn filtered_commodity_signature(
-    signature: &[(CommodityKind, Quantity)],
-    relevant: Option<&Option<std::collections::BTreeSet<CommodityKind>>>,
-) -> Vec<(CommodityKind, Quantity)> {
-    match relevant {
-        Some(Some(relevant)) => signature
-            .iter()
-            .copied()
-            .filter(|(commodity, _)| relevant.contains(commodity))
-            .collect(),
-        Some(None) | None => signature.to_vec(),
-    }
-}
-
-fn unique_item_signature(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-) -> Vec<(UniqueItemKind, u32)> {
-    UniqueItemKind::ALL
-        .into_iter()
-        .filter_map(|kind| {
-            let count = view.unique_item_count(agent, kind);
-            (count > 0).then_some((kind, count))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
+    use super::observation::{
+        facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
+        update_runtime_observation_snapshot, ReadPhaseContext,
+    };
     use super::{
         abandon_expired_facility_queues_with_limit, advance_completed_step,
         apply_step_materialization_bindings, committed_action_for_step,
         determine_selected_plan_source, effective_goal_switch_margin,
-        facility_queue_patience_exhausted, handle_recoverable_travel_step_blockage,
-        persist_blocked_memory, plan_and_validate_next_step, plan_and_validate_next_step_traced,
-        refresh_runtime_for_read_phase, resolve_step_targets, summarize_plan_replacement,
-        update_journey_fields_for_adopted_plan, update_runtime_observation_snapshot,
-        AgentTickDriver, ReadPhaseContext,
+        handle_recoverable_travel_step_blockage, persist_blocked_memory,
+        plan_and_validate_next_step, plan_and_validate_next_step_traced, resolve_step_targets,
+        summarize_plan_replacement, update_journey_fields_for_adopted_plan, AgentTickDriver,
     };
     use crate::PlanningBudget;
     use crate::{
