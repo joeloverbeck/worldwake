@@ -1,6 +1,6 @@
 # S20STRCLE-006: Extract agent_tick/journey.rs
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -80,3 +80,12 @@ Move the listed functions, enum, and struct. Add necessary `use` imports.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**:
+  - Created `crates/worldwake-ai/src/agent_tick/journey.rs` with `JourneySwitchMarginSource`, `JourneyDebugSnapshot`, `update_journey_fields_for_adopted_plan()`, `handle_recoverable_travel_step_blockage()`, `blocked_leg_target()`
+  - Updated `crates/worldwake-ai/src/agent_tick/mod.rs`: added `mod journey;`, `pub use journey::{...}` for lib.rs re-export chain, explicit `use journey::{...}` for internal callers, removed moved items, cleaned up now-unused imports
+- **Deviations**: Used explicit `use journey::{...}` imports instead of `use journey::*;` to match the existing pattern in mod.rs (other sub-modules use explicit imports)
+- **Verification**: `cargo test -p worldwake-ai` — 21 passed, 0 failed; `cargo clippy -p worldwake-ai` — 0 warnings; `lib.rs` re-export chain intact
