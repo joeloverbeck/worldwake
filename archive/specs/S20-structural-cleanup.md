@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S20: AI Pipeline Structural Cleanup
 
@@ -89,3 +89,10 @@ Extract search internals into sub-modules under `search/`:
 2. `cargo clippy --workspace` — no new warnings
 3. `cargo test -p worldwake-ai --test golden_* -- --list | wc -l` — count matches pre-split count
 4. `git diff --stat` confirms only file moves/renames within `crates/worldwake-ai/src/`, no changes to other crates
+
+## Outcome
+
+- **Completion date**: 2026-03-23
+- **What changed**: `agent_tick.rs` split into `agent_tick/` directory with `mod.rs`, `observation.rs`, `candidates.rs`, `active_action.rs`, `planning.rs`, `execution.rs`, `journey.rs`, and `tests.rs`. `search.rs` split into `search/` directory with `mod.rs`, `frontier.rs`, `heuristic.rs`, `transition.rs`, `candidates.rs`, and `tests.rs`. All inline tests relocated to dedicated test sub-modules.
+- **Verification results**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean, 304 golden tests unchanged.
+- **Deviations**: None — pure structural refactoring with zero behavioral change.

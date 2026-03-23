@@ -80,6 +80,9 @@ Replaced the thin E16 force-succession shortcut with explicit jurisdiction-contr
 ### S16b (golden): Force-Legitimacy Emergence Golden E2E Suites — COMPLETED
 3 cross-system golden tests in `golden_emergent.rs` proving E16b's force-legitimacy mechanisms participate in emergent multi-system chains: Suite 10 (controller departure enables rival claim), Suite 11 (force claim creates hostility witnessed and propagated), Suite 12 (contested force state propagates through belief system). All 6 tests (3 main + 3 replay) pass with deterministic replay.
 
+### S20: AI Pipeline Structural Cleanup — COMPLETED
+Split `agent_tick.rs` (~6124 lines) into `agent_tick/` directory with 7 sub-modules (mod, observation, candidates, active_action, planning, execution, journey) plus dedicated test module. Split `search.rs` (~5880 lines) into `search/` directory with 5 sub-modules (mod, frontier, heuristic, transition, candidates) plus dedicated test module. Pure refactoring with zero behavioral change — all 304 golden tests passed unchanged.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -123,14 +126,14 @@ S10 ──→ S06 (opportunity valuation benefits from variable pricing)
 E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
 E18, E19, E20 ──→ E22 (integration tests need everything)
 
-S20 (structural cleanup — no deps, groundwork for S21–S28)
+S20 ✅ (structural cleanup completed — groundwork for S21–S28)
 S26 (planner conformance tests — no deps, can parallel with S20)
-S20 ──→ S21 (promote causal runtime state — benefits from cleaner agent_tick.rs)
-S20 ──→ S23 (refined blocked intents — benefits from cleaner code surface)
+S20 ✅ ──→ S21 (promote causal runtime state — benefits from cleaner agent_tick.rs)
+S20 ✅ ──→ S23 (refined blocked intents — benefits from cleaner code surface)
 S21 ──→ S22 (generalized intention frames — needs state promoted first)
 S21 ──→ S24 (typed invalidation domains — replaces dirty field in restructured runtime)
 S21 ──→ S28 (knowledge-path traces — authoritative belief sources make traces meaningful)
-S20, S23 ──→ S25 (feasibility sketching — needs cleaner search + refined blockers)
+S20 ✅, S23 ──→ S25 (feasibility sketching — needs cleaner search + refined blockers)
 S22, S23 ──→ S27 (expectation-violation goals — needs intention frames + refined blockers)
 ```
 
@@ -211,9 +214,8 @@ S22, S23 ──→ S27 (expectation-violation goals — needs intention frames +
 ### Phase 3+: AI Architecture Overhaul
 
 **Step 13.5 Wave 0** (parallel, no deps):
-- **S20**: AI Pipeline Structural Cleanup
-  - splits `agent_tick.rs` (~6124 lines) and `search.rs` (~5880 lines) into modular sub-components
-  - pure refactoring, all golden tests pass unchanged
+- **S20**: AI Pipeline Structural Cleanup — ✅ COMPLETED
+  - split `agent_tick.rs` and `search.rs` into modular sub-directories with dedicated test modules
 - **S26**: Planner Conformance Tests
   - compares planner hypothetical transitions against real handler outcomes for each action family
   - test-only additions, zero production risk
@@ -293,7 +295,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
 | `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
-| `S20-structural-cleanup.md` | 3+ | 13.5 W0 | none |
+| ~~`S20-structural-cleanup.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | `S26-planner-conformance-tests.md` | 3+ | 13.5 W0 | none |
 | `S21-promote-causal-runtime-state.md` | 3+ | 13.5 W1 | S20 |
 | `S23-refined-blocked-intents.md` | 3+ | 13.5 W1 | S20 |
@@ -331,6 +333,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
-| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | PENDING |
+| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
