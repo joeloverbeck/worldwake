@@ -5,7 +5,10 @@ mod frame;
 mod observation;
 mod planning;
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
-use frame::{handle_recoverable_travel_step_blockage, update_frame_for_adopted_plan};
+use frame::{
+    apply_assumption_result, evaluate_assumptions, handle_recoverable_travel_step_blockage,
+    populate_assumptions, update_frame_for_adopted_plan, AssumptionEvalResult,
+};
 use active_action::{
     active_action_for_agent, advance_completed_step, effective_goal_switch_margin,
     goal_switch_margin_details, handle_active_action_phase, handle_current_step_failure,
@@ -306,6 +309,35 @@ fn process_agent(
 
     let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
 
+    // ── Pre-planning assumption evaluation ──
+    // Evaluate frame assumptions (except NoCriticalThreat, which needs ranked
+    // candidates and is deferred to after ranking).
+    {
+        let should_eval = current_frame
+            .as_ref()
+            .is_some_and(|f| !matches!(f.state, worldwake_core::FrameState::Exhausted));
+        if should_eval {
+            let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+            let frame = current_frame.as_mut().unwrap();
+            frame.assumptions = populate_assumptions(&frame.domain, agent, &view);
+            let eval = evaluate_assumptions(&frame.assumptions, &view, None);
+            if !matches!(eval, AssumptionEvalResult::Deferred) {
+                current_frame = Some(apply_assumption_result(
+                    current_frame.as_ref().unwrap(),
+                    &eval,
+                    tick,
+                    runtime,
+                ));
+                if matches!(eval, AssumptionEvalResult::CriticalFailure) {
+                    runtime.current_plan = None;
+                    runtime.current_step_index = 0;
+                    runtime.materialization_bindings.clear();
+                    runtime.dirty = true;
+                }
+            }
+        }
+    }
+
     // ── Read phase: candidate generation + ranking ──
     let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
     let read_result = refresh_runtime_for_read_phase(
@@ -328,6 +360,34 @@ fn process_agent(
         tracing,
     );
     let ranked_candidates = read_result.ranked;
+
+    // ── Deferred NoCriticalThreat evaluation ──
+    // Now that ranked candidates are available, evaluate NoCriticalThreat
+    // assumptions that were deferred in the pre-planning stage.
+    if let Some(frame) = current_frame.as_ref() {
+        if !matches!(frame.state, worldwake_core::FrameState::Exhausted) {
+            let has_no_critical_threat = frame
+                .assumptions
+                .iter()
+                .any(|a| matches!(a, worldwake_core::FrameAssumption::NoCriticalThreat));
+            if has_no_critical_threat {
+                let deferred_eval = evaluate_assumptions(
+                    &[worldwake_core::FrameAssumption::NoCriticalThreat],
+                    &runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs),
+                    Some(&ranked_candidates),
+                );
+                if matches!(
+                    deferred_eval,
+                    AssumptionEvalResult::RecoverableFailure(_)
+                        | AssumptionEvalResult::AllPass
+                ) {
+                    current_frame =
+                        Some(apply_assumption_result(frame, &deferred_eval, tick, runtime));
+                }
+            }
+        }
+    }
+
     let active_action = active_action_for_agent(ctx, agent);
     let frame_switch_margin = {
         let jc = ctx.world.get_component_intention_frame(agent);

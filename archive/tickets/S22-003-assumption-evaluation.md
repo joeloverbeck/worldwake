@@ -1,6 +1,6 @@
 # S22-003: Implement assumption population and evaluation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new AI pipeline stage (assumption evaluation before planning)
@@ -107,3 +107,12 @@ Since `NoCriticalThreat` requires ranked candidates (not available until after c
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - `crates/worldwake-ai/src/agent_tick/frame.rs`: Added `populate_assumptions()`, `evaluate_assumptions()`, `apply_assumption_result()`, `AssumptionEvalResult` enum, and 16 focused unit tests.
+  - `crates/worldwake-ai/src/agent_tick/mod.rs`: Integrated pre-planning assumption evaluation (after observation, before ranking) and deferred `NoCriticalThreat` evaluation (after ranking, before planning/active-action fork). Assumptions are populated from domain each tick and stored on the frame.
+- **Deviations from plan**: Travel and Errand matched arms were merged per clippy. `apply_assumption_result` returns `IntentionFrame` directly (not `Option`) since it never clears a frame — exhaustion sets `FrameState::Exhausted` on the frame rather than removing it. `CommodityAvailableAt` stubbed as always-true per out-of-scope note.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.
