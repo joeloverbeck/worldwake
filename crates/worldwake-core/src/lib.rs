@@ -48,6 +48,8 @@ pub mod goal;
 pub mod ids;
 pub mod institutional;
 pub mod intention;
+pub mod intention_disposition;
+pub mod intention_frame;
 pub mod items;
 pub mod load;
 pub mod needs;
@@ -118,6 +120,11 @@ pub use institutional::{
 pub use intention::{
     ActiveGoal, FacilityQueueIntents, JourneyCommitment, JourneyCommitmentState,
     QueuedFacilityIntent,
+};
+pub use intention_disposition::IntentionDispositionProfile;
+pub use intention_frame::{
+    FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,
+    IntentionFrame, SuspensionReason,
 };
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,

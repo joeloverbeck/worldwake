@@ -155,6 +155,10 @@ pub enum BlockingFact {
     DangerTooHigh,
     CombatTooRisky,
     Unknown,
+    /// Frame patience exhausted for this goal at this place/target.
+    PatienceExhausted,
+    /// A critical frame assumption failed (target dead, route severed).
+    AssumptionFailed,
 }
 
 #[cfg(test)]
@@ -514,5 +518,29 @@ mod tests {
 
         // SourceDepleted does not block goal generation, so global query does not match
         assert!(!memory.is_blocked(&key, None, None, None, Tick(9)));
+    }
+
+    #[test]
+    fn patience_exhausted_blocks_goal_generation() {
+        let intent = BlockedIntent {
+            blocker_key: sample_blocker_key(),
+            blocking_fact: BlockingFact::PatienceExhausted,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(100),
+        };
+        assert!(intent.blocks_goal_generation());
+    }
+
+    #[test]
+    fn assumption_failed_blocks_goal_generation() {
+        let intent = BlockedIntent {
+            blocker_key: sample_blocker_key(),
+            blocking_fact: BlockingFact::AssumptionFailed,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(100),
+        };
+        assert!(intent.blocks_goal_generation());
     }
 }

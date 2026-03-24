@@ -11,6 +11,8 @@ use crate::{
     factions::FactionData,
     institutional::RecordData,
     intention::{ActiveGoal, FacilityQueueIntents, JourneyCommitment},
+    intention_disposition::IntentionDispositionProfile,
+    intention_frame::IntentionFrame,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},

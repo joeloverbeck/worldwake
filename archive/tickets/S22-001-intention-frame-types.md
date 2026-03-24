@@ -1,6 +1,6 @@
 # S22-001: Define IntentionFrame and IntentionDispositionProfile types in worldwake-core
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — component registration (component_schema, component_tables), new blocked_intent variants
@@ -111,3 +111,16 @@ Update `crates/worldwake-core/src/lib.rs` to declare `intention_frame` and `inte
 1. `cargo test -p worldwake-core`
 2. `cargo build --workspace && cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - Created `crates/worldwake-core/src/intention_frame.rs` — `IntentionFrame`, `IntentionDomain`, `IntentionDomainTag`, `FrameAssumption`, `FrameState`, `SuspensionReason`, `FrameClearReason`
+  - Created `crates/worldwake-core/src/intention_disposition.rs` — `IntentionDispositionProfile` with `patience_for()` helper
+  - Added `PatienceExhausted` and `AssumptionFailed` variants to `BlockingFact` in `blocked_intent.rs`
+  - Registered both new components on `EntityKind::Agent` in `component_schema.rs`
+  - Updated `component_tables.rs`, `delta.rs`, `world.rs`, `lib.rs` with imports and re-exports
+  - Updated `failure_handling.rs` in worldwake-ai to handle new `BlockingFact` variants (structural TTL, not auto-resolvable)
+- **Deviations**: None. The worldwake-ai `failure_handling.rs` match arms needed updating for exhaustiveness — this was not listed in the ticket's "Files to Touch" but was a necessary consequence of adding `BlockingFact` variants.
+- **Verification**: `cargo build --workspace`, `cargo clippy --workspace`, `cargo test --workspace` — all 766+ tests pass, 0 failures, 0 clippy warnings.

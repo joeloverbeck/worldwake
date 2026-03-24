@@ -572,7 +572,10 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
         BlockingFact::TooExpensive => {
             view.commodity_quantity(agent, CommodityKind::Coin) > Quantity(0)
         }
-        BlockingFact::ExclusiveFacilityUnavailable | BlockingFact::Unknown => false,
+        BlockingFact::ExclusiveFacilityUnavailable
+        | BlockingFact::Unknown
+        | BlockingFact::PatienceExhausted
+        | BlockingFact::AssumptionFailed => false,
         BlockingFact::SourceDepleted => {
             let Some(source) = intent.blocker_key.target else {
                 return false;
@@ -726,7 +729,9 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
         | BlockingFact::MissingTool(_)
         | BlockingFact::MissingInput(_)
         | BlockingFact::DangerTooHigh
-        | BlockingFact::CombatTooRisky => budget.structural_block_ticks,
+        | BlockingFact::CombatTooRisky
+        | BlockingFact::PatienceExhausted
+        | BlockingFact::AssumptionFailed => budget.structural_block_ticks,
     }
 }
 
