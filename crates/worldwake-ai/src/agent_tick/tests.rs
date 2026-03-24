@@ -19,7 +19,7 @@
         build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtyReason,
         ExpectedMaterialization, GoalKey, GoalKind, JourneySwitchMarginSource,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlanningEntityRef, QueuedFacilityIntent, RankedGoal, RankedGoalProvenance,
+        PlanningEntityRef, RankedGoal, RankedGoalProvenance,
         SelectedPlanReplacementKind,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -31,9 +31,10 @@
         BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
         CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-        EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-        HomeostaticNeeds, JourneyCommitment, JourneyCommitmentState, KnownRecipes, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent, PerceptionProfile,
+        EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue,
+        GrantedFacilityUse, HomeostaticNeeds, JourneyCommitment, JourneyCommitmentState,
+        KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent,
+        PerceptionProfile, QueuedFacilityIntent,
         PerceptionSource, Permille, Place, Quantity, RecipeId, RecipientKnowledgeStatus,
         ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
         Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
@@ -561,12 +562,14 @@
             .entry(harness.actor)
             .or_default();
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
         refresh_runtime_for_read_phase(
             &harness.world,
             &harness.scheduler,
             &harness.defs,
             runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -1183,12 +1186,14 @@
         );
 
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -1253,16 +1258,27 @@
         let goal = GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         });
-        let mut runtime = crate::AgentDecisionRuntime {
-            ..crate::AgentDecisionRuntime::default()
-        };
-        runtime.queued_facility_intents.insert(
-            facility,
-            QueuedFacilityIntent {
-                goal_key: goal,
-                intended_action: ActionDefId(77),
-            },
-        );
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        // Set facility queue intents as a component on the World.
+        {
+            let mut txn = new_txn(&mut harness.world, 1);
+            txn.set_component_facility_queue_intents(
+                harness.actor,
+                FacilityQueueIntents {
+                    intents: [(
+                        facility,
+                        QueuedFacilityIntent {
+                            goal_key: goal,
+                            intended_action: ActionDefId(77),
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
         let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
@@ -1275,6 +1291,11 @@
         )
         .unwrap());
 
+        let mut facility_intents = harness
+            .world
+            .get_component_facility_queue_intents(harness.actor)
+            .cloned()
+            .unwrap_or_default();
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
@@ -1282,6 +1303,7 @@
             &harness.defs,
             &mut runtime,
             None,
+            &mut facility_intents,
             &mut blocked,
             harness.actor,
             &[],
@@ -1302,7 +1324,7 @@
         );
         assert_eq!(blocked.intents[0].related_entity, Some(facility));
         assert_eq!(blocked.intents[0].related_action, Some(ActionDefId(77)));
-        assert!(runtime.queued_facility_intents.is_empty());
+        assert!(facility_intents.intents.is_empty());
     }
 
     #[test]
@@ -1355,12 +1377,14 @@
         );
 
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -1422,21 +1446,36 @@
         let goal = GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         });
-        let mut runtime = crate::AgentDecisionRuntime {
-            ..crate::AgentDecisionRuntime::default()
-        };
-        runtime.queued_facility_intents.insert(
-            facility,
-            QueuedFacilityIntent {
-                goal_key: goal,
-                intended_action: ActionDefId(77),
-            },
-        );
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        {
+            let mut txn = new_txn(&mut harness.world, 1);
+            txn.set_component_facility_queue_intents(
+                harness.actor,
+                FacilityQueueIntents {
+                    intents: [(
+                        facility,
+                        QueuedFacilityIntent {
+                            goal_key: goal,
+                            intended_action: ActionDefId(77),
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
         let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
         clear_local_queue_state(&mut harness.world, harness.actor, facility, 2);
 
+        let mut facility_intents = harness
+            .world
+            .get_component_facility_queue_intents(harness.actor)
+            .cloned()
+            .unwrap_or_default();
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
@@ -1444,6 +1483,7 @@
             &harness.defs,
             &mut runtime,
             None,
+            &mut facility_intents,
             &mut blocked,
             harness.actor,
             &[],
@@ -1464,7 +1504,7 @@
         );
         assert_eq!(blocked.intents[0].related_entity, Some(facility));
         assert_eq!(blocked.intents[0].related_action, Some(ActionDefId(77)));
-        assert!(runtime.queued_facility_intents.is_empty());
+        assert!(facility_intents.intents.is_empty());
     }
 
     #[test]
@@ -1482,21 +1522,36 @@
             Some(ActionDefId(77)),
         );
 
-        let mut runtime = crate::AgentDecisionRuntime {
-            ..crate::AgentDecisionRuntime::default()
-        };
-        runtime.queued_facility_intents.insert(
-            facility,
-            QueuedFacilityIntent {
-                goal_key: goal,
-                intended_action: ActionDefId(77),
-            },
-        );
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        {
+            let mut txn = new_txn(&mut harness.world, 1);
+            txn.set_component_facility_queue_intents(
+                harness.actor,
+                FacilityQueueIntents {
+                    intents: [(
+                        facility,
+                        QueuedFacilityIntent {
+                            goal_key: goal,
+                            intended_action: ActionDefId(77),
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
         let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
         clear_local_queue_state(&mut harness.world, harness.actor, facility, 2);
 
+        let mut facility_intents = harness
+            .world
+            .get_component_facility_queue_intents(harness.actor)
+            .cloned()
+            .unwrap_or_default();
         let mut blocked = BlockedIntentMemory::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
@@ -1504,6 +1559,7 @@
             &harness.defs,
             &mut runtime,
             None,
+            &mut facility_intents,
             &mut blocked,
             harness.actor,
             &[],
@@ -1518,7 +1574,7 @@
         );
 
         assert!(blocked.intents.is_empty());
-        assert!(runtime.queued_facility_intents.is_empty());
+        assert!(facility_intents.intents.is_empty());
     }
 
     #[test]
@@ -2403,6 +2459,7 @@
         );
 
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
         let utility = harness
             .world
             .get_component_utility_profile(harness.actor)
@@ -2419,6 +2476,7 @@
             &harness.defs,
             runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -2517,6 +2575,7 @@
             &harness.defs,
             runtime,
             active_goal_state.map(|ag| ag.goal_key),
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -2588,12 +2647,14 @@
         }
 
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
             &harness.scheduler,
             &harness.defs,
             runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -2642,12 +2703,14 @@
         }
 
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
             &harness.scheduler,
             &harness.defs,
             runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -2676,6 +2739,7 @@
         let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
         update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
 
         let _ = refresh_runtime_for_read_phase(
             &harness.world,
@@ -2683,6 +2747,7 @@
             &harness.defs,
             &mut runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -3496,6 +3561,7 @@
             .entry(harness.actor)
             .or_default();
         let mut blocked = BlockedIntentMemory::default();
+        let mut fi = FacilityQueueIntents::default();
 
         let initial_read = refresh_runtime_for_read_phase(
             &harness.world,
@@ -3503,6 +3569,7 @@
             &harness.defs,
             runtime,
             None,
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],
@@ -3582,6 +3649,7 @@
             &harness.defs,
             runtime,
             active_goal_state.as_ref().map(|ag| ag.goal_key),
+            &mut fi,
             &mut blocked,
             harness.actor,
             &[],

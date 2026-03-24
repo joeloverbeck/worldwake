@@ -17,7 +17,8 @@ use observation::{
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_journey_commitment, plan_finished,
+    persist_blocked_memory, persist_facility_queue_intents, persist_journey_commitment,
+    plan_finished,
 };
 use candidates::abandon_expired_facility_queues;
 use planning::{
@@ -35,7 +36,7 @@ use crate::{
     PlannerOpSemantics, PlanningBudget,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, ControlSource, EntityId, Tick};
+use worldwake_core::{ActionDefId, ControlSource, EntityId, FacilityQueueIntents, Tick};
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
     PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -225,6 +226,13 @@ fn process_agent(
     // Read active goal from authoritative component.
     let original_active_goal = ctx.world.get_component_active_goal(agent).copied();
     let mut current_active_goal = original_active_goal;
+    // Read facility queue intents from authoritative component.
+    let original_facility_intents = ctx
+        .world
+        .get_component_facility_queue_intents(agent)
+        .cloned()
+        .unwrap_or_default();
+    let mut current_facility_intents = original_facility_intents.clone();
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
@@ -238,6 +246,7 @@ fn process_agent(
                 current_jc = None;
             }
             current_active_goal = None;
+            current_facility_intents = FacilityQueueIntents::default();
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -260,6 +269,14 @@ fn process_agent(
                 original_active_goal.as_ref(),
                 current_active_goal.as_ref(),
             )?;
+            persist_facility_queue_intents(
+                ctx.world,
+                ctx.event_log,
+                agent,
+                tick,
+                &original_facility_intents,
+                &current_facility_intents,
+            )?;
             return Ok(tracing.then_some(AgentDecisionTrace {
                 agent,
                 tick,
@@ -273,6 +290,7 @@ fn process_agent(
         runtime,
         &mut current_active_goal,
         &mut current_jc,
+        &mut current_facility_intents,
         &mut blocked_memory,
         active_action.as_ref(),
         agent,
@@ -293,6 +311,7 @@ fn process_agent(
         action_defs,
         runtime,
         active_goal_key,
+        &mut current_facility_intents,
         &mut blocked_memory,
         agent,
         replan_signals,
@@ -321,6 +340,7 @@ fn process_agent(
             runtime,
             &mut current_active_goal,
             &mut current_jc,
+            &mut current_facility_intents,
             &mut blocked_memory,
             agent,
             &ranked_candidates,
@@ -484,6 +504,14 @@ fn process_agent(
         tick,
         original_active_goal.as_ref(),
         current_active_goal.as_ref(),
+    )?;
+    persist_facility_queue_intents(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        tick,
+        &original_facility_intents,
+        &current_facility_intents,
     )?;
     finalize_agent_tick(
         ctx.world,

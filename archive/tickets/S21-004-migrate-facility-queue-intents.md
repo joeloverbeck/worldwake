@@ -1,6 +1,6 @@
 # S21-004: Migrate facility queue intents from runtime to FacilityQueueIntents component
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — AI crate runtime reads/writes of queued_facility_intents migrated to World/WorldTxn
@@ -92,3 +92,17 @@ Tests that set `runtime.queued_facility_intents` must use the component on a tes
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - Removed `queued_facility_intents` field from `AgentDecisionRuntime` in `decision_runtime.rs`
+  - `handle_facility_queue_transitions()` and `reconcile_committed_facility_queue_intents()` in `observation.rs` now take `&mut FacilityQueueIntents` parameter instead of mutating runtime field
+  - Added `persist_facility_queue_intents()` in `execution.rs` (diff-and-commit pattern matching `persist_journey_commitment` and `persist_active_goal`)
+  - Threaded `FacilityQueueIntents` through `process_agent` → `reconcile_in_flight_state` → `handle_active_action_phase` pipeline in `mod.rs` and `active_action.rs`
+  - Dead-agent early return clears facility intents and persists
+  - Removed `QueuedFacilityIntent` re-export from `decision_runtime.rs` and `lib.rs` (imports now directly from `worldwake_core`)
+  - Updated 3 facility-queue tests to set component on World via `WorldTxn` and assert on component; updated all 10 `refresh_runtime_for_read_phase` test call sites with new parameter
+- **Deviations**: Ticket anticipated writes going through `txn.set_component_facility_queue_intents` directly at call sites. Instead, facility intents are threaded as `&mut FacilityQueueIntents` through the pipeline (matching the `ActiveGoal` / `JourneyCommitment` pattern from S21-002/S21-003) and persisted once at finalize via `persist_facility_queue_intents()`. This is functionally equivalent but cleaner.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean, zero `runtime.queued_facility_intents` references in crates/

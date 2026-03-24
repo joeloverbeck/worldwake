@@ -33,7 +33,7 @@ pub use decision_runtime::{
     classify_journey_plan_relation, has_active_journey_travel, has_journey_commitment,
     journey_committed_destination, journey_runtime_snapshot, AgentDecisionRuntime,
     JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation, JourneyRuntimeSnapshot,
-    MaterializationBindings, QueuedFacilityIntent,
+    MaterializationBindings,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,
