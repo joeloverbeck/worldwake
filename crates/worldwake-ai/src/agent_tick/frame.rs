@@ -4,8 +4,9 @@ use crate::{
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, EntityId, FrameAssumption, FrameClearReason,
-    FrameState, IntentionDomain, IntentionFrame, Permille, SuspensionReason, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, EntityId, FrameAssumption,
+    FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille, SuspensionReason,
+    Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -351,6 +352,81 @@ pub(super) fn apply_assumption_result(
         }
         AssumptionEvalResult::Deferred => frame.clone(),
     }
+}
+
+/// Extract the domain-specific target entity for a `BlockerKey` from an
+/// `IntentionDomain`. Used when creating `BlockedIntent`s on frame exhaustion
+/// (patience or assumption failure).
+pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId> {
+    match *domain {
+        IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination } => {
+            Some(destination)
+        }
+        IntentionDomain::Care { patient } => Some(patient),
+        IntentionDomain::Escort { ward, .. } => Some(ward),
+        IntentionDomain::Generic => None,
+    }
+}
+
+/// Check whether a frame's `stalled_ticks` has reached `patience_limit` after an
+/// increment. If so, record a `BlockedIntent` with `PatienceExhausted`,
+/// transition the frame to `Exhausted`, clear the plan, and return `true`.
+///
+/// The caller must have already incremented `frame.stalled_ticks`. This
+/// function only handles the creation of the blocked intent and state
+/// transition when the threshold is met.
+pub(super) fn check_patience_exhaustion(
+    frame: &IntentionFrame,
+    agent_place: Option<EntityId>,
+    blocked_memory: &mut BlockedIntentMemory,
+    runtime: &mut AgentDecisionRuntime,
+    tick: Tick,
+    structural_block_ticks: u32,
+) -> bool {
+    if frame.stalled_ticks < frame.patience_limit {
+        return false;
+    }
+    blocked_memory.record(BlockedIntent {
+        blocker_key: BlockerKey {
+            goal_key: frame.goal,
+            place: agent_place,
+            target: frame_blocker_target(&frame.domain),
+            action_def: None,
+        },
+        blocking_fact: BlockingFact::PatienceExhausted,
+        diagnostic_context: None,
+        observed_tick: tick,
+        expires_tick: tick + u64::from(structural_block_ticks),
+    });
+    runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
+    runtime.current_plan = None;
+    runtime.current_step_index = 0;
+    runtime.materialization_bindings.clear();
+    runtime.dirty = true;
+    true
+}
+
+/// Record a `BlockedIntent` with `AssumptionFailed` for a frame whose critical
+/// assumption has failed.
+pub(super) fn record_assumption_failure_blocked_intent(
+    frame: &IntentionFrame,
+    agent_place: Option<EntityId>,
+    blocked_memory: &mut BlockedIntentMemory,
+    tick: Tick,
+    structural_block_ticks: u32,
+) {
+    blocked_memory.record(BlockedIntent {
+        blocker_key: BlockerKey {
+            goal_key: frame.goal,
+            place: agent_place,
+            target: frame_blocker_target(&frame.domain),
+            action_def: None,
+        },
+        blocking_fact: BlockingFact::AssumptionFailed,
+        diagnostic_context: None,
+        observed_tick: tick,
+        expires_tick: tick + u64::from(structural_block_ticks),
+    });
 }
 
 fn blocked_leg_target(step: &PlannedStep) -> Option<EntityId> {
@@ -1013,5 +1089,52 @@ mod tests {
             !ops.contains(&PlannerOpKind::Consume),
             "Eating during travel must not count as progress"
         );
+    }
+
+    // ── frame_blocker_target tests ──
+
+    #[test]
+    fn frame_blocker_target_travel_returns_destination() {
+        let dest = make_entity(20);
+        assert_eq!(
+            frame_blocker_target(&IntentionDomain::Travel { destination: dest }),
+            Some(dest)
+        );
+    }
+
+    #[test]
+    fn frame_blocker_target_care_returns_patient() {
+        let patient = make_entity(5);
+        assert_eq!(
+            frame_blocker_target(&IntentionDomain::Care { patient }),
+            Some(patient)
+        );
+    }
+
+    #[test]
+    fn frame_blocker_target_escort_returns_ward() {
+        let ward = make_entity(3);
+        let dest = make_entity(20);
+        assert_eq!(
+            frame_blocker_target(&IntentionDomain::Escort {
+                ward,
+                destination: dest
+            }),
+            Some(ward)
+        );
+    }
+
+    #[test]
+    fn frame_blocker_target_errand_returns_destination() {
+        let dest = make_entity(20);
+        assert_eq!(
+            frame_blocker_target(&IntentionDomain::Errand { destination: dest }),
+            Some(dest)
+        );
+    }
+
+    #[test]
+    fn frame_blocker_target_generic_returns_none() {
+        assert_eq!(frame_blocker_target(&IntentionDomain::Generic), None);
     }
 }

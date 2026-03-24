@@ -6,8 +6,10 @@ mod observation;
 mod planning;
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use frame::{
-    apply_assumption_result, evaluate_assumptions, handle_recoverable_travel_step_blockage,
-    populate_assumptions, update_frame_for_adopted_plan, AssumptionEvalResult,
+    apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
+    handle_recoverable_travel_step_blockage, populate_assumptions,
+    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan,
+    AssumptionEvalResult,
 };
 use active_action::{
     active_action_for_agent, advance_completed_step, effective_goal_switch_margin,
@@ -41,7 +43,7 @@ use crate::{
 use worldwake_core::FrameClearReason;
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, Tick,
+    ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, IntentionFrame, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -329,6 +331,15 @@ fn process_agent(
                     runtime,
                 ));
                 if matches!(eval, AssumptionEvalResult::CriticalFailure) {
+                    // Create blocked intent so the agent doesn't immediately
+                    // re-adopt the same goal after assumption failure.
+                    record_assumption_failure_blocked_intent(
+                        current_frame.as_ref().unwrap(),
+                        view.effective_place(agent),
+                        &mut blocked_memory,
+                        tick,
+                        budget.structural_block_ticks,
+                    );
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
                     runtime.materialization_bindings.clear();
@@ -573,7 +584,7 @@ fn process_agent(
     // If the frame is Active and no progress was recorded this tick, increment
     // stalled_ticks. Progress resets happen inside advance_completed_step via
     // progress_op_kinds().
-    if let Some(ref mut frame) = current_frame {
+    let patience_exhausted = if let Some(ref mut frame) = current_frame {
         if matches!(frame.state, worldwake_core::FrameState::Active)
             && frame.last_progress_tick != Some(tick)
         {
@@ -581,6 +592,30 @@ fn process_agent(
                 .stalled_ticks
                 .checked_add(1)
                 .expect("stalled ticks overflowed");
+            frame.stalled_ticks >= frame.patience_limit
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // ── Patience exhaustion → BlockedIntent + Exhausted state ──
+    if patience_exhausted {
+        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+        let exhausted = check_patience_exhaustion(
+            current_frame.as_ref().unwrap(),
+            view.effective_place(agent),
+            &mut blocked_memory,
+            runtime,
+            tick,
+            budget.structural_block_ticks,
+        );
+        if exhausted {
+            current_frame = Some(IntentionFrame {
+                state: worldwake_core::FrameState::Exhausted,
+                ..current_frame.take().unwrap()
+            });
         }
     }
 

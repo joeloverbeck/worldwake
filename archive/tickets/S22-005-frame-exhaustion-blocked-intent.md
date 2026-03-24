@@ -1,6 +1,6 @@
 # S22-005: Implement frame exhaustion → BlockedIntent integration
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new blocked intent creation path on frame exhaustion/assumption failure
@@ -119,3 +119,15 @@ Ensure `BlockedIntentMemory` is available where frame exhaustion is detected. Pa
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - `frame.rs`: Added `frame_blocker_target()` (domain→target mapping), `check_patience_exhaustion()` (creates `BlockedIntent` with `PatienceExhausted`), `record_assumption_failure_blocked_intent()` (creates `BlockedIntent` with `AssumptionFailed`). 10 new focused tests.
+  - `mod.rs`: Wired patience exhaustion check after per-tick stall increment; wired assumption failure blocked intent creation after critical assumption eval. Frame transitions to `Exhausted` on patience exhaustion (consistent with assumption failure path).
+  - `tests.rs`: Added `goal_completion_does_not_create_blocked_intent` integration test.
+- **Deviations from original plan**:
+  - Extracted blocked intent creation into testable helper functions in `frame.rs` rather than inlining in `mod.rs`. This was necessary because the general stall increment path in `mod.rs` fires after the planning phase, which can clear the frame before patience is checked — making full-pipeline integration tests impractical for the patience path. Focused unit tests on the extracted helpers provide better coverage.
+  - `failure_handling.rs` was NOT modified (ticket listed it as a possible touch point). All logic lives in `frame.rs` and `mod.rs`.
+- **Verification**: `cargo test -p worldwake-ai` (926 pass), `cargo clippy --workspace` (clean), `cargo test --workspace` (all pass).

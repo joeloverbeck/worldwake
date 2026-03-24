@@ -4189,3 +4189,227 @@
         // Non-traced harness should have no trace data.
         assert!(harness_no_trace.driver.trace_sink().is_none());
     }
+
+    // ── S22-005: Frame exhaustion → BlockedIntent integration tests ──
+
+    #[test]
+    fn check_patience_exhaustion_creates_blocked_intent() {
+        use super::frame::check_patience_exhaustion;
+
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let destination = entity(20);
+        let place = entity(10);
+        let frame = IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 5, // >= patience_limit of 5
+            patience_limit: 5,
+        };
+        let mut blocked_memory = BlockedIntentMemory::default();
+        let mut runtime = crate::AgentDecisionRuntime::default();
+        let budget = PlanningBudget::default();
+
+        let exhausted = check_patience_exhaustion(
+            &frame,
+            Some(place),
+            &mut blocked_memory,
+            &mut runtime,
+            Tick(10),
+            budget.structural_block_ticks,
+        );
+
+        assert!(exhausted, "should detect patience exhaustion");
+        assert_eq!(blocked_memory.intents.len(), 1);
+        let intent = blocked_memory.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::PatienceExhausted);
+        assert_eq!(intent.blocker_key.goal_key, goal);
+        assert_eq!(intent.blocker_key.place, Some(place));
+        assert_eq!(intent.blocker_key.target, Some(destination));
+        assert!(intent.blocker_key.action_def.is_none());
+        assert_eq!(intent.observed_tick, Tick(10));
+        assert_eq!(
+            intent.expires_tick,
+            Tick(10 + u64::from(budget.structural_block_ticks))
+        );
+        assert_eq!(
+            runtime.last_frame_clear_reason,
+            Some(worldwake_core::FrameClearReason::PatienceExhausted)
+        );
+        assert!(runtime.current_plan.is_none());
+        assert!(runtime.dirty);
+    }
+
+    #[test]
+    fn check_patience_exhaustion_below_limit_returns_false() {
+        use super::frame::check_patience_exhaustion;
+
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain: IntentionDomain::Generic,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 4, // < patience_limit of 5
+            patience_limit: 5,
+        };
+        let mut blocked_memory = BlockedIntentMemory::default();
+        let mut runtime = crate::AgentDecisionRuntime::default();
+
+        let exhausted = check_patience_exhaustion(
+            &frame,
+            None,
+            &mut blocked_memory,
+            &mut runtime,
+            Tick(10),
+            200,
+        );
+
+        assert!(!exhausted);
+        assert!(blocked_memory.intents.is_empty());
+        assert_eq!(runtime.last_frame_clear_reason, None);
+    }
+
+    #[test]
+    fn patience_exhaustion_care_domain_uses_patient_as_target() {
+        use super::frame::check_patience_exhaustion;
+
+        let patient = entity(5);
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let frame = IntentionFrame {
+            goal,
+            domain: IntentionDomain::Care { patient },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 10,
+            patience_limit: 10,
+        };
+        let mut blocked_memory = BlockedIntentMemory::default();
+        let mut runtime = crate::AgentDecisionRuntime::default();
+
+        check_patience_exhaustion(
+            &frame,
+            Some(entity(99)),
+            &mut blocked_memory,
+            &mut runtime,
+            Tick(20),
+            100,
+        );
+
+        let intent = blocked_memory.intents.values().next().unwrap();
+        assert_eq!(
+            intent.blocker_key.target,
+            Some(patient),
+            "Care domain should use patient as target"
+        );
+    }
+
+    #[test]
+    fn patience_exhaustion_generic_domain_uses_none_target() {
+        use super::frame::check_patience_exhaustion;
+
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain: IntentionDomain::Generic,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 3,
+            patience_limit: 3,
+        };
+        let mut blocked_memory = BlockedIntentMemory::default();
+        let mut runtime = crate::AgentDecisionRuntime::default();
+
+        check_patience_exhaustion(
+            &frame,
+            Some(entity(99)),
+            &mut blocked_memory,
+            &mut runtime,
+            Tick(5),
+            100,
+        );
+
+        let intent = blocked_memory.intents.values().next().unwrap();
+        assert_eq!(
+            intent.blocker_key.target, None,
+            "Generic domain should use None as target"
+        );
+    }
+
+    #[test]
+    fn assumption_failure_creates_blocked_intent() {
+        use super::frame::record_assumption_failure_blocked_intent;
+
+        let patient = entity(50);
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let place = entity(10);
+        let frame = IntentionFrame {
+            goal,
+            domain: IntentionDomain::Care { patient },
+            assumptions: vec![worldwake_core::FrameAssumption::TargetAlive(patient)],
+            state: FrameState::Exhausted, // already transitioned by apply_assumption_result
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        };
+        let mut blocked_memory = BlockedIntentMemory::default();
+        let budget = PlanningBudget::default();
+
+        record_assumption_failure_blocked_intent(
+            &frame,
+            Some(place),
+            &mut blocked_memory,
+            Tick(5),
+            budget.structural_block_ticks,
+        );
+
+        assert_eq!(blocked_memory.intents.len(), 1);
+        let intent = blocked_memory.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::AssumptionFailed);
+        assert_eq!(intent.blocker_key.goal_key, goal);
+        assert_eq!(intent.blocker_key.place, Some(place));
+        assert_eq!(intent.blocker_key.target, Some(patient));
+        assert!(intent.blocker_key.action_def.is_none());
+        assert_eq!(intent.observed_tick, Tick(5));
+        assert_eq!(
+            intent.expires_tick,
+            Tick(5 + u64::from(budget.structural_block_ticks))
+        );
+    }
+
+    #[test]
+    fn goal_completion_does_not_create_blocked_intent() {
+        // A standard hungry agent that eats bread → goal completes normally.
+        // No blocked intent should be created for the completed goal.
+        let mut harness = Harness::new(ControlSource::Ai);
+
+        // Step enough to complete the eat action.
+        for _ in 0..5 {
+            harness.step_once();
+        }
+
+        // Check that no blocked intent was created for the completed goal.
+        let blocked_memory = harness
+            .world
+            .get_component_blocked_intent_memory(harness.actor);
+        if let Some(memory) = blocked_memory {
+            let has_patience_or_assumption = memory.intents.values().any(|intent| {
+                intent.blocking_fact == BlockingFact::PatienceExhausted
+                    || intent.blocking_fact == BlockingFact::AssumptionFailed
+            });
+            assert!(
+                !has_patience_or_assumption,
+                "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
+                 got: {:?}",
+                memory.intents
+            );
+        }
+    }
