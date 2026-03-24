@@ -12,7 +12,7 @@
 
 ## Assumption Reassessment (2026-03-23)
 
-1. `current_goal` field is at `decision_runtime.rs` line 78.
+1. `current_goal` field is at `decision_runtime.rs` line 68.
 2. Read/write sites confirmed via grep `current_goal` in AI crate (10 files):
    - `agent_tick/mod.rs` — goal adoption/clearing orchestration
    - `agent_tick/planning.rs` — plan search uses current goal for switching margin
@@ -57,19 +57,23 @@ In `mod.rs`, `planning.rs`, `active_action.rs`, `journey.rs`, `observation.rs`:
 - `compare_goal_switch()` and related logic reads the component instead of `runtime.current_goal`
 - Update test fixtures to set `ActiveGoal` component
 
-### 4. Migrate reads/writes in failure_handling.rs, interrupts.rs
+### 4. Migrate reads/writes in interrupts.rs and test fixtures in failure_handling.rs
 
-- Goal clearing on failure: via `txn.clear_component_active_goal(agent)`
-- Interrupt threshold comparisons: read from component
-- Update test fixtures
+- `failure_handling.rs`: production code does NOT read/write `current_goal` — only test fixtures and assertions reference it. Update test fixtures to set `ActiveGoal` component and assertions to read from it.
+- `interrupts.rs`: interrupt threshold comparisons read from the local `Option<ActiveGoal>` (passed as parameter following S21-002 persist-at-end pattern)
+- Update test fixtures in both files
 
-### 5. Remove current_goal from AgentDecisionRuntime
+### 5. Add persist_active_goal in agent_tick/execution.rs
 
-Delete the field from struct definition (line 78). Update `Default` impl.
+Following the S21-002 pattern (`persist_journey_commitment`): read component at start of `process_agent` into local `original_active_goal` / `current_active_goal`, mutate locally throughout the tick, persist at end via `persist_active_goal(world, event_log, agent, tick, original, current)`.
 
-### 6. Update unit tests
+### 6. Remove current_goal from AgentDecisionRuntime
 
-Tests that set `runtime.current_goal = Some(goal_key)` must instead set the `ActiveGoal` component on a test World.
+Delete the field from struct definition (line 68). Update `Default` impl.
+
+### 7. Update unit tests
+
+Tests that set `runtime.current_goal = Some(goal_key)` must instead set the `ActiveGoal` component on a test World or pass `Option<ActiveGoal>` to functions that now accept it as a parameter.
 
 ## Files to Touch
 
@@ -81,8 +85,9 @@ Tests that set `runtime.current_goal = Some(goal_key)` must instead set the `Act
 - `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — dirty detection via component)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — update fixtures)
 - `crates/worldwake-ai/src/plan_selection.rs` (modify — read component + update tests)
-- `crates/worldwake-ai/src/failure_handling.rs` (modify — clear via txn + update tests)
-- `crates/worldwake-ai/src/interrupts.rs` (modify — read component + update tests)
+- `crates/worldwake-ai/src/agent_tick/execution.rs` (modify — add `persist_active_goal` function)
+- `crates/worldwake-ai/src/failure_handling.rs` (modify — update test fixtures only; production code does not reference `current_goal`)
+- `crates/worldwake-ai/src/interrupts.rs` (modify — read from parameter + update tests)
 
 ## Out of Scope
 
