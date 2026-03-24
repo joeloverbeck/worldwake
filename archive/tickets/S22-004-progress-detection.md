@@ -1,6 +1,6 @@
 # S22-004: Implement progress detection via PlannerOpKind
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — new progress tracking in agent_tick step completion
@@ -114,3 +114,13 @@ This may already be partially implemented from S22-002's migration of `consecuti
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - `frame.rs`: Added `GENERIC_PROGRESS_OPS` (all 22 variants) and `progress_op_kinds()` mapping each `IntentionDomain` to its progress-relevant `PlannerOpKind` slice. 6 unit tests added.
+  - `active_action.rs`: Generalized `advance_completed_step` — replaced hardcoded `Travel`-only check with `progress_op_kinds(&domain).contains()`.
+  - `mod.rs`: Added per-tick stall increment in `process_agent` before finalization: increments `stalled_ticks` when frame is `Active` and no progress was recorded this tick.
+- **Deviations**: `execution.rs` was not touched (step completion lives entirely in `active_action.rs`, called from `observation.rs`). No other deviations.
+- **Verification**: 6 new tests pass, all 555+ workspace tests pass, `cargo clippy --workspace` clean.

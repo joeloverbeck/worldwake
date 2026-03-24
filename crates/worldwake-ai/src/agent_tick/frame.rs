@@ -1,6 +1,6 @@
 use crate::{
     authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
-    AgentDecisionRuntime, FrameRuntimeSnapshot, PlannedStep, PlanningBudget,
+    AgentDecisionRuntime, FrameRuntimeSnapshot, PlannerOpKind, PlannedStep, PlanningBudget,
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
@@ -8,6 +8,52 @@ use worldwake_core::{
     FrameState, IntentionDomain, IntentionFrame, Permille, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
+
+/// All `PlannerOpKind` variants — used for `IntentionDomain::Generic` where
+/// every completed action counts as progress.
+static GENERIC_PROGRESS_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::Consume,
+    PlannerOpKind::Sleep,
+    PlannerOpKind::Relieve,
+    PlannerOpKind::Wash,
+    PlannerOpKind::Trade,
+    PlannerOpKind::QueueForFacilityUse,
+    PlannerOpKind::Harvest,
+    PlannerOpKind::Craft,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::Heal,
+    PlannerOpKind::Loot,
+    PlannerOpKind::Bury,
+    PlannerOpKind::Tell,
+    PlannerOpKind::ConsultRecord,
+    PlannerOpKind::Attack,
+    PlannerOpKind::Defend,
+    PlannerOpKind::Bribe,
+    PlannerOpKind::Threaten,
+    PlannerOpKind::DeclareSupport,
+    PlannerOpKind::PressForceClaim,
+    PlannerOpKind::YieldForceClaim,
+];
+
+/// Returns the set of `PlannerOpKind`s that count as forward progress for a
+/// given intention domain. Only step completions matching one of these op
+/// kinds will reset `stalled_ticks` and update `last_progress_tick`.
+#[allow(clippy::match_same_arms)] // Travel and Escort intentionally listed separately for domain clarity.
+pub(super) fn progress_op_kinds(domain: &IntentionDomain) -> &'static [PlannerOpKind] {
+    match domain {
+        IntentionDomain::Travel { .. } => &[PlannerOpKind::Travel],
+        IntentionDomain::Care { .. } => &[PlannerOpKind::Heal, PlannerOpKind::Travel],
+        IntentionDomain::Escort { .. } => &[PlannerOpKind::Travel],
+        IntentionDomain::Errand { .. } => &[
+            PlannerOpKind::Travel,
+            PlannerOpKind::DeclareSupport,
+            PlannerOpKind::PressForceClaim,
+            PlannerOpKind::YieldForceClaim,
+        ],
+        IntentionDomain::Generic => GENERIC_PROGRESS_OPS,
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FrameSwitchMarginSource {
@@ -883,6 +929,89 @@ mod tests {
             updated.state,
             FrameState::Exhausted,
             "Exhausted frames must not resume"
+        );
+    }
+
+    // ── progress_op_kinds tests ──
+
+    #[test]
+    fn progress_ops_travel_returns_travel_only() {
+        let ops = progress_op_kinds(&IntentionDomain::Travel {
+            destination: make_entity(20),
+        });
+        assert_eq!(ops, &[PlannerOpKind::Travel]);
+    }
+
+    #[test]
+    fn progress_ops_care_returns_heal_and_travel() {
+        let ops = progress_op_kinds(&IntentionDomain::Care {
+            patient: make_entity(1),
+        });
+        assert_eq!(ops, &[PlannerOpKind::Heal, PlannerOpKind::Travel]);
+    }
+
+    #[test]
+    fn progress_ops_escort_returns_travel_only() {
+        let ops = progress_op_kinds(&IntentionDomain::Escort {
+            ward: make_entity(1),
+            destination: make_entity(20),
+        });
+        assert_eq!(ops, &[PlannerOpKind::Travel]);
+    }
+
+    #[test]
+    fn progress_ops_errand_returns_travel_and_political() {
+        let ops = progress_op_kinds(&IntentionDomain::Errand {
+            destination: make_entity(20),
+        });
+        assert_eq!(
+            ops,
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::DeclareSupport,
+                PlannerOpKind::PressForceClaim,
+                PlannerOpKind::YieldForceClaim,
+            ]
+        );
+    }
+
+    #[test]
+    fn progress_ops_generic_returns_all_variants() {
+        let ops = progress_op_kinds(&IntentionDomain::Generic);
+        // Generic should contain every PlannerOpKind variant.
+        assert!(ops.contains(&PlannerOpKind::Travel));
+        assert!(ops.contains(&PlannerOpKind::Consume));
+        assert!(ops.contains(&PlannerOpKind::Sleep));
+        assert!(ops.contains(&PlannerOpKind::Relieve));
+        assert!(ops.contains(&PlannerOpKind::Wash));
+        assert!(ops.contains(&PlannerOpKind::Trade));
+        assert!(ops.contains(&PlannerOpKind::QueueForFacilityUse));
+        assert!(ops.contains(&PlannerOpKind::Harvest));
+        assert!(ops.contains(&PlannerOpKind::Craft));
+        assert!(ops.contains(&PlannerOpKind::MoveCargo));
+        assert!(ops.contains(&PlannerOpKind::Heal));
+        assert!(ops.contains(&PlannerOpKind::Loot));
+        assert!(ops.contains(&PlannerOpKind::Bury));
+        assert!(ops.contains(&PlannerOpKind::Tell));
+        assert!(ops.contains(&PlannerOpKind::ConsultRecord));
+        assert!(ops.contains(&PlannerOpKind::Attack));
+        assert!(ops.contains(&PlannerOpKind::Defend));
+        assert!(ops.contains(&PlannerOpKind::Bribe));
+        assert!(ops.contains(&PlannerOpKind::Threaten));
+        assert!(ops.contains(&PlannerOpKind::DeclareSupport));
+        assert!(ops.contains(&PlannerOpKind::PressForceClaim));
+        assert!(ops.contains(&PlannerOpKind::YieldForceClaim));
+        assert_eq!(ops.len(), 22);
+    }
+
+    #[test]
+    fn progress_ops_travel_excludes_consume() {
+        let ops = progress_op_kinds(&IntentionDomain::Travel {
+            destination: make_entity(20),
+        });
+        assert!(
+            !ops.contains(&PlannerOpKind::Consume),
+            "Eating during travel must not count as progress"
         );
     }
 }

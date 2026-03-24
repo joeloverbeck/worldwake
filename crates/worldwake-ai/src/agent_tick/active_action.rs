@@ -18,6 +18,7 @@ use super::{
     build_candidate_plans, persist_blocked_memory, plans_as_options, AgentTickContext,
     FrameSwitchMarginSource,
 };
+use super::frame::progress_op_kinds;
 use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
 
 pub(super) fn active_action_for_agent(
@@ -174,8 +175,8 @@ pub(super) fn advance_completed_step(
 
     let mut updated_jc = jc.cloned();
 
-    if completed_op_kind == crate::PlannerOpKind::Travel {
-        if let Some(ref mut c) = updated_jc {
+    if let Some(ref mut c) = updated_jc {
+        if progress_op_kinds(&c.domain).contains(&completed_op_kind) {
             c.last_progress_tick = Some(tick);
             c.stalled_ticks = 0;
         }

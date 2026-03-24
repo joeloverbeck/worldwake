@@ -569,6 +569,21 @@ fn process_agent(
         })
     };
 
+    // ── Per-tick stall increment ──
+    // If the frame is Active and no progress was recorded this tick, increment
+    // stalled_ticks. Progress resets happen inside advance_completed_step via
+    // progress_op_kinds().
+    if let Some(ref mut frame) = current_frame {
+        if matches!(frame.state, worldwake_core::FrameState::Active)
+            && frame.last_progress_tick != Some(tick)
+        {
+            frame.stalled_ticks = frame
+                .stalled_ticks
+                .checked_add(1)
+                .expect("stalled ticks overflowed");
+        }
+    }
+
     // ── Finalize (runs for both paths) ──
     persist_intention_frame(
         ctx.world,
