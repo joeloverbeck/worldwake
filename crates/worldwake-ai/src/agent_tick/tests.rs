@@ -566,6 +566,7 @@
             &harness.scheduler,
             &harness.defs,
             runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -864,7 +865,6 @@
     fn active_runtime(goal: GoalKind) -> crate::AgentDecisionRuntime {
         let goal = GoalKey::from(goal);
         crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
                 goal,
                 vec![barrier_step()],
@@ -1188,6 +1188,7 @@
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -1253,7 +1254,6 @@
             commodity: CommodityKind::Apple,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             ..crate::AgentDecisionRuntime::default()
         };
         runtime.queued_facility_intents.insert(
@@ -1281,6 +1281,7 @@
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -1359,6 +1360,7 @@
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -1382,10 +1384,12 @@
         );
         let semantics = build_semantics_table(&harness.defs);
         let mut jc = None;
+        let mut active_goal = None;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
             &harness.scheduler,
             &mut runtime,
+            &mut active_goal,
             &mut jc,
             harness.actor,
             std::slice::from_ref(&goal),
@@ -1401,7 +1405,7 @@
             &harness.recipes,
         );
 
-        assert_eq!(runtime.current_goal, Some(goal.grounded.key));
+        assert_eq!(active_goal.map(|ag| ag.goal_key), Some(goal.grounded.key));
         assert_eq!(next_step_valid, Some(true));
         assert_eq!(
             next_step
@@ -1419,7 +1423,6 @@
             commodity: CommodityKind::Apple,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             ..crate::AgentDecisionRuntime::default()
         };
         runtime.queued_facility_intents.insert(
@@ -1440,6 +1443,7 @@
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -1479,7 +1483,6 @@
         );
 
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             ..crate::AgentDecisionRuntime::default()
         };
         runtime.queued_facility_intents.insert(
@@ -1500,6 +1503,7 @@
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -1704,7 +1708,6 @@
             consecutive_blocked_leg_ticks: 3,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             ..crate::AgentDecisionRuntime::default()
         };
 
@@ -1738,7 +1741,6 @@
             consecutive_blocked_leg_ticks: 3,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             ..crate::AgentDecisionRuntime::default()
         };
 
@@ -1765,7 +1767,6 @@
             consecutive_blocked_leg_ticks: 5,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
                 goal,
                 vec![travel_step(1, entity(11)), barrier_step()],
@@ -1775,7 +1776,7 @@
             ..crate::AgentDecisionRuntime::default()
         };
 
-        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Travel, Tick(9));
+        let updated_jc = advance_completed_step(&mut runtime, &mut None, jc.as_ref(), PlannerOpKind::Travel, Tick(9));
 
         assert_eq!(runtime.current_step_index, 1);
         let updated_jc = updated_jc.expect("journey commitment should persist");
@@ -1819,7 +1820,6 @@
             consecutive_blocked_leg_ticks: 1,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(plan.clone()),
             current_step_index: 0,
             dirty: false,
@@ -1831,6 +1831,7 @@
             &view,
             jc.as_ref(),
             &mut runtime,
+            Some(goal),
             &mut blocked_memory,
             actor,
             &step,
@@ -1841,7 +1842,6 @@
         let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
         assert_eq!(updated_jc.consecutive_blocked_leg_ticks, 2);
         assert!(runtime.dirty);
-        assert_eq!(runtime.current_goal, Some(goal));
         assert_eq!(updated_jc.committed_goal, goal);
         assert_eq!(updated_jc.destination, entity(11));
         assert_eq!(runtime.current_plan, None);
@@ -1890,7 +1890,6 @@
             consecutive_blocked_leg_ticks: 1,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(plan),
             current_step_index: 0,
             dirty: false,
@@ -1903,6 +1902,7 @@
             &view,
             jc.as_ref(),
             &mut runtime,
+            Some(goal),
             &mut blocked_memory,
             actor,
             &step,
@@ -1910,7 +1910,6 @@
             &budget,
         );
         assert!(handled);
-        assert_eq!(runtime.current_goal, Some(goal));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(runtime.dirty);
@@ -2044,7 +2043,6 @@
             consecutive_blocked_leg_ticks: 0,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
                 goal,
                 vec![travel_step(1, destination)],
@@ -2056,9 +2054,10 @@
             ..crate::AgentDecisionRuntime::default()
         };
 
-        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
+        let mut active_goal = Some(worldwake_core::ActiveGoal { goal_key: goal, adopted_at: Tick(0) });
+        let updated_jc = advance_completed_step(&mut runtime, &mut active_goal, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
 
-        assert_eq!(runtime.current_goal, Some(goal));
+        assert_eq!(active_goal.map(|ag| ag.goal_key), Some(goal));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         let updated_jc = updated_jc.expect("journey commitment should persist through progress barrier");
@@ -2091,7 +2090,6 @@
             consecutive_blocked_leg_ticks: 0,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(detour_goal),
             current_plan: Some(PlannedPlan::new(
                 detour_goal,
                 vec![PlannedStep {
@@ -2111,9 +2109,10 @@
             ..crate::AgentDecisionRuntime::default()
         };
 
-        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Consume, Tick(4));
+        let mut active_goal = Some(worldwake_core::ActiveGoal { goal_key: detour_goal, adopted_at: Tick(0) });
+        let updated_jc = advance_completed_step(&mut runtime, &mut active_goal, jc.as_ref(), PlannerOpKind::Consume, Tick(4));
 
-        assert_eq!(runtime.current_goal, None);
+        assert_eq!(active_goal, None);
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         let updated_jc = updated_jc.expect("commitment should be reactivated after detour");
@@ -2139,7 +2138,6 @@
             consecutive_blocked_leg_ticks: 0,
         });
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
                 goal,
                 vec![travel_step(1, destination)],
@@ -2149,7 +2147,8 @@
             ..crate::AgentDecisionRuntime::default()
         };
 
-        let updated_jc = advance_completed_step(&mut runtime, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
+        let mut active_goal = Some(worldwake_core::ActiveGoal { goal_key: goal, adopted_at: Tick(0) });
+        let updated_jc = advance_completed_step(&mut runtime, &mut active_goal, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(
             runtime.last_journey_clear_reason,
@@ -2278,13 +2277,13 @@
             PlanTerminalKind::GoalSatisfied,
         );
         let mut runtime = crate::AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(plan.clone()),
             current_step_index: 0,
             step_in_flight: true,
             dirty: false,
             ..crate::AgentDecisionRuntime::default()
         };
+        let mut active_goal = Some(worldwake_core::ActiveGoal { goal_key: goal, adopted_at: Tick(0) });
 
         apply_step_materialization_bindings(
             &mut runtime,
@@ -2298,7 +2297,7 @@
         )
         .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime, None, PlannerOpKind::MoveCargo, Tick(3));
+        advance_completed_step(&mut runtime, &mut active_goal, None, PlannerOpKind::MoveCargo, Tick(3));
 
         assert_eq!(runtime.current_step_index, 1);
         assert_eq!(
@@ -2310,7 +2309,7 @@
         apply_step_materialization_bindings(&mut runtime, &plan.steps[1], &CommitOutcome::empty())
             .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime, None, PlannerOpKind::Travel, Tick(4));
+        advance_completed_step(&mut runtime, &mut active_goal, None, PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(runtime.current_step_index, 2);
         assert_eq!(
@@ -2322,7 +2321,7 @@
         apply_step_materialization_bindings(&mut runtime, &plan.steps[2], &CommitOutcome::empty())
             .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(&mut runtime, None, PlannerOpKind::MoveCargo, Tick(5));
+        advance_completed_step(&mut runtime, &mut active_goal, None, PlannerOpKind::MoveCargo, Tick(5));
 
         assert!(runtime.current_plan.is_none());
         assert!(!runtime.step_in_flight);
@@ -2419,6 +2418,7 @@
             &harness.scheduler,
             &harness.defs,
             runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -2433,10 +2433,12 @@
         )
         .ranked;
         let mut jc = None;
+        let mut active_goal_state = None;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
             &harness.scheduler,
             runtime,
+            &mut active_goal_state,
             &mut jc,
             harness.actor,
             &ranked,
@@ -2452,7 +2454,7 @@
             &harness.recipes,
         );
         let pick_up = next_step.expect("cargo runtime should choose an initial pick_up step");
-        assert_eq!(runtime.current_goal, Some(expected_goal));
+        assert_eq!(active_goal_state.map(|ag| ag.goal_key), Some(expected_goal));
         assert_eq!(pick_up.op_kind, PlannerOpKind::MoveCargo);
         assert_eq!(
             pick_up.targets,
@@ -2506,14 +2508,15 @@
         )
         .unwrap();
         runtime.step_in_flight = false;
-        advance_completed_step(runtime, None, PlannerOpKind::MoveCargo, Tick(2));
-        assert_eq!(runtime.current_goal, Some(expected_goal));
+        advance_completed_step(runtime, &mut active_goal_state, None, PlannerOpKind::MoveCargo, Tick(2));
+        assert_eq!(active_goal_state.map(|ag| ag.goal_key), Some(expected_goal));
 
         let ranked_after_pickup = refresh_runtime_for_read_phase(
             &harness.world,
             &harness.scheduler,
             &harness.defs,
             runtime,
+            active_goal_state.map(|ag| ag.goal_key),
             &mut blocked,
             harness.actor,
             &[],
@@ -2533,6 +2536,7 @@
             &harness.world,
             &harness.scheduler,
             runtime,
+            &mut active_goal_state,
             &mut jc2,
             harness.actor,
             &ranked_after_pickup,
@@ -2548,7 +2552,7 @@
             &harness.recipes,
         );
         let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
-        assert_eq!(runtime.current_goal, Some(expected_goal));
+        assert_eq!(active_goal_state.map(|ag| ag.goal_key), Some(expected_goal));
         assert!(matches!(
             travel.op_kind,
             PlannerOpKind::Travel | PlannerOpKind::MoveCargo
@@ -2589,6 +2593,7 @@
             &harness.scheduler,
             &harness.defs,
             runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -2642,6 +2647,7 @@
             &harness.scheduler,
             &harness.defs,
             runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -2676,6 +2682,7 @@
             &harness.scheduler,
             &harness.defs,
             &mut runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -2883,7 +2890,7 @@
 
         let _ = harness.step_once();
         assert_eq!(
-            harness.runtime().unwrap().current_goal,
+            harness.world.get_component_active_goal(harness.actor).map(|ag| ag.goal_key),
             Some(GoalKey::from(GoalKind::MoveCargo {
                 commodity: CommodityKind::Bread,
                 destination,
@@ -2900,7 +2907,7 @@
         assert_eq!(result.actions_started, 0);
         assert_eq!(harness.world.possessor_of(remote_lot), Some(harness.actor));
         assert_eq!(harness.world.effective_place(remote_lot), Some(destination));
-        assert_eq!(harness.runtime().unwrap().current_goal, None);
+        assert_eq!(harness.world.get_component_active_goal(harness.actor).map(|ag| ag.goal_key), None);
         assert!(harness.runtime().unwrap().current_plan.is_none());
         assert_eq!(harness.active_action_name(), None);
     }
@@ -2917,7 +2924,7 @@
         assert_eq!(result.actions_started, 1);
 
         assert_eq!(
-            harness.runtime().unwrap().current_goal,
+            harness.world.get_component_active_goal(harness.actor).map(|ag| ag.goal_key),
             Some(GoalKey::from(GoalKind::MoveCargo {
                 commodity: CommodityKind::Bread,
                 destination,
@@ -3388,7 +3395,6 @@
         harness.driver.runtime_by_agent.insert(
             harness.actor,
             crate::AgentDecisionRuntime {
-                current_goal: Some(goal),
                 current_plan: Some(PlannedPlan::new(
                     goal,
                     vec![heal_step],
@@ -3496,6 +3502,7 @@
             &harness.scheduler,
             &harness.defs,
             runtime,
+            None,
             &mut blocked,
             harness.actor,
             &[],
@@ -3508,13 +3515,15 @@
             },
             false,
         );
-        let previous_goal = runtime.current_goal;
+        let mut active_goal_state: Option<worldwake_core::ActiveGoal> = None;
+        let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
         let mut jc = None;
         let (_, initial_valid, initial_continued, _, initial_selection) =
             plan_and_validate_next_step_traced(
                 &harness.world,
                 &harness.scheduler,
                 runtime,
+                &mut active_goal_state,
                 &mut jc,
                 harness.actor,
                 &initial_read.ranked,
@@ -3572,6 +3581,7 @@
             &harness.scheduler,
             &harness.defs,
             runtime,
+            active_goal_state.as_ref().map(|ag| ag.goal_key),
             &mut blocked,
             harness.actor,
             &[],
@@ -3589,13 +3599,14 @@
             vec![DirtyReason::SnapshotChanged]
         );
 
-        let previous_goal = runtime.current_goal;
+        let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
         let mut jc2 = None;
         let (continued_step, continued_valid, plan_continued, _, continuation_selection) =
             plan_and_validate_next_step_traced(
                 &harness.world,
                 &harness.scheduler,
                 runtime,
+                &mut active_goal_state,
                 &mut jc2,
                 harness.actor,
                 &continuation_read.ranked,
@@ -3669,14 +3680,13 @@
             PlanTerminalKind::GoalSatisfied,
         );
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(current_plan),
             current_step_index: 1,
             ..AgentDecisionRuntime::default()
         };
 
         let replacement =
-            summarize_plan_replacement(&runtime, goal, &selected_plan, &ActionDefRegistry::new())
+            summarize_plan_replacement(&runtime, Some(goal), goal, &selected_plan, &ActionDefRegistry::new())
                 .expect("changed same-goal branch should produce replacement provenance");
 
         assert_eq!(

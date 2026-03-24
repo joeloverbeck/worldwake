@@ -1,4 +1,6 @@
-use worldwake_core::{BlockedIntentMemory, CauseRef, EntityId, JourneyCommitment, Permille, Tick};
+use worldwake_core::{
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, JourneyCommitment, Permille, Tick,
+};
 use worldwake_sim::{
     ActionHandlerRegistry, PerAgentBeliefView, RuntimeBeliefView, SchedulerActionRuntime,
     TickInputError,
@@ -33,6 +35,7 @@ pub(super) fn active_action_for_agent(
 pub(super) fn handle_active_action_phase(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
@@ -72,8 +75,10 @@ pub(super) fn handle_active_action_phase(
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
+    let active_goal_key = active_goal.map(|ag| ag.goal_key);
     let decision = evaluate_interrupt(
         runtime,
+        active_goal_key,
         jc.as_ref(),
         interruptibility,
         ranked_candidates,
@@ -105,6 +110,7 @@ pub(super) fn handle_active_action_phase(
         reconcile_in_flight_state(
             ctx,
             runtime,
+            active_goal,
             jc,
             blocked_memory,
             None,
@@ -154,6 +160,7 @@ pub(super) fn goal_switch_margin_details(
 /// journey commitment (or `None` if it was cleared).
 pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<ActiveGoal>,
     jc: Option<&JourneyCommitment>,
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
@@ -186,7 +193,10 @@ pub(super) fn advance_completed_step(
 
     match plan.terminal_kind {
         PlanTerminalKind::ProgressBarrier => {
-            runtime.current_goal = Some(plan.goal);
+            *active_goal = Some(ActiveGoal {
+                goal_key: plan.goal,
+                adopted_at: tick,
+            });
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.dirty = true;
@@ -204,7 +214,7 @@ pub(super) fn advance_completed_step(
                 }
                 updated_jc = None;
             }
-            runtime.current_goal = None;
+            *active_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.dirty = true;
@@ -215,9 +225,11 @@ pub(super) fn advance_completed_step(
     updated_jc
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_current_step_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
@@ -229,7 +241,7 @@ pub(super) fn handle_current_step_failure(
     let budget = ctx.budget;
     let tick = ctx.tick;
     let view = PerAgentBeliefView::from_world(agent, world);
-    let goal_key = runtime.current_goal.unwrap_or_else(|| {
+    let goal_key = active_goal.unwrap_or_else(|| {
         runtime
             .current_plan
             .as_ref()

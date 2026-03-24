@@ -11,7 +11,9 @@ use crate::{
     PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, BlockedIntentMemory, JourneyCommitment, Permille, Tick};
+use worldwake_core::{
+    ActionDefId, ActiveGoal, BlockedIntentMemory, JourneyCommitment, Permille, Tick,
+};
 use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, Scheduler};
 
 use super::{current_step, runtime_belief_view, update_journey_for_adopted_plan};
@@ -84,11 +86,12 @@ pub(super) fn summarize_search_provenance(
 
 pub(super) fn summarize_plan_replacement(
     runtime: &AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
     selected_goal: worldwake_core::GoalKey,
     selected_plan: &PlannedPlan,
     action_defs: &worldwake_sim::ActionDefRegistry,
 ) -> Option<SelectedPlanReplacementTrace> {
-    let previous_goal = runtime.current_goal?;
+    let previous_goal = active_goal?;
     let previous_next_step = current_step(runtime).map(|step| summarize_step(step, action_defs));
     let new_next_step = selected_plan
         .steps
@@ -231,6 +234,7 @@ pub(super) fn plan_and_validate_next_step(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<JourneyCommitment>,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
@@ -247,11 +251,12 @@ pub(super) fn plan_and_validate_next_step(
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     if runtime.dirty {
         if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
-                .is_some_and(|top| Some(top.grounded.key) == runtime.current_goal);
+                .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
             if current_goal_still_top {
                 if let Some(step) = current_step(runtime).cloned() {
                     let valid = revalidate_next_step(
@@ -290,20 +295,24 @@ pub(super) fn plan_and_validate_next_step(
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
             &plans_options,
+            active_goal_key,
             runtime,
             jc.as_ref(),
             default_switch_margin,
             journey_switch_margin,
         ) {
             runtime.materialization_bindings.clear();
-            runtime.current_goal = Some(selected_plan.goal);
+            *active_goal = Some(ActiveGoal {
+                goal_key: selected_plan.goal,
+                adopted_at: tick,
+            });
             *jc = update_journey_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
             runtime.last_priority_class = ranked_candidates
                 .iter()
-                .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
+                .find(|candidate| Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key))
                 .map(|candidate| candidate.priority_class);
         } else {
             if jc.is_some() {
@@ -311,7 +320,7 @@ pub(super) fn plan_and_validate_next_step(
             }
             *jc = None;
             runtime.materialization_bindings.clear();
-            runtime.current_goal = None;
+            *active_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -352,6 +361,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<JourneyCommitment>,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
@@ -379,6 +389,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             world,
             scheduler,
             runtime,
+            active_goal,
             jc,
             agent,
             ranked_candidates,
@@ -398,6 +409,7 @@ pub(super) fn plan_and_validate_next_step_traced(
 
     // Traced path: inline the logic to capture intermediate results.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     let mut plan_search_trace = PlanSearchTrace {
         attempts: Vec::new(),
     };
@@ -415,7 +427,7 @@ pub(super) fn plan_and_validate_next_step_traced(
         if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
-                .is_some_and(|top| Some(top.grounded.key) == runtime.current_goal);
+                .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
             if current_goal_still_top {
                 if let Some(step) = current_step(runtime).cloned() {
                     let valid = revalidate_next_step(
@@ -429,7 +441,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                     if valid {
                         runtime.dirty = false;
                         plan_continued = true;
-                        selection_trace.selected = runtime.current_goal;
+                        selection_trace.selected = active_goal_key;
                         selection_trace.selected_plan = runtime.current_plan.as_ref().map(|plan| {
                             summarize_selected_plan(
                                 plan,
@@ -479,11 +491,12 @@ pub(super) fn plan_and_validate_next_step_traced(
         }
 
         let plans_options = plans_as_options(&plans);
-        let current_goal_before_selection = runtime.current_goal;
+        let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.goal_key);
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
             &plans_options,
+            current_goal_before_selection,
             runtime,
             jc.as_ref(),
             default_switch_margin,
@@ -508,7 +521,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             ));
             selection_trace.selected_plan_source = Some(selected_plan_source);
             selection_trace.plan_replacement =
-                summarize_plan_replacement(runtime, selected_goal, &selected_plan, action_defs);
+                summarize_plan_replacement(runtime, current_goal_before_selection, selected_goal, &selected_plan, action_defs);
 
             if let Some(prev) = previous_goal {
                 if prev != selected_goal {
@@ -531,14 +544,17 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
 
             runtime.materialization_bindings.clear();
-            runtime.current_goal = Some(selected_plan.goal);
+            *active_goal = Some(ActiveGoal {
+                goal_key: selected_plan.goal,
+                adopted_at: tick,
+            });
             *jc = update_journey_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
             runtime.last_priority_class = ranked_candidates
                 .iter()
-                .find(|candidate| Some(candidate.grounded.key) == runtime.current_goal)
+                .find(|candidate| Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key))
                 .map(|candidate| candidate.priority_class);
         } else {
             if jc.is_some() {
@@ -546,7 +562,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
             *jc = None;
             runtime.materialization_bindings.clear();
-            runtime.current_goal = None;
+            *active_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;

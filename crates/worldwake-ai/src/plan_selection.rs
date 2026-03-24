@@ -10,6 +10,7 @@ use worldwake_core::{JourneyCommitment, Permille};
 pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
+    active_goal: Option<GoalKey>,
     current: &AgentDecisionRuntime,
     jc: Option<&JourneyCommitment>,
     default_switch_margin: Permille,
@@ -35,7 +36,7 @@ pub fn select_best_plan(
         .collect::<Vec<_>>();
     available.sort_by(compare_ranked_plans);
     let best_plan = available.first()?.2.clone();
-    let has_current_goal_plan = current.current_goal.is_some_and(|goal| {
+    let has_current_goal_plan = active_goal.is_some_and(|goal| {
         plans
             .iter()
             .any(|(key, plan)| *key == goal && plan.is_some())
@@ -180,6 +181,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            None,
             &AgentDecisionRuntime::default(),
             None,
             default_switch_margin(),
@@ -225,7 +227,6 @@ mod tests {
             (challenger_goal, Some(challenger_plan)),
         ];
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(current_goal),
             current_plan: Some(current_plan.clone()),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
@@ -235,6 +236,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(current_goal),
             &runtime,
             None,
             default_switch_margin(),
@@ -271,6 +273,7 @@ mod tests {
         let first = select_best_plan(
             &candidates,
             &plans,
+            None,
             &AgentDecisionRuntime::default(),
             None,
             default_switch_margin(),
@@ -280,6 +283,7 @@ mod tests {
         let second = select_best_plan(
             &candidates,
             &plans,
+            None,
             &AgentDecisionRuntime::default(),
             None,
             default_switch_margin(),
@@ -332,7 +336,6 @@ mod tests {
         )];
         let plans = vec![(goal, Some(refreshed_plan.clone()))];
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(stale_plan),
             current_step_index: 1,
             dirty: true,
@@ -343,6 +346,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(goal),
             &runtime,
             None,
             default_switch_margin(),
@@ -372,7 +376,6 @@ mod tests {
         let actionable = plan(eat_goal, 1, 3);
         let plans = vec![(eat_goal, Some(actionable.clone()))];
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(eat_goal),
             current_plan: Some(empty_plan(eat_goal)),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
@@ -382,6 +385,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(eat_goal),
             &runtime,
             None,
             default_switch_margin(),
@@ -413,7 +417,6 @@ mod tests {
         let challenger = plan(eat_goal, 2, 1);
         let plans = vec![(eat_goal, Some(challenger.clone()))];
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(eat_goal),
             current_plan: Some(current.clone()),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
@@ -423,6 +426,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(eat_goal),
             &runtime,
             None,
             default_switch_margin(),
@@ -450,7 +454,6 @@ mod tests {
         )];
         let plans = vec![(eat_goal, Some(empty_plan(eat_goal)))];
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(eat_goal),
             current_plan: Some(empty_plan(eat_goal)),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
@@ -460,6 +463,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(eat_goal),
             &runtime,
             None,
             default_switch_margin(),
@@ -517,7 +521,6 @@ mod tests {
             consecutive_blocked_leg_ticks: 0,
         });
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(current_goal),
             current_plan: Some(current_plan),
             dirty: false,
             last_priority_class: Some(GoalPriorityClass::High),
@@ -527,6 +530,7 @@ mod tests {
         let conservative = select_best_plan(
             &candidates,
             &plans,
+            Some(current_goal),
             &runtime,
             jc.as_ref(),
             default_switch_margin(),
@@ -536,6 +540,7 @@ mod tests {
         let permissive = select_best_plan(
             &candidates,
             &plans,
+            Some(current_goal),
             &runtime,
             jc.as_ref(),
             default_switch_margin(),
@@ -580,7 +585,6 @@ mod tests {
             (fallback_goal, Some(fallback_plan.clone())),
         ];
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(current_goal),
             current_plan: Some(current_plan),
             dirty: true,
             last_priority_class: Some(GoalPriorityClass::High),
@@ -590,6 +594,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(current_goal),
             &runtime,
             None,
             default_switch_margin(),
@@ -686,7 +691,6 @@ mod tests {
             consecutive_blocked_leg_ticks: 0,
         });
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(committed_goal),
             current_plan: Some(current_plan),
             ..AgentDecisionRuntime::default()
         };
@@ -694,6 +698,7 @@ mod tests {
         let selected = select_best_plan(
             &candidates,
             &plans,
+            Some(committed_goal),
             &runtime,
             jc.as_ref(),
             default_switch_margin(),

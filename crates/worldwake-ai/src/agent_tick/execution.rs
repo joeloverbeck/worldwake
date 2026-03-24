@@ -5,7 +5,8 @@ use super::{
 };
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    BlockedIntentMemory, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData,
+    WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -13,6 +14,7 @@ use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickIn
 pub(super) fn enqueue_valid_step_or_handle_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<worldwake_core::JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
@@ -27,6 +29,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             &view,
             jc.as_ref(),
             runtime,
+            active_goal,
             blocked_memory,
             agent,
             step,
@@ -37,7 +40,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         if handled {
             return Ok(());
         }
-        return handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, step, None);
+        return handle_current_step_failure(ctx, runtime, active_goal, jc, blocked_memory, agent, step, None);
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
@@ -46,6 +49,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             &view,
             jc.as_ref(),
             runtime,
+            active_goal,
             blocked_memory,
             agent,
             step,
@@ -66,7 +70,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 runtime,
             );
         }
-        handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, step, None)?;
+        handle_current_step_failure(ctx, runtime, active_goal, jc, blocked_memory, agent, step, None)?;
         return finalize_agent_tick(
             ctx.world,
             ctx.event_log,
@@ -254,6 +258,41 @@ pub(super) fn persist_journey_commitment(
             .map_err(|error| TickInputError::new(error.to_string()))?;
     } else {
         txn.clear_component_journey_commitment(agent)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+    }
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+/// Persist the active goal component to the world, producing a
+/// `ComponentDelta` in the event log. Follows the same diff-and-commit
+/// pattern as `persist_journey_commitment`.
+pub(super) fn persist_active_goal(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: Option<&ActiveGoal>,
+    after: Option<&ActiveGoal>,
+) -> Result<(), TickInputError> {
+    if before == after {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    if let Some(goal) = after {
+        txn.set_component_active_goal(agent, *goal)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+    } else {
+        txn.clear_component_active_goal(agent)
             .map_err(|error| TickInputError::new(error.to_string()))?;
     }
     let _ = txn.commit(event_log);

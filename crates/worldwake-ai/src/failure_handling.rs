@@ -1095,7 +1095,6 @@ mod tests {
 
     fn runtime_with_plan(goal: GoalKey, step: PlannedStep) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
                 goal,
                 vec![step],
@@ -1155,7 +1154,6 @@ mod tests {
 
         assert_eq!(runtime.current_plan, None);
         assert!(runtime.dirty);
-        assert_eq!(runtime.current_goal, Some(goal));
         assert!(jc.is_none());
         assert!(blocked.is_blocked(&goal, Tick(20)));
         assert_eq!(blocked.intents.len(), 1);

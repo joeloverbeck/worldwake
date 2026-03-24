@@ -29,6 +29,7 @@ pub enum InterruptTrigger {
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_interrupt(
     runtime: &AgentDecisionRuntime,
+    active_goal: Option<GoalKey>,
     jc: Option<&JourneyCommitment>,
     current_action_interruptibility: Interruptibility,
     ranked_candidates: &[RankedGoal],
@@ -48,7 +49,7 @@ pub fn evaluate_interrupt(
         };
     }
 
-    let Some(challenger) = best_challenger(runtime.current_goal, ranked_candidates) else {
+    let Some(challenger) = best_challenger(active_goal, ranked_candidates) else {
         return InterruptDecision::NoInterrupt;
     };
 
@@ -56,6 +57,7 @@ pub fn evaluate_interrupt(
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
         Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
         Interruptibility::FreelyInterruptible => interrupt_freely(
+            active_goal,
             runtime,
             jc,
             challenger,
@@ -83,6 +85,7 @@ fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
 
 #[allow(clippy::too_many_arguments)]
 fn interrupt_freely(
+    active_goal: Option<GoalKey>,
     runtime: &AgentDecisionRuntime,
     jc: Option<&JourneyCommitment>,
     challenger: &RankedGoal,
@@ -103,12 +106,14 @@ fn interrupt_freely(
         };
     }
 
-    let Some((current_class, current_motive)) = current_priority(runtime, ranked_candidates) else {
+    let Some((current_class, current_motive)) =
+        current_priority(active_goal, runtime, ranked_candidates)
+    else {
         return InterruptDecision::NoInterrupt;
     };
 
     if let Some((challenger, switch_kind)) = relation_aware_interrupt_candidate(
-        runtime,
+        active_goal,
         jc,
         ranked_candidates,
         planned_candidates,
@@ -164,7 +169,7 @@ fn interrupt_freely(
 
 #[allow(clippy::too_many_arguments)]
 fn relation_aware_interrupt_candidate<'a>(
-    runtime: &AgentDecisionRuntime,
+    active_goal: Option<GoalKey>,
     jc: Option<&JourneyCommitment>,
     ranked_candidates: &'a [RankedGoal],
     planned_candidates: Option<&'a [(GoalKey, Option<PlannedPlan>)]>,
@@ -180,7 +185,7 @@ fn relation_aware_interrupt_candidate<'a>(
         .collect::<BTreeMap<_, _>>();
 
     for challenger in ranked_candidates {
-        if Some(challenger.grounded.key) == runtime.current_goal {
+        if Some(challenger.grounded.key) == active_goal {
             continue;
         }
 
@@ -227,10 +232,11 @@ fn best_challenger(
 }
 
 fn current_priority(
+    active_goal: Option<GoalKey>,
     runtime: &AgentDecisionRuntime,
     ranked_candidates: &[RankedGoal],
 ) -> Option<(GoalPriorityClass, Option<u32>)> {
-    if let Some(current_goal) = runtime.current_goal {
+    if let Some(current_goal) = active_goal {
         if let Some(current) = ranked_candidates
             .iter()
             .find(|candidate| candidate.grounded.key == current_goal)
@@ -274,11 +280,10 @@ mod tests {
     }
 
     fn runtime(
-        current_goal: GoalKind,
+        _current_goal: GoalKind,
         last_priority_class: GoalPriorityClass,
     ) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
-            current_goal: Some(GoalKey::from(current_goal)),
             current_plan: None,
             dirty: false,
             last_priority_class: Some(last_priority_class),
@@ -313,6 +318,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::NonInterruptible,
             &challengers,
@@ -338,6 +344,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
@@ -368,6 +375,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
@@ -388,6 +396,7 @@ mod tests {
         };
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
             &[ranked(current_goal, GoalPriorityClass::Medium, 100)],
@@ -424,6 +433,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers,
@@ -456,6 +466,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
             &challengers,
@@ -489,8 +500,8 @@ mod tests {
             last_progress_tick: None,
             consecutive_blocked_leg_ticks: 0,
         });
+        let active_goal = Some(GoalKey::from(current_goal));
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(GoalKey::from(current_goal)),
             current_plan: Some(PlannedPlan::new(
                 GoalKey::from(current_goal),
                 vec![crate::PlannedStep {
@@ -534,6 +545,7 @@ mod tests {
         assert_eq!(
             evaluate_interrupt(
                 &runtime,
+                active_goal,
                 jc.as_ref(),
                 Interruptibility::FreelyInterruptible,
                 &below_margin,
@@ -548,6 +560,7 @@ mod tests {
         assert_eq!(
             evaluate_interrupt(
                 &runtime,
+                active_goal,
                 jc.as_ref(),
                 Interruptibility::FreelyInterruptible,
                 &at_margin,
@@ -606,6 +619,9 @@ mod tests {
                     },
                     GoalPriorityClass::Background,
                 ),
+                Some(GoalKey::from(GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                })),
                 None,
                 Interruptibility::FreelyInterruptible,
                 &no_pressure,
@@ -627,6 +643,9 @@ mod tests {
                     },
                     GoalPriorityClass::Medium,
                 ),
+                Some(GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                })),
                 None,
                 Interruptibility::FreelyInterruptible,
                 &blocked_by_hunger,
@@ -656,6 +675,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Low),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
             &challengers,
@@ -690,7 +710,6 @@ mod tests {
             consecutive_blocked_leg_ticks: 0,
         });
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(current_goal_key),
             current_plan: Some(PlannedPlan::new(
                 current_goal_key,
                 vec![crate::PlannedStep {
@@ -738,6 +757,7 @@ mod tests {
 
         let conservative = evaluate_interrupt(
             &runtime,
+            Some(current_goal_key),
             jc.as_ref(),
             Interruptibility::FreelyInterruptible,
             &challengers,
@@ -749,6 +769,7 @@ mod tests {
         );
         let permissive = evaluate_interrupt(
             &runtime,
+            Some(current_goal_key),
             jc.as_ref(),
             Interruptibility::FreelyInterruptible,
             &challengers,
@@ -787,6 +808,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Background),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
             &challengers,
@@ -819,6 +841,7 @@ mod tests {
         ];
         let decision_free = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
             &challengers_higher,
@@ -842,6 +865,7 @@ mod tests {
         ];
         let decision_penalty = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
             &challengers_critical,
@@ -879,7 +903,6 @@ mod tests {
             consecutive_blocked_leg_ticks: 0,
         });
         let runtime = AgentDecisionRuntime {
-            current_goal: Some(committed_goal),
             current_plan: Some(PlannedPlan::new(
                 committed_goal,
                 vec![crate::PlannedStep {
@@ -958,6 +981,7 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime,
+            Some(committed_goal),
             jc.as_ref(),
             Interruptibility::FreelyInterruptible,
             &challengers,

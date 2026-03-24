@@ -1,6 +1,6 @@
 # S21-003: Migrate active goal from runtime to ActiveGoal component
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI crate runtime reads/writes of current_goal migrated to World/WorldTxn
@@ -125,3 +125,11 @@ Tests that set `runtime.current_goal = Some(goal_key)` must instead set the `Act
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Removed `current_goal: Option<GoalKey>` from `AgentDecisionRuntime`. All reads/writes now go through the `ActiveGoal` component on the World ECS, following the S21-002 persist-at-end pattern: read from world at start of `process_agent`, track as mutable local, persist via `persist_active_goal` at end. `adopted_at: Tick` is set at every goal adoption site.
+- **Files modified**: `decision_runtime.rs`, `agent_tick/mod.rs`, `agent_tick/planning.rs`, `agent_tick/active_action.rs`, `agent_tick/execution.rs`, `agent_tick/observation.rs`, `agent_tick/journey.rs`, `interrupts.rs`, `plan_selection.rs`, `agent_tick/tests.rs`, `failure_handling.rs` (tests only).
+- **Deviations from ticket**: (1) `failure_handling.rs` production code does not read/write `current_goal` — only test fixtures were updated, not production code. Ticket section 4 was corrected before implementation. (2) `agent_tick/execution.rs` was added to the files list for the new `persist_active_goal` function. (3) Line number for field was 68, not 78 as originally stated.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean, `grep runtime.current_goal` returns zero hits, all golden tests pass with unchanged hashes.
