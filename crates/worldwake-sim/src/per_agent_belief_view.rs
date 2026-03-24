@@ -11,7 +11,7 @@ use worldwake_core::{
     HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
     MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
     RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind,
+    ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind,
     WorkstationTag, World, Wound,
 };
 
@@ -529,14 +529,18 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile> {
+    fn intention_disposition_profile(&self, agent: EntityId) -> Option<IntentionDispositionProfile> {
         (agent == self.agent)
             .then(|| {
                 self.world
-                    .get_component_travel_disposition_profile(agent)
+                    .get_component_intention_disposition_profile(agent)
                     .cloned()
             })
             .flatten()
+    }
+
+    fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
+        self.world.topology().shortest_path(from, to).is_some()
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {

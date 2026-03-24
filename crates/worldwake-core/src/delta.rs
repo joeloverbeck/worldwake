@@ -6,11 +6,11 @@ use crate::{
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
     FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, JourneyCommitment, KnownRecipes, MerchandiseProfile,
+    IntentionFrame, ItemLot, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile,
     Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity, RecordData,
     ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, TradeDispositionProfile,
-    TravelDispositionProfile, UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -235,7 +235,7 @@ mod tests {
             sample_blocked_intent_memory, sample_demand_memory,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_travel_disposition_profile, sample_utility_profile,
+            sample_utility_profile,
         },
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart,
@@ -244,7 +244,7 @@ mod tests {
         EventId, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FactionData,
         FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
         IntentionDispositionProfile, IntentionDomain, IntentionDomainTag, IntentionFrame,
-        InstitutionalRecordEntry, ItemLot, JourneyCommitment, JourneyCommitmentState, KnownRecipes,
+        InstitutionalRecordEntry, ItemLot, KnownRecipes,
         LoadUnits, LotOperation, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
         OfficeForceState, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
@@ -426,7 +426,6 @@ mod tests {
                 crate::RecipeId(7),
             ])),
             ComponentValue::DemandMemory(sample_demand_memory()),
-            ComponentValue::TravelDispositionProfile(sample_travel_disposition_profile()),
             ComponentValue::TradeDispositionProfile(sample_trade_disposition_profile()),
             ComponentValue::MerchandiseProfile(sample_merchandise_profile()),
             ComponentValue::SubstitutePreferences(sample_substitute_preferences()),
@@ -461,14 +460,6 @@ mod tests {
             ComponentValue::ActiveGoal(ActiveGoal {
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 adopted_at: Tick(10),
-            }),
-            ComponentValue::JourneyCommitment(JourneyCommitment {
-                committed_goal: GoalKey::from(GoalKind::Sleep),
-                destination: entity(40),
-                state: JourneyCommitmentState::Active,
-                established_at: Tick(8),
-                last_progress_tick: Some(Tick(12)),
-                consecutive_blocked_leg_ticks: 0,
             }),
             ComponentValue::FacilityQueueIntents(FacilityQueueIntents {
                 intents: BTreeMap::from([(
@@ -626,7 +617,6 @@ mod tests {
                 ComponentKind::CarryCapacity,
                 ComponentKind::KnownRecipes,
                 ComponentKind::DemandMemory,
-                ComponentKind::TravelDispositionProfile,
                 ComponentKind::TradeDispositionProfile,
                 ComponentKind::MerchandiseProfile,
                 ComponentKind::SubstitutePreferences,
@@ -638,7 +628,6 @@ mod tests {
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
                 ComponentKind::ActiveGoal,
-                ComponentKind::JourneyCommitment,
                 ComponentKind::FacilityQueueIntents,
                 ComponentKind::IntentionFrame,
                 ComponentKind::IntentionDispositionProfile,

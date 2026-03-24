@@ -212,7 +212,7 @@ pub(super) fn reconcile_in_flight_state(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<worldwake_core::ActiveGoal>,
-    jc: &mut Option<worldwake_core::JourneyCommitment>,
+    jc: &mut Option<worldwake_core::IntentionFrame>,
     facility_intents: &mut FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,

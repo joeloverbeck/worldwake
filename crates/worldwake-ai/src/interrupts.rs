@@ -1,13 +1,13 @@
 use crate::{
-    classify_journey_plan_relation,
+    classify_frame_plan_relation,
     goal_policy::{goal_family_policy, FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{compare_goal_switch, GoalSwitchKind},
-    journey_switch_policy::compare_relation_aware_goal_switch,
-    AgentDecisionRuntime, DecisionContext, GoalKey, GoalPriorityClass, JourneyPlanRelation,
+    frame_switch_policy::compare_relation_aware_goal_switch,
+    AgentDecisionRuntime, DecisionContext, GoalKey, GoalPriorityClass, FramePlanRelation,
     PlannedPlan, RankedGoal,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{JourneyCommitment, Permille};
+use worldwake_core::{IntentionFrame, Permille};
 use worldwake_sim::Interruptibility;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -30,13 +30,13 @@ pub enum InterruptTrigger {
 pub fn evaluate_interrupt(
     runtime: &AgentDecisionRuntime,
     active_goal: Option<GoalKey>,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     current_action_interruptibility: Interruptibility,
     ranked_candidates: &[RankedGoal],
     planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
     plan_valid: bool,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
     decision_context: &DecisionContext,
 ) -> InterruptDecision {
     if current_action_interruptibility == Interruptibility::NonInterruptible {
@@ -64,7 +64,7 @@ pub fn evaluate_interrupt(
             ranked_candidates,
             planned_candidates,
             default_switch_margin,
-            journey_switch_margin,
+            frame_switch_margin,
             *decision_context,
         ),
     }
@@ -87,12 +87,12 @@ fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
 fn interrupt_freely(
     active_goal: Option<GoalKey>,
     runtime: &AgentDecisionRuntime,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     challenger: &RankedGoal,
     ranked_candidates: &[RankedGoal],
     planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
     decision_context: DecisionContext,
 ) -> InterruptDecision {
     let policy = goal_family_policy(&challenger.grounded.key.kind);
@@ -120,7 +120,7 @@ fn interrupt_freely(
         current_class,
         current_motive,
         default_switch_margin,
-        journey_switch_margin,
+        frame_switch_margin,
     ) {
         return match switch_kind {
             GoalSwitchKind::HigherPriorityGoal
@@ -170,13 +170,13 @@ fn interrupt_freely(
 #[allow(clippy::too_many_arguments)]
 fn relation_aware_interrupt_candidate<'a>(
     active_goal: Option<GoalKey>,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     ranked_candidates: &'a [RankedGoal],
     planned_candidates: Option<&'a [(GoalKey, Option<PlannedPlan>)]>,
     current_class: GoalPriorityClass,
     current_motive: Option<u32>,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
 ) -> Option<(&'a RankedGoal, GoalSwitchKind)> {
     let planned_candidates = planned_candidates?;
     let planned_by_goal = planned_candidates
@@ -192,7 +192,7 @@ fn relation_aware_interrupt_candidate<'a>(
         let Some(plan) = planned_by_goal.get(&challenger.grounded.key) else {
             continue;
         };
-        let relation = classify_journey_plan_relation(jc, plan);
+        let relation = classify_frame_plan_relation(jc, plan);
         let Some(switch_kind) = compare_relation_aware_goal_switch(
             current_class,
             current_motive,
@@ -200,12 +200,12 @@ fn relation_aware_interrupt_candidate<'a>(
             challenger.motive_score,
             relation,
             default_switch_margin,
-            journey_switch_margin,
+            frame_switch_margin,
         ) else {
             continue;
         };
 
-        if relation == JourneyPlanRelation::RefreshesCommitment
+        if relation == FramePlanRelation::RefreshesFrame
             && matches!(
                 switch_kind,
                 GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin
@@ -214,7 +214,7 @@ fn relation_aware_interrupt_candidate<'a>(
             return Some((challenger, switch_kind));
         }
 
-        if relation != JourneyPlanRelation::NoCommitment {
+        if relation != FramePlanRelation::NoFrame {
             return Some((challenger, switch_kind));
         }
     }
@@ -487,18 +487,20 @@ mod tests {
 
     #[test]
     fn freely_interruptible_requires_margin_for_same_class_switch() {
-        use worldwake_core::{JourneyCommitment, JourneyCommitmentState, Tick};
+        use worldwake_core::{IntentionFrame, IntentionDomain, FrameState, Tick};
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         };
-        let jc = Some(JourneyCommitment {
-            committed_goal: GoalKey::from(current_goal),
-            destination: entity(1),
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: GoalKey::from(current_goal),
+            domain: IntentionDomain::Travel { destination: entity(1) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let active_goal = Some(GoalKey::from(current_goal));
         let runtime = AgentDecisionRuntime {
@@ -691,7 +693,7 @@ mod tests {
 
     #[test]
     fn higher_effective_margin_raises_interrupt_switch_threshold() {
-        use worldwake_core::{JourneyCommitment, JourneyCommitmentState, Tick};
+        use worldwake_core::{IntentionFrame, IntentionDomain, FrameState, Tick};
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -701,13 +703,15 @@ mod tests {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
         });
-        let jc = Some(JourneyCommitment {
-            committed_goal: current_goal_key,
-            destination: entity(1),
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: current_goal_key,
+            domain: IntentionDomain::Travel { destination: entity(1) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
@@ -880,8 +884,8 @@ mod tests {
 
     #[allow(clippy::too_many_lines)]
     #[test]
-    fn journey_interrupt_allows_detour_without_route_margin_when_plan_is_local() {
-        use worldwake_core::{JourneyCommitment, JourneyCommitmentState, Tick};
+    fn frame_interrupt_allows_detour_without_route_margin_when_plan_is_local() {
+        use worldwake_core::{IntentionFrame, IntentionDomain, FrameState, Tick};
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -894,13 +898,15 @@ mod tests {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
         });
-        let jc = Some(JourneyCommitment {
-            committed_goal,
-            destination,
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: committed_goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(

@@ -7,11 +7,11 @@ use crate::{
     DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
     FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, JourneyCommitment, KnownRecipes, LoadUnits, LotOperation,
+    IntentionFrame, ItemLot, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
     PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
     Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick,
-    Topology, TradeDispositionProfile, TravelDispositionProfile, UniqueItem, UniqueItemKind,
+    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -588,7 +588,7 @@ mod tests {
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_travel_disposition_profile, sample_utility_profile,
+            sample_utility_profile,
         },
         AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
         CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
@@ -5119,33 +5119,6 @@ mod tests {
     }
 
     #[test]
-    fn travel_disposition_profile_component_roundtrip_on_agent() {
-        let mut world = World::new(Topology::new()).unwrap();
-        let agent = world.create_entity(EntityKind::Agent, Tick(1));
-        let profile = sample_travel_disposition_profile();
-
-        world
-            .insert_component_travel_disposition_profile(agent, profile.clone())
-            .unwrap();
-        assert_eq!(
-            world.get_component_travel_disposition_profile(agent),
-            Some(&profile)
-        );
-        assert!(world.has_component_travel_disposition_profile(agent));
-        assert_eq!(
-            world.query_travel_disposition_profile().collect::<Vec<_>>(),
-            vec![(agent, &profile)]
-        );
-        assert_eq!(world.count_with_travel_disposition_profile(), 1);
-
-        let removed = world
-            .remove_component_travel_disposition_profile(agent)
-            .unwrap();
-        assert_eq!(removed, Some(profile));
-        assert_eq!(world.get_component_travel_disposition_profile(agent), None);
-    }
-
-    #[test]
     fn workstation_marker_component_roundtrip_on_facility() {
         let mut world = World::new(Topology::new()).unwrap();
         let facility = world.create_entity(EntityKind::Facility, Tick(1));
@@ -5227,18 +5200,6 @@ mod tests {
                     demand_memory_retention_ticks: 60,
                 },
             )
-            .unwrap_err();
-
-        assert!(matches!(err, WorldError::InvalidOperation(_)));
-    }
-
-    #[test]
-    fn insert_travel_disposition_profile_on_non_agent_errors() {
-        let mut world = World::new(Topology::new()).unwrap();
-        let id = world.create_entity(EntityKind::Facility, Tick(1));
-
-        let err = world
-            .insert_component_travel_disposition_profile(id, sample_travel_disposition_profile())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

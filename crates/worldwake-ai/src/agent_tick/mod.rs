@@ -1,11 +1,11 @@
 mod active_action;
 mod candidates;
 mod execution;
-mod journey;
+mod frame;
 mod observation;
 mod planning;
-pub use journey::{JourneyDebugSnapshot, JourneySwitchMarginSource};
-use journey::{handle_recoverable_travel_step_blockage, update_journey_for_adopted_plan};
+pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
+use frame::{handle_recoverable_travel_step_blockage, update_frame_for_adopted_plan};
 use active_action::{
     active_action_for_agent, advance_completed_step, effective_goal_switch_margin,
     goal_switch_margin_details, handle_active_action_phase, handle_current_step_failure,
@@ -17,7 +17,7 @@ use observation::{
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_facility_queue_intents, persist_journey_commitment,
+    persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame,
     plan_finished,
 };
 use candidates::abandon_expired_facility_queues;
@@ -32,9 +32,10 @@ use crate::decision_trace::{
     PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
 };
 use crate::{
-    build_semantics_table, journey_runtime_snapshot, AgentDecisionRuntime, JourneyClearReason,
+    build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime,
     PlannerOpSemantics, PlanningBudget,
 };
+use worldwake_core::FrameClearReason;
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, Tick,
@@ -101,18 +102,18 @@ impl AgentTickDriver {
     }
 
     #[must_use]
-    pub fn journey_snapshot(
+    pub fn frame_snapshot(
         &self,
         world: &worldwake_core::World,
         agent: EntityId,
-    ) -> Option<JourneyDebugSnapshot> {
+    ) -> Option<FrameDebugSnapshot> {
         let runtime = self.runtime_by_agent.get(&agent)?;
-        let jc = world.get_component_journey_commitment(agent);
+        let frame = world.get_component_intention_frame(agent);
         let view = PerAgentBeliefView::from_world(agent, world);
         let (effective_switch_margin, switch_margin_source) =
-            goal_switch_margin_details(&view, agent, jc, &self.budget);
-        Some(JourneyDebugSnapshot {
-            runtime: journey_runtime_snapshot(jc, runtime),
+            goal_switch_margin_details(&view, agent, frame, &self.budget);
+        Some(FrameDebugSnapshot {
+            runtime: frame_runtime_snapshot(frame, runtime),
             effective_switch_margin,
             switch_margin_source,
         })
@@ -222,9 +223,9 @@ fn process_agent(
         .get_component_utility_profile(agent)
         .cloned()
         .unwrap_or_default();
-    // Read journey commitment from authoritative component.
-    let original_jc = ctx.world.get_component_journey_commitment(agent).copied();
-    let mut current_jc = original_jc;
+    // Read intention frame from authoritative component.
+    let original_frame = ctx.world.get_component_intention_frame(agent).cloned();
+    let mut current_frame = original_frame.clone();
     // Read active goal from authoritative component.
     let original_active_goal = ctx.world.get_component_active_goal(agent).copied();
     let mut current_active_goal = original_active_goal;
@@ -243,9 +244,9 @@ fn process_agent(
     {
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
         if view.is_dead(agent) || !view.is_alive(agent) {
-            if current_jc.is_some() {
-                runtime.last_journey_clear_reason = Some(JourneyClearReason::Death);
-                current_jc = None;
+            if current_frame.is_some() {
+                runtime.last_frame_clear_reason = Some(FrameClearReason::Death);
+                current_frame = None;
             }
             current_active_goal = None;
             current_facility_intents = FacilityQueueIntents::default();
@@ -255,13 +256,13 @@ fn process_agent(
             runtime.dirty = false;
             runtime.materialization_bindings.clear();
             update_runtime_observation_snapshot(&view, agent, runtime);
-            persist_journey_commitment(
+            persist_intention_frame(
                 ctx.world,
                 ctx.event_log,
                 agent,
                 tick,
-                original_jc.as_ref(),
-                current_jc.as_ref(),
+                original_frame.as_ref(),
+                current_frame.as_ref(),
             )?;
             persist_active_goal(
                 ctx.world,
@@ -291,7 +292,7 @@ fn process_agent(
         ctx,
         runtime,
         &mut current_active_goal,
-        &mut current_jc,
+        &mut current_frame,
         &mut current_facility_intents,
         &mut blocked_memory,
         active_action.as_ref(),
@@ -328,8 +329,8 @@ fn process_agent(
     );
     let ranked_candidates = read_result.ranked;
     let active_action = active_action_for_agent(ctx, agent);
-    let journey_switch_margin = {
-        let jc = ctx.world.get_component_journey_commitment(agent);
+    let frame_switch_margin = {
+        let jc = ctx.world.get_component_intention_frame(agent);
         let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
         effective_goal_switch_margin(&view, agent, jc, budget)
     };
@@ -341,14 +342,14 @@ fn process_agent(
             ctx,
             runtime,
             &mut current_active_goal,
-            &mut current_jc,
+            &mut current_frame,
             &mut current_facility_intents,
             &mut blocked_memory,
             agent,
             &ranked_candidates,
             &active_action,
             default_switch_margin,
-            journey_switch_margin,
+            frame_switch_margin,
             tick,
             action_defs,
             action_handlers,
@@ -390,12 +391,12 @@ fn process_agent(
                 ctx.scheduler,
                 runtime,
                 &mut current_active_goal,
-                &mut current_jc,
+                &mut current_frame,
                 agent,
                 &ranked_candidates,
                 &blocked_memory,
                 default_switch_margin,
-                journey_switch_margin,
+                frame_switch_margin,
                 tick,
                 budget,
                 semantics_table,
@@ -432,7 +433,7 @@ fn process_agent(
                 ctx,
                 runtime,
                 active_goal_key,
-                &mut current_jc,
+                &mut current_frame,
                 &mut blocked_memory,
                 agent,
                 tick,
@@ -509,13 +510,13 @@ fn process_agent(
     };
 
     // ── Finalize (runs for both paths) ──
-    persist_journey_commitment(
+    persist_intention_frame(
         ctx.world,
         ctx.event_log,
         agent,
         tick,
-        original_jc.as_ref(),
-        current_jc.as_ref(),
+        original_frame.as_ref(),
+        current_frame.as_ref(),
     )?;
     persist_active_goal(
         ctx.world,

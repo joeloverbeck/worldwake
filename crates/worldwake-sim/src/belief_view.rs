@@ -8,8 +8,8 @@ use worldwake_core::{
     EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
     LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity,
     RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, TravelDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    IntentionDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -248,7 +248,8 @@ pub trait RuntimeBeliefView {
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
-    fn travel_disposition_profile(&self, agent: EntityId) -> Option<TravelDispositionProfile>;
+    fn intention_disposition_profile(&self, agent: EntityId) -> Option<IntentionDispositionProfile>;
+    fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
         None

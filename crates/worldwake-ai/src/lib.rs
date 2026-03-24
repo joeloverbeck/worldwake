@@ -16,7 +16,7 @@ pub mod goal_policy;
 mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
-mod journey_switch_policy;
+mod frame_switch_policy;
 pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_ops;
@@ -26,13 +26,13 @@ pub mod pressure;
 pub mod ranking;
 pub mod search;
 
-pub use agent_tick::{AgentTickDriver, JourneyDebugSnapshot, JourneySwitchMarginSource};
+pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    classify_journey_plan_relation, has_active_journey_travel, has_journey_commitment,
-    journey_committed_destination, journey_runtime_snapshot, AgentDecisionRuntime,
-    JourneyClearReason, JourneyPlanRelation, JourneyRuntimeSnapshot, MaterializationBindings,
+    classify_frame_plan_relation, has_active_frame_travel, has_frame,
+    frame_travel_destination, frame_runtime_snapshot, AgentDecisionRuntime,
+    FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,

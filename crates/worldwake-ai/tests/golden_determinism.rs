@@ -6,7 +6,7 @@ use golden_harness::*;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     ActiveGoal, BeliefConfidencePolicy, CommodityKind, FacilityQueueIntents, HomeostaticNeeds,
-    JourneyCommitment, JourneyCommitmentState, MetabolismProfile, PerceptionProfile, PrototypePlace,
+    IntentionFrame, FrameState, MetabolismProfile, PerceptionProfile, PrototypePlace,
     Quantity, ResourceSource, Seed, StateHash, UtilityProfile, WorkstationTag,
 };
 
@@ -537,7 +537,7 @@ fn golden_world_runs_without_observers_replays_deterministically() {
 //
 // Setup: A hungry agent at Village Square with food available only at
 //   Orchard Farm. The agent must travel (7 ticks across 3 legs). We save
-//   mid-travel, load, and assert that ActiveGoal, JourneyCommitment, and
+//   mid-travel, load, and assert that ActiveGoal, IntentionFrame, and
 //   FacilityQueueIntents survive the round-trip.
 //
 // Proves: Promoted causal runtime state (S21-001..004) is preserved by
@@ -634,24 +634,24 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
 
     // --- Pre-save component reads ---
     let pre_active_goal: Option<ActiveGoal> =
-        h.world.get_component_active_goal(agent).copied();
-    let pre_journey: Option<JourneyCommitment> =
-        h.world.get_component_journey_commitment(agent).copied();
+        h.world.get_component_active_goal(agent).cloned();
+    let pre_frame: Option<IntentionFrame> =
+        h.world.get_component_intention_frame(agent).cloned();
     let pre_facility: Option<FacilityQueueIntents> =
         h.world.get_component_facility_queue_intents(agent).cloned();
 
-    // Assert non-trivial state: at least ActiveGoal and JourneyCommitment
+    // Assert non-trivial state: at least ActiveGoal and IntentionFrame
     // must be present (acceptance criterion 3).
     assert!(
         pre_active_goal.is_some(),
         "Agent should have an ActiveGoal at save time (tick ~{save_tick})"
     );
-    let pre_journey_val =
-        pre_journey.expect("Agent should have a JourneyCommitment at save time");
+    let pre_frame_val =
+        pre_frame.clone().expect("Agent should have a IntentionFrame at save time");
     assert_eq!(
-        pre_journey_val.state,
-        JourneyCommitmentState::Active,
-        "JourneyCommitment should be Active mid-travel"
+        pre_frame_val.state,
+        FrameState::Active,
+        "IntentionFrame should be Active mid-travel"
     );
 
     // --- Save/load round-trip ---
@@ -660,9 +660,9 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
 
     // --- Post-load component reads ---
     let post_active_goal: Option<ActiveGoal> =
-        resumed.world.get_component_active_goal(agent).copied();
-    let post_journey: Option<JourneyCommitment> =
-        resumed.world.get_component_journey_commitment(agent).copied();
+        resumed.world.get_component_active_goal(agent).cloned();
+    let post_frame: Option<IntentionFrame> =
+        resumed.world.get_component_intention_frame(agent).cloned();
     let post_facility: Option<FacilityQueueIntents> =
         resumed.world.get_component_facility_queue_intents(agent).cloned();
 
@@ -672,9 +672,9 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
         "ActiveGoal must survive save/load round-trip"
     );
     assert_eq!(
-        pre_journey, post_journey,
-        "JourneyCommitment must survive save/load round-trip (destination, state, established_at, \
-         last_progress_tick, consecutive_blocked_leg_ticks)"
+        pre_frame, post_frame,
+        "IntentionFrame must survive save/load round-trip (destination, state, established_at, \
+         last_progress_tick, stalled_ticks)"
     );
     assert_eq!(
         pre_facility, post_facility,
@@ -682,19 +682,19 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     );
 
     // Specific field assertions for clarity (redundant but documents the contract).
-    let post_journey_val = post_journey.unwrap();
+    let post_frame_val = post_frame.unwrap();
     assert_eq!(
-        pre_journey_val.destination, post_journey_val.destination,
-        "JourneyCommitment.destination must match after load"
+        pre_frame_val.domain, post_frame_val.domain,
+        "IntentionFrame.domain must match after load"
     );
     assert_eq!(
-        post_journey_val.state,
-        JourneyCommitmentState::Active,
-        "JourneyCommitment.state must be Active after load"
+        post_frame_val.state,
+        FrameState::Active,
+        "IntentionFrame.state must be Active after load"
     );
     assert_eq!(
-        pre_journey_val.established_at, post_journey_val.established_at,
-        "JourneyCommitment.established_at must match after load"
+        pre_frame_val.established_at, post_frame_val.established_at,
+        "IntentionFrame.established_at must match after load"
     );
 
     // --- Verify agent continues journey (not restarting) ---

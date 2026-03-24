@@ -492,7 +492,7 @@ mod tests {
         MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource,
         Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed,
         SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, TradeDispositionProfile,
-        TravelDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        IntentionDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
         World, WorldTxn, Wound,
     };
     use worldwake_sim::{
@@ -982,8 +982,12 @@ mod tests {
             None
         }
 
-        fn travel_disposition_profile(&self, _agent: EntityId) -> Option<TravelDispositionProfile> {
+        fn intention_disposition_profile(&self, _agent: EntityId) -> Option<IntentionDispositionProfile> {
             None
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
         }
 
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {

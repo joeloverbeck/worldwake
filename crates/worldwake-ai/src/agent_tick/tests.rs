@@ -12,12 +12,12 @@
         apply_step_materialization_bindings, committed_action_for_step,
         effective_goal_switch_margin, handle_recoverable_travel_step_blockage,
         persist_blocked_memory, plan_and_validate_next_step_traced,
-        update_journey_for_adopted_plan, AgentTickDriver,
+        update_frame_for_adopted_plan, AgentTickDriver,
     };
     use crate::PlanningBudget;
     use crate::{
         build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtyReason,
-        ExpectedMaterialization, GoalKey, GoalKind, JourneySwitchMarginSource,
+        ExpectedMaterialization, GoalKey, GoalKind, FrameSwitchMarginSource,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef, RankedGoal, RankedGoalProvenance,
         SelectedPlanReplacementKind,
@@ -32,12 +32,13 @@
         CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue,
-        GrantedFacilityUse, HomeostaticNeeds, JourneyCommitment, JourneyCommitmentState,
+        GrantedFacilityUse, HomeostaticNeeds, IntentionFrame, IntentionDomain, FrameState,
+        IntentionDispositionProfile,
         KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent,
         PerceptionProfile, QueuedFacilityIntent,
         PerceptionSource, Permille, Place, Quantity, RecipeId, RecipientKnowledgeStatus,
         ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
-        Topology, TravelDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
+        Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
         UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
         WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
@@ -1054,8 +1055,11 @@
         ) -> Option<worldwake_core::TradeDispositionProfile> {
             None
         }
-        fn travel_disposition_profile(&self, _agent: EntityId) -> Option<TravelDispositionProfile> {
+        fn intention_disposition_profile(&self, _agent: EntityId) -> Option<IntentionDispositionProfile> {
             None
+        }
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
         }
         fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
             None
@@ -1119,18 +1123,19 @@
     }
 
     #[test]
-    fn effective_goal_switch_margin_uses_route_margin_for_any_journey_commitment() {
+    fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             txn.set_ground_location(actor, place).unwrap();
-            txn.set_component_travel_disposition_profile(
+            txn.set_component_intention_disposition_profile(
                 actor,
-                TravelDispositionProfile {
-                    route_replan_margin: Permille::new(300).unwrap(),
-                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                IntentionDispositionProfile {
+                    commitment_switch_margin: Permille::new(300).unwrap(),
+                    domain_patience: BTreeMap::new(),
+                    default_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
                 },
             )
             .unwrap();
@@ -1139,13 +1144,15 @@
         };
         let budget = PlanningBudget::default();
         let view = PerAgentBeliefView::from_world(actor, &world);
-        let jc_active = Some(JourneyCommitment {
-            committed_goal: GoalKey::from(GoalKind::Sleep),
-            destination: place,
-            state: JourneyCommitmentState::Active,
+        let jc_active = Some(IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain: IntentionDomain::Travel { destination: place },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(7),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
 
         assert_eq!(
@@ -1162,7 +1169,7 @@
             effective_goal_switch_margin(&view, actor, None, &budget),
             budget.switch_margin_permille
         );
-        // Unknown agent => budget default (no TravelDispositionProfile).
+        // Unknown agent => budget default (no IntentionDispositionProfile).
         assert_eq!(
             effective_goal_switch_margin(&view, entity(999), jc_active.as_ref(), &budget),
             budget.switch_margin_permille
@@ -1599,18 +1606,19 @@
     }
 
     #[test]
-    fn journey_snapshot_reports_profile_margin_source_for_active_journey() {
+    fn frame_snapshot_reports_profile_margin_source_for_active_journey() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let actor = {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             txn.set_ground_location(actor, place).unwrap();
-            txn.set_component_travel_disposition_profile(
+            txn.set_component_intention_disposition_profile(
                 actor,
-                TravelDispositionProfile {
-                    route_replan_margin: Permille::new(300).unwrap(),
-                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                IntentionDispositionProfile {
+                    commitment_switch_margin: Permille::new(300).unwrap(),
+                    domain_patience: BTreeMap::new(),
+                    default_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
                 },
             )
             .unwrap();
@@ -1619,15 +1627,17 @@
         };
         {
             let mut txn = new_txn(&mut world, 2);
-            txn.set_component_journey_commitment(
+            txn.set_component_intention_frame(
                 actor,
-                JourneyCommitment {
-                    committed_goal: GoalKey::from(GoalKind::Sleep),
-                    destination: place,
-                    state: JourneyCommitmentState::Active,
+                IntentionFrame {
+                    goal: GoalKey::from(GoalKind::Sleep),
+                    domain: IntentionDomain::Travel { destination: place },
+                    assumptions: Vec::new(),
+                    state: FrameState::Active,
                     established_at: Tick(7),
                     last_progress_tick: None,
-                    consecutive_blocked_leg_ticks: 0,
+                    stalled_ticks: 0,
+                    patience_limit: 10,
                 },
             )
             .unwrap();
@@ -1646,11 +1656,11 @@
             },
         );
 
-        let snapshot = driver.journey_snapshot(&world, actor).unwrap();
+        let snapshot = driver.frame_snapshot(&world, actor).unwrap();
 
         assert_eq!(
             snapshot.switch_margin_source,
-            JourneySwitchMarginSource::JourneyProfile
+            FrameSwitchMarginSource::FrameProfile
         );
         assert_eq!(
             snapshot.effective_switch_margin,
@@ -1658,11 +1668,11 @@
         );
         assert_eq!(snapshot.runtime.committed_destination, Some(place));
         assert_eq!(snapshot.runtime.active_plan_destination, Some(place));
-        assert!(snapshot.runtime.has_active_journey_travel);
+        assert!(snapshot.runtime.has_active_frame_travel);
     }
 
     #[test]
-    fn journey_snapshot_reports_budget_margin_when_no_profile_override_applies() {
+    fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let actor = {
@@ -1686,11 +1696,11 @@
             },
         );
 
-        let snapshot = driver.journey_snapshot(&world, actor).unwrap();
+        let snapshot = driver.frame_snapshot(&world, actor).unwrap();
 
         assert_eq!(
             snapshot.switch_margin_source,
-            JourneySwitchMarginSource::BudgetDefault
+            FrameSwitchMarginSource::BudgetDefault
         );
         assert_eq!(
             snapshot.effective_switch_margin,
@@ -1698,11 +1708,11 @@
         );
         assert_eq!(snapshot.runtime.committed_destination, None);
         assert_eq!(snapshot.runtime.active_plan_destination, None);
-        assert!(!snapshot.runtime.has_active_journey_travel);
+        assert!(!snapshot.runtime.has_active_frame_travel);
     }
 
     #[test]
-    fn travel_led_plan_adoption_sets_journey_commitment_anchor() {
+    fn travel_led_plan_adoption_sets_intention_frame_anchor() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let destination = entity(11);
         let plan = PlannedPlan::new(
@@ -1712,44 +1722,46 @@
         );
         let mut runtime = crate::AgentDecisionRuntime::default();
 
-        let jc = update_journey_for_adopted_plan(None, &plan, Tick(9), &mut runtime);
+        let jc = update_frame_for_adopted_plan(None, &plan, Tick(9), &mut runtime);
 
-        let jc = jc.expect("should create a new journey commitment");
-        assert_eq!(jc.committed_goal, goal);
-        assert_eq!(jc.destination, destination);
+        let jc = jc.expect("should create a new intention frame");
+        assert_eq!(jc.goal, goal);
+        assert!(matches!(jc.domain, IntentionDomain::Travel { destination: d } if d == destination));
         assert_eq!(jc.established_at, Tick(9));
         assert_eq!(jc.last_progress_tick, None);
-        assert_eq!(jc.consecutive_blocked_leg_ticks, 0);
+        assert_eq!(jc.stalled_ticks, 0);
     }
 
     #[test]
-    fn non_travel_plan_adoption_suspends_journey_commitment() {
+    fn non_travel_plan_adoption_suspends_intention_frame() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let plan = PlannedPlan::new(goal, vec![barrier_step()], PlanTerminalKind::GoalSatisfied);
-        let existing_jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination: entity(12),
-            state: JourneyCommitmentState::Active,
+        let existing_jc = Some(IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination: entity(12) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(3),
             last_progress_tick: Some(Tick(7)),
-            consecutive_blocked_leg_ticks: 2,
+            stalled_ticks: 2,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime::default();
 
-        let jc = update_journey_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
+        let jc = update_frame_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
 
         let jc = jc.expect("should preserve commitment in suspended state");
-        assert_eq!(jc.committed_goal, goal);
-        assert_eq!(jc.destination, entity(12));
-        assert_eq!(jc.state, JourneyCommitmentState::Suspended);
+        assert_eq!(jc.goal, goal);
+        assert!(matches!(jc.domain, IntentionDomain::Travel { destination: d } if d == entity(12)));
+        assert!(matches!(jc.state, FrameState::Suspended { .. }));
         assert_eq!(jc.established_at, Tick(3));
         assert_eq!(jc.last_progress_tick, Some(Tick(7)));
-        assert_eq!(jc.consecutive_blocked_leg_ticks, 2);
-        assert_eq!(runtime.last_journey_clear_reason, None);
+        assert_eq!(jc.stalled_ticks, 2);
+        assert_eq!(runtime.last_frame_clear_reason, None);
     }
 
     #[test]
-    fn same_goal_same_destination_replan_preserves_journey_commitment() {
+    fn same_goal_same_destination_replan_preserves_intention_frame() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let destination = entity(11);
         let plan = PlannedPlan::new(
@@ -1757,31 +1769,33 @@
             vec![travel_step(1, destination), barrier_step()],
             PlanTerminalKind::GoalSatisfied,
         );
-        let existing_jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination,
-            state: JourneyCommitmentState::Active,
+        let existing_jc = Some(IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(4),
             last_progress_tick: Some(Tick(6)),
-            consecutive_blocked_leg_ticks: 3,
+            stalled_ticks: 3,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             ..crate::AgentDecisionRuntime::default()
         };
 
-        let jc = update_journey_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
+        let jc = update_frame_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
 
-        let jc = jc.expect("should preserve commitment");
-        assert_eq!(jc.committed_goal, goal);
-        assert_eq!(jc.destination, destination);
-        assert_eq!(jc.state, JourneyCommitmentState::Active);
+        let jc = jc.expect("should preserve frame");
+        assert_eq!(jc.goal, goal);
+        assert!(matches!(jc.domain, IntentionDomain::Travel { destination: d } if d == destination));
+        assert_eq!(jc.state, FrameState::Active);
         assert_eq!(jc.established_at, Tick(4));
         assert_eq!(jc.last_progress_tick, Some(Tick(6)));
-        assert_eq!(jc.consecutive_blocked_leg_ticks, 3);
+        assert_eq!(jc.stalled_ticks, 3);
     }
 
     #[test]
-    fn same_goal_different_destination_replan_restarts_journey_commitment() {
+    fn same_goal_different_destination_replan_restarts_intention_frame() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let original_destination = entity(11);
         let new_destination = entity(22);
@@ -1790,39 +1804,43 @@
             vec![travel_step(1, new_destination), barrier_step()],
             PlanTerminalKind::GoalSatisfied,
         );
-        let existing_jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination: original_destination,
-            state: JourneyCommitmentState::Active,
+        let existing_jc = Some(IntentionFrame {
+            goal: goal,
+            domain: IntentionDomain::Travel { destination: original_destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(4),
             last_progress_tick: Some(Tick(6)),
-            consecutive_blocked_leg_ticks: 3,
+            stalled_ticks: 3,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             ..crate::AgentDecisionRuntime::default()
         };
 
-        let jc = update_journey_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
+        let jc = update_frame_for_adopted_plan(existing_jc.as_ref(), &plan, Tick(9), &mut runtime);
 
         let jc = jc.expect("should restart commitment with new destination");
-        assert_eq!(jc.committed_goal, goal);
-        assert_eq!(jc.destination, new_destination);
-        assert_eq!(jc.state, JourneyCommitmentState::Active);
+        assert_eq!(jc.goal, goal);
+        assert!(matches!(jc.domain, IntentionDomain::Travel { destination: d } if d == new_destination));
+        assert_eq!(jc.state, FrameState::Active);
         assert_eq!(jc.established_at, Tick(9));
         assert_eq!(jc.last_progress_tick, None);
-        assert_eq!(jc.consecutive_blocked_leg_ticks, 0);
+        assert_eq!(jc.stalled_ticks, 0);
     }
 
     #[test]
     fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
         let goal = GoalKey::from(GoalKind::Sleep);
-        let jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination: entity(11),
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: goal,
+            domain: IntentionDomain::Travel { destination: entity(11) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 5,
+            stalled_ticks: 5,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
@@ -1837,9 +1855,9 @@
         let updated_jc = advance_completed_step(&mut runtime, &mut None, jc.as_ref(), PlannerOpKind::Travel, Tick(9));
 
         assert_eq!(runtime.current_step_index, 1);
-        let updated_jc = updated_jc.expect("journey commitment should persist");
+        let updated_jc = updated_jc.expect("intention frame should persist");
         assert_eq!(updated_jc.last_progress_tick, Some(Tick(9)));
-        assert_eq!(updated_jc.consecutive_blocked_leg_ticks, 0);
+        assert_eq!(updated_jc.stalled_ticks, 0);
     }
 
     #[test]
@@ -1857,11 +1875,12 @@
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             txn.set_ground_location(actor, place).unwrap();
-            txn.set_component_travel_disposition_profile(
+            txn.set_component_intention_disposition_profile(
                 actor,
-                TravelDispositionProfile {
-                    route_replan_margin: Permille::new(300).unwrap(),
-                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                IntentionDispositionProfile {
+                    commitment_switch_margin: Permille::new(300).unwrap(),
+                    domain_patience: BTreeMap::new(),
+                    default_patience_ticks: std::num::NonZeroU32::new(4).unwrap(),
                 },
             )
             .unwrap();
@@ -1869,13 +1888,15 @@
             actor
         };
         let view = PerAgentBeliefView::from_world(actor, &world);
-        let jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination: entity(11),
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: goal,
+            domain: IntentionDomain::Travel { destination: entity(11) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(2),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 1,
+            stalled_ticks: 1,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(plan.clone()),
@@ -1898,10 +1919,10 @@
         );
         assert!(handled);
         let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
-        assert_eq!(updated_jc.consecutive_blocked_leg_ticks, 2);
+        assert_eq!(updated_jc.stalled_ticks, 2);
         assert!(runtime.dirty);
-        assert_eq!(updated_jc.committed_goal, goal);
-        assert_eq!(updated_jc.destination, entity(11));
+        assert_eq!(updated_jc.goal, goal);
+        assert!(matches!(updated_jc.domain, IntentionDomain::Travel { destination: d } if d == entity(11)));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert!(blocked_memory.intents.is_empty());
@@ -1927,11 +1948,12 @@
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             txn.set_ground_location(actor, place).unwrap();
-            txn.set_component_travel_disposition_profile(
+            txn.set_component_intention_disposition_profile(
                 actor,
-                TravelDispositionProfile {
-                    route_replan_margin: Permille::new(300).unwrap(),
-                    blocked_leg_patience_ticks: std::num::NonZeroU32::new(2).unwrap(),
+                IntentionDispositionProfile {
+                    commitment_switch_margin: Permille::new(300).unwrap(),
+                    domain_patience: BTreeMap::new(),
+                    default_patience_ticks: std::num::NonZeroU32::new(2).unwrap(),
                 },
             )
             .unwrap();
@@ -1939,13 +1961,15 @@
             actor
         };
         let view = PerAgentBeliefView::from_world(actor, &world);
-        let jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination,
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(2),
             last_progress_tick: Some(Tick(4)),
-            consecutive_blocked_leg_ticks: 1,
+            stalled_ticks: 1,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(plan),
@@ -1973,8 +1997,8 @@
         assert!(runtime.dirty);
         assert!(updated_jc.is_none(), "patience exhaustion should clear commitment");
         assert_eq!(
-            runtime.last_journey_clear_reason,
-            Some(crate::JourneyClearReason::PatienceExhausted)
+            runtime.last_frame_clear_reason,
+            Some(worldwake_core::FrameClearReason::PatienceExhausted)
         );
         assert_eq!(blocked_memory.intents.len(), 1);
         let intent = blocked_memory.intents.values().next().unwrap();
@@ -2050,15 +2074,17 @@
         let mut harness = Harness::new(ControlSource::Ai);
         {
             let mut txn = new_txn(&mut harness.world, 2);
-            txn.set_component_journey_commitment(
+            txn.set_component_intention_frame(
                 harness.actor,
-                JourneyCommitment {
-                    committed_goal: GoalKey::from(GoalKind::Sleep),
-                    destination: entity(11),
-                    state: JourneyCommitmentState::Active,
+                IntentionFrame {
+                    goal: GoalKey::from(GoalKind::Sleep),
+                    domain: IntentionDomain::Travel { destination: entity(11) },
+                    assumptions: Vec::new(),
+                    state: FrameState::Active,
                     established_at: Tick(1),
                     last_progress_tick: None,
-                    consecutive_blocked_leg_ticks: 0,
+                    stalled_ticks: 0,
+                    patience_limit: 10,
                 },
             )
             .unwrap();
@@ -2078,8 +2104,8 @@
             Quantity(1)
         );
         assert_eq!(
-            harness.runtime().unwrap().last_journey_clear_reason,
-            Some(crate::JourneyClearReason::Death)
+            harness.runtime().unwrap().last_frame_clear_reason,
+            Some(worldwake_core::FrameClearReason::Death)
         );
     }
 
@@ -2090,13 +2116,15 @@
             purpose: CommodityPurpose::SelfConsume,
         });
         let destination = entity(11);
-        let jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination,
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
@@ -2116,9 +2144,9 @@
         assert_eq!(active_goal.map(|ag| ag.goal_key), Some(goal));
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
-        let updated_jc = updated_jc.expect("journey commitment should persist through progress barrier");
-        assert_eq!(updated_jc.committed_goal, goal);
-        assert_eq!(updated_jc.destination, destination);
+        let updated_jc = updated_jc.expect("intention frame should persist through progress barrier");
+        assert_eq!(updated_jc.goal, goal);
+        assert!(matches!(updated_jc.domain, IntentionDomain::Travel { destination: d } if d == destination));
         assert_eq!(updated_jc.last_progress_tick, Some(Tick(4)));
         assert!(runtime.dirty);
         assert!(runtime
@@ -2137,13 +2165,15 @@
             commodity: CommodityKind::Water,
         });
         let destination = entity(11);
-        let jc = Some(JourneyCommitment {
-            committed_goal,
-            destination,
-            state: JourneyCommitmentState::Suspended,
+        let jc = Some(IntentionFrame {
+            goal: committed_goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Suspended { reason: worldwake_core::SuspensionReason::PriorityInterrupt, suspended_at: Tick(2) },
             established_at: Tick(1),
             last_progress_tick: Some(Tick(3)),
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
@@ -2172,12 +2202,12 @@
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         let updated_jc = updated_jc.expect("commitment should be reactivated after detour");
-        assert_eq!(updated_jc.committed_goal, committed_goal);
-        assert_eq!(updated_jc.destination, destination);
-        assert_eq!(updated_jc.state, JourneyCommitmentState::Active);
+        assert_eq!(updated_jc.goal, committed_goal);
+        assert!(matches!(updated_jc.domain, IntentionDomain::Travel { destination: d } if d == destination));
+        assert_eq!(updated_jc.state, FrameState::Active);
         assert_eq!(updated_jc.established_at, Tick(1));
         assert_eq!(updated_jc.last_progress_tick, Some(Tick(3)));
-        assert_eq!(runtime.last_journey_clear_reason, None);
+        assert_eq!(runtime.last_frame_clear_reason, None);
         assert!(runtime.dirty);
     }
 
@@ -2185,13 +2215,15 @@
     fn goal_completion_records_goal_satisfied_clear_reason() {
         let goal = GoalKey::from(GoalKind::Sleep);
         let destination = entity(11);
-        let jc = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination,
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
@@ -2207,10 +2239,10 @@
         let updated_jc = advance_completed_step(&mut runtime, &mut active_goal, jc.as_ref(), PlannerOpKind::Travel, Tick(4));
 
         assert_eq!(
-            runtime.last_journey_clear_reason,
-            Some(crate::JourneyClearReason::GoalSatisfied)
+            runtime.last_frame_clear_reason,
+            Some(worldwake_core::FrameClearReason::GoalSatisfied)
         );
-        assert!(updated_jc.is_none(), "goal satisfied should clear journey commitment");
+        assert!(updated_jc.is_none(), "goal satisfied should clear intention frame");
     }
 
     #[test]

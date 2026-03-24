@@ -8,8 +8,8 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
-    HomeostaticNeeds, JourneyCommitmentState, MetabolismProfile, PerceptionProfile,
-    PrototypePlace, Quantity, ResourceSource, Seed, TravelDispositionProfile, UtilityProfile,
+    HomeostaticNeeds, FrameState, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, IntentionDispositionProfile, UtilityProfile,
     WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
@@ -897,11 +897,12 @@ fn golden_goal_switching_during_multi_leg_travel() {
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_travel_disposition_profile(
+        txn.set_component_intention_disposition_profile(
             agent,
-            TravelDispositionProfile {
-                route_replan_margin: pm(0),
-                blocked_leg_patience_ticks: nz(4),
+            IntentionDispositionProfile {
+                commitment_switch_margin: pm(0),
+                domain_patience: std::collections::BTreeMap::new(),
+                default_patience_ticks: nz(4),
             },
         )
         .unwrap();
@@ -985,23 +986,23 @@ fn golden_goal_switching_during_multi_leg_travel() {
             .find(|instance| instance.actor == agent)
             .and_then(|instance| h.defs.get(instance.def_id))
             .map(|def| def.name.as_str());
-        let journey_snapshot = h
+        let frame_snapshot = h
             .driver
-            .journey_snapshot(&h.world, agent)
+            .frame_snapshot(&h.world, agent)
             .expect("golden harness should retain runtime state for the seeded AI agent");
 
-        if journey_snapshot.runtime.committed_destination == Some(ORCHARD_FARM) {
-            if journey_snapshot.runtime.commitment_state == JourneyCommitmentState::Active {
+        if frame_snapshot.runtime.committed_destination == Some(ORCHARD_FARM) {
+            if frame_snapshot.runtime.frame_state == Some(FrameState::Active) {
                 saw_active_commitment_to_orchard = true;
                 if saw_suspended_commitment_to_orchard {
                     saw_reactivated_commitment_to_orchard = true;
                 }
             }
-            if journey_snapshot.runtime.commitment_state == JourneyCommitmentState::Suspended {
+            if matches!(frame_snapshot.runtime.frame_state, Some(FrameState::Suspended { .. })) {
                 saw_suspended_commitment_to_orchard = true;
             }
         }
-        saw_progress_tick_recorded |= journey_snapshot.runtime.last_progress_tick.is_some();
+        saw_progress_tick_recorded |= frame_snapshot.runtime.last_progress_tick.is_some();
 
         if h.world.is_in_transit(agent) || h.world.effective_place(agent) != Some(bandit_camp) {
             left_bandit_camp = true;
@@ -1314,7 +1315,7 @@ fn observe_multi_hop_travel_step(
     let origin = observation
         .visited_places
         .first()
-        .copied()
+        .cloned()
         .expect("observation should record the origin before stepping");
     if current_place != Some(origin) {
         observation
