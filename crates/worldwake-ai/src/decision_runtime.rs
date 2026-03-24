@@ -1,4 +1,4 @@
-use crate::{GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
+use crate::{GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, JourneyCommitment, Quantity, Tick,
@@ -65,7 +65,6 @@ impl MaterializationBindings {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AgentDecisionRuntime {
-    pub current_goal: Option<GoalKey>,
     pub current_plan: Option<PlannedPlan>,
     pub current_step_index: usize,
     pub last_journey_clear_reason: Option<JourneyClearReason>,
@@ -223,7 +222,6 @@ mod tests {
     fn agent_decision_runtime_defaults_to_empty_clean_state() {
         let runtime = AgentDecisionRuntime::default();
 
-        assert_eq!(runtime.current_goal, None);
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
         assert_eq!(runtime.last_journey_clear_reason, None);
@@ -477,7 +475,7 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
         let jc = JourneyCommitment {
-            committed_goal: committed_goal,
+            committed_goal,
             destination: committed_destination,
             state: JourneyCommitmentState::Active,
             established_at: Tick(3),

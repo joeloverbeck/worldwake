@@ -80,6 +80,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     view: &dyn RuntimeBeliefView,
     jc: Option<&JourneyCommitment>,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     step: &PlannedStep,
@@ -107,7 +108,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
         .is_some_and(|profile| new_blocked >= profile.blocked_leg_patience_ticks.get());
 
     let updated_commitment = if patience_exhausted {
-        let goal_key = runtime.current_goal.unwrap_or_else(|| {
+        let goal_key = active_goal.unwrap_or_else(|| {
             runtime
                 .current_plan
                 .as_ref()

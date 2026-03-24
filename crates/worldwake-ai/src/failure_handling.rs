@@ -1095,7 +1095,6 @@ mod tests {
 
     fn runtime_with_plan(goal: GoalKey, step: PlannedStep) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
-            current_goal: Some(goal),
             current_plan: Some(PlannedPlan::new(
                 goal,
                 vec![step],
@@ -1107,15 +1106,15 @@ mod tests {
         }
     }
 
-    fn jc_for_goal(goal: GoalKey) -> Option<JourneyCommitment> {
-        Some(JourneyCommitment {
+    fn jc_for_goal(goal: GoalKey) -> JourneyCommitment {
+        JourneyCommitment {
             committed_goal: goal,
             destination: entity(99),
             state: JourneyCommitmentState::Active,
             established_at: Tick(10),
             last_progress_tick: None,
             consecutive_blocked_leg_ticks: 0,
-        })
+        }
     }
 
     #[test]
@@ -1135,7 +1134,7 @@ mod tests {
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         let mut runtime = runtime_with_plan(goal, step.clone());
-        let mut jc = jc_for_goal(goal);
+        let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
 
         handle_plan_failure(
@@ -1155,7 +1154,6 @@ mod tests {
 
         assert_eq!(runtime.current_plan, None);
         assert!(runtime.dirty);
-        assert_eq!(runtime.current_goal, Some(goal));
         assert!(jc.is_none());
         assert!(blocked.is_blocked(&goal, Tick(20)));
         assert_eq!(blocked.intents.len(), 1);
@@ -1400,7 +1398,7 @@ mod tests {
             )),
         };
         let mut runtime = runtime_with_plan(goal, step.clone());
-        let mut jc = jc_for_goal(goal);
+        let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
         let budget = PlanningBudget::default();
 
