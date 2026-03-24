@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S23: Refined Blocked Intents
 
@@ -610,3 +610,10 @@ One potential concern: if blocker clearing is too aggressive (clears blocker, ag
 5. Unknown blockers expire in 5 ticks, not 20
 6. Decision traces for Unknown blockers include diagnostic context (action_def)
 7. Search trace shows `PlaceBlocker` filter reasons when candidates are pruned
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: All 6 tickets (S23-001 through S23-006) implemented as specified. `BlockedIntentMemory` refactored from `Vec<BlockedIntent>` to `BTreeMap<BlockerKey, BlockedIntent>` with compound keying (goal + place + target + action_def). Place-scoped blockers no longer suppress at candidate generation; they prune at plan search instead. Unknown blockers use dedicated 5-tick TTL with `BlockerDiagnostic` context. `UnknownBlockerTrace` and `PlaceBlocker` filter reasons integrated into decision traces. `search_plan()` takes `&BlockedIntentMemory` parameter for search-time pruning.
+- **Deviations**: None — implemented exactly as specified.
+- **Verification results**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean, all golden tests pass unchanged.
