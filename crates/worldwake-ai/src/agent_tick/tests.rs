@@ -4146,6 +4146,7 @@
                 action_def_id: _,
                 action_name,
                 interrupt,
+                ..
             } => {
                 assert!(
                     !action_name.is_empty(),

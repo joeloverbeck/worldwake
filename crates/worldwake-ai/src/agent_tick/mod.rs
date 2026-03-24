@@ -33,8 +33,9 @@ use planning::{
 
 use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
-    DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, InterruptTrace, PlanSearchTrace,
-    PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
+    DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, FrameTransitionKind,
+    FrameTransitionTrace, InterruptTrace, PlanSearchTrace, PlanningPipelineTrace, SelectionTrace,
+    UnknownBlockerTrace,
 };
 use crate::{
     build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime,
@@ -244,6 +245,8 @@ fn process_agent(
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
+    let mut frame_transitions: Option<Vec<FrameTransitionKind>> =
+        if tracing { Some(Vec::new()) } else { None };
 
     // ── Dead-agent early return ──
     {
@@ -252,6 +255,11 @@ fn process_agent(
             if current_frame.is_some() {
                 runtime.last_frame_clear_reason = Some(FrameClearReason::Death);
                 current_frame = None;
+                if let Some(ref mut ft) = frame_transitions {
+                    ft.push(FrameTransitionKind::Cleared {
+                        reason: FrameClearReason::Death,
+                    });
+                }
             }
             current_active_goal = None;
             current_facility_intents = FacilityQueueIntents::default();
@@ -309,6 +317,23 @@ fn process_agent(
         },
     )?;
 
+    // Detect progress recorded during reconciliation (advance_completed_step).
+    if let Some(ref mut ft) = frame_transitions {
+        let new_progress = current_frame
+            .as_ref()
+            .and_then(|f| f.last_progress_tick)
+            .is_some_and(|lpt| {
+                lpt == tick
+                    && original_frame
+                        .as_ref()
+                        .and_then(|f| f.last_progress_tick)
+                        != Some(tick)
+            });
+        if new_progress {
+            ft.push(FrameTransitionKind::Progressed { tick });
+        }
+    }
+
     let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
 
     // ── Pre-planning assumption evaluation ──
@@ -324,12 +349,19 @@ fn process_agent(
             frame.assumptions = populate_assumptions(&frame.domain, agent, &view);
             let eval = evaluate_assumptions(&frame.assumptions, &view, None);
             if !matches!(eval, AssumptionEvalResult::Deferred) {
+                let pre_state = current_frame.as_ref().unwrap().state;
                 current_frame = Some(apply_assumption_result(
                     current_frame.as_ref().unwrap(),
                     &eval,
                     tick,
                     runtime,
                 ));
+                emit_assumption_transitions(
+                    &pre_state,
+                    &eval,
+                    tick,
+                    &mut frame_transitions,
+                );
                 if matches!(eval, AssumptionEvalResult::CriticalFailure) {
                     // Create blocked intent so the agent doesn't immediately
                     // re-adopt the same goal after assumption failure.
@@ -392,8 +424,15 @@ fn process_agent(
                     AssumptionEvalResult::RecoverableFailure(_)
                         | AssumptionEvalResult::AllPass
                 ) {
+                    let pre_state = frame.state;
                     current_frame =
                         Some(apply_assumption_result(frame, &deferred_eval, tick, runtime));
+                    emit_assumption_transitions(
+                        &pre_state,
+                        &deferred_eval,
+                        tick,
+                        &mut frame_transitions,
+                    );
                 }
             }
         }
@@ -439,6 +478,7 @@ fn process_agent(
                     decision: interrupt_decision,
                     top_challenger,
                 },
+                frame_transition: build_frame_transition_trace(&mut frame_transitions),
             }
         })
     } else {
@@ -576,6 +616,7 @@ fn process_agent(
                         })
                     })
                     .collect(),
+                frame_transition: build_frame_transition_trace(&mut frame_transitions),
             }))
         })
     };
@@ -612,10 +653,49 @@ fn process_agent(
             budget.structural_block_ticks,
         );
         if exhausted {
+            let frame_ref = current_frame.as_ref().unwrap();
+            if let Some(ref mut ft) = frame_transitions {
+                ft.push(FrameTransitionKind::Exhausted {
+                    stalled_ticks: frame_ref.stalled_ticks,
+                    patience_limit: frame_ref.patience_limit,
+                    blocked_intent_recorded: true,
+                });
+            }
             current_frame = Some(IntentionFrame {
                 state: worldwake_core::FrameState::Exhausted,
                 ..current_frame.take().unwrap()
             });
+        }
+    }
+
+    // ── Detect frame creation (new frame this tick) ──
+    if let Some(ref mut ft) = frame_transitions {
+        let was_none = original_frame.is_none();
+        let is_some = current_frame.is_some();
+        let established_changed = current_frame
+            .as_ref()
+            .is_some_and(|f| {
+                original_frame
+                    .as_ref()
+                    .is_none_or(|orig| orig.established_at != f.established_at)
+            });
+        if is_some && (was_none || established_changed) {
+            let frame = current_frame.as_ref().unwrap();
+            ft.push(FrameTransitionKind::Created {
+                goal: frame.goal,
+                domain_tag: frame.domain.domain_tag(),
+                patience_limit: frame.patience_limit,
+                assumptions_count: frame.assumptions.len(),
+            });
+        }
+        // Detect frame clearing (had a frame, now gone, not already emitted).
+        if original_frame.is_some()
+            && current_frame.is_none()
+            && !ft.iter().any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
+        {
+            if let Some(reason) = runtime.last_frame_clear_reason {
+                ft.push(FrameTransitionKind::Cleared { reason });
+            }
         }
     }
 
@@ -663,6 +743,50 @@ fn process_agent(
     }))
 }
 
+/// Convert collected frame transitions into a trace, consuming the option.
+/// Returns `None` when tracing is disabled or no transitions were recorded.
+fn build_frame_transition_trace(
+    transitions: &mut Option<Vec<FrameTransitionKind>>,
+) -> Option<FrameTransitionTrace> {
+    let ts = transitions.as_mut()?;
+    if ts.is_empty() {
+        return None;
+    }
+    Some(FrameTransitionTrace {
+        transitions: std::mem::take(ts),
+    })
+}
+
+/// Emit assumption-evaluation-driven frame transitions (suspend, resume, exhaust).
+fn emit_assumption_transitions(
+    pre_state: &worldwake_core::FrameState,
+    eval: &AssumptionEvalResult,
+    tick: Tick,
+    frame_transitions: &mut Option<Vec<FrameTransitionKind>>,
+) {
+    let Some(ref mut ft) = *frame_transitions else {
+        return;
+    };
+    match eval {
+        AssumptionEvalResult::RecoverableFailure(reason) => {
+            ft.push(FrameTransitionKind::Suspended {
+                reason: *reason,
+                tick,
+            });
+        }
+        AssumptionEvalResult::CriticalFailure => {
+            ft.push(FrameTransitionKind::Cleared {
+                reason: FrameClearReason::AssumptionFailed,
+            });
+        }
+        AssumptionEvalResult::AllPass => {
+            if matches!(pre_state, worldwake_core::FrameState::Suspended { .. }) {
+                ft.push(FrameTransitionKind::Resumed { tick });
+            }
+        }
+        AssumptionEvalResult::Deferred => {}
+    }
+}
 
 #[cfg(test)]
 mod tests;

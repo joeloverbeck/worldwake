@@ -1,6 +1,6 @@
 # S22-006: Add decision trace integration for IntentionFrame lifecycle
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — new trace events in DecisionTraceSink
@@ -112,3 +112,13 @@ Include frame lifecycle events in the human-readable trace output.
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - `decision_trace.rs`: Added `FrameTransitionKind` (6 variants), `FrameTransitionTrace`, extended `DecisionOutcome::ActiveAction` and `PlanningPipelineTrace` with `frame_transition` field, updated `summary()` and `dump_agent()` output, added 11 focused tests.
+  - `agent_tick/mod.rs`: Threaded `Option<Vec<FrameTransitionKind>>` through `process_agent`, emitting events at death clear, assumption evaluation (suspend/resume/exhaust), patience exhaustion, frame creation, and frame clearing. Added `build_frame_transition_trace()` and `emit_assumption_transitions()` helpers.
+  - `agent_tick/tests.rs`: Updated pattern match for new `frame_transition` field.
+- **Deviations**: Frame transitions are collected via state-comparison detection in `process_agent` rather than threading a mutable vec through all sub-functions (less invasive). Progress detection compares `last_progress_tick` before/after reconciliation. Creation detection compares `established_at` before/after planning.
+- **Verification**: `cargo clippy --workspace` clean, `cargo test --workspace` all pass (0 failures).

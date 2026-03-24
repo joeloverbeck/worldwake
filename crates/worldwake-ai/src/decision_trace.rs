@@ -5,7 +5,8 @@
 
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, BlockingFact, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
+    ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
+    IntentionDomainTag, RecipientKnowledgeStatus, SuspensionReason, Tick,
 };
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
@@ -13,6 +14,43 @@ use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
+// ── Frame Transition Trace ──────────────────────────────────────
+
+/// One lifecycle event recorded for an `IntentionFrame` during a tick.
+#[derive(Clone, Debug)]
+pub enum FrameTransitionKind {
+    Created {
+        goal: GoalKey,
+        domain_tag: IntentionDomainTag,
+        patience_limit: u32,
+        assumptions_count: usize,
+    },
+    Progressed {
+        tick: Tick,
+    },
+    Suspended {
+        reason: SuspensionReason,
+        tick: Tick,
+    },
+    Resumed {
+        tick: Tick,
+    },
+    Exhausted {
+        stalled_ticks: u32,
+        patience_limit: u32,
+        blocked_intent_recorded: bool,
+    },
+    Cleared {
+        reason: FrameClearReason,
+    },
+}
+
+/// Collected frame lifecycle events for one agent-tick.
+#[derive(Clone, Debug)]
+pub struct FrameTransitionTrace {
+    pub transitions: Vec<FrameTransitionKind>,
+}
+
 // ── Top-Level Record ────────────────────────────────────────────
 
 /// One complete decision record for one agent at one tick.
@@ -34,6 +72,7 @@ pub enum DecisionOutcome {
         action_def_id: ActionDefId,
         action_name: String,
         interrupt: InterruptTrace,
+        frame_transition: Option<FrameTransitionTrace>,
     },
 
     /// Agent had no active action — full planning pipeline ran.
@@ -48,10 +87,12 @@ impl DecisionOutcome {
             DecisionOutcome::ActiveAction {
                 action_name,
                 interrupt,
+                frame_transition,
                 ..
             } => {
                 let decision = &interrupt.decision;
-                format!("ACTIVE: {action_name} — interrupt: {decision:?}")
+                let frame_suffix = format_frame_transition_summary(frame_transition.as_ref());
+                format!("ACTIVE: {action_name} — interrupt: {decision:?}{frame_suffix}")
             }
             DecisionOutcome::Planning(planning) => {
                 let selected = planning
@@ -84,8 +125,10 @@ impl DecisionOutcome {
                 } else {
                     format!(", unknown_blockers={}", planning.unknown_blockers.len())
                 };
+                let frame_suffix =
+                    format_frame_transition_summary(planning.frame_transition.as_ref());
                 format!(
-                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{unknown_suffix}"
+                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -112,6 +155,8 @@ pub struct PlanningPipelineTrace {
     /// Active `BlockingFact::Unknown` blockers in `BlockedIntentMemory` at
     /// trace construction time. Derived view for debuggability (P27).
     pub unknown_blockers: Vec<UnknownBlockerTrace>,
+    /// Frame lifecycle events recorded during this tick (P27).
+    pub frame_transition: Option<FrameTransitionTrace>,
 }
 
 /// Summary of an action start failure for trace output.
@@ -774,6 +819,7 @@ fn omitted_social_status_for_goal(
 }
 
 /// Format a `DecisionOutcome` with action name resolution via the registry.
+#[allow(clippy::too_many_lines)]
 fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) -> String {
     match outcome {
         DecisionOutcome::Dead => "DEAD — no decision".to_string(),
@@ -781,6 +827,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             action_def_id,
             action_name,
             interrupt,
+            frame_transition,
             ..
         } => {
             let name = action_defs
@@ -792,7 +839,8 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .as_ref()
                 .and_then(|summary| summary.provenance.as_ref())
                 .map_or_else(String::new, format_ranked_goal_provenance_summary);
-            format!("ACTIVE: {name} — interrupt: {decision:?}{challenger}")
+            let frame_suffix = format_frame_transition_summary(frame_transition.as_ref());
+            format!("ACTIVE: {name} — interrupt: {decision:?}{challenger}{frame_suffix}")
         }
         DecisionOutcome::Planning(planning) => {
             let selected = planning
@@ -864,6 +912,12 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                         "\n    goal={:?} action={def_name} op={:?} place={:?}",
                         ub.goal_key.kind, ub.op_kind, ub.place,
                     );
+                }
+            }
+            if let Some(ref ft) = planning.frame_transition {
+                let _ = write!(out, "\n  Frame transitions:");
+                for t in &ft.transitions {
+                    let _ = write!(out, "\n    {}", format_frame_transition_kind(t));
                 }
             }
             out
@@ -988,6 +1042,60 @@ impl Default for DecisionTraceSink {
     }
 }
 
+/// Format a single frame transition event for human-readable output.
+fn format_frame_transition_kind(kind: &FrameTransitionKind) -> String {
+    match kind {
+        FrameTransitionKind::Created {
+            goal,
+            domain_tag,
+            patience_limit,
+            assumptions_count,
+        } => format!(
+            "FRAME_CREATED: goal={:?}, domain={domain_tag:?}, patience={patience_limit}, assumptions={assumptions_count}",
+            goal.kind,
+        ),
+        FrameTransitionKind::Progressed { tick } => {
+            format!("FRAME_PROGRESSED: tick={}", tick.0)
+        }
+        FrameTransitionKind::Suspended { reason, tick } => {
+            format!("FRAME_SUSPENDED: reason={reason:?}, tick={}", tick.0)
+        }
+        FrameTransitionKind::Resumed { tick } => {
+            format!("FRAME_RESUMED: tick={}", tick.0)
+        }
+        FrameTransitionKind::Exhausted {
+            stalled_ticks,
+            patience_limit,
+            blocked_intent_recorded,
+        } => format!(
+            "FRAME_EXHAUSTED: stalled={stalled_ticks}/{patience_limit}, blocked={blocked_intent_recorded}"
+        ),
+        FrameTransitionKind::Cleared { reason } => {
+            format!("FRAME_CLEARED: reason={reason:?}")
+        }
+    }
+}
+
+/// Compact one-line summary of frame transitions for `summary()`.
+fn format_frame_transition_summary(trace: Option<&FrameTransitionTrace>) -> String {
+    let Some(trace) = trace else {
+        return String::new();
+    };
+    let kinds: Vec<&str> = trace
+        .transitions
+        .iter()
+        .map(|t| match t {
+            FrameTransitionKind::Created { .. } => "created",
+            FrameTransitionKind::Progressed { .. } => "progressed",
+            FrameTransitionKind::Suspended { .. } => "suspended",
+            FrameTransitionKind::Resumed { .. } => "resumed",
+            FrameTransitionKind::Exhausted { .. } => "exhausted",
+            FrameTransitionKind::Cleared { .. } => "cleared",
+        })
+        .collect();
+    format!(", frame=[{}]", kinds.join(","))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1054,6 +1162,7 @@ mod tests {
                 },
                 action_start_failures: Vec::new(),
                 unknown_blockers: Vec::new(),
+                frame_transition: None,
             })),
         }
     }
@@ -1370,6 +1479,7 @@ mod tests {
                 decision: InterruptDecision::NoInterrupt,
                 top_challenger: None,
             },
+            frame_transition: None,
         };
         let summary = outcome.summary();
         assert!(summary.contains("ACTIVE"));
@@ -1446,6 +1556,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            frame_transition: None,
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));
@@ -1505,6 +1616,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            frame_transition: None,
         }));
 
         let summary = outcome.summary();
@@ -1571,6 +1683,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            frame_transition: None,
         }));
 
         let summary = outcome.summary();
@@ -1674,5 +1787,178 @@ mod tests {
         let debug = format!("{summary:?}");
         assert!(debug.contains("SearchExpansionSummary"));
         assert!(debug.contains("depth: 0"));
+    }
+
+    // ── Frame Transition Trace Tests ────────────────────────────────
+
+    #[test]
+    fn frame_transition_trace_created_format() {
+        let kind = FrameTransitionKind::Created {
+            goal: GoalKey::new(GoalKind::Sleep),
+            domain_tag: IntentionDomainTag::Travel,
+            patience_limit: 30,
+            assumptions_count: 2,
+        };
+        let formatted = format_frame_transition_kind(&kind);
+        assert!(formatted.contains("FRAME_CREATED"));
+        assert!(formatted.contains("Travel"));
+        assert!(formatted.contains("patience=30"));
+        assert!(formatted.contains("assumptions=2"));
+    }
+
+    #[test]
+    fn frame_transition_trace_progressed_format() {
+        let kind = FrameTransitionKind::Progressed { tick: Tick(5) };
+        let formatted = format_frame_transition_kind(&kind);
+        assert!(formatted.contains("FRAME_PROGRESSED"));
+        assert!(formatted.contains("tick=5"));
+    }
+
+    #[test]
+    fn frame_transition_trace_suspended_format() {
+        let kind = FrameTransitionKind::Suspended {
+            reason: SuspensionReason::RouteBlocked,
+            tick: Tick(7),
+        };
+        let formatted = format_frame_transition_kind(&kind);
+        assert!(formatted.contains("FRAME_SUSPENDED"));
+        assert!(formatted.contains("RouteBlocked"));
+        assert!(formatted.contains("tick=7"));
+    }
+
+    #[test]
+    fn frame_transition_trace_resumed_format() {
+        let kind = FrameTransitionKind::Resumed { tick: Tick(10) };
+        let formatted = format_frame_transition_kind(&kind);
+        assert!(formatted.contains("FRAME_RESUMED"));
+        assert!(formatted.contains("tick=10"));
+    }
+
+    #[test]
+    fn frame_transition_trace_exhausted_format() {
+        let kind = FrameTransitionKind::Exhausted {
+            stalled_ticks: 30,
+            patience_limit: 30,
+            blocked_intent_recorded: true,
+        };
+        let formatted = format_frame_transition_kind(&kind);
+        assert!(formatted.contains("FRAME_EXHAUSTED"));
+        assert!(formatted.contains("stalled=30/30"));
+        assert!(formatted.contains("blocked=true"));
+    }
+
+    #[test]
+    fn frame_transition_trace_cleared_format() {
+        let kind = FrameTransitionKind::Cleared {
+            reason: FrameClearReason::PatienceExhausted,
+        };
+        let formatted = format_frame_transition_kind(&kind);
+        assert!(formatted.contains("FRAME_CLEARED"));
+        assert!(formatted.contains("PatienceExhausted"));
+    }
+
+    #[test]
+    fn frame_transition_summary_with_transitions() {
+        let trace = FrameTransitionTrace {
+            transitions: vec![
+                FrameTransitionKind::Created {
+                    goal: GoalKey::new(GoalKind::Sleep),
+                    domain_tag: IntentionDomainTag::Generic,
+                    patience_limit: 20,
+                    assumptions_count: 1,
+                },
+                FrameTransitionKind::Progressed { tick: Tick(3) },
+            ],
+        };
+        let summary = format_frame_transition_summary(Some(&trace));
+        assert!(summary.contains("frame="));
+        assert!(summary.contains("created"));
+        assert!(summary.contains("progressed"));
+    }
+
+    #[test]
+    fn frame_transition_summary_none_is_empty() {
+        let summary = format_frame_transition_summary(None);
+        assert!(summary.is_empty());
+    }
+
+    #[test]
+    fn frame_transition_in_active_action_summary() {
+        let outcome = DecisionOutcome::ActiveAction {
+            action_def_id: ActionDefId(0),
+            action_name: "travel".to_string(),
+            interrupt: InterruptTrace {
+                decision: InterruptDecision::NoInterrupt,
+                top_challenger: None,
+            },
+            frame_transition: Some(FrameTransitionTrace {
+                transitions: vec![FrameTransitionKind::Progressed { tick: Tick(5) }],
+            }),
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("ACTIVE"));
+        assert!(summary.contains("frame="));
+        assert!(summary.contains("progressed"));
+    }
+
+    #[test]
+    fn frame_transition_in_planning_summary() {
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty_reasons: vec![DirtyReason::NoPlan],
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![],
+                evidence: vec![],
+                ranked: vec![],
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: None,
+                selected_plan: None,
+                selected_plan_source: None,
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: Some(FrameTransitionTrace {
+                transitions: vec![FrameTransitionKind::Created {
+                    goal: GoalKey::new(GoalKind::Sleep),
+                    domain_tag: IntentionDomainTag::Travel,
+                    patience_limit: 30,
+                    assumptions_count: 1,
+                }],
+            }),
+        }));
+        let summary = outcome.summary();
+        assert!(summary.contains("PLAN"));
+        assert!(summary.contains("frame="));
+        assert!(summary.contains("created"));
+    }
+
+    #[test]
+    fn zero_cost_when_no_transitions() {
+        // When frame_transition is None, summary should not contain "frame="
+        let outcome = DecisionOutcome::ActiveAction {
+            action_def_id: ActionDefId(0),
+            action_name: "eat".to_string(),
+            interrupt: InterruptTrace {
+                decision: InterruptDecision::NoInterrupt,
+                top_challenger: None,
+            },
+            frame_transition: None,
+        };
+        let summary = outcome.summary();
+        assert!(!summary.contains("frame="));
     }
 }
