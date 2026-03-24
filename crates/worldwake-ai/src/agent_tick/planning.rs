@@ -7,16 +7,16 @@ use crate::decision_trace::{
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, JourneyClearReason, PlannedPlan,
+    search_plan, select_best_plan, AgentDecisionRuntime, PlannedPlan,
     PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockedIntentMemory, JourneyCommitment, Permille, Tick,
+    ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, Scheduler};
 
-use super::{current_step, runtime_belief_view, update_journey_for_adopted_plan};
+use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 
 /// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
 pub(super) fn summarize_step(
@@ -237,12 +237,12 @@ pub(super) fn plan_and_validate_next_step(
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
-    jc: &mut Option<JourneyCommitment>,
+    jc: &mut Option<IntentionFrame>,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
     tick: Tick,
     budget: &PlanningBudget,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -301,14 +301,14 @@ pub(super) fn plan_and_validate_next_step(
             runtime,
             jc.as_ref(),
             default_switch_margin,
-            journey_switch_margin,
+            frame_switch_margin,
         ) {
             runtime.materialization_bindings.clear();
             *active_goal = Some(ActiveGoal {
                 goal_key: selected_plan.goal,
                 adopted_at: tick,
             });
-            *jc = update_journey_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+            *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -318,7 +318,7 @@ pub(super) fn plan_and_validate_next_step(
                 .map(|candidate| candidate.priority_class);
         } else {
             if jc.is_some() {
-                runtime.last_journey_clear_reason = Some(JourneyClearReason::LostTravelPlan);
+                runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
             }
             *jc = None;
             runtime.materialization_bindings.clear();
@@ -364,12 +364,12 @@ pub(super) fn plan_and_validate_next_step_traced(
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
-    jc: &mut Option<JourneyCommitment>,
+    jc: &mut Option<IntentionFrame>,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
     tick: Tick,
     budget: &PlanningBudget,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -397,7 +397,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             ranked_candidates,
             blocked_memory,
             default_switch_margin,
-            journey_switch_margin,
+            frame_switch_margin,
             tick,
             budget,
             semantics_table,
@@ -502,7 +502,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             runtime,
             jc.as_ref(),
             default_switch_margin,
-            journey_switch_margin,
+            frame_switch_margin,
         ) {
             let selected_goal = selected_plan.goal;
             let selected_plan_source = determine_selected_plan_source(
@@ -550,7 +550,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                 goal_key: selected_plan.goal,
                 adopted_at: tick,
             });
-            *jc = update_journey_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+            *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -560,7 +560,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                 .map(|candidate| candidate.priority_class);
         } else {
             if jc.is_some() {
-                runtime.last_journey_clear_reason = Some(JourneyClearReason::LostTravelPlan);
+                runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
             }
             *jc = None;
             runtime.materialization_bindings.clear();

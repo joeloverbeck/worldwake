@@ -435,11 +435,15 @@ mod tests {
             None
         }
 
-        fn travel_disposition_profile(
+        fn intention_disposition_profile(
             &self,
             _agent: EntityId,
-        ) -> Option<worldwake_core::TravelDispositionProfile> {
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
         }
 
         fn tell_profile(&self, _agent: EntityId) -> Option<TellProfile> {

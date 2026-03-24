@@ -1279,11 +1279,15 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
     }
 
-    fn travel_disposition_profile(
+    fn intention_disposition_profile(
         &self,
         _agent: EntityId,
-    ) -> Option<worldwake_core::TravelDispositionProfile> {
+    ) -> Option<worldwake_core::IntentionDispositionProfile> {
         None
+    }
+
+    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+        false
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -1903,11 +1907,14 @@ mod tests {
             None
         }
 
-        fn travel_disposition_profile(
+        fn intention_disposition_profile(
             &self,
             _agent: EntityId,
-        ) -> Option<worldwake_core::TravelDispositionProfile> {
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
+        }
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
         }
 
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {

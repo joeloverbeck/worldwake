@@ -61,7 +61,6 @@ pub mod test_utils;
 pub mod topology;
 pub mod trade;
 pub mod traits;
-pub mod travel_disposition;
 pub mod utility_profile;
 pub mod verification;
 pub mod visibility;
@@ -117,10 +116,7 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
-pub use intention::{
-    ActiveGoal, FacilityQueueIntents, JourneyCommitment, JourneyCommitmentState,
-    QueuedFacilityIntent,
-};
+pub use intention::{ActiveGoal, FacilityQueueIntents, QueuedFacilityIntent};
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,
@@ -155,7 +151,6 @@ pub use trade::{
     SubstitutePreferences, TradeDispositionProfile,
 };
 pub use traits::{Component, RelationRecord};
-pub use travel_disposition::TravelDispositionProfile;
 pub use utility_profile::UtilityProfile;
 pub use verification::{verify_completeness, VerificationError};
 pub use visibility::VisibilitySpec;

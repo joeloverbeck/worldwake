@@ -1,6 +1,6 @@
 # S22-002: Replace JourneyCommitment and TravelDispositionProfile with frame equivalents
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — component removal, BeliefView trait changes, AI pipeline rewiring across 3 crates
@@ -177,3 +177,10 @@ All journey-specific types (`JourneyCommitment`, `JourneyCommitmentState`, `Trav
 4. `cargo clippy --workspace`
 5. `cargo test --workspace`
 6. `grep -r "JourneyCommitment\|TravelDispositionProfile\|JourneyPlanRelation\|JourneyClearReason" crates/ --include="*.rs" | grep -v "archive/"` — must return empty
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Removed all journey-specific types (`JourneyCommitment`, `JourneyCommitmentState`, `TravelDispositionProfile`, `JourneyPlanRelation`, `JourneyClearReason`, `JourneyRuntimeSnapshot`, `JourneySwitchMarginSource`, `JourneyDebugSnapshot`) and replaced them with generalized frame equivalents (`IntentionFrame`, `FrameState`, `IntentionDispositionProfile`, `FramePlanRelation`, `FrameClearReason`, `FrameRuntimeSnapshot`, `FrameSwitchMarginSource`, `FrameDebugSnapshot`). Deleted `travel_disposition.rs`, renamed `journey.rs` → `frame.rs` and `journey_switch_policy.rs` → `frame_switch_policy.rs`. Updated `RuntimeBeliefView` trait: replaced `travel_disposition_profile()` with `intention_disposition_profile()` and added `route_exists()`. Updated all mock impls across 4 crates.
+- **Deviations from original plan**: No `OmniscientBeliefView` existed (ticket assumed it did); the concrete impl is `PerAgentBeliefView` which was updated. `FrameClearReason` was already defined in `intention_frame.rs` by S22-001, so it was reused from there rather than redefined in `decision_runtime.rs`.
+- **Verification results**: `cargo test --workspace` — 2424 tests pass. `cargo clippy --workspace` — clean, no warnings. Grep for orphaned journey references — only doc comments in the new S22-001 type files remain (explaining what was replaced).

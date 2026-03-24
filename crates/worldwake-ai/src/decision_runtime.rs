@@ -1,39 +1,29 @@
 use crate::{GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, JourneyCommitment,
-    JourneyCommitmentState, Quantity, Tick, UniqueItemKind, Wound,
+    ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
+    IntentionDomain, IntentionFrame, Quantity, Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum JourneyPlanRelation {
-    NoCommitment,
-    RefreshesCommitment,
-    SuspendsCommitment,
-    AbandonsCommitment,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum JourneyClearReason {
-    GoalSatisfied,
-    Reprioritized,
-    PlanFailed,
-    PatienceExhausted,
-    Death,
-    LostTravelPlan,
+pub enum FramePlanRelation {
+    NoFrame,
+    RefreshesFrame,
+    SuspendsFrame,
+    AbandonsFrame,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct JourneyRuntimeSnapshot {
+pub struct FrameRuntimeSnapshot {
     pub committed_destination: Option<EntityId>,
     pub active_plan_destination: Option<EntityId>,
-    pub commitment_state: JourneyCommitmentState,
+    pub frame_state: Option<FrameState>,
     pub established_at: Option<Tick>,
     pub last_progress_tick: Option<Tick>,
     pub remaining_travel_steps: usize,
-    pub consecutive_blocked_ticks: u32,
-    pub has_active_journey_travel: bool,
-    pub last_clear_reason: Option<JourneyClearReason>,
+    pub stalled_ticks: u32,
+    pub has_active_frame_travel: bool,
+    pub last_clear_reason: Option<FrameClearReason>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -65,7 +55,7 @@ impl MaterializationBindings {
 pub struct AgentDecisionRuntime {
     pub current_plan: Option<PlannedPlan>,
     pub current_step_index: usize,
-    pub last_journey_clear_reason: Option<JourneyClearReason>,
+    pub last_frame_clear_reason: Option<FrameClearReason>,
     pub step_in_flight: bool,
     pub dirty: bool,
     pub last_priority_class: Option<GoalPriorityClass>,
@@ -87,97 +77,111 @@ impl AgentDecisionRuntime {
     }
 }
 
-// ── Free functions operating on JourneyCommitment component ──
+// ── Free functions operating on IntentionFrame component ──
 
-/// Returns `true` if the agent has a journey commitment (component present).
+/// Returns `true` if the agent has an intention frame (component present).
 #[must_use]
-pub fn has_journey_commitment(jc: Option<&JourneyCommitment>) -> bool {
-    jc.is_some()
+pub fn has_frame(frame: Option<&IntentionFrame>) -> bool {
+    frame.is_some()
 }
 
-/// Returns the committed destination if the agent has a journey commitment.
+/// Returns the committed travel destination if the frame is a Travel domain frame.
 #[must_use]
-pub fn journey_committed_destination(jc: Option<&JourneyCommitment>) -> Option<EntityId> {
-    jc.map(|c| c.destination)
-}
-
-/// Returns `true` if the agent has an active journey with remaining travel
-/// steps matching the commitment destination.
-#[must_use]
-pub fn has_active_journey_travel(
-    jc: Option<&JourneyCommitment>,
-    plan: Option<&PlannedPlan>,
-    step_index: usize,
-) -> bool {
-    let Some(commitment) = jc else {
-        return false;
-    };
-    if commitment.state != JourneyCommitmentState::Active {
-        return false;
-    }
-    plan.is_some_and(|plan| {
-        plan.has_remaining_travel_steps_from(step_index)
-            && plan.terminal_travel_destination() == Some(commitment.destination)
+pub fn frame_travel_destination(frame: Option<&IntentionFrame>) -> Option<EntityId> {
+    frame.and_then(|f| match f.domain {
+        IntentionDomain::Travel { destination } => Some(destination),
+        _ => None,
     })
 }
 
-/// Builds a snapshot of journey-related runtime state for diagnostic/debug use.
+/// Returns `true` if the agent has an active travel frame with remaining travel
+/// steps matching the frame's destination.
 #[must_use]
-pub fn journey_runtime_snapshot(
-    jc: Option<&JourneyCommitment>,
+pub fn has_active_frame_travel(
+    frame: Option<&IntentionFrame>,
+    plan: Option<&PlannedPlan>,
+    step_index: usize,
+) -> bool {
+    let Some(f) = frame else {
+        return false;
+    };
+    if f.state != FrameState::Active {
+        return false;
+    }
+    let Some(destination) = (match f.domain {
+        IntentionDomain::Travel { destination } => Some(destination),
+        _ => None,
+    }) else {
+        return false;
+    };
+    plan.is_some_and(|plan| {
+        plan.has_remaining_travel_steps_from(step_index)
+            && plan.terminal_travel_destination() == Some(destination)
+    })
+}
+
+/// Builds a snapshot of frame-related runtime state for diagnostic/debug use.
+#[must_use]
+pub fn frame_runtime_snapshot(
+    frame: Option<&IntentionFrame>,
     runtime: &AgentDecisionRuntime,
-) -> JourneyRuntimeSnapshot {
-    JourneyRuntimeSnapshot {
-        committed_destination: journey_committed_destination(jc),
+) -> FrameRuntimeSnapshot {
+    FrameRuntimeSnapshot {
+        committed_destination: frame_travel_destination(frame),
         active_plan_destination: runtime
             .current_plan
             .as_ref()
             .and_then(PlannedPlan::terminal_travel_destination),
-        commitment_state: jc.map_or(JourneyCommitmentState::Active, |c| c.state),
-        established_at: jc.map(|c| c.established_at),
-        last_progress_tick: jc.and_then(|c| c.last_progress_tick),
+        frame_state: frame.map(|f| f.state),
+        established_at: frame.map(|f| f.established_at),
+        last_progress_tick: frame.and_then(|f| f.last_progress_tick),
         remaining_travel_steps: runtime.remaining_travel_steps(),
-        consecutive_blocked_ticks: jc.map_or(0, |c| c.consecutive_blocked_leg_ticks),
-        has_active_journey_travel: has_active_journey_travel(
-            jc,
+        stalled_ticks: frame.map_or(0, |f| f.stalled_ticks),
+        has_active_frame_travel: has_active_frame_travel(
+            frame,
             runtime.current_plan.as_ref(),
             runtime.current_step_index,
         ),
-        last_clear_reason: runtime.last_journey_clear_reason,
+        last_clear_reason: runtime.last_frame_clear_reason,
     }
 }
 
-/// Classifies how a proposed plan relates to the current journey commitment.
+/// Classifies how a proposed plan relates to the current intention frame.
 #[must_use]
-pub fn classify_journey_plan_relation(
-    jc: Option<&JourneyCommitment>,
+pub fn classify_frame_plan_relation(
+    frame: Option<&IntentionFrame>,
     plan: &PlannedPlan,
-) -> JourneyPlanRelation {
-    let Some(commitment) = jc else {
-        return JourneyPlanRelation::NoCommitment;
+) -> FramePlanRelation {
+    let Some(f) = frame else {
+        return FramePlanRelation::NoFrame;
     };
 
-    if plan.goal == commitment.committed_goal
-        && plan.terminal_travel_destination() == Some(commitment.destination)
-    {
-        return JourneyPlanRelation::RefreshesCommitment;
+    let frame_destination = match f.domain {
+        IntentionDomain::Travel { destination } => Some(destination),
+        _ => None,
+    };
+
+    if plan.goal == f.goal && plan.terminal_travel_destination() == frame_destination {
+        return FramePlanRelation::RefreshesFrame;
     }
 
     if !plan.has_remaining_travel_steps_from(0) {
-        return JourneyPlanRelation::SuspendsCommitment;
+        return FramePlanRelation::SuspendsFrame;
     }
 
-    JourneyPlanRelation::AbandonsCommitment
+    FramePlanRelation::AbandonsFrame
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_journey_plan_relation, has_active_journey_travel, has_journey_commitment,
-        journey_committed_destination, journey_runtime_snapshot, AgentDecisionRuntime,
-        JourneyClearReason, JourneyPlanRelation, MaterializationBindings,
+        classify_frame_plan_relation, has_active_frame_travel, has_frame,
+        frame_travel_destination, frame_runtime_snapshot, AgentDecisionRuntime,
+        FramePlanRelation, MaterializationBindings,
     };
-    use worldwake_core::{JourneyCommitment, JourneyCommitmentState};
+    use worldwake_core::{
+        FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
+    };
     use crate::{
         CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef,
@@ -215,13 +219,26 @@ mod tests {
         )
     }
 
+    fn sample_travel_frame(goal: GoalKey, destination: EntityId) -> IntentionFrame {
+        IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(3),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        }
+    }
+
     #[test]
     fn agent_decision_runtime_defaults_to_empty_clean_state() {
         let runtime = AgentDecisionRuntime::default();
 
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
-        assert_eq!(runtime.last_journey_clear_reason, None);
+        assert_eq!(runtime.last_frame_clear_reason, None);
         assert!(!runtime.step_in_flight);
         assert!(!runtime.dirty);
         assert_eq!(runtime.last_priority_class, None);
@@ -268,43 +285,29 @@ mod tests {
     }
 
     #[test]
-    fn has_journey_commitment_returns_true_when_component_present() {
+    fn has_frame_returns_true_when_component_present() {
         let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
         let destination = entity(77);
-        assert!(!has_journey_commitment(None));
-        assert!(has_journey_commitment(Some(&JourneyCommitment {
-            committed_goal: goal,
-            destination,
-            state: JourneyCommitmentState::Active,
-            established_at: Tick(3),
-            last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
-        })));
+        assert!(!has_frame(None));
+        assert!(has_frame(Some(&sample_travel_frame(goal, destination))));
     }
 
     #[test]
-    fn has_active_journey_travel_requires_commitment_and_matching_travel_steps() {
+    fn has_active_frame_travel_requires_frame_and_matching_travel_steps() {
         let destination = entity(77);
         let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
-        let jc_active = JourneyCommitment {
-            committed_goal: goal,
-            destination,
-            state: JourneyCommitmentState::Active,
-            established_at: Tick(7),
-            last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
-        };
+        let frame_active = sample_travel_frame(goal, destination);
 
-        // No commitment
+        // No frame
         let plan_with_travel = sample_plan(vec![sample_step(1, PlannerOpKind::Travel)]);
-        assert!(!has_active_journey_travel(None, Some(&plan_with_travel), 0));
+        assert!(!has_active_frame_travel(None, Some(&plan_with_travel), 0));
 
         // No remaining travel
         let plan_no_travel = sample_plan(vec![sample_step(1, PlannerOpKind::Consume)]);
-        assert!(!has_active_journey_travel(Some(&jc_active), Some(&plan_no_travel), 0));
+        assert!(!has_active_frame_travel(Some(&frame_active), Some(&plan_no_travel), 0));
 
         // Mismatched destination
-        assert!(!has_active_journey_travel(Some(&jc_active), Some(&plan_with_travel), 0));
+        assert!(!has_active_frame_travel(Some(&frame_active), Some(&plan_with_travel), 0));
 
         // Matching: travel step with correct destination
         let plan_matching = sample_plan(vec![
@@ -314,14 +317,17 @@ mod tests {
             },
             sample_step(2, PlannerOpKind::Consume),
         ]);
-        assert!(has_active_journey_travel(Some(&jc_active), Some(&plan_matching), 0));
+        assert!(has_active_frame_travel(Some(&frame_active), Some(&plan_matching), 0));
 
-        // Suspended commitment
-        let jc_suspended = JourneyCommitment {
-            state: JourneyCommitmentState::Suspended,
-            ..jc_active
+        // Suspended frame
+        let frame_suspended = IntentionFrame {
+            state: FrameState::Suspended {
+                reason: worldwake_core::SuspensionReason::PriorityInterrupt,
+                suspended_at: Tick(5),
+            },
+            ..frame_active.clone()
         };
-        assert!(!has_active_journey_travel(Some(&jc_suspended), Some(&plan_matching), 0));
+        assert!(!has_active_frame_travel(Some(&frame_suspended), Some(&plan_matching), 0));
     }
 
     #[test]
@@ -349,64 +355,59 @@ mod tests {
     }
 
     #[test]
-    fn journey_committed_destination_returns_destination_when_present() {
+    fn frame_travel_destination_returns_destination_when_present() {
         let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
         let destination = entity(55);
-        assert_eq!(journey_committed_destination(None), None);
+        assert_eq!(frame_travel_destination(None), None);
         assert_eq!(
-            journey_committed_destination(Some(&JourneyCommitment {
-                committed_goal: goal,
-                destination,
-                state: JourneyCommitmentState::Active,
-                established_at: Tick(3),
-                last_progress_tick: None,
-                consecutive_blocked_leg_ticks: 0,
-            })),
+            frame_travel_destination(Some(&sample_travel_frame(goal, destination))),
             Some(destination)
         );
     }
 
     #[test]
-    fn clearing_journey_commitment_sets_option_to_none_and_records_reason_on_runtime() {
+    fn clearing_frame_sets_option_to_none_and_records_reason_on_runtime() {
         let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
-        let mut jc: Option<JourneyCommitment> = Some(JourneyCommitment {
-            committed_goal: goal,
-            destination: entity(77),
-            state: JourneyCommitmentState::Suspended,
-            established_at: Tick(3),
+        let mut frame: Option<IntentionFrame> = Some(IntentionFrame {
+            state: FrameState::Suspended {
+                reason: worldwake_core::SuspensionReason::PriorityInterrupt,
+                suspended_at: Tick(4),
+            },
             last_progress_tick: Some(Tick(8)),
-            consecutive_blocked_leg_ticks: 5,
+            stalled_ticks: 5,
+            ..sample_travel_frame(goal, entity(77))
         });
         let mut runtime = AgentDecisionRuntime {
-            last_journey_clear_reason: Some(JourneyClearReason::Reprioritized),
+            last_frame_clear_reason: Some(FrameClearReason::Reprioritized),
             ..AgentDecisionRuntime::default()
         };
 
-        // Simulate clearing: set jc to None and record reason on runtime.
-        if jc.is_some() {
-            runtime.last_journey_clear_reason = Some(JourneyClearReason::PlanFailed);
+        // Simulate clearing: set frame to None and record reason on runtime.
+        if frame.is_some() {
+            runtime.last_frame_clear_reason = Some(FrameClearReason::PlanFailed);
         }
-        jc = None;
+        frame = None;
 
-        assert!(jc.is_none());
+        assert!(frame.is_none());
         assert_eq!(
-            runtime.last_journey_clear_reason,
-            Some(JourneyClearReason::PlanFailed)
+            runtime.last_frame_clear_reason,
+            Some(FrameClearReason::PlanFailed)
         );
     }
 
     #[test]
-    fn journey_runtime_snapshot_reflects_anchor_plan_and_temporal_fields() {
+    fn frame_runtime_snapshot_reflects_anchor_plan_and_temporal_fields() {
         let committed_destination = entity(55);
         let active_plan_destination = entity(77);
         let goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
-        let jc = JourneyCommitment {
-            committed_goal: goal,
-            destination: committed_destination,
-            state: JourneyCommitmentState::Suspended,
-            established_at: Tick(3),
+        let frame = IntentionFrame {
+            state: FrameState::Suspended {
+                reason: worldwake_core::SuspensionReason::PriorityInterrupt,
+                suspended_at: Tick(4),
+            },
             last_progress_tick: Some(Tick(8)),
-            consecutive_blocked_leg_ticks: 5,
+            stalled_ticks: 5,
+            ..sample_travel_frame(goal, committed_destination)
         };
         let runtime = AgentDecisionRuntime {
             current_plan: Some(sample_plan(vec![
@@ -420,31 +421,34 @@ mod tests {
                 },
             ])),
             current_step_index: 1,
-            last_journey_clear_reason: Some(JourneyClearReason::LostTravelPlan),
+            last_frame_clear_reason: Some(FrameClearReason::LostPlan),
             ..AgentDecisionRuntime::default()
         };
 
-        let snapshot = journey_runtime_snapshot(Some(&jc), &runtime);
+        let snapshot = frame_runtime_snapshot(Some(&frame), &runtime);
 
         assert_eq!(snapshot.committed_destination, Some(committed_destination));
         assert_eq!(
             snapshot.active_plan_destination,
             Some(active_plan_destination)
         );
-        assert_eq!(snapshot.commitment_state, JourneyCommitmentState::Suspended);
+        assert_eq!(snapshot.frame_state, Some(FrameState::Suspended {
+            reason: worldwake_core::SuspensionReason::PriorityInterrupt,
+            suspended_at: Tick(4),
+        }));
         assert_eq!(snapshot.established_at, Some(Tick(3)));
         assert_eq!(snapshot.last_progress_tick, Some(Tick(8)));
         assert_eq!(snapshot.remaining_travel_steps, 1);
-        assert_eq!(snapshot.consecutive_blocked_ticks, 5);
-        assert!(!snapshot.has_active_journey_travel);
+        assert_eq!(snapshot.stalled_ticks, 5);
+        assert!(!snapshot.has_active_frame_travel);
         assert_eq!(
             snapshot.last_clear_reason,
-            Some(JourneyClearReason::LostTravelPlan)
+            Some(FrameClearReason::LostPlan)
         );
     }
 
     #[test]
-    fn classify_journey_plan_relation_distinguishes_refresh_suspend_and_abandon() {
+    fn classify_frame_plan_relation_distinguishes_refresh_suspend_and_abandon() {
         let committed_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
         let committed_destination = entity(77);
         let refresh = PlannedPlan::new(
@@ -471,30 +475,23 @@ mod tests {
             }],
             PlanTerminalKind::GoalSatisfied,
         );
-        let jc = JourneyCommitment {
-            committed_goal,
-            destination: committed_destination,
-            state: JourneyCommitmentState::Active,
-            established_at: Tick(3),
-            last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
-        };
+        let frame = sample_travel_frame(committed_goal, committed_destination);
 
         assert_eq!(
-            classify_journey_plan_relation(None, &refresh),
-            JourneyPlanRelation::NoCommitment
+            classify_frame_plan_relation(None, &refresh),
+            FramePlanRelation::NoFrame
         );
         assert_eq!(
-            classify_journey_plan_relation(Some(&jc), &refresh),
-            JourneyPlanRelation::RefreshesCommitment
+            classify_frame_plan_relation(Some(&frame), &refresh),
+            FramePlanRelation::RefreshesFrame
         );
         assert_eq!(
-            classify_journey_plan_relation(Some(&jc), &suspend),
-            JourneyPlanRelation::SuspendsCommitment
+            classify_frame_plan_relation(Some(&frame), &suspend),
+            FramePlanRelation::SuspendsFrame
         );
         assert_eq!(
-            classify_journey_plan_relation(Some(&jc), &abandon),
-            JourneyPlanRelation::AbandonsCommitment
+            classify_frame_plan_relation(Some(&frame), &abandon),
+            FramePlanRelation::AbandonsFrame
         );
     }
 }

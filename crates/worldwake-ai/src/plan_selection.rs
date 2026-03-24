@@ -1,20 +1,20 @@
 use crate::{
-    classify_journey_plan_relation, goal_switching::GoalSwitchKind,
-    journey_switch_policy::compare_relation_aware_goal_switch, AgentDecisionRuntime, GoalKey,
-    GoalPriorityClass, JourneyPlanRelation, PlannedPlan, RankedGoal,
+    classify_frame_plan_relation, goal_switching::GoalSwitchKind,
+    frame_switch_policy::compare_relation_aware_goal_switch, AgentDecisionRuntime, GoalKey,
+    GoalPriorityClass, FramePlanRelation, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use worldwake_core::{JourneyCommitment, Permille};
+use worldwake_core::{IntentionFrame, Permille};
 
 pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[(GoalKey, Option<PlannedPlan>)],
     active_goal: Option<GoalKey>,
     current: &AgentDecisionRuntime,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
 ) -> Option<PlannedPlan> {
     let candidate_scores = candidates
         .iter()
@@ -51,8 +51,8 @@ pub fn select_best_plan(
     };
 
     for (challenger_class, challenger_motive, challenger_plan) in available {
-        let relation = classify_journey_plan_relation(jc, &challenger_plan);
-        if relation == JourneyPlanRelation::RefreshesCommitment
+        let relation = classify_frame_plan_relation(jc, &challenger_plan);
+        if relation == FramePlanRelation::RefreshesFrame
             || challenger_plan.goal == current_plan.goal
         {
             return Some(challenger_plan);
@@ -66,7 +66,7 @@ pub fn select_best_plan(
                 challenger_motive,
                 relation,
                 default_switch_margin,
-                journey_switch_margin,
+                frame_switch_margin,
             ),
             Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
         ) {
@@ -107,7 +107,7 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::ActionDefId;
-    use worldwake_core::{CommodityKind, EntityId, JourneyCommitment, JourneyCommitmentState, Permille, Tick};
+    use worldwake_core::{CommodityKind, EntityId, IntentionFrame, IntentionDomain, FrameState, Permille, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -512,13 +512,15 @@ mod tests {
             (current_goal, Some(current_plan.clone())),
             (challenger_goal, Some(challenger_plan.clone())),
         ];
-        let jc = Some(JourneyCommitment {
-            committed_goal: current_goal,
-            destination: entity(1),
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: current_goal,
+            domain: IntentionDomain::Travel { destination: entity(1) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan),
@@ -682,13 +684,15 @@ mod tests {
             (detour_goal, Some(detour_plan.clone())),
             (committed_goal, Some(current_plan.clone())),
         ];
-        let jc = Some(JourneyCommitment {
-            committed_goal,
-            destination,
-            state: JourneyCommitmentState::Active,
+        let jc = Some(IntentionFrame {
+            goal: committed_goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(1),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan),

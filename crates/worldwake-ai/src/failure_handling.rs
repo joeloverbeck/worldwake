@@ -1,11 +1,11 @@
 use crate::{
-    authoritative_target, AgentDecisionRuntime, JourneyClearReason, PlannedStep, PlannerOpKind,
+    authoritative_target, AgentDecisionRuntime, PlannedStep, PlannerOpKind,
     PlanningBudget,
 };
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
     EntityId, GoalKey,
-    GoalKind, JourneyCommitment, Quantity, Tick,
+    GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -31,13 +31,13 @@ pub struct PlanFailureContext<'a> {
 pub fn handle_plan_failure(
     context: &PlanFailureContext<'_>,
     runtime: &mut AgentDecisionRuntime,
-    jc: &mut Option<JourneyCommitment>,
+    jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
     budget: &PlanningBudget,
 ) {
     runtime.current_plan = None;
     if jc.is_some() {
-        runtime.last_journey_clear_reason = Some(JourneyClearReason::PlanFailed);
+        runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::PlanFailed);
     }
     *jc = None;
     runtime.materialization_bindings.clear();
@@ -751,7 +751,7 @@ mod tests {
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
         DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, JourneyCommitment, JourneyCommitmentState, LoadUnits,
+        InTransitOnEdge, IntentionFrame, IntentionDomain, FrameState, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
         TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
@@ -923,11 +923,14 @@ mod tests {
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
-        fn travel_disposition_profile(
+        fn intention_disposition_profile(
             &self,
             _agent: EntityId,
-        ) -> Option<worldwake_core::TravelDispositionProfile> {
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
+        }
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
         }
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
@@ -1129,14 +1132,16 @@ mod tests {
         }
     }
 
-    fn jc_for_goal(goal: GoalKey) -> JourneyCommitment {
-        JourneyCommitment {
-            committed_goal: goal,
-            destination: entity(99),
-            state: JourneyCommitmentState::Active,
+    fn jc_for_goal(goal: GoalKey) -> IntentionFrame {
+        IntentionFrame {
+            goal,
+            domain: IntentionDomain::Travel { destination: entity(99) },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
             established_at: Tick(10),
             last_progress_tick: None,
-            consecutive_blocked_leg_ticks: 0,
+            stalled_ticks: 0,
+            patience_limit: 10,
         }
     }
 

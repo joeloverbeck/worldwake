@@ -69,7 +69,7 @@ mod tests {
         DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, GrantedFacilityUse,
         HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
         Permille, PlaceTag, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, TravelDispositionProfile, UniqueItemKind, UtilityProfile,
+        TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind, UtilityProfile,
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -289,8 +289,11 @@ mod tests {
             None
         }
 
-        fn travel_disposition_profile(&self, _agent: EntityId) -> Option<TravelDispositionProfile> {
+        fn intention_disposition_profile(&self, _agent: EntityId) -> Option<IntentionDispositionProfile> {
             None
+        }
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
         }
 
         fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {

@@ -8,8 +8,7 @@ use crate::{
     CommodityPurpose,
     DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
-    Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-    TravelDispositionProfile, UtilityProfile,
+    Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -59,14 +58,6 @@ pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
         initial_offer_bias: Permille::new(650).unwrap(),
         concession_rate: Permille::new(125).unwrap(),
         demand_memory_retention_ticks: 240,
-    }
-}
-
-/// Returns a representative travel disposition fixture for authoritative component tests.
-pub fn sample_travel_disposition_profile() -> TravelDispositionProfile {
-    TravelDispositionProfile {
-        route_replan_margin: Permille::new(180).unwrap(),
-        blocked_leg_patience_ticks: NonZeroU32::new(9).unwrap(),
     }
 }
 

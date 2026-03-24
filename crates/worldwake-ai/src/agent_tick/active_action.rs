@@ -1,6 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, JourneyCommitment,
-    JourneyCommitmentState, Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FrameState, IntentionFrame,
+    Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, PerAgentBeliefView, RuntimeBeliefView, SchedulerActionRuntime,
@@ -9,14 +9,14 @@ use worldwake_sim::{
 
 use crate::failure_handling::ExecutionFailure;
 use crate::{
-    classify_journey_plan_relation, evaluate_interrupt, handle_plan_failure, has_journey_commitment,
-    AgentDecisionRuntime, DecisionContext, InterruptDecision, JourneyClearReason,
+    classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
+    AgentDecisionRuntime, DecisionContext, InterruptDecision,
     PlanFailureContext, PlanTerminalKind, PlannedStep, PlanningBudget, RankedGoal,
 };
 
 use super::{
     build_candidate_plans, persist_blocked_memory, plans_as_options, AgentTickContext,
-    JourneySwitchMarginSource,
+    FrameSwitchMarginSource,
 };
 use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
 
@@ -36,14 +36,14 @@ pub(super) fn handle_active_action_phase(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
-    jc: &mut Option<JourneyCommitment>,
+    jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     active_action: &worldwake_sim::ActionInstance,
     default_switch_margin: Permille,
-    journey_switch_margin: Permille,
+    frame_switch_margin: Permille,
     tick: Tick,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -58,7 +58,7 @@ pub(super) fn handle_active_action_phase(
         .current_plan
         .as_ref()
         .is_some_and(|plan| runtime.current_step_index < plan.steps.len());
-    let planned_candidates = has_journey_commitment(jc.as_ref()).then(|| {
+    let planned_candidates = has_frame(jc.as_ref()).then(|| {
         build_candidate_plans(
             ctx.world,
             ctx.scheduler,
@@ -86,7 +86,7 @@ pub(super) fn handle_active_action_phase(
         planned_as_options.as_deref(),
         plan_valid,
         default_switch_margin,
-        journey_switch_margin,
+        frame_switch_margin,
         &decision_context,
     );
     if let InterruptDecision::InterruptForReplan { trigger: _ } = decision {
@@ -131,7 +131,7 @@ pub(super) fn handle_active_action_phase(
 pub(super) fn effective_goal_switch_margin(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     budget: &PlanningBudget,
 ) -> Permille {
     goal_switch_margin_details(view, agent, jc, budget).0
@@ -140,44 +140,44 @@ pub(super) fn effective_goal_switch_margin(
 pub(super) fn goal_switch_margin_details(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     budget: &PlanningBudget,
-) -> (Permille, JourneySwitchMarginSource) {
-    if has_journey_commitment(jc) {
-        if let Some(profile) = view.travel_disposition_profile(agent) {
+) -> (Permille, FrameSwitchMarginSource) {
+    if has_frame(jc) {
+        if let Some(profile) = view.intention_disposition_profile(agent) {
             return (
-                profile.route_replan_margin,
-                JourneySwitchMarginSource::JourneyProfile,
+                profile.commitment_switch_margin,
+                FrameSwitchMarginSource::FrameProfile,
             );
         }
     }
 
     (
         budget.switch_margin_permille,
-        JourneySwitchMarginSource::BudgetDefault,
+        FrameSwitchMarginSource::BudgetDefault,
     )
 }
 
 /// Advance the step index after a completed step. Returns the updated
-/// journey commitment (or `None` if it was cleared).
+/// intention frame (or `None` if it was cleared).
 pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
-    jc: Option<&JourneyCommitment>,
+    jc: Option<&IntentionFrame>,
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
-) -> Option<JourneyCommitment> {
+) -> Option<IntentionFrame> {
     let completed_plan_relation = runtime
         .current_plan
         .as_ref()
-        .map(|plan| classify_journey_plan_relation(jc, plan));
+        .map(|plan| classify_frame_plan_relation(jc, plan));
 
-    let mut updated_jc = jc.copied();
+    let mut updated_jc = jc.cloned();
 
     if completed_op_kind == crate::PlannerOpKind::Travel {
         if let Some(ref mut c) = updated_jc {
             c.last_progress_tick = Some(tick);
-            c.consecutive_blocked_leg_ticks = 0;
+            c.stalled_ticks = 0;
         }
     }
 
@@ -205,14 +205,14 @@ pub(super) fn advance_completed_step(
             runtime.materialization_bindings.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
-            if completed_plan_relation == Some(crate::JourneyPlanRelation::SuspendsCommitment) {
+            if completed_plan_relation == Some(crate::FramePlanRelation::SuspendsFrame) {
                 if let Some(ref mut c) = updated_jc {
-                    c.state = JourneyCommitmentState::Active;
+                    c.state = FrameState::Active;
                 }
             } else {
                 if updated_jc.is_some() {
-                    runtime.last_journey_clear_reason =
-                        Some(JourneyClearReason::GoalSatisfied);
+                    runtime.last_frame_clear_reason =
+                        Some(worldwake_core::FrameClearReason::GoalSatisfied);
                 }
                 updated_jc = None;
             }
@@ -232,7 +232,7 @@ pub(super) fn handle_current_step_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
-    jc: &mut Option<JourneyCommitment>,
+    jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     step: &PlannedStep,

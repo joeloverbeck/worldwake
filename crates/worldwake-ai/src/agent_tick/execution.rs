@@ -15,7 +15,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
-    jc: &mut Option<worldwake_core::JourneyCommitment>,
+    jc: &mut Option<worldwake_core::IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     tick: Tick,
@@ -229,16 +229,16 @@ pub(super) fn persist_blocked_memory(
     Ok(())
 }
 
-/// Persist the journey commitment component to the world, producing a
+/// Persist the intention frame component to the world, producing a
 /// `ComponentDelta` in the event log. Follows the same diff-and-commit
 /// pattern as `persist_blocked_memory`.
-pub(super) fn persist_journey_commitment(
+pub(super) fn persist_intention_frame(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
     tick: Tick,
-    before: Option<&worldwake_core::JourneyCommitment>,
-    after: Option<&worldwake_core::JourneyCommitment>,
+    before: Option<&worldwake_core::IntentionFrame>,
+    after: Option<&worldwake_core::IntentionFrame>,
 ) -> Result<(), TickInputError> {
     if before == after {
         return Ok(());
@@ -253,11 +253,11 @@ pub(super) fn persist_journey_commitment(
         VisibilitySpec::Hidden,
         WitnessData::default(),
     );
-    if let Some(commitment) = after {
-        txn.set_component_journey_commitment(agent, *commitment)
+    if let Some(frame) = after {
+        txn.set_component_intention_frame(agent, frame.clone())
             .map_err(|error| TickInputError::new(error.to_string()))?;
     } else {
-        txn.clear_component_journey_commitment(agent)
+        txn.clear_component_intention_frame(agent)
             .map_err(|error| TickInputError::new(error.to_string()))?;
     }
     let _ = txn.commit(event_log);
@@ -266,7 +266,7 @@ pub(super) fn persist_journey_commitment(
 
 /// Persist the active goal component to the world, producing a
 /// `ComponentDelta` in the event log. Follows the same diff-and-commit
-/// pattern as `persist_journey_commitment`.
+/// pattern as `persist_intention_frame`.
 pub(super) fn persist_active_goal(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
@@ -301,7 +301,7 @@ pub(super) fn persist_active_goal(
 
 /// Persist the facility queue intents component to the world, producing a
 /// `ComponentDelta` in the event log. Follows the same diff-and-commit
-/// pattern as `persist_journey_commitment`.
+/// pattern as `persist_intention_frame`.
 pub(super) fn persist_facility_queue_intents(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
