@@ -1,8 +1,8 @@
 use crate::{
     authoritative_target, classify_journey_plan_relation, has_active_journey_travel,
-    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot,
-    PlannedStep, PlanningBudget,
+    AgentDecisionRuntime, JourneyClearReason, JourneyRuntimeSnapshot, PlannedStep, PlanningBudget,
 };
+use worldwake_core::JourneyCommitmentState;
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, EntityId, JourneyCommitment, Permille, Tick,
 };

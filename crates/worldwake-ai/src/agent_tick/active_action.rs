@@ -1,5 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, JourneyCommitment, Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, JourneyCommitment,
+    JourneyCommitmentState, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, PerAgentBeliefView, RuntimeBeliefView, SchedulerActionRuntime,
@@ -10,8 +11,7 @@ use crate::failure_handling::ExecutionFailure;
 use crate::{
     classify_journey_plan_relation, evaluate_interrupt, handle_plan_failure, has_journey_commitment,
     AgentDecisionRuntime, DecisionContext, InterruptDecision, JourneyClearReason,
-    JourneyCommitmentState, PlanFailureContext, PlanTerminalKind, PlannedStep, PlanningBudget,
-    RankedGoal,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, PlanningBudget, RankedGoal,
 };
 
 use super::{

@@ -1,11 +1,9 @@
 use crate::{GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, JourneyCommitment, Quantity, Tick,
-    UniqueItemKind, Wound,
+    ActionDefId, CommodityKind, EntityId, HomeostaticNeeds, JourneyCommitment,
+    JourneyCommitmentState, Quantity, Tick, UniqueItemKind, Wound,
 };
-
-pub use worldwake_core::JourneyCommitmentState;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum JourneyPlanRelation {
@@ -177,9 +175,9 @@ mod tests {
     use super::{
         classify_journey_plan_relation, has_active_journey_travel, has_journey_commitment,
         journey_committed_destination, journey_runtime_snapshot, AgentDecisionRuntime,
-        JourneyClearReason, JourneyCommitmentState, JourneyPlanRelation, MaterializationBindings,
+        JourneyClearReason, JourneyPlanRelation, MaterializationBindings,
     };
-    use worldwake_core::JourneyCommitment;
+    use worldwake_core::{JourneyCommitment, JourneyCommitmentState};
     use crate::{
         CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef,
