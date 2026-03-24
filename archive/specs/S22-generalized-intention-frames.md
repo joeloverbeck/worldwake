@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S22: Generalized Intention Frames
 
@@ -732,3 +732,10 @@ The exhaustion → blocked intent path is a dampener, not an amplifier: it preve
 6. Decision traces show frame lifecycle events (created, progressed, suspended, resumed, exhausted, cleared)
 7. Frame exhaustion creates a `BlockedIntent` that prevents immediate re-adoption
 8. No references to `JourneyCommitment`, `JourneyCommitmentState`, `JourneyPlanRelation`, or `TravelDispositionProfile` remain in non-archived code
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Replaced travel-specific `JourneyCommitment` + `TravelDispositionProfile` with domain-agnostic `IntentionFrame` + `IntentionDispositionProfile`. Added `IntentionDomain` (Travel, Care, Generic), `FrameAssumption` evaluation, progress detection via `PlannerOpKind`, frame exhaustion → `BlockedIntent` integration, `FrameTransitionTrace` in decision traces, save/load round-trip coverage, and workspace-wide verification. All 8 old journey types removed.
+- **Deviations**: None significant. Implementation followed the spec's migration scope and type mappings as designed.
+- **Verification results**: `cargo build --workspace` clean, `cargo test --workspace` all pass, `cargo clippy --workspace` no warnings, `golden_deterministic_replay_fidelity` stable hashes, zero orphaned references to old types in non-archived source.

@@ -1,6 +1,6 @@
 # S22-008: Workspace verification and orphan cleanup
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — verification and cleanup only
@@ -88,3 +88,10 @@ None — documentation-only ticket; verification is command-based and existing r
 2. `cargo build --workspace`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Spec S22 status updated to COMPLETED. No production code changes needed.
+- **Deviations**: None. All 8 old types confirmed absent from non-archived source (two doc-comment references explain what the new types replaced — not orphans).
+- **Verification results**: `cargo build --workspace` clean, `cargo test --workspace` all pass (0 failures), `cargo clippy --workspace` no warnings, `golden_deterministic_replay_fidelity` passes with stable hashes.
