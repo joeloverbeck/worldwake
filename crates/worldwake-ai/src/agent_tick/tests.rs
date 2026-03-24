@@ -2450,6 +2450,8 @@
             &harness.handlers,
             &budget,
             &worldwake_sim::RecipeRegistry::new(),
+            &worldwake_core::BlockedIntentMemory::default(),
+            worldwake_core::Tick(0),
             None,
             None,
         );

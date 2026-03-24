@@ -603,6 +603,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
             ..PlanningBudget::default()
         },
         &h.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
         None,
         None,
     );
@@ -614,6 +616,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &h.handlers,
         &PlanningBudget::default(),
         &h.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
         None,
         None,
     );

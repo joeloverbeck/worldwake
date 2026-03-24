@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
+    ActionDefId, BlockingFact, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
 };
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
@@ -257,6 +257,10 @@ pub enum RootCandidateFilterReason {
     BlockedFacilityUse {
         facility: EntityId,
         intended_action: ActionDefId,
+    },
+    PlaceBlocker {
+        place: Option<EntityId>,
+        blocking_fact: BlockingFact,
     },
 }
 

@@ -1,6 +1,6 @@
 # S23-004: Add blocker check to plan search for place-specific blockers
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — search signature and pruning logic (worldwake-ai)
@@ -162,3 +162,16 @@ Pass `blocked` (or `&BlockedIntentMemory::default()` in tests that don't exercis
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - `search_plan()` and `search_candidates()` gained `blocked: &BlockedIntentMemory` and `current_tick: Tick` parameters
+  - `candidate_blocked_by_place()` and `candidate_action_place()` helpers added to `search/candidates.rs`
+  - `PlaceBlocker` variant added to `RootCandidateFilterReason` in `decision_trace.rs`
+  - `find_blocked_for_search()` added to `BlockedIntentMemory` in `worldwake-core` (returns `Option<&BlockedIntent>` for trace extraction)
+  - All call sites updated (search/tests.rs, agent_tick/planning.rs, agent_tick/tests.rs, goal_model.rs, golden_care.rs, golden_offices.rs)
+  - 4 new focused tests added
+- **Deviations**: Added `find_blocked_for_search()` (not in original ticket) to avoid double-pass when extracting `blocking_fact` for trace recording. `is_blocked_for_search()` now delegates to it.
+- **Verification**: `cargo test -p worldwake-ai` all pass, `cargo clippy -p worldwake-ai` clean

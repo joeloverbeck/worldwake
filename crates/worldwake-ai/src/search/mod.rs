@@ -20,7 +20,7 @@ use heuristic::compute_heuristic;
 #[cfg(test)]
 use transition::build_successor;
 use std::collections::{BTreeMap, BinaryHeap};
-use worldwake_core::ActionDefId;
+use worldwake_core::{ActionDefId, BlockedIntentMemory, Tick};
 use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry};
 
 #[derive(Clone)]
@@ -77,6 +77,8 @@ pub fn search_plan(
     handlers: &ActionHandlerRegistry,
     budget: &PlanningBudget,
     recipes: &RecipeRegistry,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
 ) -> PlanSearchResult {
@@ -122,6 +124,8 @@ pub fn search_plan(
             semantics_table,
             registry,
             handlers,
+            blocked,
+            current_tick,
             binding_rejections.as_deref_mut(),
             record_root_candidates.then_some(&mut root_candidates),
         );

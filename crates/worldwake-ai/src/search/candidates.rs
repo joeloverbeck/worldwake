@@ -1,7 +1,7 @@
-use crate::planner_ops::planner_only_candidates;
+use crate::planner_ops::{planner_only_candidates, PlannerOpKind};
 use crate::{GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState};
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, EntityId, GoalKind};
+use worldwake_core::{ActionDefId, BlockedIntentMemory, EntityId, GoalKind, Tick};
 use worldwake_sim::{
     get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
     QueueForFacilityUsePayload, RuntimeBeliefView,
@@ -96,6 +96,8 @@ pub(super) fn search_candidates(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
 ) -> Vec<SearchCandidate> {
@@ -168,6 +170,29 @@ pub(super) fn search_candidates(
                 crate::decision_trace::RootCandidateOutcome::Filtered(
                     crate::decision_trace::RootCandidateFilterReason::BindingMismatch {
                         required_target,
+                    },
+                ),
+            );
+            continue;
+        }
+
+        if let Some((place, blocking_fact)) =
+            candidate_blocked_by_place(
+                &candidate,
+                goal,
+                node,
+                semantics_table,
+                blocked,
+                current_tick,
+            )
+        {
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::PlaceBlocker {
+                        place,
+                        blocking_fact,
                     },
                 ),
             );
@@ -341,4 +366,46 @@ pub(super) fn search_candidate_from_planner(
 
 pub(super) fn unsupported_goal(goal: &GoalKind) -> bool {
     matches!(goal, GoalKind::SellCommodity { .. })
+}
+
+/// Returns `Some((place, blocking_fact))` if the candidate is blocked by a
+/// place-scoped blocker, `None` otherwise.
+fn candidate_blocked_by_place(
+    candidate: &SearchCandidate,
+    goal: &GroundedGoal,
+    node: &SearchNode<'_>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+) -> Option<(Option<EntityId>, worldwake_core::BlockingFact)> {
+    let place = candidate_action_place(candidate, node, semantics_table);
+    let target = candidate.authoritative_targets.first().copied();
+    let intent = blocked.find_blocked_for_search(
+        &goal.key,
+        place,
+        target,
+        Some(candidate.def_id),
+        current_tick,
+    )?;
+    Some((place, intent.blocking_fact))
+}
+
+/// Resolves the place where a candidate action would execute.
+///
+/// Travel actions use the destination (target place) as their action place.
+/// All other actions use the actor's current simulated place.
+fn candidate_action_place(
+    candidate: &SearchCandidate,
+    node: &SearchNode<'_>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> Option<EntityId> {
+    let semantics = semantics_table.get(&candidate.def_id)?;
+    match semantics.op_kind {
+        PlannerOpKind::Travel => candidate.authoritative_targets.first().copied(),
+        _ => node
+            .state
+            .effective_place_ref(PlanningEntityRef::Authoritative(
+                node.state.snapshot().actor(),
+            )),
+    }
 }

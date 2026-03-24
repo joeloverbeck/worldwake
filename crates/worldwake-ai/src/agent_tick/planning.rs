@@ -197,6 +197,8 @@ pub(super) fn build_candidate_plans(
                 action_handlers,
                 budget,
                 recipe_registry,
+                blocked_memory,
+                current_tick,
                 if collect_rejections {
                     Some(&mut rejections)
                 } else {

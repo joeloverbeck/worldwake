@@ -48,7 +48,21 @@ impl BlockedIntentMemory {
         action_def: Option<ActionDefId>,
         current_tick: Tick,
     ) -> bool {
-        self.intents.values().any(|intent| {
+        self.find_blocked_for_search(goal_key, place, target, action_def, current_tick)
+            .is_some()
+    }
+
+    /// Like `is_blocked_for_search` but returns the matching `BlockedIntent`
+    /// reference so callers can inspect the `blocking_fact` for trace recording.
+    pub fn find_blocked_for_search(
+        &self,
+        goal_key: &GoalKey,
+        place: Option<EntityId>,
+        target: Option<EntityId>,
+        action_def: Option<ActionDefId>,
+        current_tick: Tick,
+    ) -> Option<&BlockedIntent> {
+        self.intents.values().find(|intent| {
             intent.blocker_key.goal_key == *goal_key
                 && intent.expires_tick > current_tick
                 && matches_scope(&intent.blocker_key, place, target, action_def)
