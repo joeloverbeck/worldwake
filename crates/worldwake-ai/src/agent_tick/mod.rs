@@ -16,8 +16,8 @@ use observation::{
 };
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
-    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_blocked_memory,
-    persist_journey_commitment, plan_finished,
+    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
+    persist_blocked_memory, persist_journey_commitment, plan_finished,
 };
 use candidates::abandon_expired_facility_queues;
 use planning::{
@@ -222,6 +222,9 @@ fn process_agent(
     // Read journey commitment from authoritative component.
     let original_jc = ctx.world.get_component_journey_commitment(agent).copied();
     let mut current_jc = original_jc;
+    // Read active goal from authoritative component.
+    let original_active_goal = ctx.world.get_component_active_goal(agent).copied();
+    let mut current_active_goal = original_active_goal;
     let runtime = runtime_by_agent.entry(agent).or_default();
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
@@ -234,7 +237,7 @@ fn process_agent(
                 runtime.last_journey_clear_reason = Some(JourneyClearReason::Death);
                 current_jc = None;
             }
-            runtime.current_goal = None;
+            current_active_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -249,6 +252,14 @@ fn process_agent(
                 original_jc.as_ref(),
                 current_jc.as_ref(),
             )?;
+            persist_active_goal(
+                ctx.world,
+                ctx.event_log,
+                agent,
+                tick,
+                original_active_goal.as_ref(),
+                current_active_goal.as_ref(),
+            )?;
             return Ok(tracing.then_some(AgentDecisionTrace {
                 agent,
                 tick,
@@ -260,6 +271,7 @@ fn process_agent(
     reconcile_in_flight_state(
         ctx,
         runtime,
+        &mut current_active_goal,
         &mut current_jc,
         &mut blocked_memory,
         active_action.as_ref(),
@@ -274,11 +286,13 @@ fn process_agent(
     let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
 
     // ── Read phase: candidate generation + ranking ──
+    let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
     let read_result = refresh_runtime_for_read_phase(
         ctx.world,
         ctx.scheduler,
         action_defs,
         runtime,
+        active_goal_key,
         &mut blocked_memory,
         agent,
         replan_signals,
@@ -305,6 +319,7 @@ fn process_agent(
         let interrupt_decision = handle_active_action_phase(
             ctx,
             runtime,
+            &mut current_active_goal,
             &mut current_jc,
             &mut blocked_memory,
             agent,
@@ -334,7 +349,7 @@ fn process_agent(
         })
     } else {
         // ── Planning path ──
-        let previous_goal = runtime.current_goal;
+        let previous_goal = current_active_goal.as_ref().map(|ag| ag.goal_key);
 
         // Drain action start failures for this agent from the scheduler.
         let agent_failures: Vec<ActionStartFailureSummary> = start_failures
@@ -352,6 +367,7 @@ fn process_agent(
                 ctx.world,
                 ctx.scheduler,
                 runtime,
+                &mut current_active_goal,
                 &mut current_jc,
                 agent,
                 &ranked_candidates,
@@ -389,9 +405,11 @@ fn process_agent(
                 et.enqueued_step = Some(summarize_step(&step, action_defs));
             }
 
+            let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
             let exec_result = enqueue_valid_step_or_handle_failure(
                 ctx,
                 runtime,
+                active_goal_key,
                 &mut current_jc,
                 &mut blocked_memory,
                 agent,
@@ -458,6 +476,14 @@ fn process_agent(
         tick,
         original_jc.as_ref(),
         current_jc.as_ref(),
+    )?;
+    persist_active_goal(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        tick,
+        original_active_goal.as_ref(),
+        current_active_goal.as_ref(),
     )?;
     finalize_agent_tick(
         ctx.world,

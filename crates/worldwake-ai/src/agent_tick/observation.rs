@@ -66,6 +66,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     scheduler: &worldwake_sim::Scheduler,
     action_defs: &worldwake_sim::ActionDefRegistry,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
@@ -80,7 +81,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
     let snapshot_changed =
-        observation_snapshot_changed(&view, agent, runtime, phase.recipe_registry);
+        observation_snapshot_changed(&view, agent, active_goal, runtime, phase.recipe_registry);
     let queue_patience_exhausted = facility_queue_patience_exhausted(&view, agent, phase.tick);
 
     // Decompose dirty-flag into individual reasons for tracing.
@@ -194,9 +195,11 @@ pub(super) fn handle_facility_queue_transitions(
     changed
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn reconcile_in_flight_state(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<worldwake_core::ActiveGoal>,
     jc: &mut Option<worldwake_core::JourneyCommitment>,
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
@@ -220,6 +223,7 @@ pub(super) fn reconcile_in_flight_state(
         handle_current_step_failure(
             ctx,
             runtime,
+            active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
             agent,
@@ -233,6 +237,7 @@ pub(super) fn reconcile_in_flight_state(
         handle_current_step_failure(
             ctx,
             runtime,
+            active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
             agent,
@@ -244,17 +249,18 @@ pub(super) fn reconcile_in_flight_state(
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
-        handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
         return Ok(());
     };
-    reconcile_committed_facility_queue_intents(runtime, &step);
+    let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
+    reconcile_committed_facility_queue_intents(runtime, goal_key, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        handle_current_step_failure(ctx, runtime, jc, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
         return Ok(());
     }
 
     runtime.step_in_flight = false;
-    *jc = advance_completed_step(runtime, jc.as_ref(), step.op_kind, ctx.tick);
+    *jc = advance_completed_step(runtime, active_goal, jc.as_ref(), step.op_kind, ctx.tick);
     Ok(())
 }
 
@@ -269,6 +275,7 @@ fn matching_start_failure<'a>(
 
 fn reconcile_committed_facility_queue_intents(
     runtime: &mut AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
     step: &PlannedStep,
 ) {
     let Some(facility) = step.targets.first().copied().and_then(authoritative_target) else {
@@ -277,8 +284,7 @@ fn reconcile_committed_facility_queue_intents(
 
     match step.op_kind {
         crate::PlannerOpKind::QueueForFacilityUse => {
-            let Some(goal_key) = runtime
-                .current_goal
+            let Some(goal_key) = active_goal
                 .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
             else {
                 return;
@@ -326,12 +332,12 @@ fn reconcile_committed_facility_queue_intents(
 pub(super) fn observation_snapshot_changed(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
+    active_goal: Option<worldwake_core::GoalKey>,
     runtime: &AgentDecisionRuntime,
     recipe_registry: &RecipeRegistry,
 ) -> bool {
     let current_commodity_signature = commodity_signature(view, agent);
-    let commodity_filter = runtime
-        .current_goal
+    let commodity_filter = active_goal
         .map(|goal| goal.kind.relevant_observed_commodities(recipe_registry))
         .or_else(|| {
             runtime.current_plan.as_ref().map(|plan| {
