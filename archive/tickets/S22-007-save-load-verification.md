@@ -1,6 +1,6 @@
 # S22-007: Save/load verification for IntentionFrame and IntentionDispositionProfile
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — verification-only ticket
@@ -93,3 +93,13 @@ In the existing `golden_save_load_round_trip_under_ai` test (or create a focused
 1. `cargo test -p worldwake-ai --test golden_determinism`
 2. `cargo clippy --workspace`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Added 3 new golden tests to `crates/worldwake-ai/tests/golden_determinism.rs`:
+  - `golden_save_load_preserves_suspended_intention_frame` — verifies suspended `IntentionFrame` with `SuspensionReason::PriorityInterrupt` and tick survives save/load.
+  - `golden_save_load_preserves_intention_disposition_profile` — verifies `IntentionDispositionProfile` with 3 domain-specific patience entries, default patience, and switch margin survive save/load.
+  - `golden_save_load_preserves_frame_assumptions` — verifies `IntentionFrame` with 3 `FrameAssumption` entries preserved in order after save/load, plus all scalar fields.
+- **Deviations**: Criterion 1 (active IntentionFrame with Travel) was already covered by the existing `golden_save_load_preserves_promoted_commitments` test from a prior ticket, so no additional test was needed for that case.
+- **Verification**: All 23 golden tests pass, `cargo clippy --workspace` clean, `cargo test --workspace` all pass.

@@ -3,11 +3,14 @@
 mod golden_harness;
 
 use golden_harness::*;
+use std::collections::BTreeMap;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    ActiveGoal, BeliefConfidencePolicy, CommodityKind, FacilityQueueIntents, HomeostaticNeeds,
-    IntentionFrame, FrameState, MetabolismProfile, PerceptionProfile, PrototypePlace,
-    Quantity, ResourceSource, Seed, StateHash, UtilityProfile, WorkstationTag,
+    ActiveGoal, BeliefConfidencePolicy, CommodityKind, FacilityQueueIntents,
+    FrameAssumption, FrameState, GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile,
+    IntentionDomain, IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick,
+    UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -739,4 +742,250 @@ fn golden_save_load_preserves_promoted_commitments_replays_deterministically() {
         "Two runs of the commitment-preservation scenario with the same seed must produce \
          identical hashes"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario S22-007: Save/load verification for IntentionFrame and
+// IntentionDispositionProfile
+// ---------------------------------------------------------------------------
+
+#[test]
+fn golden_save_load_preserves_suspended_intention_frame() {
+    let (mut h, agent) = build_commitment_preservation_scenario(Seed([107; 32]));
+
+    // Run until the agent has an active IntentionFrame (mid-travel).
+    for _ in 0..30 {
+        h.step_once();
+        if h.world.get_component_intention_frame(agent).is_some() {
+            break;
+        }
+    }
+    let pre_frame = h
+        .world
+        .get_component_intention_frame(agent)
+        .cloned()
+        .expect("Agent should have an IntentionFrame before suspension");
+
+    // Manually suspend the frame to test suspended-state round-trip.
+    let suspended_frame = IntentionFrame {
+        state: FrameState::Suspended {
+            reason: SuspensionReason::PriorityInterrupt,
+            suspended_at: Tick(99),
+        },
+        ..pre_frame
+    };
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_component_intention_frame(agent, suspended_frame.clone())
+            .unwrap();
+        txn.commit(&mut h.event_log);
+    }
+
+    // Verify the suspended frame is set.
+    let pre_save = h
+        .world
+        .get_component_intention_frame(agent)
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        pre_save.state,
+        FrameState::Suspended {
+            reason: SuspensionReason::PriorityInterrupt,
+            suspended_at: Tick(99),
+        },
+        "Frame should be Suspended before save"
+    );
+
+    // Save/load round-trip.
+    let resumed_state = h.save_load_roundtrip();
+    let resumed = GoldenHarness::from_simulation_state(&resumed_state);
+
+    let post_load = resumed
+        .world
+        .get_component_intention_frame(agent)
+        .cloned()
+        .expect("IntentionFrame must survive save/load");
+
+    assert_eq!(
+        pre_save, post_load,
+        "Suspended IntentionFrame must survive save/load round-trip"
+    );
+    assert_eq!(
+        post_load.state,
+        FrameState::Suspended {
+            reason: SuspensionReason::PriorityInterrupt,
+            suspended_at: Tick(99),
+        },
+        "Suspended state with reason and tick must be preserved after load"
+    );
+}
+
+#[test]
+fn golden_save_load_preserves_intention_disposition_profile() {
+    let (mut h, agent) = build_commitment_preservation_scenario(Seed([108; 32]));
+
+    // Set an IntentionDispositionProfile with 2+ domain-specific patience entries.
+    let mut domain_patience = BTreeMap::new();
+    domain_patience.insert(IntentionDomainTag::Travel, nz(50));
+    domain_patience.insert(IntentionDomainTag::Care, nz(75));
+    domain_patience.insert(IntentionDomainTag::Escort, nz(100));
+
+    let profile = IntentionDispositionProfile {
+        domain_patience,
+        default_patience_ticks: nz(30),
+        commitment_switch_margin: pm(200),
+    };
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_intention_disposition_profile(agent, profile.clone())
+            .unwrap();
+        txn.commit(&mut h.event_log);
+    }
+
+    let pre_save = h
+        .world
+        .get_component_intention_disposition_profile(agent)
+        .cloned()
+        .expect("Profile should be set before save");
+
+    // Save/load round-trip.
+    let resumed_state = h.save_load_roundtrip();
+    let resumed = GoldenHarness::from_simulation_state(&resumed_state);
+
+    let post_load = resumed
+        .world
+        .get_component_intention_disposition_profile(agent)
+        .cloned()
+        .expect("IntentionDispositionProfile must survive save/load");
+
+    assert_eq!(
+        pre_save, post_load,
+        "IntentionDispositionProfile must survive save/load round-trip"
+    );
+
+    // Explicit field assertions for contract documentation.
+    assert_eq!(
+        post_load.domain_patience.len(),
+        3,
+        "domain_patience should have 3 entries after load"
+    );
+    assert_eq!(
+        post_load.domain_patience.get(&IntentionDomainTag::Travel),
+        Some(&nz(50)),
+        "Travel patience must be preserved"
+    );
+    assert_eq!(
+        post_load.domain_patience.get(&IntentionDomainTag::Care),
+        Some(&nz(75)),
+        "Care patience must be preserved"
+    );
+    assert_eq!(
+        post_load.domain_patience.get(&IntentionDomainTag::Escort),
+        Some(&nz(100)),
+        "Escort patience must be preserved"
+    );
+    assert_eq!(
+        post_load.default_patience_ticks,
+        nz(30),
+        "default_patience_ticks must be preserved"
+    );
+    assert_eq!(
+        post_load.commitment_switch_margin,
+        pm(200),
+        "commitment_switch_margin must be preserved"
+    );
+}
+
+#[test]
+fn golden_save_load_preserves_frame_assumptions() {
+    let (mut h, agent) = build_commitment_preservation_scenario(Seed([109; 32]));
+
+    // Create a frame with 2+ explicit assumptions.
+    let destination = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let frame = IntentionFrame {
+        goal: GoalKey::new(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        }),
+        domain: IntentionDomain::Travel { destination },
+        assumptions: vec![
+            FrameAssumption::RouteExists {
+                from: prototype_place_entity(PrototypePlace::VillageSquare),
+                to: destination,
+            },
+            FrameAssumption::NoCriticalThreat,
+            FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place: destination,
+            },
+        ],
+        state: FrameState::Active,
+        established_at: Tick(5),
+        last_progress_tick: Some(Tick(8)),
+        stalled_ticks: 2,
+        patience_limit: 40,
+    };
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_intention_frame(agent, frame.clone())
+            .unwrap();
+        txn.commit(&mut h.event_log);
+    }
+
+    let pre_save = h
+        .world
+        .get_component_intention_frame(agent)
+        .cloned()
+        .unwrap();
+
+    // Save/load round-trip.
+    let resumed_state = h.save_load_roundtrip();
+    let resumed = GoldenHarness::from_simulation_state(&resumed_state);
+
+    let post_load = resumed
+        .world
+        .get_component_intention_frame(agent)
+        .cloned()
+        .expect("IntentionFrame with assumptions must survive save/load");
+
+    assert_eq!(
+        pre_save, post_load,
+        "IntentionFrame must survive save/load round-trip"
+    );
+
+    // Explicit assumptions assertions — order must be preserved (not re-sorted).
+    assert_eq!(
+        post_load.assumptions.len(),
+        3,
+        "All 3 assumptions must be preserved"
+    );
+    assert_eq!(
+        post_load.assumptions[0],
+        FrameAssumption::RouteExists {
+            from: prototype_place_entity(PrototypePlace::VillageSquare),
+            to: destination,
+        },
+        "First assumption (RouteExists) must be preserved in order"
+    );
+    assert_eq!(
+        post_load.assumptions[1],
+        FrameAssumption::NoCriticalThreat,
+        "Second assumption (NoCriticalThreat) must be preserved in order"
+    );
+    assert_eq!(
+        post_load.assumptions[2],
+        FrameAssumption::CommodityAvailableAt {
+            commodity: CommodityKind::Apple,
+            place: destination,
+        },
+        "Third assumption (CommodityAvailableAt) must be preserved in order"
+    );
+
+    // Additional field assertions for full coverage.
+    assert_eq!(post_load.established_at, Tick(5));
+    assert_eq!(post_load.last_progress_tick, Some(Tick(8)));
+    assert_eq!(post_load.stalled_ticks, 2);
+    assert_eq!(post_load.patience_limit, 40);
 }
