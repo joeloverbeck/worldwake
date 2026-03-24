@@ -12,7 +12,7 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, AgentData, BeliefConfidencePolicy,
-    CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
+    BlockedIntentMemory, CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
     FactionPurpose, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, MetabolismProfile,
     PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash,
     SuccessionLaw, TellProfile, Tick, UtilityProfile,
@@ -2464,6 +2464,8 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         &h.handlers,
         &PlanningBudget::default(),
         &h.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
         None,
         None,
     ) {

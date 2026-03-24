@@ -1,10 +1,10 @@
 use crate::{
     authoritative_target, classify_journey_plan_relation, has_active_journey_travel,
-    AgentDecisionRuntime, JourneyClearReason, JourneyCommitmentState, JourneyRuntimeSnapshot,
-    PlannedStep, PlanningBudget,
+    AgentDecisionRuntime, JourneyClearReason, JourneyRuntimeSnapshot, PlannedStep, PlanningBudget,
 };
+use worldwake_core::JourneyCommitmentState;
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, EntityId, JourneyCommitment, Permille, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, EntityId, JourneyCommitment, Permille, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -116,11 +116,14 @@ pub(super) fn handle_recoverable_travel_step_blockage(
                 .expect("active journey travel must retain a current goal")
         });
         blocked_memory.record(BlockedIntent {
-            goal_key,
+            blocker_key: BlockerKey {
+                goal_key,
+                place: blocked_leg_target(step),
+                target: None,
+                action_def: Some(step.def_id),
+            },
             blocking_fact: worldwake_core::BlockingFact::NoKnownPath,
-            related_entity: None,
-            related_place: blocked_leg_target(step),
-            related_action: None,
+            diagnostic_context: None,
             observed_tick: tick,
             expires_tick: tick + u64::from(budget.structural_block_ticks),
         });

@@ -77,7 +77,9 @@ pub use belief::{
     RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SocialObservation,
     SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
 };
-pub use blocked_intent::{BlockedIntent, BlockedIntentMemory, BlockingFact};
+pub use blocked_intent::{
+    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
+};
 pub use canonical::{
     canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, CanonicalError,
     StateHash,

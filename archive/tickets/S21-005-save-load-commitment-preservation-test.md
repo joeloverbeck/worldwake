@@ -1,6 +1,6 @@
 # S21-005: Update save/load round-trip test to verify commitment preservation
 
-**Status**: PENDING
+**Status**: DONE
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test-only ticket

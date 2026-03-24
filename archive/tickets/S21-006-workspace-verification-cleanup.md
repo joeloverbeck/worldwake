@@ -1,6 +1,6 @@
 # S21-006: Workspace verification and cleanup
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — cleanup and verification only
@@ -95,3 +95,10 @@ In `crates/worldwake-ai/src/decision_runtime.rs`, check if `pub use worldwake_co
 1. `cargo test --workspace`
 2. `cargo clippy --workspace`
 3. Grep sweep: `grep -r "runtime\.current_goal\|runtime\.journey_committed\|runtime\.queued_facility_intents\|runtime\.journey_commitment_state\|runtime\.journey_established_at\|runtime\.journey_last_progress_tick\|runtime\.consecutive_blocked_leg_ticks" crates/worldwake-ai/src/` — must return zero hits
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Removed the `pub use worldwake_core::JourneyCommitmentState;` re-export from `decision_runtime.rs` and the corresponding `JourneyCommitmentState` entry from `lib.rs` re-exports. Updated 4 files (`decision_runtime.rs`, `agent_tick/active_action.rs`, `agent_tick/journey.rs`, `tests/golden_ai_decisions.rs`) to import `JourneyCommitmentState` from `worldwake_core` directly. No `QueuedFacilityIntent` re-export existed (already clean from S21-004).
+- **Deviations from plan**: None. The ticket anticipated the re-export might not exist; one of the two (`JourneyCommitmentState`) was still present and was removed. The other (`QueuedFacilityIntent`) was already clean.
+- **Verification results**: `cargo test --workspace` — all pass (zero failures). `cargo clippy --workspace` — zero warnings. `SAVE_FORMAT_VERSION == 5`. Stale runtime field grep sweep — zero hits. All golden/determinism/save-load tests pass.

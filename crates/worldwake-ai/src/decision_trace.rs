@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
+    ActionDefId, BlockingFact, CommodityKind, EntityId, GoalKey, RecipientKnowledgeStatus, Tick,
 };
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
@@ -79,8 +79,13 @@ impl DecisionOutcome {
                 let selected_provenance = selected_ranked_goal_summary(planning)
                     .and_then(|summary| summary.provenance.as_ref())
                     .map_or_else(String::new, format_ranked_goal_provenance_summary);
+                let unknown_suffix = if planning.unknown_blockers.is_empty() {
+                    String::new()
+                } else {
+                    format!(", unknown_blockers={}", planning.unknown_blockers.len())
+                };
                 format!(
-                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
+                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{unknown_suffix}"
                 )
             }
         }
@@ -104,6 +109,9 @@ pub struct PlanningPipelineTrace {
     /// Action start failures from the previous tick's `BestEffort` inputs,
     /// drained from the `Scheduler` for this agent.
     pub action_start_failures: Vec<ActionStartFailureSummary>,
+    /// Active `BlockingFact::Unknown` blockers in `BlockedIntentMemory` at
+    /// trace construction time. Derived view for debuggability (P27).
+    pub unknown_blockers: Vec<UnknownBlockerTrace>,
 }
 
 /// Summary of an action start failure for trace output.
@@ -113,6 +121,17 @@ pub struct ActionStartFailureSummary {
     pub def_id: ActionDefId,
     pub request: ResolvedRequestTrace,
     pub reason: ActionStartFailureReason,
+}
+
+/// Diagnostic trace for `BlockingFact::Unknown` blockers active during planning.
+/// Derived from `BlockedIntentMemory` at trace construction time (P25: derived view).
+#[derive(Clone, Debug)]
+pub struct UnknownBlockerTrace {
+    pub goal_key: GoalKey,
+    pub failed_action_def: ActionDefId,
+    pub op_kind: PlannerOpKind,
+    pub target: Option<EntityId>,
+    pub place: Option<EntityId>,
 }
 
 // ── Stage 1: Candidate Generation + Ranking ─────────────────────
@@ -257,6 +276,10 @@ pub enum RootCandidateFilterReason {
     BlockedFacilityUse {
         facility: EntityId,
         intended_action: ActionDefId,
+    },
+    PlaceBlocker {
+        place: Option<EntityId>,
+        blocking_fact: BlockingFact,
     },
 }
 
@@ -830,6 +853,19 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                     );
                 }
             }
+            if !planning.unknown_blockers.is_empty() {
+                let _ = write!(out, "\n  Unknown blockers active:");
+                for ub in &planning.unknown_blockers {
+                    let def_name = action_defs
+                        .get(ub.failed_action_def)
+                        .map_or("unknown", |d| d.name.as_str());
+                    let _ = write!(
+                        out,
+                        "\n    goal={:?} action={def_name} op={:?} place={:?}",
+                        ub.goal_key.kind, ub.op_kind, ub.place,
+                    );
+                }
+            }
             out
         }
     }
@@ -1017,6 +1053,7 @@ mod tests {
                     failure: None,
                 },
                 action_start_failures: Vec::new(),
+                unknown_blockers: Vec::new(),
             })),
         }
     }
@@ -1408,6 +1445,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
+            unknown_blockers: vec![],
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));
@@ -1466,6 +1504,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
+            unknown_blockers: vec![],
         }));
 
         let summary = outcome.summary();
@@ -1531,6 +1570,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
+            unknown_blockers: vec![],
         }));
 
         let summary = outcome.summary();

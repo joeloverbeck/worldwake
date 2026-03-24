@@ -5,8 +5,8 @@ use super::{
 };
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData,
-    WorldTxn,
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FacilityQueueIntents, Tick,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -293,6 +293,41 @@ pub(super) fn persist_active_goal(
             .map_err(|error| TickInputError::new(error.to_string()))?;
     } else {
         txn.clear_component_active_goal(agent)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+    }
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+/// Persist the facility queue intents component to the world, producing a
+/// `ComponentDelta` in the event log. Follows the same diff-and-commit
+/// pattern as `persist_journey_commitment`.
+pub(super) fn persist_facility_queue_intents(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: &FacilityQueueIntents,
+    after: &FacilityQueueIntents,
+) -> Result<(), TickInputError> {
+    if before == after {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    if after.intents.is_empty() {
+        txn.clear_component_facility_queue_intents(agent)
+            .map_err(|error| TickInputError::new(error.to_string()))?;
+    } else {
+        txn.set_component_facility_queue_intents(agent, after.clone())
             .map_err(|error| TickInputError::new(error.to_string()))?;
     }
     let _ = txn.commit(event_log);

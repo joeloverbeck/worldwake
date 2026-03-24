@@ -5,11 +5,12 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, JourneyCommitmentState, PlannerOpKind, SelectedPlanSource};
+use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
-    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, TravelDispositionProfile, UtilityProfile, WorkstationTag,
+    HomeostaticNeeds, JourneyCommitmentState, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, TravelDispositionProfile, UtilityProfile,
+    WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 

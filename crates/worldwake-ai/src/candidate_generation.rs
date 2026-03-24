@@ -1194,7 +1194,7 @@ fn emit_candidate(
     }
 
     let key = GoalKey::from(kind);
-    if blocked.is_blocked(&key, current_tick) {
+    if blocked.is_blocked(&key, None, None, None, current_tick) {
         return;
     }
 
@@ -1227,7 +1227,7 @@ fn emit_candidate_with_trace(
     }
 
     let key = GoalKey::from(kind);
-    if blocked.is_blocked(&key, current_tick) {
+    if blocked.is_blocked(&key, None, None, None, current_tick) {
         return;
     }
 
@@ -1696,7 +1696,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockingFact, BodyPart,
+        BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
         EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
@@ -2707,17 +2707,19 @@ mod tests {
             .insert(agent, DriveThresholds::default());
         view.sellers
             .insert((place, CommodityKind::Bread), vec![seller]);
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: key,
-                blocking_fact: BlockingFact::NoKnownSeller,
-                related_entity: Some(seller),
-                related_place: Some(place),
-                related_action: None,
-                observed_tick: Tick(1),
-                expires_tick: Tick(10),
-            }],
-        };
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+        });
 
         let candidates =
             generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
@@ -4229,17 +4231,19 @@ mod tests {
         ));
 
         view.tell_profiles.insert(speaker, TellProfile::default());
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief { listener, subject }),
-                blocking_fact: BlockingFact::NoKnownPath,
-                related_entity: Some(listener),
-                related_place: Some(place),
-                related_action: None,
-                observed_tick: Tick(10),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::NoKnownPath,
+            diagnostic_context: None,
+            observed_tick: Tick(10),
+            expires_tick: Tick(20),
+        });
 
         let blocked_candidates =
             generate_candidates(&view, speaker, &blocked, &RecipeRegistry::new(), Tick(11));

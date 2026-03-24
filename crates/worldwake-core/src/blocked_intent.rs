@@ -2,46 +2,129 @@
 
 use crate::{ActionDefId, CommodityKind, Component, EntityId, GoalKey, Tick, UniqueItemKind};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct BlockerKey {
+    pub goal_key: GoalKey,
+    pub place: Option<EntityId>,
+    pub target: Option<EntityId>,
+    pub action_def: Option<ActionDefId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BlockerDiagnostic {
+    pub action_def: ActionDefId,
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockedIntentMemory {
-    pub intents: Vec<BlockedIntent>,
+    pub intents: BTreeMap<BlockerKey, BlockedIntent>,
 }
 
 impl BlockedIntentMemory {
-    pub fn is_blocked(&self, key: &GoalKey, current_tick: Tick) -> bool {
-        self.intents.iter().any(|intent| {
-            intent.goal_key == *key
+    pub fn is_blocked(
+        &self,
+        goal_key: &GoalKey,
+        place: Option<EntityId>,
+        target: Option<EntityId>,
+        action_def: Option<ActionDefId>,
+        current_tick: Tick,
+    ) -> bool {
+        let global_query = place.is_none() && target.is_none() && action_def.is_none();
+        self.intents.values().any(|intent| {
+            intent.blocker_key.goal_key == *goal_key
                 && intent.expires_tick > current_tick
                 && intent.blocks_goal_generation()
+                && (global_query || matches_scope(&intent.blocker_key, place, target, action_def))
+        })
+    }
+
+    pub fn is_blocked_for_search(
+        &self,
+        goal_key: &GoalKey,
+        place: Option<EntityId>,
+        target: Option<EntityId>,
+        action_def: Option<ActionDefId>,
+        current_tick: Tick,
+    ) -> bool {
+        self.find_blocked_for_search(goal_key, place, target, action_def, current_tick)
+            .is_some()
+    }
+
+    /// Like `is_blocked_for_search` but returns the matching `BlockedIntent`
+    /// reference so callers can inspect the `blocking_fact` for trace recording.
+    pub fn find_blocked_for_search(
+        &self,
+        goal_key: &GoalKey,
+        place: Option<EntityId>,
+        target: Option<EntityId>,
+        action_def: Option<ActionDefId>,
+        current_tick: Tick,
+    ) -> Option<&BlockedIntent> {
+        self.intents.values().find(|intent| {
+            intent.blocker_key.goal_key == *goal_key
+                && intent.expires_tick > current_tick
+                && matches_scope(&intent.blocker_key, place, target, action_def)
         })
     }
 
     pub fn record(&mut self, intent: BlockedIntent) {
-        self.intents
-            .retain(|existing| existing.goal_key != intent.goal_key);
-        self.intents.push(intent);
+        self.intents.insert(intent.blocker_key, intent);
     }
 
     pub fn expire(&mut self, current_tick: Tick) {
         self.intents
-            .retain(|intent| intent.expires_tick > current_tick);
+            .retain(|_, intent| intent.expires_tick > current_tick);
     }
 
-    pub fn clear_for(&mut self, key: &GoalKey) {
-        self.intents.retain(|intent| intent.goal_key != *key);
+    pub fn clear_for(&mut self, key: &BlockerKey) {
+        self.intents.remove(key);
     }
+
+    pub fn clear_all_for_goal(&mut self, goal_key: &GoalKey) {
+        self.intents.retain(|k, _| k.goal_key != *goal_key);
+    }
+}
+
+fn matches_scope(
+    blocker: &BlockerKey,
+    query_place: Option<EntityId>,
+    query_target: Option<EntityId>,
+    query_action: Option<ActionDefId>,
+) -> bool {
+    // Goal-scoped blocker (place=None, target=None, action=None) matches everything
+    if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
+        return true;
+    }
+    // Place must match if blocker has one
+    if let Some(blocker_place) = blocker.place {
+        if query_place != Some(blocker_place) {
+            return false;
+        }
+    }
+    // Target must match if blocker has one
+    if let Some(blocker_target) = blocker.target {
+        if query_target != Some(blocker_target) {
+            return false;
+        }
+    }
+    // Action must match if blocker has one
+    if let Some(blocker_action) = blocker.action_def {
+        if query_action != Some(blocker_action) {
+            return false;
+        }
+    }
+    true
 }
 
 impl Component for BlockedIntentMemory {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockedIntent {
-    pub goal_key: GoalKey,
+    pub blocker_key: BlockerKey,
     pub blocking_fact: BlockingFact,
-    pub related_entity: Option<EntityId>,
-    pub related_place: Option<EntityId>,
-    pub related_action: Option<ActionDefId>,
+    pub diagnostic_context: Option<BlockerDiagnostic>,
     pub observed_tick: Tick,
     pub expires_tick: Tick,
 }
@@ -76,9 +159,9 @@ pub enum BlockingFact {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockedIntent, BlockedIntentMemory, BlockingFact};
+    use super::{BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact};
     use crate::{
-        test_utils::{entity_id, sample_blocked_intent, sample_goal_key},
+        test_utils::{entity_id, sample_blocked_intent, sample_blocker_key, sample_goal_key},
         traits::Component,
         ActionDefId, CommodityKind, GoalKind, Tick, UniqueItemKind,
     };
@@ -89,44 +172,69 @@ mod tests {
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
+    fn make_intent(key: BlockerKey, fact: BlockingFact, expires: Tick) -> BlockedIntent {
+        BlockedIntent {
+            blocker_key: key,
+            blocking_fact: fact,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: expires,
+        }
+    }
+
     #[test]
     fn blocked_intent_types_satisfy_required_bounds() {
         assert_component_bounds::<BlockedIntentMemory>();
         assert_value_bounds::<BlockedIntentMemory>();
         assert_value_bounds::<BlockedIntent>();
         assert_value_bounds::<BlockingFact>();
+        assert_value_bounds::<BlockerKey>();
+        assert_value_bounds::<BlockerDiagnostic>();
     }
 
     #[test]
     fn blocked_intent_memory_defaults_empty() {
-        assert_eq!(BlockedIntentMemory::default().intents, Vec::new());
+        let memory = BlockedIntentMemory::default();
+        assert!(memory.intents.is_empty());
     }
 
     #[test]
     fn is_blocked_matches_only_live_entries_for_goal_key() {
         let key = sample_goal_key();
         let stale_key = crate::GoalKey::from(GoalKind::Sleep);
-        let mut memory = BlockedIntentMemory {
-            intents: vec![
-                BlockedIntent {
-                    expires_tick: Tick(10),
-                    ..sample_blocked_intent()
-                },
-                BlockedIntent {
-                    goal_key: stale_key,
-                    blocking_fact: BlockingFact::DangerTooHigh,
-                    related_entity: None,
-                    related_place: None,
-                    related_action: None,
-                    observed_tick: Tick(8),
-                    expires_tick: Tick(20),
-                },
-            ],
-        };
+        let mut memory = BlockedIntentMemory::default();
 
-        assert!(memory.is_blocked(&key, Tick(9)));
-        assert!(!memory.is_blocked(&key, Tick(10)));
-        assert!(!memory.is_blocked(&stale_key, Tick(20)));
+        // Global blocker for key — blocks goal generation
+        let blocker1 = make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::NoKnownPath,
+            Tick(10),
+        );
+        // Global blocker for stale_key
+        let blocker2 = make_intent(
+            BlockerKey {
+                goal_key: stale_key,
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::DangerTooHigh,
+            Tick(20),
+        );
+        memory.record(blocker1);
+        memory.record(blocker2);
+
+        // Live at tick 9
+        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+        // Expired at tick 10
+        assert!(!memory.is_blocked(&key, None, None, None, Tick(10)));
+        // Expired at tick 20
+        assert!(!memory.is_blocked(&stale_key, None, None, None, Tick(20)));
 
         memory.expire(Tick(10));
         assert_eq!(memory.intents.len(), 1);
@@ -135,41 +243,63 @@ mod tests {
     #[test]
     fn source_depleted_does_not_block_goal_generation() {
         let key = sample_goal_key();
-        let memory = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
                 goal_key: key,
-                blocking_fact: BlockingFact::SourceDepleted,
-                related_entity: Some(entity_id(4, 0)),
-                related_place: Some(entity_id(2, 0)),
-                related_action: None,
-                observed_tick: Tick(8),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(entity_id(2, 0)),
+                target: Some(entity_id(4, 0)),
+                action_def: None,
+            },
+            BlockingFact::SourceDepleted,
+            Tick(20),
+        ));
 
-        assert!(!memory.is_blocked(&key, Tick(9)));
+        // SourceDepleted does not block goal generation (blocks_goal_generation returns false)
+        assert!(!memory.is_blocked(&key, Some(entity_id(2, 0)), Some(entity_id(4, 0)), None, Tick(9)));
     }
 
     #[test]
-    fn record_replaces_existing_entry_for_same_goal_key() {
-        let key = sample_goal_key();
+    fn record_replaces_existing_entry_for_same_compound_key() {
+        let bk = sample_blocker_key();
         let original = sample_blocked_intent();
         let replacement = BlockedIntent {
-            goal_key: key,
+            blocker_key: bk,
             blocking_fact: BlockingFact::MissingTool(UniqueItemKind::SimpleTool),
-            related_entity: Some(entity_id(7, 0)),
-            related_place: Some(entity_id(3, 0)),
-            related_action: Some(ActionDefId(44)),
+            diagnostic_context: None,
             observed_tick: Tick(11),
             expires_tick: Tick(19),
         };
-        let mut memory = BlockedIntentMemory {
-            intents: vec![original],
-        };
-
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(original);
         memory.record(replacement);
 
-        assert_eq!(memory.intents, vec![replacement]);
+        assert_eq!(memory.intents.len(), 1);
+        assert_eq!(memory.intents[&bk], replacement);
+    }
+
+    #[test]
+    fn record_preserves_different_place_for_same_goal() {
+        let key = sample_goal_key();
+        let place_a = entity_id(10, 0);
+        let place_b = entity_id(11, 0);
+        let bk_a = BlockerKey {
+            goal_key: key,
+            place: Some(place_a),
+            target: None,
+            action_def: None,
+        };
+        let bk_b = BlockerKey {
+            goal_key: key,
+            place: Some(place_b),
+            target: None,
+            action_def: None,
+        };
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(bk_a, BlockingFact::SourceDepleted, Tick(20)));
+        memory.record(make_intent(bk_b, BlockingFact::SourceDepleted, Tick(25)));
+
+        assert_eq!(memory.intents.len(), 2);
     }
 
     #[test]
@@ -179,70 +309,81 @@ mod tests {
             commodity: CommodityKind::Water,
             purpose: crate::CommodityPurpose::SelfConsume,
         });
-        let mut memory = BlockedIntentMemory {
-            intents: vec![
-                BlockedIntent {
-                    goal_key: key,
-                    expires_tick: Tick(14),
-                    ..sample_blocked_intent()
-                },
-                BlockedIntent {
-                    goal_key: other,
-                    blocking_fact: BlockingFact::Unknown,
-                    related_entity: None,
-                    related_place: None,
-                    related_action: None,
-                    observed_tick: Tick(9),
-                    expires_tick: Tick(15),
-                },
-            ],
+        let bk1 = BlockerKey {
+            goal_key: key,
+            place: None,
+            target: None,
+            action_def: None,
         };
+        let bk2 = BlockerKey {
+            goal_key: other,
+            place: None,
+            target: None,
+            action_def: None,
+        };
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(bk1, BlockingFact::NoKnownPath, Tick(14)));
+        memory.record(make_intent(bk2, BlockingFact::Unknown, Tick(15)));
 
         memory.expire(Tick(14));
 
         assert_eq!(memory.intents.len(), 1);
-        assert_eq!(memory.intents[0].goal_key, other);
+        assert!(memory.intents.contains_key(&bk2));
     }
 
     #[test]
-    fn clear_for_removes_all_matching_entries() {
-        let key = sample_goal_key();
-        let other = crate::GoalKey::from(GoalKind::ReduceDanger);
-        let mut memory = BlockedIntentMemory {
-            intents: vec![
-                sample_blocked_intent(),
-                BlockedIntent {
-                    goal_key: key,
-                    blocking_fact: BlockingFact::TargetGone,
-                    related_entity: Some(entity_id(10, 1)),
-                    related_place: None,
-                    related_action: None,
-                    observed_tick: Tick(8),
-                    expires_tick: Tick(17),
-                },
-                BlockedIntent {
-                    goal_key: other,
-                    blocking_fact: BlockingFact::CombatTooRisky,
-                    related_entity: None,
-                    related_place: Some(entity_id(12, 0)),
-                    related_action: None,
-                    observed_tick: Tick(6),
-                    expires_tick: Tick(30),
-                },
-            ],
+    fn clear_for_removes_matching_blocker_key() {
+        let bk = sample_blocker_key();
+        let other_bk = BlockerKey {
+            goal_key: crate::GoalKey::from(GoalKind::ReduceDanger),
+            place: None,
+            target: None,
+            action_def: None,
         };
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(sample_blocked_intent());
+        memory.record(make_intent(other_bk, BlockingFact::CombatTooRisky, Tick(30)));
 
-        memory.clear_for(&key);
+        memory.clear_for(&bk);
 
         assert_eq!(memory.intents.len(), 1);
-        assert_eq!(memory.intents[0].goal_key, other);
+        assert!(memory.intents.contains_key(&other_bk));
+    }
+
+    #[test]
+    fn clear_all_for_goal_removes_all_entries_for_goal() {
+        let key = sample_goal_key();
+        let place_a = entity_id(10, 0);
+        let place_b = entity_id(11, 0);
+        let other_goal = crate::GoalKey::from(GoalKind::ReduceDanger);
+        let mut memory = BlockedIntentMemory::default();
+
+        memory.record(make_intent(
+            BlockerKey { goal_key: key, place: Some(place_a), target: None, action_def: None },
+            BlockingFact::SourceDepleted,
+            Tick(20),
+        ));
+        memory.record(make_intent(
+            BlockerKey { goal_key: key, place: Some(place_b), target: None, action_def: None },
+            BlockingFact::SourceDepleted,
+            Tick(25),
+        ));
+        memory.record(make_intent(
+            BlockerKey { goal_key: other_goal, place: None, target: None, action_def: None },
+            BlockingFact::CombatTooRisky,
+            Tick(30),
+        ));
+
+        memory.clear_all_for_goal(&key);
+
+        assert_eq!(memory.intents.len(), 1);
+        assert_eq!(memory.intents.values().next().unwrap().blocker_key.goal_key, other_goal);
     }
 
     #[test]
     fn blocked_intent_memory_roundtrips_through_bincode() {
-        let memory = BlockedIntentMemory {
-            intents: vec![sample_blocked_intent()],
-        };
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(sample_blocked_intent());
 
         let bytes = bincode::serialize(&memory).unwrap();
         let roundtrip: BlockedIntentMemory = bincode::deserialize(&bytes).unwrap();
@@ -253,18 +394,125 @@ mod tests {
     #[test]
     fn exclusive_facility_blockers_do_not_block_goal_generation() {
         let key = sample_goal_key();
-        let memory = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
                 goal_key: key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(entity_id(4, 0)),
-                related_place: Some(entity_id(2, 0)),
-                related_action: Some(ActionDefId(9)),
-                observed_tick: Tick(10),
-                expires_tick: Tick(30),
-            }],
-        };
+                place: Some(entity_id(2, 0)),
+                target: Some(entity_id(4, 0)),
+                action_def: Some(ActionDefId(9)),
+            },
+            BlockingFact::ExclusiveFacilityUnavailable,
+            Tick(30),
+        ));
 
-        assert!(!memory.is_blocked(&key, Tick(11)));
+        assert!(!memory.is_blocked(&key, Some(entity_id(2, 0)), Some(entity_id(4, 0)), Some(ActionDefId(9)), Tick(11)));
+    }
+
+    #[test]
+    fn is_blocked_for_search_ignores_blocks_goal_generation_gate() {
+        let key = sample_goal_key();
+        let place = entity_id(2, 0);
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: Some(place),
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::SourceDepleted,
+            Tick(20),
+        ));
+
+        // is_blocked returns false (SourceDepleted doesn't block goal generation)
+        assert!(!memory.is_blocked(&key, Some(place), None, None, Tick(9)));
+        // is_blocked_for_search returns true (no blocks_goal_generation gate)
+        assert!(memory.is_blocked_for_search(&key, Some(place), None, None, Tick(9)));
+    }
+
+    #[test]
+    fn global_blocker_matches_any_place_query() {
+        let key = sample_goal_key();
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::NoKnownPath,
+            Tick(20),
+        ));
+
+        // Global blocker matches query with a specific place
+        assert!(memory.is_blocked(&key, Some(entity_id(5, 0)), None, None, Tick(9)));
+        // Global blocker matches query with no place
+        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+    }
+
+    #[test]
+    fn place_scoped_blocker_does_not_match_different_place() {
+        let key = sample_goal_key();
+        let place_a = entity_id(10, 0);
+        let place_b = entity_id(11, 0);
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_a),
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::NoKnownPath,
+            Tick(20),
+        ));
+
+        // Matches at place_a
+        assert!(memory.is_blocked(&key, Some(place_a), None, None, Tick(9)));
+        // Does NOT match at place_b
+        assert!(!memory.is_blocked(&key, Some(place_b), None, None, Tick(9)));
+    }
+
+    #[test]
+    fn place_scoped_goal_blocking_fact_matches_global_query() {
+        let key = sample_goal_key();
+        let place_a = entity_id(10, 0);
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_a),
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::NoKnownPath,
+            Tick(20),
+        ));
+
+        // Global query (None place) matches any goal-generation-blocking fact
+        // regardless of key scope — candidate generation uses global queries
+        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+    }
+
+    #[test]
+    fn place_scoped_non_goal_blocking_fact_does_not_match_global_query() {
+        let key = sample_goal_key();
+        let place_a = entity_id(10, 0);
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_a),
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::SourceDepleted,
+            Tick(20),
+        ));
+
+        // SourceDepleted does not block goal generation, so global query does not match
+        assert!(!memory.is_blocked(&key, None, None, None, Tick(9)));
     }
 }

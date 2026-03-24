@@ -17,7 +17,7 @@
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity,
         test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
+        BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
         CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
         DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
@@ -609,6 +609,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -719,6 +721,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -766,6 +770,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -835,6 +841,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -921,6 +929,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -992,6 +1002,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1052,6 +1064,8 @@
             &handlers,
             &budget,
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1104,6 +1118,8 @@
             &handlers,
             &budget,
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1152,6 +1168,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1166,6 +1184,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1232,6 +1252,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1246,6 +1268,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1311,6 +1335,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1326,6 +1352,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1370,6 +1398,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1437,6 +1467,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -1494,6 +1526,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1547,6 +1581,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1608,6 +1644,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1695,6 +1733,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1784,6 +1824,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -1923,7 +1965,7 @@
         };
 
         let initial_candidates =
-            search_candidates(&goal, &node, &semantics, &registry, &handlers, None, None);
+            search_candidates(&goal, &node, &semantics, &registry, &handlers, &BlockedIntentMemory::default(), Tick(0), None, None);
         let pick_up = initial_candidates
             .iter()
             .find(|candidate| {
@@ -1955,6 +1997,8 @@
             &semantics,
             &registry,
             &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -2025,6 +2069,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -2077,6 +2123,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -2314,6 +2362,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -2485,6 +2535,8 @@
             &fixture.handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -2536,6 +2588,8 @@
             &fixture.handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -2599,6 +2653,8 @@
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -2619,17 +2675,19 @@
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: goal.key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(fixture.orchard_row),
-                related_place: Some(fixture.orchard_farm),
-                related_action: Some(fixture.harvest_action),
-                observed_tick: Tick(2),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(fixture.orchard_farm),
+                target: Some(fixture.orchard_row),
+                action_def: Some(fixture.harvest_action),
+            },
+            blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+        });
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
@@ -2658,6 +2716,8 @@
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -2678,17 +2738,19 @@
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: goal.key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(fixture.orchard_row),
-                related_place: Some(fixture.orchard_farm),
-                related_action: Some(fixture.harvest_action),
-                observed_tick: Tick(2),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(fixture.orchard_farm),
+                target: Some(fixture.orchard_row),
+                action_def: Some(fixture.harvest_action),
+            },
+            blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+        });
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
@@ -2715,6 +2777,8 @@
             &fixture.handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             Some(&mut expansions),
         );
@@ -2795,17 +2859,19 @@
             evidence_entities: BTreeSet::from([fixture.orchard_row, second_orchard]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: goal.key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(fixture.orchard_row),
-                related_place: Some(fixture.orchard_farm),
-                related_action: Some(fixture.harvest_action),
-                observed_tick: Tick(2),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(fixture.orchard_farm),
+                target: Some(fixture.orchard_row),
+                action_def: Some(fixture.harvest_action),
+            },
+            blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+        });
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
@@ -2825,6 +2891,8 @@
             &fixture.handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -3672,7 +3740,7 @@
             heuristic_ticks: 0,
         };
 
-        let pick_up = search_candidates(&goal, &node, &semantics, &registry, &handlers, None, None)
+        let pick_up = search_candidates(&goal, &node, &semantics, &registry, &handlers, &BlockedIntentMemory::default(), Tick(0), None, None)
             .into_iter()
             .find(|candidate| {
                 registry
@@ -3786,7 +3854,7 @@
         );
 
         let candidates =
-            search_candidates(&goal, &node, &semantics, &registry, &handlers, None, None);
+            search_candidates(&goal, &node, &semantics, &registry, &handlers, &BlockedIntentMemory::default(), Tick(0), None, None);
 
         assert!(
             candidates.iter().any(|candidate| {
@@ -3848,6 +3916,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             Some(&mut rejections),
             None,
         );
@@ -3929,6 +3999,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             Some(&mut rejections),
             None,
         );
@@ -4002,6 +4074,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             Some(&mut rejections),
             None,
         );
@@ -4061,6 +4135,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             Some(&mut rejections),
             None,
         );
@@ -4168,6 +4244,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -4249,6 +4327,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -4337,6 +4417,8 @@
             &handlers,
             &tight_budget,
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -4444,6 +4526,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             Some(&mut summaries),
         );
@@ -4490,6 +4574,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             Some(&mut summaries),
         );
@@ -4550,6 +4636,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None, // tracing disabled
         );
@@ -4603,6 +4691,8 @@
                 ..PlanningBudget::default()
             },
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             Some(&mut summaries),
         );
@@ -4725,6 +4815,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -4813,6 +4905,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         );
@@ -4882,6 +4976,8 @@
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             Some(&mut expansions),
         );
@@ -4920,4 +5016,343 @@
                 ),
             )
         );
+    }
+
+    // ── S23-004: Place-scoped blocker pruning in plan search ──
+
+    #[test]
+    fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
+        // Actor at town with local bread. Blocker says "consume bread is blocked
+        // at town". The eat candidate is at town → should be pruned → no plan.
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        let (registry, handlers) = build_registry();
+        let goal = consume_goal(CommodityKind::Bread);
+
+        // Without blocker: plan is found.
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let no_blocker = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            None,
+            None,
+        );
+        assert!(
+            no_blocker.is_found(),
+            "without blocker, consume plan should be found"
+        );
+
+        // With place-scoped blocker at town: plan should NOT be found.
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: goal.key,
+                place: Some(town),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::SourceDepleted,
+            diagnostic_context: None,
+            observed_tick: Tick(0),
+            expires_tick: Tick(100),
+        });
+        let with_blocker = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &blocked,
+            Tick(1),
+            None,
+            None,
+        );
+        assert!(
+            !with_blocker.is_found(),
+            "place-scoped blocker at actor's place should prune all candidates"
+        );
+    }
+
+    #[test]
+    fn place_scoped_blocker_does_not_prune_candidate_at_different_place() {
+        // Actor at town with bread at town. Blocker at field (different place).
+        // Eat candidate is at town → blocker at field should NOT prune it.
+        let actor = entity(1);
+        let town = entity(10);
+        let field = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, field, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(field, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        let (registry, handlers) = build_registry();
+        let goal = consume_goal(CommodityKind::Bread);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: goal.key,
+                place: Some(field), // different place
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::SourceDepleted,
+            diagnostic_context: None,
+            observed_tick: Tick(0),
+            expires_tick: Tick(100),
+        });
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &blocked,
+            Tick(1),
+            None,
+            None,
+        );
+        assert!(
+            result.is_found(),
+            "blocker at different place should not prune local candidate"
+        );
+    }
+
+    #[test]
+    fn travel_action_uses_destination_as_place_for_blocker_check() {
+        // Actor at town, bread at field. Blocker at field. Travel-to-field
+        // should be pruned because the travel destination is the blocked place.
+        let actor = entity(1);
+        let town = entity(10);
+        let field = entity(11);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, field, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(field, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, field);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(field, vec![bread]);
+        view.controllable.insert((actor, bread));
+        view.adjacent
+            .insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(1));
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        let (registry, handlers) = build_registry();
+        let goal = consume_goal(CommodityKind::Bread);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        // Without blocker: plan includes travel to field.
+        let no_blocker = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            None,
+            None,
+        );
+        assert!(no_blocker.is_found(), "baseline without blocker should find plan");
+
+        // With blocker at field: travel-to-field should be pruned → no plan.
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: goal.key,
+                place: Some(field),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::SourceDepleted,
+            diagnostic_context: None,
+            observed_tick: Tick(0),
+            expires_tick: Tick(100),
+        });
+        let with_blocker = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &blocked,
+            Tick(1),
+            None,
+            None,
+        );
+        assert!(
+            !with_blocker.is_found(),
+            "blocker at travel destination should prune travel-to-field, leaving no viable plan"
+        );
+    }
+
+    #[test]
+    fn candidate_pruned_by_blocker_records_place_blocker_trace() {
+        // Same setup as place_scoped_blocker_prunes test but with trace collection.
+        let actor = entity(1);
+        let town = entity(10);
+        let bread = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(bread, town);
+        view.entities_at.insert(town, vec![actor, bread]);
+        view.controllable.insert((actor, bread));
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.thresholds.insert(actor, DriveThresholds::default());
+        let (registry, handlers) = build_registry();
+        let goal = consume_goal(CommodityKind::Bread);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: goal.key,
+                place: Some(town),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::SourceDepleted,
+            diagnostic_context: None,
+            observed_tick: Tick(0),
+            expires_tick: Tick(100),
+        });
+
+        let mut summaries = Vec::new();
+        let _result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &blocked,
+            Tick(1),
+            None,
+            Some(&mut summaries),
+        );
+
+        // At least one expansion summary should exist (root expansion).
+        assert!(
+            !summaries.is_empty(),
+            "search should produce at least one expansion summary"
+        );
+        let root = &summaries[0];
+        // At least one root candidate should be filtered with PlaceBlocker.
+        let has_place_blocker = root.root_candidates.iter().any(|c| {
+            matches!(
+                c.outcome,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::PlaceBlocker { .. }
+                )
+            )
+        });
+        assert!(
+            has_place_blocker,
+            "trace should record PlaceBlocker filter for pruned candidates"
+        );
+
+        // Verify the PlaceBlocker carries the correct place and fact.
+        let place_blocker_trace = root
+            .root_candidates
+            .iter()
+            .find_map(|c| match &c.outcome {
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::PlaceBlocker {
+                        place,
+                        blocking_fact,
+                    },
+                ) => Some((*place, *blocking_fact)),
+                _ => None,
+            })
+            .expect("should find a PlaceBlocker trace entry");
+        assert_eq!(place_blocker_trace.0, Some(town));
+        assert_eq!(place_blocker_trace.1, BlockingFact::SourceDepleted);
     }

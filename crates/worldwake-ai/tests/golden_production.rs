@@ -848,7 +848,7 @@ fn record_materialized_output_theft_milestones(
         .world
         .get_component_blocked_intent_memory(scenario.crafter)
         .is_some_and(|memory| {
-            memory.intents.iter().any(|intent| {
+            memory.intents.iter().any(|(_, intent)| {
                 intent.blocking_fact == BlockingFact::MissingInput(CommodityKind::Bread)
             })
         })
@@ -1273,9 +1273,9 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
     assert!(
         h.world
             .get_component_blocked_intent_memory(loser)
-            .is_some_and(|memory| memory.intents.iter().any(|intent| {
+            .is_some_and(|memory| memory.intents.iter().any(|(_, intent)| {
                 intent.blocking_fact == BlockingFact::ReservationConflict
-                    && intent.related_entity == Some(local_workstation)
+                    && intent.blocker_key.target == Some(local_workstation)
             })),
         "losing contender should record a reservation-conflict blocker for the local orchard"
     );
@@ -1930,11 +1930,11 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
         if h.world
             .get_component_blocked_intent_memory(patient)
             .is_some_and(|memory| {
-                memory.intents.iter().any(|intent| {
+                memory.intents.iter().any(|(_, intent)| {
                     intent.blocking_fact
                         == worldwake_core::BlockingFact::ExclusiveFacilityUnavailable
-                        && intent.related_entity == Some(facility_a)
-                        && intent.related_action == Some(harvest_action)
+                        && intent.blocker_key.target == Some(facility_a)
+                        && intent.blocker_key.action_def == Some(harvest_action)
                 })
             })
         {

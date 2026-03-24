@@ -3,8 +3,9 @@ use crate::{
     PlanningBudget,
 };
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, GoalKey, GoalKind,
-    JourneyCommitment, Quantity, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
+    EntityId, GoalKey,
+    GoalKind, JourneyCommitment, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -50,17 +51,30 @@ pub fn handle_plan_failure(
     );
     let expires_tick = context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, budget));
 
-    blocked_memory.record(BlockedIntent {
+    let blocker_key = BlockerKey {
         goal_key: context.goal_key,
-        blocking_fact,
-        related_entity: related_entity(context.failed_step),
-        related_place: related_place(
+        place: related_place(
             context.view,
             context.agent,
             &context.goal_key,
             context.failed_step,
         ),
-        related_action: None,
+        target: related_entity(context.failed_step),
+        action_def: Some(context.failed_step.def_id),
+    };
+
+    let diagnostic_context = if matches!(blocking_fact, BlockingFact::Unknown) {
+        Some(BlockerDiagnostic {
+            action_def: context.failed_step.def_id,
+        })
+    } else {
+        None
+    };
+
+    blocked_memory.record(BlockedIntent {
+        blocker_key,
+        blocking_fact,
+        diagnostic_context,
         observed_tick: context.current_tick,
         expires_tick,
     });
@@ -76,7 +90,7 @@ pub fn clear_resolved_blockers(
     blocked_memory.expire(current_tick);
     blocked_memory
         .intents
-        .retain(|intent| !blocker_resolved(view, agent, intent));
+        .retain(|_, intent| !blocker_resolved(view, agent, intent));
 }
 
 fn derive_blocking_fact(
@@ -524,7 +538,7 @@ fn parse_abort_detail(detail: &str) -> Option<BlockingFact> {
 fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &BlockedIntent) -> bool {
     match intent.blocking_fact {
         BlockingFact::NoKnownPath => {
-            let Some(target_place) = intent.related_place else {
+            let Some(target_place) = intent.blocker_key.place else {
                 return false;
             };
             let Some(current_place) = view.effective_place(agent) else {
@@ -535,7 +549,7 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
                 .any(|(adjacent, _)| adjacent == target_place)
         }
         BlockingFact::NoKnownSeller => {
-            let Some(commodity) = intent.goal_key.commodity else {
+            let Some(commodity) = intent.blocker_key.goal_key.commodity else {
                 return false;
             };
             let Some(current_place) = view.effective_place(agent) else {
@@ -546,10 +560,10 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
                 .any(|seller| seller != agent)
         }
         BlockingFact::SellerOutOfStock => {
-            let Some(seller) = intent.related_entity else {
+            let Some(seller) = intent.blocker_key.target else {
                 return false;
             };
-            let Some(commodity) = intent.goal_key.commodity else {
+            let Some(commodity) = intent.blocker_key.goal_key.commodity else {
                 return false;
             };
             view.entity_kind(seller).is_some()
@@ -560,28 +574,32 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
         }
         BlockingFact::ExclusiveFacilityUnavailable | BlockingFact::Unknown => false,
         BlockingFact::SourceDepleted => {
-            let Some(source) = intent.related_entity else {
+            let Some(source) = intent.blocker_key.target else {
                 return false;
             };
             view.resource_source(source)
                 .is_some_and(|resource| resource.available_quantity > Quantity(0))
         }
         BlockingFact::WorkstationBusy => intent
-            .related_entity
+            .blocker_key
+            .target
             .is_some_and(|workstation| !view.has_production_job(workstation)),
         BlockingFact::ReservationConflict => intent
-            .related_entity
+            .blocker_key
+            .target
             .is_some_and(|entity| view.reservation_ranges(entity).is_empty()),
         BlockingFact::MissingTool(kind) => view.unique_item_count(agent, kind) > 0,
         BlockingFact::MissingInput(commodity) => {
             view.commodity_quantity(agent, commodity) > Quantity(0)
         }
-        BlockingFact::TargetGone => match intent.goal_key.kind {
+        BlockingFact::TargetGone => match intent.blocker_key.goal_key.kind {
             GoalKind::TreatWounds { .. } | GoalKind::ReduceDanger => intent
-                .related_entity
+                .blocker_key
+                .target
                 .is_some_and(|entity| view.entity_kind(entity).is_some() && view.is_alive(entity)),
             _ => intent
-                .related_entity
+                .blocker_key
+                .target
                 .is_some_and(|entity| view.entity_kind(entity).is_some()),
         },
         BlockingFact::DangerTooHigh | BlockingFact::CombatTooRisky => {
@@ -699,8 +717,8 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
         | BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict
         | BlockingFact::ExclusiveFacilityUnavailable
-        | BlockingFact::TargetGone
-        | BlockingFact::Unknown => budget.transient_block_ticks,
+        | BlockingFact::TargetGone => budget.transient_block_ticks,
+        BlockingFact::Unknown => budget.unknown_block_ticks,
         BlockingFact::NoKnownPath
         | BlockingFact::NoKnownSeller
         | BlockingFact::TooExpensive
@@ -725,7 +743,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CombatProfile,
+        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
         DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
         InTransitOnEdge, JourneyCommitment, JourneyCommitmentState, LoadUnits,
@@ -1155,16 +1173,14 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert!(runtime.dirty);
         assert!(jc.is_none());
-        assert!(blocked.is_blocked(&goal, Tick(20)));
         assert_eq!(blocked.intents.len(), 1);
+        let intent = blocked.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::SellerOutOfStock);
+        assert_eq!(intent.blocker_key.target, Some(seller));
+        assert_eq!(intent.blocker_key.place, Some(place));
+        assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(1)));
         assert_eq!(
-            blocked.intents[0].blocking_fact,
-            BlockingFact::SellerOutOfStock
-        );
-        assert_eq!(blocked.intents[0].related_entity, Some(seller));
-        assert_eq!(blocked.intents[0].related_place, Some(place));
-        assert_eq!(
-            blocked.intents[0].expires_tick,
+            intent.expires_tick,
             Tick(20 + u64::from(PlanningBudget::default().transient_block_ticks))
         );
     }
@@ -1420,12 +1436,14 @@ mod tests {
         assert_eq!(runtime.current_plan, None);
         assert!(runtime.dirty);
         assert_eq!(blocked.intents.len(), 1);
-        assert_eq!(blocked.intents[0].blocking_fact, BlockingFact::Unknown);
-        assert_eq!(blocked.intents[0].related_entity, Some(office));
-        assert_eq!(blocked.intents[0].related_place, Some(place));
+        let intent = blocked.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::Unknown);
+        assert_eq!(intent.blocker_key.target, Some(office));
+        assert_eq!(intent.blocker_key.place, Some(place));
+        assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(6)));
         assert_eq!(
-            blocked.intents[0].expires_tick,
-            Tick(20 + u64::from(budget.transient_block_ticks))
+            intent.expires_tick,
+            Tick(20 + u64::from(budget.unknown_block_ticks))
         );
     }
 
@@ -1495,8 +1513,82 @@ mod tests {
         );
         assert_eq!(
             blocking_fact_ttl(BlockingFact::Unknown, &budget),
-            budget.transient_block_ticks
+            budget.unknown_block_ticks
         );
+    }
+
+    #[test]
+    fn unknown_blocker_uses_dedicated_ttl() {
+        let budget = PlanningBudget::default();
+        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &budget);
+        assert_eq!(ttl, 5);
+        assert_ne!(ttl, budget.transient_block_ticks);
+    }
+
+    #[test]
+    fn transient_blockers_unchanged_ttl() {
+        let budget = PlanningBudget::default();
+        let transient_facts = [
+            BlockingFact::SellerOutOfStock,
+            BlockingFact::WorkstationBusy,
+            BlockingFact::ReservationConflict,
+            BlockingFact::ExclusiveFacilityUnavailable,
+            BlockingFact::TargetGone,
+        ];
+        for fact in transient_facts {
+            assert_eq!(
+                blocking_fact_ttl(fact, &budget),
+                20,
+                "{fact:?} should still use transient_block_ticks (20)"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_blocker_carries_diagnostic_context() {
+        let agent = entity(1);
+        let place = entity(10);
+        let office = entity(20);
+        let goal = claim_office_goal(office);
+        let step = declare_support_step(office, agent);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, place);
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(6),
+            request: sample_request(6),
+            reason: ActionStartFailureReason::PreconditionFailed("test".to_string()),
+        };
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockedIntentMemory::default();
+        let budget = PlanningBudget::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: Some(ExecutionFailure::Start(&start_failure)),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &budget,
+        );
+
+        let intent = blocked.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::Unknown);
+        let diag = intent
+            .diagnostic_context
+            .expect("Unknown blocker must have diagnostic_context");
+        assert_eq!(diag.action_def, step.def_id);
     }
 
     #[test]
@@ -1515,39 +1607,48 @@ mod tests {
         view.commodity_quantities
             .insert((seller, CommodityKind::Bread), Quantity(2));
 
-        let mut blocked = BlockedIntentMemory {
-            intents: vec![
-                BlockedIntent {
-                    goal_key: goal,
-                    blocking_fact: BlockingFact::SellerOutOfStock,
-                    related_entity: Some(seller),
-                    related_place: Some(place),
-                    related_action: None,
-                    observed_tick: Tick(1),
-                    expires_tick: Tick(30),
-                },
-                BlockedIntent {
-                    goal_key: GoalKey::from(GoalKind::ProduceCommodity {
-                        recipe_id: RecipeId(4),
-                    }),
-                    blocking_fact: BlockingFact::WorkstationBusy,
-                    related_entity: Some(workstation),
-                    related_place: Some(place),
-                    related_action: None,
-                    observed_tick: Tick(1),
-                    expires_tick: Tick(30),
-                },
-                BlockedIntent {
-                    goal_key: GoalKey::from(GoalKind::Sleep),
-                    blocking_fact: BlockingFact::Unknown,
-                    related_entity: None,
-                    related_place: None,
-                    related_action: None,
-                    observed_tick: Tick(1),
-                    expires_tick: Tick(5),
-                },
-            ],
+        let mut blocked = BlockedIntentMemory::default();
+        let bk1 = BlockerKey {
+            goal_key: goal,
+            place: Some(place),
+            target: Some(seller),
+            action_def: Some(ActionDefId(1)),
         };
+        blocked.record(BlockedIntent {
+            blocker_key: bk1,
+            blocking_fact: BlockingFact::SellerOutOfStock,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(30),
+        });
+        let bk2 = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(4),
+            }),
+            place: Some(place),
+            target: Some(workstation),
+            action_def: Some(ActionDefId(3)),
+        };
+        blocked.record(BlockedIntent {
+            blocker_key: bk2,
+            blocking_fact: BlockingFact::WorkstationBusy,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(30),
+        });
+        let bk3 = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            place: None,
+            target: None,
+            action_def: None,
+        };
+        blocked.record(BlockedIntent {
+            blocker_key: bk3,
+            blocking_fact: BlockingFact::Unknown,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(5),
+        });
 
         clear_resolved_blockers(&view, agent, &mut blocked, Tick(10));
         assert_eq!(blocked.intents.len(), 0);

@@ -1499,12 +1499,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
-        ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, Permille, Quantity, RecipeId, RecordKind, ResourceSource,
-        SuccessionLaw, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
-        WorkstationTag, Wound,
+        ActionDefId, BlockedIntentMemory, BodyCostPerTick, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        Permille, Quantity, RecipeId, RecordKind, ResourceSource, SuccessionLaw, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -4880,6 +4880,8 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -4960,6 +4962,8 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -5044,6 +5048,8 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )
@@ -5141,6 +5147,8 @@ mod tests {
             &handlers,
             &PlanningBudget::default(),
             &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(0),
             None,
             None,
         )

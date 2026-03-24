@@ -10,7 +10,8 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
-    BlockingFact, BodyPart, CommodityKind, DeprivationKind, EntityId, GoalKey, HomeostaticNeeds,
+    BlockerKey, BlockingFact, BodyPart, CommodityKind, DeprivationKind, EntityId, GoalKey,
+    HomeostaticNeeds,
     MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, Tick, UtilityProfile, Wound,
     WoundCause, WoundId, WoundList,
 };
@@ -298,34 +299,37 @@ fn setup_remote_ground_medicine_care_scenario(
         },
     );
     {
-        let blocked = BlockedIntentMemory {
-            intents: vec![
-                BlockedIntent {
-                    goal_key: GoalKey::from(GoalKind::ShareBelief {
-                        listener: patient,
-                        subject: patient,
-                    }),
-                    blocking_fact: BlockingFact::Unknown,
-                    related_entity: Some(patient),
-                    related_place: Some(VILLAGE_SQUARE),
-                    related_action: None,
-                    observed_tick: Tick(0),
-                    expires_tick: Tick(200),
-                },
-                BlockedIntent {
-                    goal_key: GoalKey::from(GoalKind::ShareBelief {
-                        listener: patient,
-                        subject: medicine,
-                    }),
-                    blocking_fact: BlockingFact::Unknown,
-                    related_entity: Some(patient),
-                    related_place: Some(VILLAGE_SQUARE),
-                    related_action: None,
-                    observed_tick: Tick(0),
-                    expires_tick: Tick(200),
-                },
-            ],
-        };
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::ShareBelief {
+                    listener: patient,
+                    subject: patient,
+                }),
+                place: Some(VILLAGE_SQUARE),
+                target: Some(patient),
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::Unknown,
+            diagnostic_context: None,
+            observed_tick: Tick(0),
+            expires_tick: Tick(200),
+        });
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::ShareBelief {
+                    listener: patient,
+                    subject: medicine,
+                }),
+                place: Some(VILLAGE_SQUARE),
+                target: Some(patient),
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::Unknown,
+            diagnostic_context: None,
+            observed_tick: Tick(0),
+            expires_tick: Tick(200),
+        });
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_blocked_intent_memory(healer, blocked)
             .unwrap();
@@ -599,6 +603,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
             ..PlanningBudget::default()
         },
         &h.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
         None,
         None,
     );
@@ -610,6 +616,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &h.handlers,
         &PlanningBudget::default(),
         &h.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
         None,
         None,
     );
@@ -1246,8 +1254,8 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
         .get_component_blocked_intent_memory(healer)
         .expect("healer should carry blocked intent memory after start failure");
     assert_eq!(blocked.intents.len(), 1);
-    assert_eq!(blocked.intents[0].goal_key.kind, care_goal);
-    assert_eq!(blocked.intents[0].related_entity, Some(patient));
+    assert_eq!(blocked.intents.values().next().unwrap().blocker_key.goal_key.kind, care_goal);
+    assert_eq!(blocked.intents.values().next().unwrap().blocker_key.target, Some(patient));
     assert!(
         h.scheduler.action_start_failures().is_empty(),
         "tick 1 reconciliation should drain the structured start failure"

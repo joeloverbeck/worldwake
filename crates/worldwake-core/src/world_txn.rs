@@ -4261,7 +4261,9 @@ mod tests {
             .unwrap();
         let before: BlockedIntentMemory = sample_blocked_intent_memory();
         let mut after = before.clone();
-        after.intents[0].expires_tick = Tick(21);
+        for intent in after.intents.values_mut() {
+            intent.expires_tick = Tick(21);
+        }
         world
             .insert_component_blocked_intent_memory(agent, before.clone())
             .unwrap();

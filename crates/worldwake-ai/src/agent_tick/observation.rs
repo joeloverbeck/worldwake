@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, Quantity, Tick,
-    UniqueItemKind,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind, EntityId,
+    Quantity, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -12,9 +12,9 @@ use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::{
     authoritative_target, clear_resolved_blockers, rank_candidates, AgentDecisionRuntime,
-    DecisionContext, GoalKindPlannerExt, PlannedStep, QueuedFacilityIntent,
-    RankedGoal,
+    DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
 };
+use worldwake_core::{FacilityQueueIntents, QueuedFacilityIntent};
 
 use super::{
     advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
@@ -67,6 +67,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     action_defs: &worldwake_sim::ActionDefRegistry,
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
+    facility_intents: &mut FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
@@ -76,8 +77,15 @@ pub(super) fn refresh_runtime_for_read_phase(
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let before = blocked_memory.clone();
-    let queue_transition_changed =
-        handle_facility_queue_transitions(&view, runtime, blocked_memory, agent, phase.tick, phase);
+    let queue_transition_changed = handle_facility_queue_transitions(
+        &view,
+        runtime,
+        facility_intents,
+        blocked_memory,
+        agent,
+        phase.tick,
+        phase,
+    );
     clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
     let snapshot_changed =
@@ -147,7 +155,8 @@ pub(super) fn refresh_runtime_for_read_phase(
 
 pub(super) fn handle_facility_queue_transitions(
     view: &dyn RuntimeBeliefView,
-    runtime: &mut AgentDecisionRuntime,
+    runtime: &AgentDecisionRuntime,
+    facility_intents: &mut FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     tick: Tick,
@@ -170,25 +179,28 @@ pub(super) fn handle_facility_queue_transitions(
 
         if was_queued && !now_queued && now_granted.is_none() {
             if previous_place == current_place {
-                if let Some(intent) = runtime.queued_facility_intents.remove(&facility) {
+                if let Some(intent) = facility_intents.intents.remove(&facility) {
                     blocked_memory.record(BlockedIntent {
-                        goal_key: intent.goal_key,
+                        blocker_key: BlockerKey {
+                            goal_key: intent.goal_key,
+                            place: current_place,
+                            target: Some(facility),
+                            action_def: Some(intent.intended_action),
+                        },
                         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                        related_entity: Some(facility),
-                        related_place: current_place,
-                        related_action: Some(intent.intended_action),
+                        diagnostic_context: None,
                         observed_tick: tick,
                         expires_tick: tick + u64::from(phase.structural_block_ticks),
                     });
                     changed = true;
                 }
-            } else if runtime.queued_facility_intents.remove(&facility).is_some() {
+            } else if facility_intents.intents.remove(&facility).is_some() {
                 changed = true;
             }
         }
 
         if previous_grant.is_some() && now_granted.is_none() {
-            changed |= runtime.queued_facility_intents.remove(&facility).is_some();
+            changed |= facility_intents.intents.remove(&facility).is_some();
         }
     }
 
@@ -201,6 +213,7 @@ pub(super) fn reconcile_in_flight_state(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<worldwake_core::ActiveGoal>,
     jc: &mut Option<worldwake_core::JourneyCommitment>,
+    facility_intents: &mut FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
@@ -253,7 +266,7 @@ pub(super) fn reconcile_in_flight_state(
         return Ok(());
     };
     let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    reconcile_committed_facility_queue_intents(runtime, goal_key, &step);
+    reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
         handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
         return Ok(());
@@ -274,7 +287,8 @@ fn matching_start_failure<'a>(
 }
 
 fn reconcile_committed_facility_queue_intents(
-    runtime: &mut AgentDecisionRuntime,
+    runtime: &AgentDecisionRuntime,
+    facility_intents: &mut FacilityQueueIntents,
     active_goal: Option<worldwake_core::GoalKey>,
     step: &PlannedStep,
 ) {
@@ -296,7 +310,7 @@ fn reconcile_committed_facility_queue_intents(
             else {
                 return;
             };
-            runtime.queued_facility_intents.insert(
+            facility_intents.intents.insert(
                 facility,
                 QueuedFacilityIntent {
                     goal_key,
@@ -305,7 +319,7 @@ fn reconcile_committed_facility_queue_intents(
             );
         }
         crate::PlannerOpKind::Harvest | crate::PlannerOpKind::Craft => {
-            runtime.queued_facility_intents.remove(&facility);
+            facility_intents.intents.remove(&facility);
         }
         crate::PlannerOpKind::Travel
         | crate::PlannerOpKind::Sleep

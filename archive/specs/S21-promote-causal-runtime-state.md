@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S21: Promote Causal Runtime State to Authoritative Components
 
@@ -293,3 +293,10 @@ N/A -- no new feedback loops are introduced by this change.
 4. Deterministic replay produces identical hashes (`golden_deterministic_replay_fidelity`)
 5. No golden test behavioral changes -- agents make the same decisions (world and event log hashes unchanged for same seeds)
 6. `AgentDecisionRuntime` remains unregistered as a component (existing test `agent_decision_runtime_is_not_registered_as_a_component` still passes)
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: All six tickets (S21-001 through S21-006) implemented. `ActiveGoal`, `JourneyCommitment`, and `FacilityQueueIntents` are now authoritative ECS components registered in `worldwake-core`, restricted to `EntityKind::Agent`. `JourneyCommitmentState` and `QueuedFacilityIntent` types relocated from `worldwake-ai::decision_runtime` to `worldwake-core` with `Serialize`/`Deserialize` derives. All promoted fields removed from `AgentDecisionRuntime`. Journey helper methods refactored to free functions with explicit component parameters. `SAVE_FORMAT_VERSION` bumped from 4 to 5. Save/load round-trip golden test (S21-005) verifies commitment preservation across serialization boundary. Cleanup pass (S21-006) removed the last stale re-export.
+- **Deviations from plan**: None. All tickets implemented as specified.
+- **Verification results**: `cargo test --workspace` — all pass. `cargo clippy --workspace` — zero warnings. Deterministic replay hashes unchanged. `AgentDecisionRuntime` remains unregistered. All golden tests pass with identical behavior.
