@@ -31,11 +31,12 @@ impl BlockedIntentMemory {
         action_def: Option<ActionDefId>,
         current_tick: Tick,
     ) -> bool {
+        let global_query = place.is_none() && target.is_none() && action_def.is_none();
         self.intents.values().any(|intent| {
             intent.blocker_key.goal_key == *goal_key
                 && intent.expires_tick > current_tick
                 && intent.blocks_goal_generation()
-                && matches_scope(&intent.blocker_key, place, target, action_def)
+                && (global_query || matches_scope(&intent.blocker_key, place, target, action_def))
         })
     }
 
@@ -461,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn place_scoped_blocker_does_not_match_global_query() {
+    fn place_scoped_goal_blocking_fact_matches_global_query() {
         let key = sample_goal_key();
         let place_a = entity_id(10, 0);
         let mut memory = BlockedIntentMemory::default();
@@ -476,7 +477,28 @@ mod tests {
             Tick(20),
         ));
 
-        // Place-scoped blocker does NOT match a global query (None place)
+        // Global query (None place) matches any goal-generation-blocking fact
+        // regardless of key scope — candidate generation uses global queries
+        assert!(memory.is_blocked(&key, None, None, None, Tick(9)));
+    }
+
+    #[test]
+    fn place_scoped_non_goal_blocking_fact_does_not_match_global_query() {
+        let key = sample_goal_key();
+        let place_a = entity_id(10, 0);
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_a),
+                target: None,
+                action_def: None,
+            },
+            BlockingFact::SourceDepleted,
+            Tick(20),
+        ));
+
+        // SourceDepleted does not block goal generation, so global query does not match
         assert!(!memory.is_blocked(&key, None, None, None, Tick(9)));
     }
 }

@@ -718,9 +718,9 @@ fn run_local_trade_start_failure_production_fallback_scenario(
     assert!(
         h.world
             .get_component_blocked_intent_memory(loser)
-            .is_some_and(|memory| memory.intents.iter().any(|intent| {
+            .is_some_and(|memory| memory.intents.iter().any(|(_, intent)| {
                 intent.blocking_fact == worldwake_core::BlockingFact::SellerOutOfStock
-                    && intent.related_entity == Some(seller)
+                    && intent.blocker_key.target == Some(seller)
             })),
         "the loser should remember that this seller is out of stock rather than blocking all food acquisition"
     );

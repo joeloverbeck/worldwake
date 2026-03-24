@@ -1,6 +1,6 @@
 # S23-003: Update candidate generation for compound blocker lookup
 
-**Status**: PENDING
+**Status**: COMPLETED (absorbed into S23-002)
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — candidate generation call site (worldwake-ai)
@@ -83,3 +83,13 @@ if blocked.is_blocked(&key, None, None, None, current_tick) {
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+**Completion date**: 2026-03-24
+
+**What changed**: Both `emit_candidate()` and `emit_candidate_with_trace()` call sites updated to `is_blocked(&key, None, None, None, current_tick)`. Two test constructions updated for `BlockerKey` / `BTreeMap` patterns.
+
+**Deviations from original plan**: Work absorbed into S23-002 since it was purely mechanical and required for crate compilation after S23-001.
+
+**Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` no warnings.

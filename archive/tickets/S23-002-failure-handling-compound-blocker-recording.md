@@ -1,6 +1,6 @@
 # S23-002: Update failure_handling.rs for compound blocker recording
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — failure recording and resolution logic (worldwake-ai)
@@ -69,11 +69,24 @@ All `BlockedIntent` construction sites must use `BlockerKey`. All assertions tha
 
 - `crates/worldwake-ai/src/failure_handling.rs` (modify)
 
+### Absorbed from other tickets (mechanical migration)
+
+The following files also required mechanical `BlockedIntent` field migration to restore crate compilability after S23-001. These were not covered by any S23 ticket, or were the sole deliverable of S23-003 (which is now COMPLETED):
+
+- `crates/worldwake-ai/src/agent_tick/journey.rs` — `BlockedIntent` construction migrated to `BlockerKey`
+- `crates/worldwake-ai/src/agent_tick/observation.rs` — `BlockedIntent` construction migrated to `BlockerKey`
+- `crates/worldwake-ai/src/planning_snapshot.rs` — `blocked_facility_uses()` updated for `BTreeMap` iteration
+- `crates/worldwake-ai/src/candidate_generation.rs` — `is_blocked()` call sites updated to 5-arg signature (S23-003 scope absorbed)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` — test assertions updated for `BlockerKey` field access
+- `crates/worldwake-ai/src/search/tests.rs` — test `BlockedIntentMemory` construction updated for `BTreeMap`
+- `crates/worldwake-ai/tests/golden_care.rs` — golden test `BlockedIntent` construction and assertions updated
+- `crates/worldwake-ai/tests/golden_trade.rs` — golden test `BTreeMap` iteration updated
+- `crates/worldwake-ai/tests/golden_production.rs` — golden test `BTreeMap` iteration updated
+- `crates/worldwake-core/src/blocked_intent.rs` — `is_blocked()` global query semantics fix: global queries (`place=None, target=None, action_def=None`) skip scope matching for goal-generation-blocking facts, preserving candidate-generation suppression behavior. Updated `place_scoped_blocker_does_not_match_global_query` test to reflect new semantics; added `place_scoped_non_goal_blocking_fact_does_not_match_global_query` test.
+
 ## Out of Scope
 
-- **No changes to `blocked_intent.rs`** — that is S23-001
-- **No changes to `candidate_generation.rs`** — that is S23-003
-- **No changes to `search/`** — that is S23-004
+- **No changes to `search/` pruning logic** — that is S23-004
 - **No changes to `budget.rs`** — that is S23-005
 - **No changes to `decision_trace.rs`** — that is S23-004/005
 - **Do not change `derive_blocking_fact()` logic** — variant classification is unchanged
@@ -105,3 +118,18 @@ All `BlockedIntent` construction sites must use `BlockerKey`. All assertions tha
 
 1. `cargo test -p worldwake-ai -- failure_handling`
 2. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+**Completion date**: 2026-03-24
+
+**What changed**:
+- `failure_handling.rs`: `handle_plan_failure()` constructs `BlockerKey`, `blocker_resolved()` reads from `blocker_key` fields, `clear_resolved_blockers()` uses BTreeMap retain. All 14 unit tests updated.
+- Absorbed mechanical `BlockedIntent` field migrations across 10 additional files (journey.rs, observation.rs, planning_snapshot.rs, candidate_generation.rs, agent_tick/tests.rs, search/tests.rs, golden_care.rs, golden_trade.rs, golden_production.rs, blocked_intent.rs).
+- S23-003 (candidate_generation `is_blocked` signature update) fully absorbed — marked COMPLETED.
+
+**Deviations from original plan**:
+- Scope expanded beyond `failure_handling.rs` to include all files with `BlockedIntent` construction or `is_blocked()` call sites that were broken by S23-001 but not covered by any ticket.
+- Fixed a regression in `is_blocked()` global query semantics: global queries (`place=None, target=None, action_def=None`) now skip `matches_scope()` for goal-generation-blocking facts. Without this, all action-failure blockers (which carry place/target from `related_place()`/`related_entity()`) would fail to suppress candidate generation, breaking golden tests. Updated one core test and added a new one.
+
+**Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` no warnings.

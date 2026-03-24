@@ -28,7 +28,7 @@
     use std::path::PathBuf;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-        BlockedIntent, BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
+        BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
         CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
         DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
         EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue,
@@ -1318,12 +1318,13 @@
         );
 
         assert_eq!(blocked.intents.len(), 1);
+        let intent = blocked.intents.values().next().unwrap();
         assert_eq!(
-            blocked.intents[0].blocking_fact,
+            intent.blocking_fact,
             BlockingFact::ExclusiveFacilityUnavailable
         );
-        assert_eq!(blocked.intents[0].related_entity, Some(facility));
-        assert_eq!(blocked.intents[0].related_action, Some(ActionDefId(77)));
+        assert_eq!(intent.blocker_key.target, Some(facility));
+        assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
         assert!(facility_intents.intents.is_empty());
     }
 
@@ -1498,12 +1499,13 @@
         );
 
         assert_eq!(blocked.intents.len(), 1);
+        let intent = blocked.intents.values().next().unwrap();
         assert_eq!(
-            blocked.intents[0].blocking_fact,
+            intent.blocking_fact,
             BlockingFact::ExclusiveFacilityUnavailable
         );
-        assert_eq!(blocked.intents[0].related_entity, Some(facility));
-        assert_eq!(blocked.intents[0].related_action, Some(ActionDefId(77)));
+        assert_eq!(intent.blocker_key.target, Some(facility));
+        assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
         assert!(facility_intents.intents.is_empty());
     }
 
@@ -1975,16 +1977,14 @@
             Some(crate::JourneyClearReason::PatienceExhausted)
         );
         assert_eq!(blocked_memory.intents.len(), 1);
-        assert_eq!(blocked_memory.intents[0].goal_key, goal);
+        let intent = blocked_memory.intents.values().next().unwrap();
+        assert_eq!(intent.blocker_key.goal_key, goal);
+        assert_eq!(intent.blocking_fact, BlockingFact::NoKnownPath);
+        assert_eq!(intent.blocker_key.target, None);
+        assert_eq!(intent.blocker_key.place, Some(destination));
+        assert_eq!(intent.observed_tick, Tick(9));
         assert_eq!(
-            blocked_memory.intents[0].blocking_fact,
-            BlockingFact::NoKnownPath
-        );
-        assert_eq!(blocked_memory.intents[0].related_entity, None);
-        assert_eq!(blocked_memory.intents[0].related_place, Some(destination));
-        assert_eq!(blocked_memory.intents[0].observed_tick, Tick(9));
-        assert_eq!(
-            blocked_memory.intents[0].expires_tick,
+            intent.expires_tick,
             Tick(9 + u64::from(budget.structural_block_ticks))
         );
     }
@@ -3040,17 +3040,19 @@
             let _ = txn.commit(&mut event_log);
             agent
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::Sleep),
-                blocking_fact: BlockingFact::Unknown,
-                related_entity: None,
-                related_place: None,
-                related_action: None,
-                observed_tick: Tick(2),
-                expires_tick: Tick(7),
-            }],
-        };
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::Unknown,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(7),
+        });
 
         persist_blocked_memory(
             &mut world,
@@ -3537,7 +3539,7 @@
             .get_component_blocked_intent_memory(harness.actor)
             .expect("reconciled failure should persist blocked intent memory");
         assert_eq!(blocked.intents.len(), 1);
-        assert_eq!(blocked.intents[0].goal_key, goal);
+        assert_eq!(blocked.intents.values().next().unwrap().blocker_key.goal_key, goal);
         assert!(
             harness.scheduler.action_start_failures().is_empty(),
             "agent tick should consume this agent's structured start failures once they are reconciled"

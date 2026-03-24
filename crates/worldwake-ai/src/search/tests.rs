@@ -17,7 +17,7 @@
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity,
         test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent,
-        BlockedIntentMemory, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
+        BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
         CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory,
         DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue,
@@ -2619,17 +2619,19 @@
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: goal.key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(fixture.orchard_row),
-                related_place: Some(fixture.orchard_farm),
-                related_action: Some(fixture.harvest_action),
-                observed_tick: Tick(2),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(fixture.orchard_farm),
+                target: Some(fixture.orchard_row),
+                action_def: Some(fixture.harvest_action),
+            },
+            blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+        });
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
@@ -2678,17 +2680,19 @@
             evidence_entities: BTreeSet::from([fixture.orchard_row]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: goal.key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(fixture.orchard_row),
-                related_place: Some(fixture.orchard_farm),
-                related_action: Some(fixture.harvest_action),
-                observed_tick: Tick(2),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(fixture.orchard_farm),
+                target: Some(fixture.orchard_row),
+                action_def: Some(fixture.harvest_action),
+            },
+            blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+        });
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
@@ -2795,17 +2799,19 @@
             evidence_entities: BTreeSet::from([fixture.orchard_row, second_orchard]),
             evidence_places: BTreeSet::from([fixture.orchard_farm]),
         };
-        let blocked = BlockedIntentMemory {
-            intents: vec![BlockedIntent {
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
                 goal_key: goal.key,
-                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                related_entity: Some(fixture.orchard_row),
-                related_place: Some(fixture.orchard_farm),
-                related_action: Some(fixture.harvest_action),
-                observed_tick: Tick(2),
-                expires_tick: Tick(20),
-            }],
-        };
+                place: Some(fixture.orchard_farm),
+                target: Some(fixture.orchard_row),
+                action_def: Some(fixture.harvest_action),
+            },
+            blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+            diagnostic_context: None,
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+        });
         let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,

@@ -619,10 +619,10 @@ fn blocked_facility_uses(
 ) -> BTreeSet<(EntityId, ActionDefId)> {
     blocked_memory
         .intents
-        .iter()
+        .values()
         .filter(|intent| intent.expires_tick > current_tick)
         .filter(|intent| intent.blocking_fact == BlockingFact::ExclusiveFacilityUnavailable)
-        .filter_map(|intent| intent.related_entity.zip(intent.related_action))
+        .filter_map(|intent| intent.blocker_key.target.zip(intent.blocker_key.action_def))
         .collect()
 }
 

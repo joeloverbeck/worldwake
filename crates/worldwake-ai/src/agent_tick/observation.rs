@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, EntityId, Quantity, Tick,
-    UniqueItemKind,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind, EntityId,
+    Quantity, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -181,11 +181,14 @@ pub(super) fn handle_facility_queue_transitions(
             if previous_place == current_place {
                 if let Some(intent) = facility_intents.intents.remove(&facility) {
                     blocked_memory.record(BlockedIntent {
-                        goal_key: intent.goal_key,
+                        blocker_key: BlockerKey {
+                            goal_key: intent.goal_key,
+                            place: current_place,
+                            target: Some(facility),
+                            action_def: Some(intent.intended_action),
+                        },
                         blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
-                        related_entity: Some(facility),
-                        related_place: current_place,
-                        related_action: Some(intent.intended_action),
+                        diagnostic_context: None,
                         observed_tick: tick,
                         expires_tick: tick + u64::from(phase.structural_block_ticks),
                     });
