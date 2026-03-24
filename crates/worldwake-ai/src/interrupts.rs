@@ -285,7 +285,7 @@ mod tests {
     ) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
             current_plan: None,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(last_priority_class),
             ..AgentDecisionRuntime::default()
         }
@@ -517,7 +517,7 @@ mod tests {
                 }],
                 crate::PlanTerminalKind::GoalSatisfied,
             )),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -727,7 +727,7 @@ mod tests {
                 }],
                 crate::PlanTerminalKind::GoalSatisfied,
             )),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };

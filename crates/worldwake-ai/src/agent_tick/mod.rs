@@ -266,7 +266,7 @@ fn process_agent(
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
-            runtime.dirty = false;
+            runtime.dirty = crate::DirtySet::default();
             runtime.materialization_bindings.clear();
             update_runtime_observation_snapshot(&view, agent, runtime);
             persist_intention_frame(
@@ -375,7 +375,7 @@ fn process_agent(
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
                     runtime.materialization_bindings.clear();
-                    runtime.dirty = true;
+                    runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
                 }
             }
         }

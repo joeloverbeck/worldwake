@@ -7,7 +7,7 @@ use crate::decision_trace::{
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, PlannedPlan,
+    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, PlannedPlan,
     PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -254,7 +254,7 @@ pub(super) fn plan_and_validate_next_step(
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    if runtime.dirty {
+    if !runtime.dirty.is_empty() {
         if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
@@ -270,7 +270,7 @@ pub(super) fn plan_and_validate_next_step(
                         action_handlers,
                     );
                     if valid {
-                        runtime.dirty = false;
+                        runtime.dirty = DirtySet::default();
                         return (Some(step), Some(true));
                     }
                 }
@@ -330,7 +330,7 @@ pub(super) fn plan_and_validate_next_step(
                 .first()
                 .map(|candidate| candidate.priority_class);
         }
-        runtime.dirty = false;
+        runtime.dirty = DirtySet::default();
     }
 
     let next_step = current_step(runtime).cloned();
@@ -425,7 +425,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     };
     let mut plan_continued = false;
 
-    if runtime.dirty {
+    if !runtime.dirty.is_empty() {
         if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
@@ -441,7 +441,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                         action_handlers,
                     );
                     if valid {
-                        runtime.dirty = false;
+                        runtime.dirty = DirtySet::default();
                         plan_continued = true;
                         selection_trace.selected = active_goal_key;
                         selection_trace.selected_plan = runtime.current_plan.as_ref().map(|plan| {
@@ -572,7 +572,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                 .first()
                 .map(|candidate| candidate.priority_class);
         }
-        runtime.dirty = false;
+        runtime.dirty = DirtySet::default();
     }
 
     let next_step = current_step(runtime).cloned();

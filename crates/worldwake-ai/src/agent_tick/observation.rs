@@ -116,8 +116,19 @@ pub(super) fn refresh_runtime_for_read_phase(
         dirty_reasons.push(DirtyReason::QueuePatienceExhausted);
     }
 
-    // Preserve original boolean behavior exactly.
-    runtime.dirty = runtime.dirty || !dirty_reasons.is_empty();
+    // Bridge: map each DirtyReason to its DirtySet bit on the runtime.
+    // This temporary bridge is removed in S24TYPINVDOM-003.
+    for reason in &dirty_reasons {
+        runtime.dirty.insert(match reason {
+            DirtyReason::NoPlan => crate::DirtySet::NO_PLAN,
+            DirtyReason::PlanFinished => crate::DirtySet::PLAN_FINISHED,
+            DirtyReason::ReplanSignal => crate::DirtySet::REPLAN_SIGNAL,
+            DirtyReason::QueueTransition => crate::DirtySet::QUEUE_TRANSITION,
+            DirtyReason::BlockerCleanup => crate::DirtySet::BLOCKER_CLEANUP,
+            DirtyReason::SnapshotChanged => crate::DirtySet::SNAPSHOT_MASK,
+            DirtyReason::QueuePatienceExhausted => crate::DirtySet::QUEUE_PATIENCE,
+        });
+    }
 
     let candidates = generate_candidates_with_travel_horizon(
         &view,

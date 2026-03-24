@@ -1,5 +1,5 @@
 use crate::{
-    authoritative_target, AgentDecisionRuntime, PlannedStep, PlannerOpKind,
+    authoritative_target, AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind,
     PlanningBudget,
 };
 use worldwake_core::{
@@ -78,7 +78,7 @@ pub fn handle_plan_failure(
         observed_tick: context.current_tick,
         expires_tick,
     });
-    runtime.dirty = true;
+    runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
 }
 
 pub fn clear_resolved_blockers(
@@ -1126,7 +1126,7 @@ mod tests {
                 vec![step],
                 PlanTerminalKind::ProgressBarrier,
             )),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: None,
             ..AgentDecisionRuntime::default()
         }
@@ -1181,7 +1181,7 @@ mod tests {
         );
 
         assert_eq!(runtime.current_plan, None);
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
         assert!(jc.is_none());
         assert_eq!(blocked.intents.len(), 1);
         let intent = blocked.intents.values().next().unwrap();
@@ -1444,7 +1444,7 @@ mod tests {
         );
 
         assert_eq!(runtime.current_plan, None);
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
         assert_eq!(blocked.intents.len(), 1);
         let intent = blocked.intents.values().next().unwrap();
         assert_eq!(intent.blocking_fact, BlockingFact::Unknown);

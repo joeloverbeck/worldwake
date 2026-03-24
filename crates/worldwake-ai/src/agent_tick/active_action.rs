@@ -8,6 +8,7 @@ use worldwake_sim::{
 };
 
 use crate::failure_handling::ExecutionFailure;
+use crate::DirtySet;
 use crate::{
     classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
     AgentDecisionRuntime, DecisionContext, InterruptDecision,
@@ -202,7 +203,7 @@ pub(super) fn advance_completed_step(
             });
             runtime.current_plan = None;
             runtime.current_step_index = 0;
-            runtime.dirty = true;
+            runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
@@ -220,7 +221,7 @@ pub(super) fn advance_completed_step(
             *active_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
-            runtime.dirty = true;
+            runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
         }
     }

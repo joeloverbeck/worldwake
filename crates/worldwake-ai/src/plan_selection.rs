@@ -228,7 +228,7 @@ mod tests {
         ];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan.clone()),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -338,7 +338,7 @@ mod tests {
         let runtime = AgentDecisionRuntime {
             current_plan: Some(stale_plan),
             current_step_index: 1,
-            dirty: true,
+            dirty: crate::DirtySet::NO_PLAN,
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -377,7 +377,7 @@ mod tests {
         let plans = vec![(eat_goal, Some(actionable.clone()))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(empty_plan(eat_goal)),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -418,7 +418,7 @@ mod tests {
         let plans = vec![(eat_goal, Some(challenger.clone()))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current.clone()),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -455,7 +455,7 @@ mod tests {
         let plans = vec![(eat_goal, Some(empty_plan(eat_goal)))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(empty_plan(eat_goal)),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -524,7 +524,7 @@ mod tests {
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan),
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };
@@ -588,7 +588,7 @@ mod tests {
         ];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan),
-            dirty: true,
+            dirty: crate::DirtySet::NO_PLAN,
             last_priority_class: Some(GoalPriorityClass::High),
             ..AgentDecisionRuntime::default()
         };

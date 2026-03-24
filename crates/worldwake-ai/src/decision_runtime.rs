@@ -1,4 +1,4 @@
-use crate::{GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
+use crate::{DirtySet, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
@@ -57,7 +57,7 @@ pub struct AgentDecisionRuntime {
     pub current_step_index: usize,
     pub last_frame_clear_reason: Option<FrameClearReason>,
     pub step_in_flight: bool,
-    pub dirty: bool,
+    pub dirty: DirtySet,
     pub last_priority_class: Option<GoalPriorityClass>,
     pub last_effective_place: Option<EntityId>,
     pub last_needs: Option<HomeostaticNeeds>,
@@ -240,7 +240,7 @@ mod tests {
         assert_eq!(runtime.current_step_index, 0);
         assert_eq!(runtime.last_frame_clear_reason, None);
         assert!(!runtime.step_in_flight);
-        assert!(!runtime.dirty);
+        assert!(runtime.dirty.is_empty());
         assert_eq!(runtime.last_priority_class, None);
         assert_eq!(runtime.last_effective_place, None);
         assert_eq!(runtime.last_needs, None);

@@ -876,7 +876,7 @@
             )),
             current_step_index: 0,
             step_in_flight: false,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         }
     }
@@ -1214,7 +1214,7 @@
             false,
         );
 
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
     }
 
     #[test]
@@ -1405,7 +1405,7 @@
             },
             false,
         );
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
 
         let goal = ranked_goal(
             GoalKind::RestockCommodity {
@@ -1901,7 +1901,7 @@
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(plan.clone()),
             current_step_index: 0,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         };
         let mut blocked_memory = BlockedIntentMemory::default();
@@ -1920,7 +1920,7 @@
         assert!(handled);
         let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
         assert_eq!(updated_jc.stalled_ticks, 2);
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
         assert_eq!(updated_jc.goal, goal);
         assert!(matches!(updated_jc.domain, IntentionDomain::Travel { destination: d } if d == entity(11)));
         assert_eq!(runtime.current_plan, None);
@@ -1974,7 +1974,7 @@
         let mut runtime = crate::AgentDecisionRuntime {
             current_plan: Some(plan),
             current_step_index: 0,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         };
         let mut blocked_memory = BlockedIntentMemory::default();
@@ -1994,7 +1994,7 @@
         assert!(handled);
         assert_eq!(runtime.current_plan, None);
         assert_eq!(runtime.current_step_index, 0);
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
         assert!(updated_jc.is_none(), "patience exhaustion should clear commitment");
         assert_eq!(
             runtime.last_frame_clear_reason,
@@ -2134,7 +2134,7 @@
             )),
             current_step_index: 0,
             step_in_flight: false,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         };
 
@@ -2148,7 +2148,7 @@
         assert_eq!(updated_jc.goal, goal);
         assert!(matches!(updated_jc.domain, IntentionDomain::Travel { destination: d } if d == destination));
         assert_eq!(updated_jc.last_progress_tick, Some(Tick(4)));
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
         assert!(runtime
             .materialization_bindings
             .hypothetical_to_authoritative
@@ -2191,7 +2191,7 @@
             )),
             current_step_index: 0,
             step_in_flight: false,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         };
 
@@ -2208,7 +2208,7 @@
         assert_eq!(updated_jc.established_at, Tick(1));
         assert_eq!(updated_jc.last_progress_tick, Some(Tick(3)));
         assert_eq!(runtime.last_frame_clear_reason, None);
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
     }
 
     #[test]
@@ -2368,7 +2368,7 @@
             current_plan: Some(plan.clone()),
             current_step_index: 0,
             step_in_flight: true,
-            dirty: false,
+            dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         };
         let mut active_goal = Some(worldwake_core::ActiveGoal { goal_key: goal, adopted_at: Tick(0) });
@@ -2623,7 +2623,7 @@
             false,
         )
         .ranked;
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
         let mut jc2 = None;
         let (next_step, next_step_valid) = plan_and_validate_next_step(
             &harness.world,
@@ -2702,7 +2702,7 @@
             false,
         );
 
-        assert!(!runtime.dirty);
+        assert!(runtime.dirty.is_empty());
     }
 
     #[test]
@@ -2758,7 +2758,7 @@
             false,
         );
 
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
     }
 
     #[test]
@@ -2795,7 +2795,7 @@
             false,
         );
 
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
     }
 
     #[test]
@@ -4241,7 +4241,7 @@
             Some(worldwake_core::FrameClearReason::PatienceExhausted)
         );
         assert!(runtime.current_plan.is_none());
-        assert!(runtime.dirty);
+        assert!(!runtime.dirty.is_empty());
     }
 
     #[test]

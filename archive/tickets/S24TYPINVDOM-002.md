@@ -1,6 +1,6 @@
 # S24TYPINVDOM-002: Replace dirty:bool with DirtySet on AgentDecisionRuntime
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `AgentDecisionRuntime.dirty` field type changes from `bool` to `DirtySet`
@@ -133,3 +133,10 @@ Any test code that initializes `dirty: false` → `dirty: DirtySet::default()` a
 1. `cargo test -p worldwake-ai` — full crate regression
 2. `cargo clippy -p worldwake-ai` — no new warnings
 3. `cargo build --workspace` — cross-crate compilation check
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Replaced `dirty: bool` with `dirty: DirtySet` on `AgentDecisionRuntime` across 9 files. 6 mutation sites tagged with domain bits (FRAME_BLOCKAGE, FRAME_PATIENCE, ASSUMPTION_FAILED, PLAN_FINISHED, REPLAN_SIGNAL). 5 clear sites use `DirtySet::default()`. 2 read sites use `!is_empty()`. Observation bridge maps `DirtyReason` variants to `DirtySet` bits (temporary, removed in S24TYPINVDOM-003). All test initializers and assertions updated.
+- **Deviations**: None. Additional test initializer sites in `plan_selection.rs`, `interrupts.rs`, and `failure_handling.rs` were updated beyond what the ticket explicitly listed in "Files to Touch", but the ticket's general rule ("Any test code that initializes dirty: false/true") covered them.
+- **Verification**: `cargo test -p worldwake-ai` 32/32 pass, `cargo clippy -p worldwake-ai` no warnings, `cargo build --workspace` clean, no `dirty: bool` references remain in runtime code.

@@ -1,6 +1,7 @@
 use crate::{
     authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
-    AgentDecisionRuntime, FrameRuntimeSnapshot, PlannerOpKind, PlannedStep, PlanningBudget,
+    AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PlannerOpKind, PlannedStep,
+    PlanningBudget,
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
@@ -194,7 +195,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.materialization_bindings.clear();
-    runtime.dirty = true;
+    runtime.dirty.insert(DirtySet::FRAME_BLOCKAGE);
     (true, updated_frame)
 }
 
@@ -402,7 +403,7 @@ pub(super) fn check_patience_exhaustion(
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.materialization_bindings.clear();
-    runtime.dirty = true;
+    runtime.dirty.insert(DirtySet::FRAME_PATIENCE);
     true
 }
 
