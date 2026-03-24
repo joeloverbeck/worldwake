@@ -1,6 +1,6 @@
 # S23-001: Introduce BlockerKey, BlockerDiagnostic, and refactor BlockedIntentMemory to BTreeMap
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — BlockedIntentMemory storage and API change (worldwake-core)
@@ -144,3 +144,10 @@ Rewrite to use `BlockerKey`-based construction and new `is_blocked()` signature.
 2. `cargo clippy -p worldwake-core`
 
 **Note**: `cargo test -p worldwake-ai` and `cargo test --workspace` will NOT compile after this ticket until S23-002 and S23-003 are applied. This ticket is expected to be landed together with S23-002 and S23-003 in the same branch.
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Added `BlockerKey` (compound key with goal_key/place/target/action_def) and `BlockerDiagnostic` structs. Refactored `BlockedIntent` to use `blocker_key: BlockerKey` + `diagnostic_context: Option<BlockerDiagnostic>`. Changed `BlockedIntentMemory` from `Vec<BlockedIntent>` to `BTreeMap<BlockerKey, BlockedIntent>`. Updated `record()`, `is_blocked()` (new 5-param signature with tiered `matches_scope()`), added `is_blocked_for_search()`, changed `clear_for(&BlockerKey)`, added `clear_all_for_goal(&GoalKey)`. Updated `test_utils.rs` fixtures and `world_txn.rs` downstream test. Re-exported new types from `lib.rs`.
+- **Deviations**: One additional file touched beyond ticket scope: `world_txn.rs` had a test using `intents[0]` Vec indexing that needed updating for `BTreeMap`.
+- **Verification**: `cargo test -p worldwake-core` — 757 tests pass. `cargo clippy -p worldwake-core` — clean.

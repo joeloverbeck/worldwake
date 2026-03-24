@@ -4,7 +4,8 @@
 //! deterministic testing.
 
 use crate::{
-    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockingFact, CommodityKind, CommodityPurpose,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
+    CommodityPurpose,
     DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
     Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
@@ -101,14 +102,22 @@ pub fn sample_goal_key() -> GoalKey {
     })
 }
 
+/// Returns a representative blocker key fixture for blocked-intent tests.
+pub fn sample_blocker_key() -> BlockerKey {
+    BlockerKey {
+        goal_key: sample_goal_key(),
+        place: Some(entity_id(3, 0)),
+        target: Some(entity_id(8, 0)),
+        action_def: Some(ActionDefId(2)),
+    }
+}
+
 /// Returns a representative blocked intent fixture for decision-memory tests.
 pub fn sample_blocked_intent() -> BlockedIntent {
     BlockedIntent {
-        goal_key: sample_goal_key(),
+        blocker_key: sample_blocker_key(),
         blocking_fact: BlockingFact::SellerOutOfStock,
-        related_entity: Some(entity_id(8, 0)),
-        related_place: Some(entity_id(3, 0)),
-        related_action: Some(ActionDefId(2)),
+        diagnostic_context: None,
         observed_tick: Tick(10),
         expires_tick: Tick(15),
     }
@@ -116,9 +125,10 @@ pub fn sample_blocked_intent() -> BlockedIntent {
 
 /// Returns a representative blocked intent memory fixture for authoritative component tests.
 pub fn sample_blocked_intent_memory() -> BlockedIntentMemory {
-    BlockedIntentMemory {
-        intents: vec![sample_blocked_intent()],
-    }
+    let intent = sample_blocked_intent();
+    let mut intents = std::collections::BTreeMap::new();
+    intents.insert(intent.blocker_key, intent);
+    BlockedIntentMemory { intents }
 }
 
 /// Returns a representative substitute-preference fixture for trade-domain tests.
