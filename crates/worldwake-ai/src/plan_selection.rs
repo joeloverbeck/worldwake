@@ -683,7 +683,7 @@ mod tests {
             (committed_goal, Some(current_plan.clone())),
         ];
         let jc = Some(JourneyCommitment {
-            committed_goal: committed_goal,
+            committed_goal,
             destination,
             state: JourneyCommitmentState::Active,
             established_at: Tick(1),

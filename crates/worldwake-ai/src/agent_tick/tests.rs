@@ -2082,7 +2082,7 @@
         });
         let destination = entity(11);
         let jc = Some(JourneyCommitment {
-            committed_goal: committed_goal,
+            committed_goal,
             destination,
             state: JourneyCommitmentState::Suspended,
             established_at: Tick(1),

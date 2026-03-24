@@ -475,7 +475,7 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
         let jc = JourneyCommitment {
-            committed_goal: committed_goal,
+            committed_goal,
             destination: committed_destination,
             state: JourneyCommitmentState::Active,
             established_at: Tick(3),

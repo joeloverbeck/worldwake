@@ -895,7 +895,7 @@ mod tests {
             purpose: CommodityPurpose::SelfConsume,
         });
         let jc = Some(JourneyCommitment {
-            committed_goal: committed_goal,
+            committed_goal,
             destination,
             state: JourneyCommitmentState::Active,
             established_at: Tick(1),
