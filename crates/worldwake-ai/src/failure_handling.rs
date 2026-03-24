@@ -3,7 +3,8 @@ use crate::{
     PlanningBudget,
 };
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind, EntityId, GoalKey,
+    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
+    EntityId, GoalKey,
     GoalKind, JourneyCommitment, Quantity, Tick,
 };
 use worldwake_sim::{
@@ -62,10 +63,18 @@ pub fn handle_plan_failure(
         action_def: Some(context.failed_step.def_id),
     };
 
+    let diagnostic_context = if matches!(blocking_fact, BlockingFact::Unknown) {
+        Some(BlockerDiagnostic {
+            action_def: context.failed_step.def_id,
+        })
+    } else {
+        None
+    };
+
     blocked_memory.record(BlockedIntent {
         blocker_key,
         blocking_fact,
-        diagnostic_context: None,
+        diagnostic_context,
         observed_tick: context.current_tick,
         expires_tick,
     });
@@ -708,8 +717,8 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
         | BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict
         | BlockingFact::ExclusiveFacilityUnavailable
-        | BlockingFact::TargetGone
-        | BlockingFact::Unknown => budget.transient_block_ticks,
+        | BlockingFact::TargetGone => budget.transient_block_ticks,
+        BlockingFact::Unknown => budget.unknown_block_ticks,
         BlockingFact::NoKnownPath
         | BlockingFact::NoKnownSeller
         | BlockingFact::TooExpensive
@@ -1434,7 +1443,7 @@ mod tests {
         assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(6)));
         assert_eq!(
             intent.expires_tick,
-            Tick(20 + u64::from(budget.transient_block_ticks))
+            Tick(20 + u64::from(budget.unknown_block_ticks))
         );
     }
 
@@ -1504,8 +1513,82 @@ mod tests {
         );
         assert_eq!(
             blocking_fact_ttl(BlockingFact::Unknown, &budget),
-            budget.transient_block_ticks
+            budget.unknown_block_ticks
         );
+    }
+
+    #[test]
+    fn unknown_blocker_uses_dedicated_ttl() {
+        let budget = PlanningBudget::default();
+        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &budget);
+        assert_eq!(ttl, 5);
+        assert_ne!(ttl, budget.transient_block_ticks);
+    }
+
+    #[test]
+    fn transient_blockers_unchanged_ttl() {
+        let budget = PlanningBudget::default();
+        let transient_facts = [
+            BlockingFact::SellerOutOfStock,
+            BlockingFact::WorkstationBusy,
+            BlockingFact::ReservationConflict,
+            BlockingFact::ExclusiveFacilityUnavailable,
+            BlockingFact::TargetGone,
+        ];
+        for fact in transient_facts {
+            assert_eq!(
+                blocking_fact_ttl(fact, &budget),
+                20,
+                "{fact:?} should still use transient_block_ticks (20)"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_blocker_carries_diagnostic_context() {
+        let agent = entity(1);
+        let place = entity(10);
+        let office = entity(20);
+        let goal = claim_office_goal(office);
+        let step = declare_support_step(office, agent);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, place);
+        let start_failure = ActionStartFailure {
+            tick: Tick(4),
+            actor: agent,
+            def_id: ActionDefId(6),
+            request: sample_request(6),
+            reason: ActionStartFailureReason::PreconditionFailed("test".to_string()),
+        };
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockedIntentMemory::default();
+        let budget = PlanningBudget::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: Some(ExecutionFailure::Start(&start_failure)),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &budget,
+        );
+
+        let intent = blocked.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::Unknown);
+        let diag = intent
+            .diagnostic_context
+            .expect("Unknown blocker must have diagnostic_context");
+        assert_eq!(diag.action_def, step.def_id);
     }
 
     #[test]

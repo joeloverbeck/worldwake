@@ -29,14 +29,16 @@ use planning::{
 use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
     DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, InterruptTrace, PlanSearchTrace,
-    PlanningPipelineTrace, SelectionTrace,
+    PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
 };
 use crate::{
     build_semantics_table, journey_runtime_snapshot, AgentDecisionRuntime, JourneyClearReason,
     PlannerOpSemantics, PlanningBudget,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, ControlSource, EntityId, FacilityQueueIntents, Tick};
+use worldwake_core::{
+    ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, Tick,
+};
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
     PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -484,6 +486,24 @@ fn process_agent(
                     failure: None,
                 }),
                 action_start_failures: agent_failures,
+                unknown_blockers: blocked_memory
+                    .intents
+                    .values()
+                    .filter(|i| {
+                        i.blocking_fact == BlockingFact::Unknown && i.expires_tick > tick
+                    })
+                    .filter_map(|i| {
+                        let action_def = i.diagnostic_context?.action_def;
+                        let op_kind = semantics_table.get(&action_def)?.op_kind;
+                        Some(UnknownBlockerTrace {
+                            goal_key: i.blocker_key.goal_key,
+                            failed_action_def: action_def,
+                            op_kind,
+                            target: i.blocker_key.target,
+                            place: i.blocker_key.place,
+                        })
+                    })
+                    .collect(),
             }))
         })
     };

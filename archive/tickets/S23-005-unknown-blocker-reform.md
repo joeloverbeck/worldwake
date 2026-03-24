@@ -1,6 +1,6 @@
 # S23-005: Reform Unknown blocker TTL and diagnostics
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — PlanningBudget field, TTL logic, trace types (worldwake-ai)
@@ -75,19 +75,22 @@ pub struct UnknownBlockerTrace {
     pub goal_key: GoalKey,
     pub failed_action_def: ActionDefId,
     pub op_kind: PlannerOpKind,
-    pub targets: Vec<PlanningEntityRef>,
+    pub target: Option<EntityId>,
     pub place: Option<EntityId>,
 }
 ```
+
+Uses concrete `Option<EntityId>` from `BlockerKey.target` (not ephemeral `PlanningEntityRef`).
+`op_kind` is derived from the semantics table lookup on `BlockerDiagnostic.action_def`.
 
 Add to `PlanningPipelineTrace`:
 ```rust
 pub unknown_blockers: Vec<UnknownBlockerTrace>,
 ```
 
-### 5. `agent_tick/` — emit `UnknownBlockerTrace`
+### 5. `agent_tick/mod.rs` — populate `unknown_blockers` at trace construction
 
-In the planning module, after calling `handle_plan_failure()`, if the blocking fact was Unknown and tracing is active, push an `UnknownBlockerTrace` to the current tick's pipeline trace.
+When building `PlanningPipelineTrace` in `mod.rs`, scan `blocked_memory` for active Unknown blockers and populate the `unknown_blockers` field. This is a derived view of authoritative state (P25), answers "why isn't the agent doing X now?" (P27), and avoids cross-phase coupling (P24). All needed data is available: `goal_key`/`place`/`target` from `BlockerKey`, `action_def` from `BlockerDiagnostic`, `op_kind` from semantics table lookup.
 
 ### 6. `decision_trace.rs` — integrate into `dump_agent()` and `summary()`
 
@@ -102,7 +105,7 @@ When printing planning traces, also emit unknown blocker details:
 - `crates/worldwake-ai/src/budget.rs` (modify — new field)
 - `crates/worldwake-ai/src/failure_handling.rs` (modify — TTL mapping, diagnostic population)
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — `UnknownBlockerTrace`, `PlanningPipelineTrace` field, `dump_agent()`)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — emit trace after Unknown failure)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — populate `unknown_blockers` at `PlanningPipelineTrace` construction)
 
 ## Out of Scope
 
@@ -145,3 +148,16 @@ When printing planning traces, also emit unknown blocker details:
 1. `cargo test -p worldwake-ai -- failure_handling`
 2. `cargo test -p worldwake-ai -- budget`
 3. `cargo clippy -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**:
+  - `budget.rs`: Added `unknown_block_ticks: u32` (default 5) to `PlanningBudget`
+  - `failure_handling.rs`: `blocking_fact_ttl()` maps `Unknown => budget.unknown_block_ticks` (was `transient_block_ticks`). `handle_plan_failure()` populates `diagnostic_context` with `BlockerDiagnostic { action_def }` for Unknown blockers.
+  - `decision_trace.rs`: Added `UnknownBlockerTrace` struct and `unknown_blockers: Vec<UnknownBlockerTrace>` field on `PlanningPipelineTrace`. Integrated into `format_outcome()` (dump_agent) and `summary()`.
+  - `agent_tick/mod.rs`: Populates `unknown_blockers` by scanning `blocked_memory` at `PlanningPipelineTrace` construction time (derived view of authoritative state, per P25/P27).
+- **Deviations from original ticket**:
+  - Ticket originally said to emit trace from `agent_tick/planning.rs` after `handle_plan_failure()` call. Corrected to derive from `blocked_memory` at trace construction in `agent_tick/mod.rs` — cleaner architecturally (P24: no cross-phase coupling, P25: derived view, P27: shows active blockers on every planning tick).
+  - `UnknownBlockerTrace.targets` changed from `Vec<PlanningEntityRef>` to `target: Option<EntityId>` — uses concrete entity from `BlockerKey.target` rather than ephemeral hypothetical refs (P3).
+- **Verification**: `cargo test --workspace` (0 failures), `cargo clippy --workspace` (0 warnings). 3 new tests + 1 updated test all pass.

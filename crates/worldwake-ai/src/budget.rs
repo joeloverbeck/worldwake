@@ -11,6 +11,7 @@ pub struct PlanningBudget {
     pub beam_width: u8,
     pub switch_margin_permille: Permille,
     pub transient_block_ticks: u32,
+    pub unknown_block_ticks: u32,
     pub structural_block_ticks: u32,
 }
 
@@ -25,6 +26,7 @@ impl Default for PlanningBudget {
             beam_width: 8,
             switch_margin_permille: Permille::new_unchecked(100),
             transient_block_ticks: 20,
+            unknown_block_ticks: 5,
             structural_block_ticks: 200,
         }
     }
@@ -47,6 +49,7 @@ mod tests {
         assert_eq!(budget.beam_width, 8);
         assert_eq!(budget.switch_margin_permille, Permille::new(100).unwrap());
         assert_eq!(budget.transient_block_ticks, 20);
+        assert_eq!(budget.unknown_block_ticks, 5);
         assert_eq!(budget.structural_block_ticks, 200);
     }
 
