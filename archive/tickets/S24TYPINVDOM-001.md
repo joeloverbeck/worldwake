@@ -1,6 +1,6 @@
 # S24TYPINVDOM-001: Define DirtySet newtype and unit tests
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -98,3 +98,10 @@ Add `mod dirty_set;` and `pub use dirty_set::DirtySet;` to `lib.rs`.
 1. `cargo test -p worldwake-ai dirty_set` — targeted new tests
 2. `cargo test -p worldwake-ai` — full crate regression
 3. `cargo clippy -p worldwake-ai` — no new warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-24
+- **What changed**: Created `crates/worldwake-ai/src/dirty_set.rs` with `DirtySet` newtype over `u16` (15 bit constants, 3 aggregate masks, 5 methods, 8 trait impls). Registered module and re-export in `crates/worldwake-ai/src/lib.rs`.
+- **Deviations**: None. Implementation matches ticket exactly.
+- **Verification**: 14/14 new unit tests pass, full crate regression (591 tests) green, clippy clean.
