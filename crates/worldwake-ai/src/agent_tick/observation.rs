@@ -22,7 +22,6 @@ use super::{
     AgentTickContext,
 };
 
-use crate::decision_trace::DirtyReason;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ReadPhaseContext<'a> {
@@ -43,7 +42,6 @@ pub(crate) struct InFlightReconciliation<'a> {
 /// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
 pub(crate) struct ReadPhaseResult {
     pub(super) ranked: Vec<RankedGoal>,
-    pub(super) dirty_reasons: Vec<DirtyReason>,
     /// Generated candidate keys (before ranking filter).
     pub(super) generated_keys: Vec<worldwake_core::GoalKey>,
     /// Typed candidate-evidence provenance keyed by generated goal.
@@ -134,13 +132,8 @@ pub(super) fn refresh_runtime_for_read_phase(
         &dc,
     );
 
-    // Temporary conversion bridge: derive Vec<DirtyReason> from runtime.dirty
-    // so that PlanningPipelineTrace.dirty_reasons still compiles. Removed in S24TYPINVDOM-004.
-    let dirty_reasons = dirty_set_to_reasons(runtime.dirty);
-
     ReadPhaseResult {
         ranked: outcome.ranked,
-        dirty_reasons,
         generated_keys,
         candidate_evidence,
         suppressed: outcome.suppressed,
@@ -472,41 +465,6 @@ pub(super) fn filtered_commodity_signature(
             .collect(),
         Some(None) | None => signature.to_vec(),
     }
-}
-
-/// Temporary bridge: convert `DirtySet` back to `Vec<DirtyReason>` for trace
-/// construction. Removed in S24TYPINVDOM-004 when traces use `DirtySet` directly.
-fn dirty_set_to_reasons(set: crate::DirtySet) -> Vec<DirtyReason> {
-    let mut reasons = Vec::new();
-    if set.contains(crate::DirtySet::NO_PLAN) {
-        reasons.push(DirtyReason::NoPlan);
-    }
-    if set.contains(crate::DirtySet::PLAN_FINISHED) {
-        reasons.push(DirtyReason::PlanFinished);
-    }
-    if set.contains(crate::DirtySet::REPLAN_SIGNAL) {
-        reasons.push(DirtyReason::ReplanSignal);
-    }
-    if set.contains(crate::DirtySet::QUEUE_TRANSITION) {
-        reasons.push(DirtyReason::QueueTransition);
-    }
-    if set.contains(crate::DirtySet::BLOCKER_CLEANUP) {
-        reasons.push(DirtyReason::BlockerCleanup);
-    }
-    // Any snapshot bit collapses to the single SnapshotChanged reason.
-    let has_snapshot = set.contains(crate::DirtySet::POSITION)
-        || set.contains(crate::DirtySet::NEEDS)
-        || set.contains(crate::DirtySet::WOUNDS)
-        || set.contains(crate::DirtySet::COMMODITY)
-        || set.contains(crate::DirtySet::UNIQUE_ITEMS)
-        || set.contains(crate::DirtySet::FACILITIES);
-    if has_snapshot {
-        reasons.push(DirtyReason::SnapshotChanged);
-    }
-    if set.contains(crate::DirtySet::QUEUE_PATIENCE) {
-        reasons.push(DirtyReason::QueuePatienceExhausted);
-    }
-    reasons
 }
 
 pub(super) fn unique_item_signature(

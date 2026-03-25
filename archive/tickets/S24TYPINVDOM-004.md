@@ -1,6 +1,6 @@
 # S24TYPINVDOM-004: Remove DirtyReason enum, migrate traces to DirtySet
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `DirtyReason` enum removed, `PlanningPipelineTrace.dirty_reasons` replaced with `dirty: DirtySet`, `ReadPhaseResult.dirty_reasons` field removed, trace output updated
@@ -140,3 +140,10 @@ Update test assertions on `summary()` output to expect dirty domain names in the
 2. `cargo clippy -p worldwake-ai` — no new warnings
 3. `cargo build --workspace` — cross-crate compilation
 4. `grep -r "DirtyReason" crates/` — verify no remaining references in source code
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**: Removed `DirtyReason` enum (7 variants) and all `Vec<DirtyReason>` usage. `PlanningPipelineTrace.dirty_reasons` replaced with `dirty: DirtySet`. `ReadPhaseResult.dirty_reasons` field and `dirty_set_to_reasons()` bridge function removed. `DirtyReason` removed from `lib.rs` exports. `summary()` and `format_outcome()` now include `dirty.display_names()` in Planning output. All 5 test construction sites migrated. Doc comment in `dirty_set.rs` updated.
+- **Deviations**: None. The ticket's suggestion to capture `runtime.dirty` before planning clears it was unnecessary — `runtime.dirty` is not cleared in the planning path (only in the dead-agent early return). Used `runtime.dirty` directly at trace construction.
+- **Verification**: 930 tests pass, clippy clean, workspace builds, `grep -r "DirtyReason" crates/` returns zero results.

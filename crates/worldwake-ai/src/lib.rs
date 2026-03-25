@@ -38,7 +38,7 @@ pub use decision_runtime::{
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,
     CandidateEvidenceExclusion, CandidateEvidenceExclusionReason, CandidateEvidenceKind,
-    CandidateEvidenceTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink, DirtyReason,
+    CandidateEvidenceTrace, CandidateTrace, DecisionOutcome, DecisionTraceSink,
     ExecutionFailureReason, ExecutionTrace, GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus,
     InterruptTrace, PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome,
     PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,

@@ -16,7 +16,7 @@
     };
     use crate::PlanningBudget;
     use crate::{
-        build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtyReason,
+        build_semantics_table, AgentDecisionRuntime, CommodityPurpose,
         ExpectedMaterialization, GoalKey, GoalKind, FrameSwitchMarginSource,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef, RankedGoal, RankedGoalProvenance,
@@ -3694,10 +3694,9 @@
             },
             false,
         );
-        assert_eq!(
-            continuation_read.dirty_reasons,
-            vec![DirtyReason::SnapshotChanged]
-        );
+        // After the read phase, runtime.dirty should contain snapshot-changed bits.
+        assert!(runtime.dirty.is_snapshot_only(),
+            "expected snapshot-only dirty, got: {}", runtime.dirty.display_names());
 
         let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
         let mut jc2 = None;

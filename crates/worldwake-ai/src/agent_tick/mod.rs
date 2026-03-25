@@ -577,7 +577,7 @@ fn process_agent(
             };
 
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-                dirty_reasons: read_result.dirty_reasons,
+                dirty: runtime.dirty,
                 plan_continued,
                 candidates: candidate_trace,
                 planning: plan_search_trace.unwrap_or(PlanSearchTrace {

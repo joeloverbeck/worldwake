@@ -127,8 +127,9 @@ impl DecisionOutcome {
                 };
                 let frame_suffix =
                     format_frame_transition_summary(planning.frame_transition.as_ref());
+                let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -140,9 +141,9 @@ impl DecisionOutcome {
 /// Full trace of the planning pipeline for one agent-tick.
 #[derive(Clone, Debug)]
 pub struct PlanningPipelineTrace {
-    pub dirty_reasons: Vec<DirtyReason>,
+    pub dirty: crate::DirtySet,
     /// When true, the existing plan was revalidated instead of replanning from
-    /// scratch. This happens when `SnapshotChanged` is the only dirty reason
+    /// scratch. This happens when `dirty.is_snapshot_only()` is true
     /// and the current plan's next step passes revalidation.
     pub plan_continued: bool,
     pub candidates: CandidateTrace,
@@ -590,20 +591,6 @@ pub struct InterruptTrace {
     pub top_challenger: Option<RankedGoalSummary>,
 }
 
-// ── Dirty Reasons ───────────────────────────────────────────────
-
-/// Why the planning pipeline was triggered (dirty flag reasons).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DirtyReason {
-    NoPlan,
-    PlanFinished,
-    ReplanSignal,
-    QueueTransition,
-    BlockerCleanup,
-    SnapshotChanged,
-    QueuePatienceExhausted,
-}
-
 /// Semantic status of one goal within one recorded agent tick.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GoalTraceStatus {
@@ -868,8 +855,9 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let selected_provenance = selected_ranked_goal_summary(planning)
                 .and_then(|summary| summary.provenance.as_ref())
                 .map_or_else(String::new, format_ranked_goal_provenance_summary);
+            let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN: selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
             );
             for attempt in &planning.planning.attempts {
                 for rej in &attempt.binding_rejections {
@@ -1133,7 +1121,7 @@ mod tests {
             agent: entity(1),
             tick,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-                dirty_reasons: Vec::new(),
+                dirty: crate::DirtySet::default(),
                 plan_continued,
                 candidates: CandidateTrace {
                     generated,
@@ -1491,7 +1479,7 @@ mod tests {
     fn summary_planning_includes_candidate_count() {
         use worldwake_core::GoalKind;
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-            dirty_reasons: vec![DirtyReason::NoPlan],
+            dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![],
@@ -1576,7 +1564,7 @@ mod tests {
         use worldwake_core::GoalKind;
 
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-            dirty_reasons: vec![DirtyReason::NoPlan],
+            dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![GoalKey::new(GoalKind::ReduceDanger)],
@@ -1630,7 +1618,7 @@ mod tests {
     #[test]
     fn summary_planning_includes_selected_drive_provenance() {
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-            dirty_reasons: vec![DirtyReason::NoPlan],
+            dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![GoalKey::new(GoalKind::ConsumeOwnedCommodity {
@@ -1904,7 +1892,7 @@ mod tests {
     #[test]
     fn frame_transition_in_planning_summary() {
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-            dirty_reasons: vec![DirtyReason::NoPlan],
+            dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
                 generated: vec![],

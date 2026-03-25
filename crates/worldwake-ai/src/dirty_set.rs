@@ -1,8 +1,8 @@
 //! Typed invalidation domain set for agent replan diagnostics.
 //!
 //! `DirtySet` is a hand-rolled bitflag newtype over `u16` that tracks
-//! which domains triggered a replan. It replaces the dual-tracking of
-//! `dirty: bool` + `Vec<DirtyReason>` with a single authoritative set.
+//! which domains triggered a replan. It is the single authoritative
+//! representation for invalidation domains in both runtime logic and traces.
 
 use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
