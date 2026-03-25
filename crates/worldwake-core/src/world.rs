@@ -12,7 +12,8 @@ use crate::{
     PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
     Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick,
     Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, WorkstationMarker, WorldError, WoundList,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

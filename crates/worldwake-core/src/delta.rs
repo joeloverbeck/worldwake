@@ -10,7 +10,8 @@ use crate::{
     MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile,
     Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity, RecordData,
     ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, TradeDispositionProfile,
-    UniqueItem, UtilityProfile, WorkstationMarker, WoundList,
+    UniqueItem, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
+    WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -250,8 +251,9 @@ mod tests {
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
         QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource,
-        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, Wound, WoundCause, WoundList,
+        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
+        ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -488,6 +490,13 @@ mod tests {
                 default_patience_ticks: std::num::NonZeroU32::new(30).unwrap(),
                 commitment_switch_margin: Permille::new(200).unwrap(),
             }),
+            ComponentValue::ViolationMemory(ViolationMemory::default()),
+            ComponentValue::ViolationDispositionProfile(ViolationDispositionProfile {
+                investigation_duration_ticks: std::num::NonZeroU32::new(3).unwrap(),
+                violation_memory_retention_ticks: 50,
+                investigation_motive_weight: Permille::new(500).unwrap(),
+                ownership_motive_bonus: Permille::new(200).unwrap(),
+            }),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
                 quantity: Quantity(11),
@@ -631,6 +640,8 @@ mod tests {
                 ComponentKind::FacilityQueueIntents,
                 ComponentKind::IntentionFrame,
                 ComponentKind::IntentionDispositionProfile,
+                ComponentKind::ViolationMemory,
+                ComponentKind::ViolationDispositionProfile,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

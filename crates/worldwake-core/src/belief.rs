@@ -704,6 +704,8 @@ pub enum SocialObservationKind {
     WitnessedObligation,
     WitnessedTelling,
     CoPresence,
+    /// Agent confirmed the absence of an expected entity at a location through investigation.
+    WitnessedAbsence,
 }
 
 /// Concrete differences between a prior belief and a new observation.
@@ -1514,6 +1516,18 @@ mod tests {
         assert_eq!(roundtrip, kind);
         assert_ne!(kind, SocialObservationKind::WitnessedConflict);
         assert_ne!(kind, SocialObservationKind::WitnessedCooperation);
+    }
+
+    #[test]
+    fn witnessed_absence_roundtrips_and_differs_from_others() {
+        let kind = SocialObservationKind::WitnessedAbsence;
+
+        let bytes = bincode::serialize(&kind).unwrap();
+        let roundtrip: SocialObservationKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, kind);
+        assert_ne!(kind, SocialObservationKind::WitnessedTelling);
+        assert_ne!(kind, SocialObservationKind::CoPresence);
     }
 
     #[test]

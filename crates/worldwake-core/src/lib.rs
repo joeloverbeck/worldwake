@@ -63,6 +63,7 @@ pub mod trade;
 pub mod traits;
 pub mod utility_profile;
 pub mod verification;
+pub mod violation;
 pub mod visibility;
 pub mod witness;
 pub mod world;
@@ -155,6 +156,9 @@ pub use trade::{
 pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;
 pub use verification::{verify_completeness, VerificationError};
+pub use violation::{
+    RecordedViolation, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+};
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;
 pub use world::lifecycle::{
