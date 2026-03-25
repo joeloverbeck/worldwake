@@ -5,6 +5,7 @@
 
 pub mod agent_tick;
 pub mod budget;
+pub mod feasibility;
 pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
@@ -51,6 +52,7 @@ pub use decision_trace::{
     TravelSuccessorTrace,
 };
 pub use dirty_set::DirtySet;
+pub use feasibility::{feasibility_hint, FeasibilityHint};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,

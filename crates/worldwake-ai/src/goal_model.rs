@@ -1480,6 +1480,7 @@ pub struct RankedGoal {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
+    pub feasibility: crate::feasibility::FeasibilityHint,
 }
 
 #[cfg(test)]
@@ -1585,6 +1586,7 @@ mod tests {
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
             provenance: None,
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
 
         let bytes = bincode::serialize(&goal).unwrap();

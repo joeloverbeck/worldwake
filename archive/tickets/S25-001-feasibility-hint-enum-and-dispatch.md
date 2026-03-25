@@ -1,6 +1,6 @@
 # S25-001: Add FeasibilityHint enum, dispatch table, and feasibility_hint() function
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new module in worldwake-ai, new field on RankedGoal
@@ -114,3 +114,14 @@ The GOAP planner wastes all `max_candidates_to_plan` slots on infeasible high-mo
 1. `cargo test -p worldwake-ai feasibility` — run new focused tests
 2. `cargo test -p worldwake-ai` — verify no regressions
 3. `cargo clippy -p worldwake-ai` — no new warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**:
+  - Created `crates/worldwake-ai/src/feasibility.rs` with `FeasibilityHint` enum (Likely, Uncertain, Unlikely), `feasibility_hint()` function with two-phase architecture (shared checks + per-GoalKind dispatch on all 17 variants), and 22 focused unit tests.
+  - Added `pub feasibility: FeasibilityHint` field to `RankedGoal` in `goal_model.rs`.
+  - Updated 6 `RankedGoal` construction sites to initialize `feasibility: FeasibilityHint::Uncertain`.
+  - Registered module and re-exported `feasibility_hint` and `FeasibilityHint` from `lib.rs`.
+- **Deviations**: Clippy required merging five identical `check_evidence_places_local` match arms into a single combined arm. No functional deviation.
+- **Verification**: `cargo test -p worldwake-ai` — 952 tests pass (22 new + 930 existing), 0 failures. `cargo clippy -p worldwake-ai` — clean.

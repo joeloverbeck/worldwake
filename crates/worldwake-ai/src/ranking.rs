@@ -98,6 +98,7 @@ pub fn rank_candidates(
             ),
             motive_score: ranked_motive_score(candidate, &context, recipes, provenance.as_ref()),
             provenance,
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
         if scored.motive_score == 0 {
             zero_motive.push(candidate.key);

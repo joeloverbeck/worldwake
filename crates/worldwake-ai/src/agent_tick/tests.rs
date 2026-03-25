@@ -895,6 +895,7 @@
             priority_class: crate::GoalPriorityClass::Medium,
             motive_score: 500,
             provenance: None,
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         }
     }
 
