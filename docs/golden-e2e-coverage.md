@@ -48,6 +48,8 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
 
+- **S27-006 Supply depletion enables ShareBelief** (removed 2026-03-25) — Implemented as Scenario 37 in `golden_emergent.rs`. The suite now covers the local depletion-reporting chain end to end: refreshed `resource_source.available_quantity` belief on the speaker -> same-tick `ShareBelief { listener, subject: source }` plus `InvestigateViolation { violation_id, place }` candidate coexistence -> committed `tell` -> listener learns the depleted source through report rather than direct perception.
+
 - **S27-005 Entity missing triggers investigation** (removed 2026-03-25) — Implemented as Scenario 36 in `golden_emergent.rs`. The suite now covers the baseline single-incident expectation-violation path: local stale belief mismatch -> `InvestigateViolation { violation_id, place }` candidate -> `investigate` commit -> `WitnessedAbsence` aftermath -> exact `ViolationMemory` resolution. The harder same-place sibling-isolation case remains covered separately by Scenario 35.
 
 - **Scenario 10: Belief Isolation** (removed 2026-03-14) — Already covered by focused runtime tests in `agent_tick.rs` (`same_place_perception_seeds_seller_belief_for_runtime_candidates`, `unseen_seller_relocation_preserves_stale_acquisition_belief`, `unseen_death_does_not_create_corpse_reaction_without_reobservation`).

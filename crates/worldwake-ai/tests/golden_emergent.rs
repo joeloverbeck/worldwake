@@ -14,10 +14,10 @@ use worldwake_core::{
     BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
     ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    KnownRecipes,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile,
-    ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
+    Quantity, RecipientKnowledgeStatus, RelationValue, ResourceSource, Seed, StateHash,
+    SuccessionLaw, TellProfile, ThresholdBand, Tick, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -4645,5 +4645,284 @@ fn golden_entity_missing_triggers_investigation_replays_deterministically() {
     assert_eq!(
         first, second,
         "entity-missing investigation scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 37: Supply Depletion Enables ShareBelief
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, AI, Generic Actions, Social Tell
+// GoalKinds: ShareBelief, InvestigateViolation
+// ActionDomains: Generic, Social
+// Places: VillageSquare
+// Principles: 1, 7, 12, 15
+//
+// Proves the live architecture for local supply-depletion reporting: the
+// speaker's refreshed belief about the depleted source drives ShareBelief via
+// the generic social pipeline, while the same mismatch also emits
+// InvestigateViolation as a separate local follow-up branch.
+
+#[allow(clippy::too_many_lines)]
+fn run_supply_depletion_enables_share_belief(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(1000),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(3),
+            max_quantity: Quantity(3),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        default_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        blind_perception_profile(),
+    );
+    set_violation_profile(
+        &mut h,
+        speaker,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(300),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    let seeded_source_belief = seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        source,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    assert_eq!(
+        seeded_source_belief
+            .resource_source
+            .as_ref()
+            .map(|source| source.available_quantity),
+        Some(Quantity(3)),
+        "speaker should begin with a non-depleted belief about the source"
+    );
+    let listener_presence_belief = seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_told_belief_memory(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        listener,
+        &listener_presence_belief,
+        Tick(0),
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, source).is_none(),
+        "listener should start without any belief about the source"
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_resource_source(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(3),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let speaker_belief_after_refresh = agent_belief_about(&h.world, speaker, source)
+        .expect("speaker should still retain a belief about the depleted source");
+    assert!(
+        speaker_belief_after_refresh
+            .resource_source
+            .as_ref()
+            .is_some_and(|source| source.available_quantity == Quantity(0)),
+        "perception refresh should project depletion onto the speaker's resource-source belief snapshot"
+    );
+    assert_eq!(
+        speaker_belief_after_refresh.source,
+        PerceptionSource::DirectObservation,
+        "speaker should learn the depletion through direct local observation"
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, source).is_none(),
+        "blind listener must still not know about the depleted source before Tell"
+    );
+
+    let first_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(speaker, Tick(0))
+        .expect("tick 0 decision trace should exist");
+    let first_planning = match &first_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    let share_goal = GoalKind::ShareBelief {
+        listener,
+        subject: source,
+    };
+    assert!(
+        first_planning
+            .candidates
+            .generated
+            .iter()
+            .any(|goal| goal.kind == share_goal),
+        "first post-refresh planning tick should expose ShareBelief for the depleted source"
+    );
+
+    let generated_violation = first_planning.candidates.generated.iter().find_map(|goal| {
+        match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some(violation_id),
+            _ => None,
+        }
+    });
+    assert!(
+        generated_violation.is_some(),
+        "the same local mismatch should also expose InvestigateViolation"
+    );
+
+    let mut tell_commit_tick = None;
+    for _ in 0..20 {
+        h.step_once();
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for supply-depletion social emergence");
+        if action_sink.events_for(speaker).iter().any(|event| {
+            event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.detail
+                    == Some(ActionTraceDetail::Tell {
+                        listener,
+                        subject: source,
+                    })
+        }) {
+            tell_commit_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+
+    let tell_commit_tick =
+        tell_commit_tick.expect("speaker should commit Tell for the depleted source");
+    let listener_belief = agent_belief_about(&h.world, listener, source)
+        .expect("listener should learn the depleted source through Tell");
+    assert!(
+        matches!(
+            listener_belief.source,
+            PerceptionSource::Report {
+                from,
+                chain_len: 1
+            } if from == speaker
+        ),
+        "listener should learn the depletion as a first-hand report from the speaker"
+    );
+    assert!(
+        listener_belief
+            .resource_source
+            .as_ref()
+            .is_some_and(|source| source.available_quantity == Quantity(0)),
+        "listener should learn the depleted resource-source state, not the stale stocked state"
+    );
+
+    assert!(
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should remain enabled")
+            .goal_history_for(speaker, &share_goal)
+            .into_iter()
+            .any(|entry| entry.tick <= tell_commit_tick && entry.status.is_generated()),
+        "ShareBelief should be generated before the tell commit that propagates the depletion"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_supply_depletion_enables_share_belief() {
+    let _ = run_supply_depletion_enables_share_belief(Seed([59; 32]));
+}
+
+#[test]
+fn golden_supply_depletion_enables_share_belief_replays_deterministically() {
+    let first = run_supply_depletion_enables_share_belief(Seed([60; 32]));
+    let second = run_supply_depletion_enables_share_belief(Seed([60; 32]));
+    assert_eq!(
+        first, second,
+        "supply-depletion social emergence scenario should replay deterministically"
     );
 }

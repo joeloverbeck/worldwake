@@ -1684,26 +1684,24 @@ fn emit_expectation_violation_candidates(
         }
 
         // Check for SupplyDepleted: believed resource source at current place
-        // with commodity > 0, now observed at 0.
-        if believed_state.resource_source.is_some()
-            && believed_state.last_known_place == Some(current_place)
-        {
-            for (commodity, believed_qty) in &believed_state.last_known_inventory {
-                if *believed_qty > Quantity(0)
-                    && ctx
-                        .view
-                        .locally_observed_commodity_quantity(ctx.agent, *entity_id, *commodity)
-                        == Quantity(0)
-                {
-                    violations.push((
-                        ViolationKind::SupplyDepleted {
-                            commodity: *commodity,
-                            source: *entity_id,
-                            place: current_place,
-                        },
-                        true, // emits goal
-                    ));
-                }
+        // with available quantity > 0, now observed at 0.
+        if let Some(resource_source) = &believed_state.resource_source {
+            if believed_state.last_known_place == Some(current_place)
+                && resource_source.available_quantity > Quantity(0)
+                && ctx.view.locally_observed_commodity_quantity(
+                    ctx.agent,
+                    *entity_id,
+                    resource_source.commodity,
+                ) == Quantity(0)
+            {
+                violations.push((
+                    ViolationKind::SupplyDepleted {
+                        commodity: resource_source.commodity,
+                        source: *entity_id,
+                        place: current_place,
+                    },
+                    true, // emits goal
+                ));
             }
         }
     }
@@ -7246,16 +7244,14 @@ mod tests {
         qty: u32,
         tick: Tick,
     ) -> BelievedEntityState {
-        let mut inv = BTreeMap::new();
-        inv.insert(commodity, Quantity(qty));
         BelievedEntityState {
             last_known_place: Some(place),
-            last_known_inventory: inv,
+            last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
             resource_source: Some(ResourceSource {
                 commodity,
-                available_quantity: Quantity(100),
-                max_quantity: Quantity(100),
+                available_quantity: Quantity(qty),
+                max_quantity: Quantity(qty),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
             }),
