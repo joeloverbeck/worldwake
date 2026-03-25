@@ -1433,7 +1433,6 @@
             &semantics,
             &harness.defs,
             &harness.handlers,
-            &[DirtyReason::NoPlan],
             &harness.recipes,
         );
 
@@ -2542,7 +2541,6 @@
             &semantics,
             &harness.defs,
             &harness.handlers,
-            &[DirtyReason::NoPlan],
             &harness.recipes,
         );
         let pick_up = next_step.expect("cargo runtime should choose an initial pick_up step");
@@ -2641,7 +2639,6 @@
             &semantics,
             &harness.defs,
             &harness.handlers,
-            &[DirtyReason::NoPlan],
             &harness.recipes,
         );
         let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
@@ -3640,7 +3637,6 @@
                 &harness.handlers,
                 true,
                 previous_goal,
-                &initial_read.dirty_reasons,
                 &harness.recipes,
             );
         assert_eq!(initial_valid, Some(true));
@@ -3724,7 +3720,6 @@
                 &harness.handlers,
                 true,
                 previous_goal,
-                &continuation_read.dirty_reasons,
                 &harness.recipes,
             );
         let selection = continuation_selection.expect("snapshot continuation trace should exist");

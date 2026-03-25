@@ -88,46 +88,29 @@ pub(super) fn refresh_runtime_for_read_phase(
     );
     clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
-    let snapshot_changed =
+    let snapshot_domains =
         observation_snapshot_changed(&view, agent, active_goal, runtime, phase.recipe_registry);
     let queue_patience_exhausted = facility_queue_patience_exhausted(&view, agent, phase.tick);
 
-    // Decompose dirty-flag into individual reasons for tracing.
-    let mut dirty_reasons = Vec::new();
+    // Accumulate all dirty bits directly on runtime.dirty — no dual-tracking.
     if runtime.current_plan.is_none() {
-        dirty_reasons.push(DirtyReason::NoPlan);
+        runtime.dirty.insert(crate::DirtySet::NO_PLAN);
     }
     if plan_finished(runtime) {
-        dirty_reasons.push(DirtyReason::PlanFinished);
+        runtime.dirty.insert(crate::DirtySet::PLAN_FINISHED);
     }
     if !replan_signals.is_empty() {
-        dirty_reasons.push(DirtyReason::ReplanSignal);
+        runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
     if queue_transition_changed {
-        dirty_reasons.push(DirtyReason::QueueTransition);
+        runtime.dirty.insert(crate::DirtySet::QUEUE_TRANSITION);
     }
     if blocked_changed_from_cleanup {
-        dirty_reasons.push(DirtyReason::BlockerCleanup);
+        runtime.dirty.insert(crate::DirtySet::BLOCKER_CLEANUP);
     }
-    if snapshot_changed {
-        dirty_reasons.push(DirtyReason::SnapshotChanged);
-    }
+    runtime.dirty.insert(snapshot_domains);
     if queue_patience_exhausted {
-        dirty_reasons.push(DirtyReason::QueuePatienceExhausted);
-    }
-
-    // Bridge: map each DirtyReason to its DirtySet bit on the runtime.
-    // This temporary bridge is removed in S24TYPINVDOM-003.
-    for reason in &dirty_reasons {
-        runtime.dirty.insert(match reason {
-            DirtyReason::NoPlan => crate::DirtySet::NO_PLAN,
-            DirtyReason::PlanFinished => crate::DirtySet::PLAN_FINISHED,
-            DirtyReason::ReplanSignal => crate::DirtySet::REPLAN_SIGNAL,
-            DirtyReason::QueueTransition => crate::DirtySet::QUEUE_TRANSITION,
-            DirtyReason::BlockerCleanup => crate::DirtySet::BLOCKER_CLEANUP,
-            DirtyReason::SnapshotChanged => crate::DirtySet::SNAPSHOT_MASK,
-            DirtyReason::QueuePatienceExhausted => crate::DirtySet::QUEUE_PATIENCE,
-        });
+        runtime.dirty.insert(crate::DirtySet::QUEUE_PATIENCE);
     }
 
     let candidates = generate_candidates_with_travel_horizon(
@@ -150,6 +133,10 @@ pub(super) fn refresh_runtime_for_read_phase(
         phase.recipe_registry,
         &dc,
     );
+
+    // Temporary conversion bridge: derive Vec<DirtyReason> from runtime.dirty
+    // so that PlanningPipelineTrace.dirty_reasons still compiles. Removed in S24TYPINVDOM-004.
+    let dirty_reasons = dirty_set_to_reasons(runtime.dirty);
 
     ReadPhaseResult {
         ranked: outcome.ranked,
@@ -360,7 +347,8 @@ pub(super) fn observation_snapshot_changed(
     active_goal: Option<worldwake_core::GoalKey>,
     runtime: &AgentDecisionRuntime,
     recipe_registry: &RecipeRegistry,
-) -> bool {
+) -> crate::DirtySet {
+    let mut result = crate::DirtySet::default();
     let current_commodity_signature = commodity_signature(view, agent);
     let commodity_filter = active_goal
         .map(|goal| goal.kind.relevant_observed_commodities(recipe_registry))
@@ -371,18 +359,31 @@ pub(super) fn observation_snapshot_changed(
                     .relevant_observed_commodities(recipe_registry)
             })
         });
-    runtime.last_effective_place != view.effective_place(agent)
-        || runtime.last_needs != view.homeostatic_needs(agent)
-        || runtime.last_wounds != view.wounds(agent)
-        || filtered_commodity_signature(
-            &runtime.last_commodity_signature,
-            commodity_filter.as_ref(),
-        ) != filtered_commodity_signature(
-            &current_commodity_signature,
-            commodity_filter.as_ref(),
-        )
-        || runtime.last_unique_item_signature != unique_item_signature(view, agent)
-        || runtime.last_facility_access_signature != facility_access_signature(view, agent)
+    if runtime.last_effective_place != view.effective_place(agent) {
+        result.insert(crate::DirtySet::POSITION);
+    }
+    if runtime.last_needs != view.homeostatic_needs(agent) {
+        result.insert(crate::DirtySet::NEEDS);
+    }
+    if runtime.last_wounds != view.wounds(agent) {
+        result.insert(crate::DirtySet::WOUNDS);
+    }
+    if filtered_commodity_signature(
+        &runtime.last_commodity_signature,
+        commodity_filter.as_ref(),
+    ) != filtered_commodity_signature(
+        &current_commodity_signature,
+        commodity_filter.as_ref(),
+    ) {
+        result.insert(crate::DirtySet::COMMODITY);
+    }
+    if runtime.last_unique_item_signature != unique_item_signature(view, agent) {
+        result.insert(crate::DirtySet::UNIQUE_ITEMS);
+    }
+    if runtime.last_facility_access_signature != facility_access_signature(view, agent) {
+        result.insert(crate::DirtySet::FACILITIES);
+    }
+    result
 }
 
 pub(super) fn update_runtime_observation_snapshot(
@@ -471,6 +472,41 @@ pub(super) fn filtered_commodity_signature(
             .collect(),
         Some(None) | None => signature.to_vec(),
     }
+}
+
+/// Temporary bridge: convert `DirtySet` back to `Vec<DirtyReason>` for trace
+/// construction. Removed in S24TYPINVDOM-004 when traces use `DirtySet` directly.
+fn dirty_set_to_reasons(set: crate::DirtySet) -> Vec<DirtyReason> {
+    let mut reasons = Vec::new();
+    if set.contains(crate::DirtySet::NO_PLAN) {
+        reasons.push(DirtyReason::NoPlan);
+    }
+    if set.contains(crate::DirtySet::PLAN_FINISHED) {
+        reasons.push(DirtyReason::PlanFinished);
+    }
+    if set.contains(crate::DirtySet::REPLAN_SIGNAL) {
+        reasons.push(DirtyReason::ReplanSignal);
+    }
+    if set.contains(crate::DirtySet::QUEUE_TRANSITION) {
+        reasons.push(DirtyReason::QueueTransition);
+    }
+    if set.contains(crate::DirtySet::BLOCKER_CLEANUP) {
+        reasons.push(DirtyReason::BlockerCleanup);
+    }
+    // Any snapshot bit collapses to the single SnapshotChanged reason.
+    let has_snapshot = set.contains(crate::DirtySet::POSITION)
+        || set.contains(crate::DirtySet::NEEDS)
+        || set.contains(crate::DirtySet::WOUNDS)
+        || set.contains(crate::DirtySet::COMMODITY)
+        || set.contains(crate::DirtySet::UNIQUE_ITEMS)
+        || set.contains(crate::DirtySet::FACILITIES);
+    if has_snapshot {
+        reasons.push(DirtyReason::SnapshotChanged);
+    }
+    if set.contains(crate::DirtySet::QUEUE_PATIENCE) {
+        reasons.push(DirtyReason::QueuePatienceExhausted);
+    }
+    reasons
 }
 
 pub(super) fn unique_item_signature(

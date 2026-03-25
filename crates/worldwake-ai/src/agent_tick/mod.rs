@@ -515,7 +515,6 @@ fn process_agent(
                 action_handlers,
                 tracing,
                 previous_goal,
-                &read_result.dirty_reasons,
                 ctx.recipe_registry,
             );
 

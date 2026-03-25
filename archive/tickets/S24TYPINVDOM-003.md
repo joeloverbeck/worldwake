@@ -1,6 +1,6 @@
 # S24TYPINVDOM-003: Decompose observation_snapshot_changed into typed domains
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `observation_snapshot_changed()` return type, `ReadPhaseResult` field removal, planning function signature changes
@@ -133,3 +133,10 @@ Tests in `agent_tick/tests.rs` that pass `&[DirtyReason::NoPlan]` to planning fu
 1. `cargo test -p worldwake-ai` — full crate regression
 2. `cargo clippy -p worldwake-ai` — no new warnings
 3. `cargo build --workspace` — cross-crate compilation check
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**: `observation_snapshot_changed()` returns `DirtySet` with per-dimension bits. Dual-tracking (`Vec<DirtyReason>` + bridge loop) eliminated from `refresh_runtime_for_read_phase()` — structural reasons write directly to `runtime.dirty`. `is_snapshot_changed_only()` removed, replaced by `runtime.dirty.is_snapshot_only()`. `dirty_reasons` parameter removed from both planning functions. Temporary `dirty_set_to_reasons()` bridge populates `ReadPhaseResult.dirty_reasons` for trace compatibility (removed in S24TYPINVDOM-004).
+- **Deviations**: None.
+- **Verification**: `cargo test -p worldwake-ai` 32 passed / 0 failed, `cargo clippy -p worldwake-ai` clean, `cargo build --workspace` clean.

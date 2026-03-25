@@ -1,5 +1,5 @@
 use crate::decision_trace::{
-    BindingRejection, DirtyReason, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome,
+    BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome,
     PlanSearchTrace, PlannedStepSummary, RankedGoalSummary, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace,
@@ -248,14 +248,13 @@ pub(super) fn plan_and_validate_next_step(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
-    dirty_reasons: &[DirtyReason],
     recipe_registry: &RecipeRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     if !runtime.dirty.is_empty() {
-        if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
+        if runtime.dirty.is_snapshot_only() && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
                 .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
@@ -347,14 +346,6 @@ pub(super) fn plan_and_validate_next_step(
     (next_step, next_step_valid)
 }
 
-/// Returns true when `SnapshotChanged` is the only dirty reason present.
-pub(super) fn is_snapshot_changed_only(dirty_reasons: &[DirtyReason]) -> bool {
-    !dirty_reasons.is_empty()
-        && dirty_reasons
-            .iter()
-            .all(|r| *r == DirtyReason::SnapshotChanged)
-}
-
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.
 ///
 /// Returns `(next_step, valid, plan_continued, plan_search_trace, selection_trace)`.
@@ -377,7 +368,6 @@ pub(super) fn plan_and_validate_next_step_traced(
     action_handlers: &ActionHandlerRegistry,
     tracing: bool,
     previous_goal: Option<worldwake_core::GoalKey>,
-    dirty_reasons: &[DirtyReason],
     recipe_registry: &RecipeRegistry,
 ) -> (
     Option<PlannedStep>,
@@ -403,7 +393,6 @@ pub(super) fn plan_and_validate_next_step_traced(
             semantics_table,
             action_defs,
             action_handlers,
-            dirty_reasons,
             recipe_registry,
         );
         return (step, valid, false, None, None);
@@ -426,7 +415,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     let mut plan_continued = false;
 
     if !runtime.dirty.is_empty() {
-        if is_snapshot_changed_only(dirty_reasons) && runtime.current_plan.is_some() {
+        if runtime.dirty.is_snapshot_only() && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
                 .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
