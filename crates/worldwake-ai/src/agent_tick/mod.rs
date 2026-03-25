@@ -224,6 +224,12 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let original_blocked = blocked_memory.clone();
+    let mut violation_memory = ctx
+        .world
+        .get_component_violation_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_violation_memory = violation_memory.clone();
     let utility = ctx
         .world
         .get_component_utility_profile(agent)
@@ -391,6 +397,7 @@ fn process_agent(
         active_goal_key,
         &mut current_facility_intents,
         &mut blocked_memory,
+        &mut violation_memory,
         agent,
         replan_signals,
         ReadPhaseContext {
@@ -565,6 +572,8 @@ fn process_agent(
                 agent,
                 tick,
                 &original_blocked,
+                &original_violation_memory,
+                &violation_memory,
                 &step,
                 valid,
             );
@@ -749,6 +758,8 @@ fn process_agent(
         tick,
         &original_blocked,
         &blocked_memory,
+        &original_violation_memory,
+        &violation_memory,
         runtime,
     )?;
 

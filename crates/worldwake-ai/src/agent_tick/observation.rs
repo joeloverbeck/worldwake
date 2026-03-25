@@ -67,6 +67,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     active_goal: Option<worldwake_core::GoalKey>,
     facility_intents: &mut FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
+    violation_memory: &mut worldwake_core::ViolationMemory,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
@@ -115,11 +116,18 @@ pub(super) fn refresh_runtime_for_read_phase(
         &view,
         agent,
         blocked_memory,
+        violation_memory,
         phase.recipe_registry,
         phase.tick,
         phase.travel_horizon,
         tracing,
     );
+
+    // Apply deferred violation records from candidate generation.
+    for pending in &candidates.pending_violations {
+        violation_memory.record(pending.kind.clone(), pending.observed_tick, pending.ttl);
+    }
+
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
     let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);

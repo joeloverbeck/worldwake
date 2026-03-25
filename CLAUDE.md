@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Foundational Principles
 
-Read `docs/FOUNDATIONS.md` before making any design decision. It defines 13 non-negotiable principles in 4 categories (Causal Foundations, World Dynamics, Agent Architecture, System Architecture) that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, concrete state over abstract scores, locality of information, feedback dampening, agent diversity, system decoupling, and no backward compatibility. All code, specs, and architectural choices must be evaluated against these principles.
+Read `docs/FOUNDATIONS.md` before making any design decision. It defines 28 non-negotiable principles in 5 categories (Causal Standard, World Dynamics, Knowledge/Belief/Evidence, Agents/Institutions/Social Order, System Architecture) that govern every system in this project — including maximal emergence, no magic numbers, agent symmetry, concrete state over abstract scores, locality of information, feedback dampening, agent diversity, system decoupling, and no backward compatibility. The preamble also mandates that every change be an architecturally comprehensive solution — no hacks, patches, or workarounds. All code, specs, and architectural choices must be evaluated against these principles.
 
 ## Project
 

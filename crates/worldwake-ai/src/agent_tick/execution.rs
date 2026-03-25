@@ -20,6 +20,8 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     agent: EntityId,
     tick: Tick,
     original_blocked: &BlockedIntentMemory,
+    original_violation_memory: &worldwake_core::ViolationMemory,
+    violation_memory: &worldwake_core::ViolationMemory,
     step: &PlannedStep,
     valid: bool,
 ) -> Result<(), TickInputError> {
@@ -67,6 +69,8 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 tick,
                 original_blocked,
                 blocked_memory,
+                original_violation_memory,
+                violation_memory,
                 runtime,
             );
         }
@@ -80,6 +84,8 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             tick,
             original_blocked,
             blocked_memory,
+            original_violation_memory,
+            violation_memory,
             runtime,
         );
     };
@@ -109,6 +115,8 @@ pub(super) fn finalize_agent_tick(
     tick: Tick,
     original_blocked: &BlockedIntentMemory,
     blocked_memory: &BlockedIntentMemory,
+    original_violation_memory: &worldwake_core::ViolationMemory,
+    violation_memory: &worldwake_core::ViolationMemory,
     runtime: &mut AgentDecisionRuntime,
 ) -> Result<(), TickInputError> {
     persist_blocked_memory(
@@ -118,6 +126,14 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_blocked,
         blocked_memory,
+    )?;
+    persist_violation_memory(
+        world,
+        event_log,
+        agent,
+        tick,
+        original_violation_memory,
+        violation_memory,
     )?;
     {
         // Snapshot the post-mutation world state before ending the tick.
@@ -224,6 +240,39 @@ pub(super) fn persist_blocked_memory(
         WitnessData::default(),
     );
     txn.set_component_blocked_intent_memory(agent, after.clone())
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+/// Persist the violation memory component to the world, producing a
+/// `ComponentDelta` in the event log. Follows the same diff-and-commit
+/// pattern as `persist_blocked_memory`.
+pub(super) fn persist_violation_memory(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: &worldwake_core::ViolationMemory,
+    after: &worldwake_core::ViolationMemory,
+) -> Result<(), TickInputError> {
+    let existing = world.get_component_violation_memory(agent);
+    if existing == Some(after)
+        || (existing.is_none() && before == after && after.violations.is_empty())
+    {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_violation_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(())

@@ -15,10 +15,11 @@ use crate::{
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
-    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity,
-    RecipientKnowledgeStatus, RecordKind, Tick,
+    load_per_unit, BelievedEntityState, BlockedIntentMemory, CommodityKind, CommodityPurpose,
+    DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData,
+    PerceptionSource, Quantity, RecipientKnowledgeStatus, RecordKind, Tick, ViolationKind,
+    ViolationMemory,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
@@ -128,6 +129,7 @@ struct GenerationContext<'a> {
     travel_horizon: u8,
     enterprise: EnterpriseSignals,
     blocked: &'a BlockedIntentMemory,
+    violation_memory: &'a ViolationMemory,
     recipes: &'a RecipeRegistry,
     current_tick: Tick,
     tracing_enabled: bool,
@@ -143,6 +145,18 @@ pub(crate) struct CandidateGenerationDiagnostics {
 pub(crate) struct CandidateGenerationResult {
     pub candidates: Vec<GroundedGoal>,
     pub diagnostics: CandidateGenerationDiagnostics,
+    /// Violations detected during candidate generation that should be recorded
+    /// in the agent's [`ViolationMemory`] by the caller. Generation itself is
+    /// side-effect-free; the caller applies these after the read phase.
+    pub pending_violations: Vec<PendingViolationRecord>,
+}
+
+/// A violation detected during candidate generation, to be recorded in
+/// [`ViolationMemory`] by the caller after the generation pass completes.
+pub(crate) struct PendingViolationRecord {
+    pub kind: ViolationKind,
+    pub observed_tick: Tick,
+    pub ttl: u32,
 }
 
 #[must_use]
@@ -153,15 +167,27 @@ pub fn generate_candidates(
     recipes: &RecipeRegistry,
     current_tick: Tick,
 ) -> Vec<GroundedGoal> {
-    generate_candidates_with_travel_horizon(view, agent, blocked, recipes, current_tick, 6, false)
-        .candidates
+    let empty_vm = ViolationMemory::default();
+    generate_candidates_with_travel_horizon(
+        view,
+        agent,
+        blocked,
+        &empty_vm,
+        recipes,
+        current_tick,
+        6,
+        false,
+    )
+    .candidates
 }
 
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_candidates_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     blocked: &BlockedIntentMemory,
+    violation_memory: &ViolationMemory,
     recipes: &RecipeRegistry,
     current_tick: Tick,
     travel_horizon: u8,
@@ -171,6 +197,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         return CandidateGenerationResult {
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
+            pending_violations: Vec::new(),
         };
     }
 
@@ -186,6 +213,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         travel_horizon,
         enterprise: analyze_candidate_enterprise(view, agent, place),
         blocked,
+        violation_memory,
         recipes,
         current_tick,
         tracing_enabled,
@@ -197,10 +225,13 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
+    let pending_violations =
+        emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     CandidateGenerationResult {
         candidates: candidates.into_values().collect(),
         diagnostics,
+        pending_violations,
     }
 }
 
@@ -1557,6 +1588,184 @@ fn emit_candidate(
     }
 }
 
+/// Detect expectation violations by comparing stale beliefs against current
+/// perception at the agent's current location.  Returns pending violation
+/// records for the caller to apply to [`ViolationMemory`].
+fn emit_expectation_violation_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) -> Vec<PendingViolationRecord> {
+    let mut pending = Vec::new();
+
+    // Early return: agent must have a current place (not in transit).
+    let Some(current_place) = ctx.place else {
+        return pending;
+    };
+
+    // Early return: agent must have a ViolationDispositionProfile.
+    let Some(profile) = ctx.view.violation_disposition_profile(ctx.agent) else {
+        return pending;
+    };
+
+    let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
+    let observed_at_place: BTreeSet<EntityId> = ctx
+        .view
+        .entities_at(current_place)
+        .into_iter()
+        .collect();
+
+    // Collect violations from belief-perception comparison.
+    let mut violations: Vec<(ViolationKind, bool)> = Vec::new();
+
+    for (entity_id, believed_state) in &beliefs {
+        // Skip self.
+        if *entity_id == ctx.agent {
+            continue;
+        }
+
+        // Check for EntityMissing: believed at current place, not observed.
+        // Exclude in-transit entities: if effective_place is None, the entity
+        // is on a travel edge and temporarily absent, not missing.
+        if believed_state.last_known_place == Some(current_place)
+            && !observed_at_place.contains(entity_id)
+            && ctx.view.effective_place(*entity_id).is_some()
+        {
+            violations.push((
+                ViolationKind::EntityMissing {
+                    entity: *entity_id,
+                    expected_place: current_place,
+                },
+                true, // emits goal
+            ));
+        }
+
+        // Check for EntityDead: believed alive, now dead, at current place.
+        if believed_state.last_known_place == Some(current_place)
+            && believed_state.alive
+            && observed_at_place.contains(entity_id)
+            && ctx.view.is_dead(*entity_id)
+        {
+            violations.push((
+                ViolationKind::EntityDead {
+                    entity: *entity_id,
+                },
+                false, // record only, no goal
+            ));
+        }
+
+        // Check for SupplyDepleted: believed resource source at current place
+        // with commodity > 0, now observed at 0.
+        if believed_state.resource_source.is_some()
+            && believed_state.last_known_place == Some(current_place)
+        {
+            for (commodity, believed_qty) in &believed_state.last_known_inventory {
+                if *believed_qty > Quantity(0)
+                    && ctx.view.commodity_quantity(*entity_id, *commodity) == Quantity(0)
+                {
+                    violations.push((
+                        ViolationKind::SupplyDepleted {
+                            commodity: *commodity,
+                            source: *entity_id,
+                            place: current_place,
+                        },
+                        true, // emits goal
+                    ));
+                }
+            }
+        }
+    }
+
+    let ttl = profile.violation_memory_retention_ticks;
+
+    for (kind, emits_goal) in violations {
+        // Skip already-recorded (unexpired) violations.
+        if ctx.violation_memory.is_recorded(&kind, ctx.current_tick) {
+            continue;
+        }
+
+        // Always record the violation for future suppression.
+        pending.push(PendingViolationRecord {
+            kind: kind.clone(),
+            observed_tick: ctx.current_tick,
+            ttl,
+        });
+
+        if emits_goal {
+            emit_violation_goal(candidates, diagnostics, &beliefs, &kind, ctx);
+        }
+    }
+
+    pending
+}
+
+/// Emit an `InvestigateMissing` goal candidate for an `EntityMissing` or
+/// `SupplyDepleted` violation, with belief-observation contradiction provenance.
+fn emit_violation_goal(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    beliefs: &[(EntityId, BelievedEntityState)],
+    kind: &ViolationKind,
+    ctx: &GenerationContext<'_>,
+) {
+    let (investigation_place, entity_id) = match kind {
+        ViolationKind::EntityMissing {
+            entity,
+            expected_place,
+        } => (*expected_place, *entity),
+        ViolationKind::SupplyDepleted { source, place, .. } => (*place, *source),
+        ViolationKind::EntityDead { .. } => return,
+    };
+
+    let belief_entry = beliefs.iter().find(|(id, _)| *id == entity_id);
+    let (source, observed_tick) = belief_entry.map_or(
+        (PerceptionSource::DirectObservation, ctx.current_tick),
+        |(_, b)| (b.source, b.observed_tick),
+    );
+
+    let aspect = match kind {
+        ViolationKind::EntityMissing { expected_place, .. } => BeliefAspect::LocationAt {
+            place: *expected_place,
+        },
+        ViolationKind::SupplyDepleted { commodity, .. } => BeliefAspect::HasCommodity {
+            commodity: *commodity,
+        },
+        ViolationKind::EntityDead { .. } => return,
+    };
+
+    let trace = EvidenceTrace {
+        contributors: BTreeSet::new(),
+        exclusions: BTreeSet::new(),
+        knowledge_path: KnowledgePath {
+            self_knowledge: Vec::new(),
+            entity_beliefs: vec![BeliefProvenance {
+                subject: entity_id,
+                aspect,
+                source,
+                observed_tick,
+            }],
+            institutional_beliefs: Vec::new(),
+        },
+    };
+
+    let evidence = Evidence {
+        entities: BTreeSet::from([entity_id]),
+        places: BTreeSet::from([investigation_place]),
+    };
+
+    emit_candidate_with_trace(
+        candidates,
+        diagnostics,
+        GoalKind::InvestigateMissing {
+            place: investigation_place,
+        },
+        evidence,
+        trace,
+        ctx.blocked,
+        ctx.current_tick,
+    );
+}
+
 fn emit_candidate_with_trace(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -2064,8 +2273,8 @@ mod tests {
         MerchandiseProfile, MetabolismProfile, OfficeData,
         PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordEntryId, RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationMemory, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -2123,6 +2332,10 @@ mod tests {
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         institutional_claims:
             BTreeMap<(EntityId, InstitutionalBeliefKey), Vec<BelievedInstitutionalClaim>>,
+        violation_disposition_profiles:
+            BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
+        in_transit: BTreeSet<EntityId>,
+        believed_owners: BTreeMap<EntityId, EntityId>,
     }
 
     impl Default for TestBeliefView {
@@ -2175,6 +2388,9 @@ mod tests {
                 support_declarations: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 institutional_claims: BTreeMap::new(),
+                violation_disposition_profiles: BTreeMap::new(),
+                in_transit: BTreeSet::new(),
+                believed_owners: BTreeMap::new(),
             }
         }
     }
@@ -2198,8 +2414,8 @@ mod tests {
             self.effective_places.get(&entity).copied()
         }
 
-        fn is_in_transit(&self, _entity: EntityId) -> bool {
-            false
+        fn is_in_transit(&self, entity: EntityId) -> bool {
+            self.in_transit.contains(&entity)
         }
 
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
@@ -2294,8 +2510,8 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+            self.believed_owners.get(&entity).copied()
         }
 
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -2594,6 +2810,13 @@ mod tests {
                 .get(&(agent, key))
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn violation_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<worldwake_core::ViolationDispositionProfile> {
+            self.violation_disposition_profiles.get(&agent).cloned()
         }
     }
 
@@ -3013,6 +3236,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &recipes,
             Tick(5),
             2,
@@ -3954,6 +4178,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &recipes,
             Tick(5),
             6,
@@ -4195,6 +4420,7 @@ mod tests {
             travel_horizon: 6,
             enterprise: EnterpriseSignals::default(),
             blocked: &blocked,
+            violation_memory: &ViolationMemory::default(),
             recipes: &recipes,
             current_tick: Tick(5),
             tracing_enabled: false,
@@ -4663,6 +4889,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
             6,
@@ -4716,6 +4943,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
             6,
@@ -4767,6 +4995,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
             6,
@@ -4814,6 +5043,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(60),
             6,
@@ -4885,6 +5115,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
             6,
@@ -5315,6 +5546,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5356,6 +5588,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5378,6 +5611,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5439,6 +5673,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5509,6 +5744,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5556,6 +5792,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5589,6 +5826,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5624,6 +5862,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5677,6 +5916,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5744,6 +5984,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5804,6 +6045,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5862,6 +6104,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
             6,
@@ -5921,6 +6164,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -5968,6 +6212,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6026,6 +6271,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6073,6 +6319,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6150,6 +6397,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &recipes,
             Tick(5),
             6,
@@ -6236,6 +6484,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &recipes,
             Tick(5),
             6,
@@ -6304,6 +6553,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6356,6 +6606,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6408,6 +6659,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6459,6 +6711,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6517,6 +6770,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
             6,
@@ -6596,6 +6850,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
             6,
@@ -6673,6 +6928,7 @@ mod tests {
             &view,
             speaker,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
             6,
@@ -6731,6 +6987,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
             6,
@@ -6804,6 +7061,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
             6,
@@ -6885,6 +7143,7 @@ mod tests {
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
             6,
@@ -6913,6 +7172,552 @@ mod tests {
                 }),
             "knowledge_path.institutional_beliefs should contain support declaration provenance, got {:?}",
             trace.knowledge_path.institutional_beliefs,
+        );
+    }
+
+    // ── Expectation-violation candidate generation tests ──
+
+    fn default_violation_profile() -> worldwake_core::ViolationDispositionProfile {
+        worldwake_core::ViolationDispositionProfile {
+            investigation_duration_ticks: NonZeroU32::new(3).unwrap(),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(500),
+            ownership_motive_bonus: pm(200),
+        }
+    }
+
+    fn belief_at_place(place: EntityId, tick: Tick) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            observed_tick: tick,
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn belief_resource_at_place(
+        place: EntityId,
+        commodity: CommodityKind,
+        qty: u32,
+        tick: Tick,
+    ) -> BelievedEntityState {
+        let mut inv = BTreeMap::new();
+        inv.insert(commodity, Quantity(qty));
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: inv,
+            workstation_tag: None,
+            resource_source: Some(ResourceSource {
+                commodity,
+                available_quantity: Quantity(100),
+                max_quantity: Quantity(100),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            }),
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            observed_tick: tick,
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    // Test 1: EntityMissing violation detected, InvestigateMissing candidate emitted
+    #[test]
+    fn violation_entity_missing_emits_investigate_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        // Agent believes entity 2 is at place 10 (stale belief).
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        // Entity 2 is NOT in entities_at(place) — it's gone.
+        view.entities_at.insert(place, vec![agent]);
+        // Entity 2 still has an effective place (somewhere else, not in transit).
+        view.effective_places.insert(missing_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        assert!(
+            result.candidates.iter().any(|c| c.key == goal_key),
+            "Expected InvestigateMissing candidate, got: {:?}",
+            result.candidates.iter().map(|c| c.key).collect::<Vec<_>>()
+        );
+        assert!(
+            !result.pending_violations.is_empty(),
+            "Expected pending violation record"
+        );
+    }
+
+    // Test 2: SupplyDepleted violation detected, InvestigateMissing candidate emitted
+    #[test]
+    fn violation_supply_depleted_emits_investigate_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let source_entity = entity(3);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        // Agent believes source has apples (qty 5) at place.
+        view.beliefs.insert(
+            agent,
+            vec![(
+                source_entity,
+                belief_resource_at_place(place, CommodityKind::Apple, 5, Tick(1)),
+            )],
+        );
+        // Source is present but commodity quantity is now 0.
+        view.entities_at.insert(place, vec![agent, source_entity]);
+        view.effective_places.insert(source_entity, place);
+        view.commodity_quantities
+            .insert((source_entity, CommodityKind::Apple), Quantity(0));
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        assert!(
+            result.candidates.iter().any(|c| c.key == goal_key),
+            "Expected InvestigateMissing candidate for depleted supply"
+        );
+    }
+
+    // Test 3: EntityDead records in ViolationMemory but does NOT emit InvestigateMissing
+    #[test]
+    fn violation_entity_dead_records_only_no_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let dead_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        // Agent believes entity 2 is alive at place.
+        view.beliefs
+            .insert(agent, vec![(dead_entity, belief_at_place(place, Tick(1)))]);
+        // Entity 2 IS present but dead.
+        view.entities_at.insert(place, vec![agent, dead_entity]);
+        view.effective_places.insert(dead_entity, place);
+        view.dead.insert(dead_entity);
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        assert!(
+            !result.candidates.iter().any(|c| c.key == goal_key),
+            "EntityDead should NOT emit InvestigateMissing"
+        );
+        // But should still produce a pending violation record.
+        assert!(
+            result.pending_violations.iter().any(|pv| matches!(
+                &pv.kind,
+                worldwake_core::ViolationKind::EntityDead { entity } if *entity == dead_entity
+            )),
+            "EntityDead should produce a pending violation record"
+        );
+    }
+
+    // Test 4: Already-recorded violation is skipped
+    #[test]
+    fn violation_already_recorded_is_skipped() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(missing_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let mut vm = ViolationMemory::default();
+        // Pre-record the violation so it's already known.
+        vm.record(
+            worldwake_core::ViolationKind::EntityMissing {
+                entity: missing_entity,
+                expected_place: place,
+            },
+            Tick(3),
+            50,
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        assert!(
+            !result.candidates.iter().any(|c| c.key == goal_key),
+            "Already-recorded violation should not emit candidate"
+        );
+        assert!(
+            result.pending_violations.is_empty(),
+            "Already-recorded violation should not produce pending record"
+        );
+    }
+
+    // Test 5: Blocked investigation goal is skipped
+    #[test]
+    fn violation_blocked_investigation_is_skipped() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(missing_entity, entity(20));
+
+        // Block the investigation goal.
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::InvestigateMissing { place }),
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::Unknown,
+            diagnostic_context: None,
+            observed_tick: Tick(3),
+            expires_tick: Tick(100),
+        });
+
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        assert!(
+            !result.candidates.iter().any(|c| c.key == goal_key),
+            "Blocked investigation should not emit candidate"
+        );
+        // But the violation should still be recorded.
+        assert!(
+            !result.pending_violations.is_empty(),
+            "Blocked investigation should still produce pending violation record"
+        );
+    }
+
+    // Test 6: Agent without ViolationDispositionProfile emits no violation candidates
+    #[test]
+    fn violation_no_profile_emits_nothing() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        // No violation_disposition_profile set.
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(missing_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            result.pending_violations.is_empty(),
+            "No profile should produce no violations"
+        );
+    }
+
+    // Test 7: Agent in transit (no current place) emits no violation candidates
+    #[test]
+    fn violation_agent_in_transit_emits_nothing() {
+        let agent = entity(1);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        // Agent has NO effective place (in transit).
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(entity(10), Tick(1)))],
+        );
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            result.pending_violations.is_empty(),
+            "Agent in transit should produce no violations"
+        );
+    }
+
+    // Test 8: Self-entity excluded from violation checks
+    #[test]
+    fn violation_self_excluded() {
+        let agent = entity(1);
+        let place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        // Agent believes itself was at place (stale self-belief).
+        view.beliefs
+            .insert(agent, vec![(agent, belief_at_place(place, Tick(1)))]);
+        // Agent IS at place but entities_at doesn't include self in observed set
+        // (simulating the edge case).
+        view.entities_at.insert(place, vec![]);
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            result.pending_violations.is_empty(),
+            "Self-entity should never trigger violation"
+        );
+    }
+
+    // Test 9: Entity with no prior belief at current place does not trigger violation
+    #[test]
+    fn violation_no_prior_belief_at_place_no_violation() {
+        let agent = entity(1);
+        let place = entity(10);
+        let other_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        // Agent believes entity 2 is at a DIFFERENT place (entity(20)), not at place 10.
+        view.beliefs.insert(
+            agent,
+            vec![(other_entity, belief_at_place(entity(20), Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(other_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            result.pending_violations.is_empty(),
+            "No belief about entity at current place should produce no violation"
+        );
+    }
+
+    // Test 10: EvidenceTrace with KnowledgePath is populated for violation candidate
+    #[test]
+    fn violation_candidate_has_knowledge_path() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.current_tick = Tick(5);
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(missing_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true, // enable tracing
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&goal_key)
+            .expect("Should have evidence trace for violation candidate");
+
+        assert!(
+            !trace.knowledge_path.entity_beliefs.is_empty(),
+            "Knowledge path should contain entity belief provenance"
+        );
+        let belief_prov = &trace.knowledge_path.entity_beliefs[0];
+        assert_eq!(belief_prov.subject, missing_entity);
+        assert_eq!(belief_prov.observed_tick, Tick(1));
+        assert!(
+            matches!(belief_prov.aspect, BeliefAspect::LocationAt { place: p } if p == place),
+            "Aspect should be LocationAt for EntityMissing violation"
+        );
+    }
+
+    // Test 11: In-transit entity excluded from violation detection
+    #[test]
+    fn violation_in_transit_entity_excluded() {
+        let agent = entity(1);
+        let place = entity(10);
+        let traveling_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        // Agent believes entity 2 was at place.
+        view.beliefs.insert(
+            agent,
+            vec![(traveling_entity, belief_at_place(place, Tick(1)))],
+        );
+        // Entity 2 is NOT at place (traveling).
+        view.entities_at.insert(place, vec![agent]);
+        // Entity 2 has NO effective place (it's on a travel edge).
+        // (effective_places does not contain traveling_entity)
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            result.pending_violations.is_empty(),
+            "In-transit entity (no effective place) should not trigger EntityMissing"
         );
     }
 }

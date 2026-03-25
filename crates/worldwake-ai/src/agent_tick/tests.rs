@@ -39,8 +39,8 @@
         PerceptionSource, Permille, Place, Quantity, RecipeId, RecipientKnowledgeStatus,
         ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
         Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -572,6 +572,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -1203,6 +1204,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -1313,6 +1315,7 @@
             None,
             &mut facility_intents,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -1395,6 +1398,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -1493,6 +1497,7 @@
             None,
             &mut facility_intents,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -1570,6 +1575,7 @@
             None,
             &mut facility_intents,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -2512,6 +2518,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -2610,6 +2617,7 @@
             active_goal_state.map(|ag| ag.goal_key),
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -2688,6 +2696,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -2744,6 +2753,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -2781,6 +2791,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -3605,6 +3616,7 @@
             None,
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
@@ -3684,6 +3696,7 @@
             active_goal_state.as_ref().map(|ag| ag.goal_key),
             &mut fi,
             &mut blocked,
+            &mut ViolationMemory::default(),
             harness.actor,
             &[],
             ReadPhaseContext {
