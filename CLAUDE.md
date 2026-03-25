@@ -376,7 +376,7 @@ Minimal: `serde`, `bincode`, `rand_chacha`, `blake3` (canonical state hashing). 
 ## Key References
 
 - Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
-- Design doc: `docs/plans/2026-03-09-worldwake-epic-breakdown-design.md`
+- Archived design doc: `archive/reports/2026-03-09-worldwake-epic-breakdown-design.md`
 - Active specs: `specs/` (currently includes S-series specs plus E16b–E22 epic specs; `archive/specs/` contains archived or completed specs, including E01–E13)
 
 ## Commit Conventions
