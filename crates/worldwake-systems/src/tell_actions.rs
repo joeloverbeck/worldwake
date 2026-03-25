@@ -9,11 +9,12 @@ use worldwake_core::{
     tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
-    belief_chain_len, listener_aware_relayable_tell_topics, AbortReason,
+    belief_chain_len, listener_aware_tell_topic_selection, AbortReason,
     ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-    PayloadEntityRole, Precondition, TargetSpec, TellActionPayload,
+    ActionState, CommitOutcome, CommitTraceData, Constraint, DeterministicRng, DurationExpr,
+    Interruptibility, PayloadEntityRole, Precondition, TargetSpec, TellActionPayload,
+    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
 };
 
 pub fn register_tell_action(
@@ -277,7 +278,7 @@ fn enumerate_tell_payloads(
         .into_iter()
         .filter(|observation| !social_observation_is_redundant_for_listener(observation, listener))
         .collect::<Vec<_>>();
-    let topics = listener_aware_relayable_tell_topics(
+    let selection = listener_aware_tell_topic_selection(
         relayable_entity_beliefs,
         relayable_social_observations,
         profile.max_relay_chain_len,
@@ -288,7 +289,8 @@ fn enumerate_tell_payloads(
         },
     );
 
-    topics
+    selection
+        .selected
         .into_iter()
         .map(|topic| {
             ActionPayload::Tell(TellActionPayload {
@@ -420,6 +422,33 @@ fn tick_tell(
     Ok(ActionProgress::Continue)
 }
 
+fn merge_tell_delta_kind(
+    current: TellBeliefDeltaKind,
+    next: TellBeliefDeltaKind,
+) -> TellBeliefDeltaKind {
+    match (current, next) {
+        (TellBeliefDeltaKind::None, delta) | (delta, TellBeliefDeltaKind::None) => delta,
+        (left, right) if left == right => left,
+        _ => TellBeliefDeltaKind::Mixed,
+    }
+}
+
+fn tell_trace(
+    listener: EntityId,
+    topic: TellTopic,
+    result: TellCommitResult,
+    heard_disposition: Option<HeardBeliefDisposition>,
+    belief_delta: TellBeliefDeltaKind,
+) -> CommitOutcome {
+    CommitOutcome::empty().with_trace(CommitTraceData::Tell(TellCommitTrace {
+        listener,
+        topic,
+        result,
+        heard_disposition,
+        belief_delta,
+    }))
+}
+
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 fn commit_tell(
     def: &ActionDef,
@@ -436,7 +465,13 @@ fn commit_tell(
     let Some(shared_state) = speaker_beliefs
         .shared_tell_state_for_topic(&payload.topic, speaker_profile.max_relay_chain_len)
     else {
-        return Ok(CommitOutcome::empty());
+        return Ok(tell_trace(
+            listener,
+            payload.topic,
+            TellCommitResult::SpeakerNoLongerKnowsTopic,
+            None,
+            TellBeliefDeltaKind::None,
+        ));
     };
 
     let topic_chain_len = match payload.topic {
@@ -446,7 +481,13 @@ fn commit_tell(
         TellTopic::SocialObservation { observation } => belief_chain_len(observation.source),
     };
     if topic_chain_len > speaker_profile.max_relay_chain_len {
-        return Ok(CommitOutcome::empty());
+        return Ok(tell_trace(
+            listener,
+            payload.topic,
+            TellCommitResult::RelayLimitExceeded,
+            None,
+            TellBeliefDeltaKind::None,
+        ));
     }
 
     let told_key = TellMemoryKey {
@@ -468,14 +509,21 @@ fn commit_tell(
         counterparty: speaker,
         topic: payload.topic,
     };
-    let disposition = if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng)
-    {
+    let (result, disposition, belief_delta) =
+        if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng) {
         let mut accepted_any = false;
+        let mut belief_delta = TellBeliefDeltaKind::None;
         let listener_perception = required_perception_profile(txn, listener)?;
         match payload.topic {
             TellTopic::EntityBelief { subject } => {
                 let Some(speaker_belief) = speaker_beliefs.get_entity(&subject).cloned() else {
-                    return Ok(CommitOutcome::empty());
+                    return Ok(tell_trace(
+                        listener,
+                        payload.topic,
+                        TellCommitResult::SpeakerNoLongerKnowsTopic,
+                        None,
+                        TellBeliefDeltaKind::None,
+                    ));
                 };
                 let mut transferred = speaker_belief.clone();
                 transferred.source = degrade_source(speaker, speaker_belief.source);
@@ -486,6 +534,8 @@ fn commit_tell(
                     listener_beliefs.update_entity(subject, transferred);
                     listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
                     accepted_any = true;
+                    belief_delta =
+                        merge_tell_delta_kind(belief_delta, TellBeliefDeltaKind::EntityBelief);
                 }
 
                 for belief in speaker_beliefs
@@ -509,6 +559,10 @@ fn commit_tell(
                         &listener_perception,
                     );
                     accepted_any = true;
+                    belief_delta = merge_tell_delta_kind(
+                        belief_delta,
+                        TellBeliefDeltaKind::InstitutionalBelief,
+                    );
                 }
             }
             TellTopic::SocialObservation { observation } => {
@@ -518,18 +572,32 @@ fn commit_tell(
                     listener_beliefs.record_social_observation(transferred);
                     listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
                     accepted_any = true;
+                    belief_delta =
+                        merge_tell_delta_kind(belief_delta, TellBeliefDeltaKind::SocialObservation);
                 }
             }
         }
 
         if accepted_any {
-            HeardBeliefDisposition::Accepted
+            (
+                TellCommitResult::Accepted,
+                HeardBeliefDisposition::Accepted,
+                belief_delta,
+            )
         } else {
-            HeardBeliefDisposition::AlreadyHeldEqualOrNewer
+            (
+                TellCommitResult::AlreadyHeldEqualOrNewer,
+                HeardBeliefDisposition::AlreadyHeldEqualOrNewer,
+                TellBeliefDeltaKind::None,
+            )
         }
     } else {
-        HeardBeliefDisposition::NotInternalized
-    };
+            (
+                TellCommitResult::NotInternalized,
+                HeardBeliefDisposition::NotInternalized,
+                TellBeliefDeltaKind::None,
+            )
+        };
 
     listener_beliefs.record_heard_belief(
         heard_key,
@@ -544,7 +612,13 @@ fn commit_tell(
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_component_agent_belief_store(listener, listener_beliefs)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    Ok(CommitOutcome::empty())
+    Ok(tell_trace(
+        listener,
+        payload.topic,
+        result,
+        Some(disposition),
+        belief_delta,
+    ))
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -578,8 +652,9 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
-        ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr, Interruptibility,
-        Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
+        ActionPayload, ActionState, ActionStatus, CommitTraceData, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, RuntimeBeliefView, TargetSpec,
+        TellActionPayload, TellBeliefDeltaKind, TellCommitResult,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -887,6 +962,22 @@ mod tests {
         let mut txn = new_action_txn(world, instance.actor, def.visibility, tick);
 
         (handler.on_commit)(def, instance, &mut rng, &mut txn)
+    }
+
+    fn assert_tell_trace(
+        outcome: &worldwake_sim::CommitOutcome,
+        expected_result: TellCommitResult,
+        expected_disposition: Option<HeardBeliefDisposition>,
+        expected_delta: TellBeliefDeltaKind,
+    ) {
+        let trace = match outcome.trace.as_ref() {
+            Some(CommitTraceData::Tell(trace)) => trace,
+            other => panic!("expected tell trace, got {other:?}"),
+        };
+        assert_eq!(trace.result, expected_result);
+        assert_eq!(trace.heard_disposition, expected_disposition);
+        assert_eq!(trace.belief_delta, expected_delta);
+        assert_eq!(trace.artifact_changed(), expected_delta != TellBeliefDeltaKind::None);
     }
 
     #[derive(Default)]
@@ -1574,6 +1665,23 @@ mod tests {
     }
 
     #[test]
+    fn tell_commit_trace_reports_accepted_entity_update() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::Accepted,
+            Some(HeardBeliefDisposition::Accepted),
+            TellBeliefDeltaKind::EntityBelief,
+        );
+    }
+
+    #[test]
     fn tell_commit_degrades_report_to_rumor() {
         let report_source = PerceptionSource::Report {
             from: entity(77),
@@ -1865,6 +1973,43 @@ mod tests {
     }
 
     #[test]
+    fn tell_commit_trace_reports_redundant_noop() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let existing = build_believed_entity_state(
+            &world,
+            subject,
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        )
+        .unwrap();
+        {
+            let mut store = world
+                .get_component_agent_belief_store(listener)
+                .cloned()
+                .unwrap_or_default();
+            store.update_entity(subject, existing);
+
+            let mut txn = new_txn(&mut world, 7);
+            txn.set_component_agent_belief_store(listener, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::AlreadyHeldEqualOrNewer,
+            Some(HeardBeliefDisposition::AlreadyHeldEqualOrNewer),
+            TellBeliefDeltaKind::None,
+        );
+    }
+
+    #[test]
     fn tell_commit_records_listener_heard_belief_with_not_internalized() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
@@ -1897,6 +2042,36 @@ mod tests {
             .unwrap();
         assert_eq!(heard.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(heard.disposition, HeardBeliefDisposition::NotInternalized);
+    }
+
+    #[test]
+    fn tell_commit_trace_reports_not_internalized() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.set_component_tell_profile(
+                listener,
+                TellProfile {
+                    acceptance_fidelity: Permille::new(0).unwrap(),
+                    ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::NotInternalized,
+            Some(HeardBeliefDisposition::NotInternalized),
+            TellBeliefDeltaKind::None,
+        );
     }
 
     #[test]
@@ -2190,6 +2365,42 @@ mod tests {
 
         let listener_store = world.get_component_agent_belief_store(listener).unwrap();
         assert!(listener_store.get_entity(&subject).is_none());
+    }
+
+    #[test]
+    fn tell_commit_trace_reports_relay_limit_rejection() {
+        let report_source = PerceptionSource::Report {
+            from: entity(77),
+            chain_len: 2,
+        };
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(report_source);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.set_component_tell_profile(
+                speaker,
+                TellProfile {
+                    max_tell_candidates: 3,
+                    max_relay_chain_len: 1,
+                    acceptance_fidelity: Permille::new(800).unwrap(),
+                    ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::RelayLimitExceeded,
+            None,
+            TellBeliefDeltaKind::None,
+        );
     }
 
     #[test]

@@ -4,17 +4,27 @@ use crate::{
     TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
-use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, World, WorldTxn};
+use worldwake_core::{
+    ActionDefId, CommodityKind, EntityId, HeardBeliefDisposition, Quantity, TellTopic, World,
+    WorldTxn,
+};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommitOutcome {
     pub materializations: Vec<Materialization>,
+    pub trace: Option<CommitTraceData>,
 }
 
 impl CommitOutcome {
     #[must_use]
     pub fn empty() -> Self {
         Self::default()
+    }
+
+    #[must_use]
+    pub fn with_trace(mut self, trace: CommitTraceData) -> Self {
+        self.trace = Some(trace);
+        self
     }
 }
 
@@ -27,6 +37,45 @@ pub struct Materialization {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum MaterializationTag {
     SplitOffLot,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CommitTraceData {
+    Tell(TellCommitTrace),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TellCommitTrace {
+    pub listener: EntityId,
+    pub topic: TellTopic,
+    pub result: TellCommitResult,
+    pub heard_disposition: Option<HeardBeliefDisposition>,
+    pub belief_delta: TellBeliefDeltaKind,
+}
+
+impl TellCommitTrace {
+    #[must_use]
+    pub const fn artifact_changed(&self) -> bool {
+        !matches!(self.belief_delta, TellBeliefDeltaKind::None)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum TellCommitResult {
+    Accepted,
+    AlreadyHeldEqualOrNewer,
+    NotInternalized,
+    SpeakerNoLongerKnowsTopic,
+    RelayLimitExceeded,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum TellBeliefDeltaKind {
+    None,
+    EntityBelief,
+    SocialObservation,
+    InstitutionalBelief,
+    Mixed,
 }
 
 pub type ActionStartFn = for<'w> fn(
@@ -454,6 +503,7 @@ mod tests {
                 tag: MaterializationTag::SplitOffLot,
                 entity,
             }],
+            trace: None,
         };
 
         assert_eq!(outcome.materializations.len(), 1);

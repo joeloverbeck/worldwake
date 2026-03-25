@@ -18,14 +18,14 @@ use worldwake_core::{
     load_per_unit, BelievedEntityState, BlockedIntentMemory, CommodityKind, CommodityPurpose,
     DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId,
     HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData,
-    PerceptionSource, Quantity, RecipientKnowledgeStatus, RecordKind,
+    PerceptionSource, Quantity, RecordKind,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     TellTopic, Tick,
     ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
-    belief_chain_len, listener_aware_relayable_tell_topics, GoalBeliefView, RecipeDefinition,
-    RecipeRegistry,
+    listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
+    TellTopicOmissionReason,
 };
 
 #[derive(Clone, Default)]
@@ -305,7 +305,16 @@ fn emit_social_candidates(
         let relayable_entity_beliefs = known_beliefs
             .iter()
             .filter(|(subject, _)| {
-                !subject_is_listener_observable_entity_belief(ctx.view, listener, *subject)
+                let directly_observable =
+                    subject_is_listener_observable_entity_belief(ctx.view, listener, *subject);
+                if directly_observable {
+                    diagnostics.omitted_social.push(SocialCandidateOmission {
+                        listener,
+                        topic: TellTopic::EntityBelief { subject: *subject },
+                        reason: TellTopicOmissionReason::DirectlyObservableByListener,
+                    });
+                }
+                !directly_observable
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -313,10 +322,21 @@ fn emit_social_candidates(
             .iter()
             .copied()
             .filter(|observation| {
-                !social_observation_is_redundant_for_listener(observation, listener)
+                let redundant =
+                    social_observation_is_redundant_for_listener(observation, listener);
+                if redundant {
+                    diagnostics.omitted_social.push(SocialCandidateOmission {
+                        listener,
+                        topic: TellTopic::SocialObservation {
+                            observation: *observation,
+                        },
+                        reason: TellTopicOmissionReason::ListenerParticipatedInObservation,
+                    });
+                }
+                !redundant
             })
             .collect::<Vec<_>>();
-        let topics = listener_aware_relayable_tell_topics(
+        let selection = listener_aware_tell_topic_selection(
             relayable_entity_beliefs.clone(),
             relayable_social_observations,
             profile.max_relay_chain_len,
@@ -324,31 +344,21 @@ fn emit_social_candidates(
             |topic| {
                 ctx.view
                     .recipient_knowledge_status(ctx.agent, listener, topic)
-                    .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker)
+                    .unwrap_or(worldwake_core::RecipientKnowledgeStatus::UnknownToSpeaker)
             },
         );
-        let selected = topics.iter().copied().collect::<BTreeSet<_>>();
-        for (subject, belief) in &relayable_entity_beliefs {
-            if belief_chain_len(belief.source) > profile.max_relay_chain_len {
-                continue;
-            }
-            let topic = TellTopic::EntityBelief { subject: *subject };
-            let status = ctx
-                .view
-                .recipient_knowledge_status(ctx.agent, listener, &topic)
-                .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker);
-            if !selected.contains(&topic)
-                && status == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
-            {
-                diagnostics.omitted_social.push(SocialCandidateOmission {
+        diagnostics.omitted_social.extend(
+            selection
+                .omitted
+                .into_iter()
+                .map(|omission| SocialCandidateOmission {
                     listener,
-                    topic,
-                    status,
-                });
-            }
-        }
+                    topic: omission.topic,
+                    reason: omission.reason,
+                }),
+        );
 
-        for topic in topics.iter().copied() {
+        for topic in selection.selected.iter().copied() {
             let mut evidence = Evidence::with_entity(listener);
             evidence.places.insert(place);
             let mut trace = EvidenceTrace::default();
@@ -2352,7 +2362,7 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
-        RuntimeBeliefView,
+        RuntimeBeliefView, TellTopicOmissionReason,
     };
 
     struct TestBeliefView {
@@ -2990,14 +3000,14 @@ mod tests {
         diagnostics: &CandidateGenerationDiagnostics,
         listener: EntityId,
         subject: EntityId,
-        status: RecipientKnowledgeStatus,
+        reason: TellTopicOmissionReason,
     ) -> bool {
         diagnostics.omitted_social.iter().any(|omission| {
             *omission
                 == SocialCandidateOmission {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
-                    status,
+                    reason,
                 }
         })
     }
@@ -4961,6 +4971,55 @@ mod tests {
     }
 
     #[test]
+    fn social_candidates_record_direct_observability_omission_reason() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (subject, place)]);
+        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        view.beliefs.insert(
+            speaker,
+            vec![(
+                subject,
+                believed_state(8, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+            false,
+        );
+
+        assert!(!contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
+        ));
+        assert!(contains_social_omission(
+            &result.diagnostics,
+            listener,
+            subject,
+            TellTopicOmissionReason::DirectlyObservableByListener,
+        ));
+    }
+
+    #[test]
     fn social_candidates_suppress_unchanged_repeat_tells_via_told_memory() {
         let speaker = entity(1);
         let listener = entity(2);
@@ -5007,7 +5066,7 @@ mod tests {
             &result.diagnostics,
             listener,
             subject,
-            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
         ));
     }
 
@@ -5064,7 +5123,7 @@ mod tests {
             &result.diagnostics,
             listener,
             subject,
-            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
         ));
     }
 
@@ -5119,7 +5178,7 @@ mod tests {
             &result.diagnostics,
             listener,
             subject,
-            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
         ));
     }
 
@@ -5170,7 +5229,7 @@ mod tests {
             &result.diagnostics,
             listener,
             subject,
-            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+            TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
         ));
     }
 

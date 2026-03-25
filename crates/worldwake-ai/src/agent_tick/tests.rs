@@ -35,8 +35,8 @@
         GrantedFacilityUse, HomeostaticNeeds, IntentionFrame, IntentionDomain, FrameState,
         IntentionDispositionProfile,
         KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent,
-        PerceptionProfile, QueuedFacilityIntent,
-        PerceptionSource, Permille, Place, Quantity, RecipeId, RecipientKnowledgeStatus,
+        PerceptionProfile, QueuedFacilityIntent, PerceptionSource, Permille, Place, Quantity,
+        RecipeId,
         ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
         ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
         UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
@@ -2261,6 +2261,7 @@
                 tag: MaterializationTag::SplitOffLot,
                 entity: created,
             }],
+            trace: None,
         };
 
         apply_step_materialization_bindings(&mut runtime, &step, &outcome).unwrap();
@@ -2387,6 +2388,7 @@
                     tag: MaterializationTag::SplitOffLot,
                     entity: created,
                 }],
+                trace: None,
             },
         )
         .unwrap();
@@ -2602,6 +2604,7 @@
                     tag: MaterializationTag::SplitOffLot,
                     entity: carried_water,
                 }],
+                trace: None,
             },
         )
         .unwrap();
@@ -4084,15 +4087,15 @@
                     planning.candidates.omitted_social.iter().any(|omission| {
                         omission.listener == listener
                             && omission.topic == TellTopic::EntityBelief { subject }
-                            && omission.status
-                                == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                            && omission.reason
+                                == worldwake_sim::TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
                     }),
                     "social resend omission should be preserved in the decision trace"
                 );
                 assert_eq!(
                     trace.goal_status(&share_goal),
                     crate::GoalTraceStatus::OmittedSocial(
-                        RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                        worldwake_sim::TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
                     )
                 );
             }

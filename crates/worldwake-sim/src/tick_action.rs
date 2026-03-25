@@ -900,6 +900,7 @@ mod tests {
                 tag: MaterializationTag::SplitOffLot,
                 entity: entity(77),
             }],
+            trace: None,
         };
         let (mut world, mut log, mut active_actions, defs, handlers, instance_id, _, _) =
             start_sample_action(
@@ -935,6 +936,7 @@ mod tests {
                         tag: MaterializationTag::SplitOffLot,
                         entity: entity(77),
                     }],
+                    trace: None,
                 },
             }
         );

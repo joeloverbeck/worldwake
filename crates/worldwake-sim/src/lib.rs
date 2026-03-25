@@ -59,8 +59,9 @@ pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
     ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, AuthoritativePayloadValidatorFn,
-    CommitOutcome, ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
-    PayloadEntityRole, PayloadOverrideValidatorFn, SelfTargetActionKind,
+    CommitOutcome, CommitTraceData, ExternalAbortReason, InterruptReason, Materialization,
+    MaterializationTag, PayloadEntityRole, PayloadOverrideValidatorFn, SelfTargetActionKind,
+    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
@@ -130,8 +131,9 @@ pub use scheduler::{
 };
 pub use simulation_state::SimulationState;
 pub use social_relay::{
-    belief_chain_len, listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
-    relayable_social_subjects, relayable_tell_topics,
+    belief_chain_len, listener_aware_relayable_subjects, listener_aware_tell_topic_selection,
+    listener_aware_relayable_tell_topics, relayable_social_subjects, relayable_tell_topics,
+    TellTopicOmission, TellTopicOmissionReason, TellTopicSelection,
 };
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};

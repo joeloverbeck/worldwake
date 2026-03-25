@@ -4,7 +4,10 @@
 //! during `step_tick()`. Follows the same pattern as `DecisionTraceSink` in
 //! `worldwake-ai`.
 
-use crate::{ActionInstanceId, ActionPayload, CommitOutcome, ResolvedRequestTrace};
+use crate::{
+    ActionInstanceId, ActionPayload, CommitOutcome, CommitTraceData, ResolvedRequestTrace,
+    TellBeliefDeltaKind, TellCommitResult,
+};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, TellTopic, Tick, ViolationId};
 
@@ -104,15 +107,20 @@ impl ActionTraceEvent {
                 outcome,
             } => {
                 let mat_count = outcome.materializations.len();
+                let commit_trace_suffix = outcome
+                    .trace
+                    .as_ref()
+                    .map_or_else(String::new, |trace| format!(" <{}>", format_commit_trace(trace)));
                 format!(
-                    "tick {} seq {}: {} committed '{}' (instance {}, {} materializations){}",
+                    "tick {} seq {}: {} committed '{}' (instance {}, {} materializations){}{}",
                     self.tick.0,
                     self.sequence_in_tick,
                     self.actor,
                     self.action_name,
                     instance_id,
                     mat_count,
-                    detail_suffix
+                    detail_suffix,
+                    commit_trace_suffix,
                 )
             }
             ActionTraceKind::Aborted {
@@ -144,6 +152,31 @@ impl ActionTraceEvent {
                     detail_suffix
                 )
             }
+        }
+    }
+}
+
+fn format_commit_trace(trace: &CommitTraceData) -> String {
+    match trace {
+        CommitTraceData::Tell(tell) => {
+            let delta = match tell.belief_delta {
+                TellBeliefDeltaKind::None => "no_change".to_string(),
+                other => format!("{other:?}"),
+            };
+            let disposition = tell
+                .heard_disposition
+                .map_or_else(|| "none".to_string(), |d| format!("{d:?}"));
+            let result = match tell.result {
+                TellCommitResult::Accepted => "Accepted",
+                TellCommitResult::AlreadyHeldEqualOrNewer => "AlreadyHeldEqualOrNewer",
+                TellCommitResult::NotInternalized => "NotInternalized",
+                TellCommitResult::SpeakerNoLongerKnowsTopic => "SpeakerNoLongerKnowsTopic",
+                TellCommitResult::RelayLimitExceeded => "RelayLimitExceeded",
+            };
+            format!(
+                "tell result={result} disposition={disposition} changed={} delta={delta}",
+                tell.artifact_changed()
+            )
         }
     }
 }
@@ -498,6 +531,42 @@ mod tests {
         assert!(summary.contains("tell listener"));
         assert!(summary.contains(&listener.to_string()));
         assert!(summary.contains("EntityBelief"));
+    }
+
+    #[test]
+    fn summary_includes_tell_commit_trace_when_present() {
+        let listener = EntityId {
+            slot: 7,
+            generation: 0,
+        };
+        let topic = TellTopic::EntityBelief {
+            subject: EntityId {
+                slot: 8,
+                generation: 0,
+            },
+        };
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty().with_trace(CommitTraceData::Tell(
+                    crate::TellCommitTrace {
+                        listener,
+                        topic,
+                        result: crate::TellCommitResult::AlreadyHeldEqualOrNewer,
+                        heard_disposition: Some(
+                            worldwake_core::HeardBeliefDisposition::AlreadyHeldEqualOrNewer,
+                        ),
+                        belief_delta: crate::TellBeliefDeltaKind::None,
+                    },
+                )),
+            },
+        );
+
+        let summary = committed.summary();
+        assert!(summary.contains("AlreadyHeldEqualOrNewer"));
+        assert!(summary.contains("changed=false"));
+        assert!(summary.contains("delta=no_change"));
     }
 
     #[test]

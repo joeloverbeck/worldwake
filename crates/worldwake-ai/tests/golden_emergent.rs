@@ -15,9 +15,8 @@ use worldwake_core::{
     ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
-    Quantity, RecipientKnowledgeStatus, RelationValue, ResourceSource, Seed, StateHash,
-    SuccessionLaw, TellProfile, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag,
+    Quantity, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile,
+    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -2637,7 +2636,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
             .expect("speaker should have decision traces in crowd-out emergence");
         saw_recent_omission |= speaker_trace.goal_status(&share_recent)
             == worldwake_ai::GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                worldwake_sim::TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             );
         saw_office_generated |= speaker_trace.goal_status(&share_office).is_generated();
 

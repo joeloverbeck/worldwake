@@ -8,11 +8,10 @@ use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
     GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
-    RecipientKnowledgeStatus, ResourceSource, Seed, SharedTellState, SocialObservationDetail,
-    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile,
-    WorkstationTag,
+    ResourceSource, Seed, SharedTellState, SocialObservationDetail, SocialObservationKind,
+    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
     UtilityProfile {
@@ -774,6 +773,7 @@ fn run_skeptical_listener_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
 
     let speaker = seed_agent(
         &mut h.world,
@@ -873,6 +873,22 @@ fn run_skeptical_listener_scenario(
         !listener_left_village,
         "listener should not travel toward Orchard Farm after rejecting the told belief"
     );
+    let tell_commit = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for skeptical-listener scenario")
+        .events_for(speaker)
+        .into_iter()
+        .find(|event| event.action_name == "tell" && matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .expect("speaker should commit a tell in the skeptical-listener scenario");
+    let CommitTraceData::Tell(tell_trace) = match &tell_commit.kind {
+        ActionTraceKind::Committed { outcome, .. } => outcome
+            .trace
+            .as_ref()
+            .expect("tell commit should include structured tell diagnostics"),
+        other => panic!("expected committed tell event, got {other:?}"),
+    };
+    assert_eq!(tell_trace.result, TellCommitResult::NotInternalized);
+    assert!(!tell_trace.artifact_changed());
 
     (
         hash_world(&h.world).unwrap(),
@@ -1368,7 +1384,7 @@ fn run_unchanged_tell_suppression_scenario(
         fixture.h.step_once();
         saw_resend_omission |= latest_goal_status(&fixture.h, fixture.speaker, &share_goal)
             == GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             );
     }
 
@@ -1507,7 +1523,7 @@ fn run_retell_after_conversation_memory_expiry_scenario(
         let status = latest_goal_status(&fixture.h, fixture.speaker, &share_goal);
         match status {
             GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             ) => saw_resend_omission_before_expiry = true,
             GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. } => {
                 saw_reenabled_after_expiry = true;
@@ -1591,9 +1607,7 @@ fn run_trace_reenabled_social_candidate_scenario(
     let pre_expiry_status = latest_goal_status(&expired.h, expired.speaker, &expired_goal);
     assert_eq!(
         pre_expiry_status,
-        GoalTraceStatus::OmittedSocial(
-            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
-        ),
+        GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief),
         "before expiry, unchanged resend suppression should still appear in the decision trace"
     );
 

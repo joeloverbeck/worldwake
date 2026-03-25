@@ -7,9 +7,11 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, PerceptionSource,
-    RecipientKnowledgeStatus, SuspensionReason, TellTopic, Tick,
+    SuspensionReason, TellTopic, Tick,
 };
-use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
+use worldwake_sim::{
+    ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
+};
 
 use crate::feasibility::FeasibilityHint;
 use crate::knowledge_path::{
@@ -247,7 +249,7 @@ pub struct PoliticalCandidateOmission {
 pub struct SocialCandidateOmission {
     pub listener: EntityId,
     pub topic: TellTopic,
-    pub status: RecipientKnowledgeStatus,
+    pub reason: TellTopicOmissionReason,
 }
 
 /// Summary of a ranked goal for trace output.
@@ -620,7 +622,7 @@ pub enum GoalTraceStatus {
     Dead,
     ActiveAction,
     OmittedPolitical(PoliticalCandidateOmissionReason),
-    OmittedSocial(RecipientKnowledgeStatus),
+    OmittedSocial(TellTopicOmissionReason),
     NotGenerated,
     GeneratedOnly,
     Suppressed,
@@ -800,9 +802,9 @@ fn goal_status_in_planning(
     {
         return GoalTraceStatus::OmittedPolitical(reason);
     }
-    if let Some(status) = omitted_social_status_for_goal(&planning.candidates.omitted_social, goal)
+    if let Some(reason) = omitted_social_reason_for_goal(&planning.candidates.omitted_social, goal)
     {
-        return GoalTraceStatus::OmittedSocial(status);
+        return GoalTraceStatus::OmittedSocial(reason);
     }
 
     let goal_key = GoalKey::from(goal);
@@ -852,15 +854,15 @@ fn omitted_political_reason_for_goal(
     })
 }
 
-fn omitted_social_status_for_goal(
+fn omitted_social_reason_for_goal(
     omissions: &[SocialCandidateOmission],
     goal: &crate::GoalKind,
-) -> Option<RecipientKnowledgeStatus> {
+) -> Option<TellTopicOmissionReason> {
     omissions.iter().find_map(|omission| match goal {
         crate::GoalKind::ShareBelief { listener, topic }
             if omission.listener == *listener && omission.topic == *topic =>
         {
-            Some(omission.status)
+            Some(omission.reason)
         }
         _ => None,
     })
@@ -1583,15 +1585,45 @@ mod tests {
             vec![SocialCandidateOmission {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
-                status: RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             }],
         );
 
         assert_eq!(
             trace.goal_status(&share_goal),
-            GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
-            )
+            GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief)
+        );
+    }
+
+    #[test]
+    fn goal_status_reports_social_direct_observability_omission_reason() {
+        let listener = entity(10);
+        let subject = entity(11);
+        let share_goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        };
+
+        let trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            Vec::new(),
+            vec![SocialCandidateOmission {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+                reason: TellTopicOmissionReason::DirectlyObservableByListener,
+            }],
+        );
+
+        assert_eq!(
+            trace.goal_status(&share_goal),
+            GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::DirectlyObservableByListener)
         );
     }
 

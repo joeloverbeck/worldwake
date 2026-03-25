@@ -284,6 +284,7 @@ fn commit_pick_up(
                 tag: MaterializationTag::SplitOffLot,
                 entity: moved_entity,
             }],
+            trace: None,
         })
     }
 }
@@ -773,6 +774,7 @@ mod tests {
                         tag: MaterializationTag::SplitOffLot,
                         entity: picked_up,
                     }],
+                    trace: None,
                 },
             }
         );
@@ -850,6 +852,7 @@ mod tests {
                         tag: MaterializationTag::SplitOffLot,
                         entity: picked_up,
                     }],
+                    trace: None,
                 },
             }
         );
