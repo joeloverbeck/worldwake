@@ -309,7 +309,8 @@ fn priority_class(
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
-        | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Low,
+        | GoalKind::SupportCandidateForOffice { .. }
+        | GoalKind::InvestigateMissing { .. } => GoalPriorityClass::Low,
     }
 }
 
@@ -483,6 +484,9 @@ fn motive_score(
             social_pressure_for_subject(context, subject),
         ),
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::InvestigateMissing { .. } => {
+            investigation_motive(candidate, context)
+        }
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
             .view
@@ -516,6 +520,23 @@ fn belief_pressure_from_state(
 ) -> Permille {
     let staleness_ticks = current_tick.0.saturating_sub(state.observed_tick.0);
     belief_confidence(&state.source, staleness_ticks, policy)
+}
+
+fn investigation_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
+    let Some(profile) = context.view.violation_disposition_profile(context.agent) else {
+        return 0;
+    };
+    let base = u32::from(profile.investigation_motive_weight.value());
+    let owns_evidence = candidate
+        .evidence_entities
+        .iter()
+        .any(|&entity| context.view.believed_owner_of(entity) == Some(context.agent));
+    let ownership_bonus = if owns_evidence {
+        u32::from(profile.ownership_motive_bonus.value())
+    } else {
+        0
+    };
+    base.saturating_add(ownership_bonus)
 }
 
 fn drive_score(
@@ -725,6 +746,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::ShareBelief { .. } => 14,
         GoalKind::ClaimOffice { .. } => 15,
         GoalKind::SupportCandidateForOffice { .. } => 16,
+        GoalKind::InvestigateMissing { .. } => 17,
     }
 }
 

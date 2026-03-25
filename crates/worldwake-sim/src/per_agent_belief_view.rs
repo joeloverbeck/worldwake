@@ -614,6 +614,19 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::ViolationDispositionProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_violation_disposition_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         if agent == self.agent {
             return self

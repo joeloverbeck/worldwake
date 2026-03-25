@@ -36,6 +36,7 @@ static GENERIC_PROGRESS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::DeclareSupport,
     PlannerOpKind::PressForceClaim,
     PlannerOpKind::YieldForceClaim,
+    PlannerOpKind::Investigate,
 ];
 
 /// Returns the set of `PlannerOpKind`s that count as forward progress for a
@@ -1079,7 +1080,8 @@ mod tests {
         assert!(ops.contains(&PlannerOpKind::DeclareSupport));
         assert!(ops.contains(&PlannerOpKind::PressForceClaim));
         assert!(ops.contains(&PlannerOpKind::YieldForceClaim));
-        assert_eq!(ops.len(), 22);
+        assert!(ops.contains(&PlannerOpKind::Investigate));
+        assert_eq!(ops.len(), 23);
     }
 
     #[test]

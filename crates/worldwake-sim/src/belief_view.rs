@@ -10,7 +10,7 @@ use worldwake_core::{
     MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick,
     TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -101,6 +101,13 @@ pub trait GoalBeliefView {
         None
     }
     fn courage(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<ViolationDispositionProfile> {
         let _ = agent;
         None
     }
@@ -293,6 +300,13 @@ pub trait RuntimeBeliefView {
         None
     }
     fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<ViolationDispositionProfile> {
         let _ = agent;
         None
     }
@@ -655,6 +669,13 @@ macro_rules! impl_goal_belief_view {
 
             fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
                 $crate::RuntimeBeliefView::courage(self, agent)
+            }
+
+            fn violation_disposition_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::ViolationDispositionProfile> {
+                $crate::RuntimeBeliefView::violation_disposition_profile(self, agent)
             }
 
             fn merchandise_profile(

@@ -331,7 +331,8 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Threaten
         | crate::PlannerOpKind::DeclareSupport
         | crate::PlannerOpKind::PressForceClaim
-        | crate::PlannerOpKind::YieldForceClaim => {}
+        | crate::PlannerOpKind::YieldForceClaim
+        | crate::PlannerOpKind::Investigate => {}
     }
 }
 

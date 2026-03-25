@@ -165,6 +165,14 @@ fn goal_specific_feasibility(
         GoalKind::SupportCandidateForOffice { candidate, .. } => {
             check_colocated_or_dead(view, agent, *candidate)
         }
+        GoalKind::InvestigateMissing { place } => {
+            let agent_place = view.effective_place(agent)?;
+            if agent_place == *place {
+                Some(FeasibilityHint::Likely)
+            } else {
+                None // Uncertain — needs travel
+            }
+        }
     }
 }
 
@@ -844,6 +852,39 @@ mod tests {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         });
+        let blocked = empty_blocked_memory();
+
+        let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
+        assert_eq!(hint, FeasibilityHint::Uncertain);
+    }
+
+    // ── Test: InvestigateMissing co-located → Likely ──
+
+    #[test]
+    fn test_investigate_missing_colocated_likely() {
+        let place = entity(10);
+        let view = MockView {
+            agent_place: Some(place),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::InvestigateMissing { place });
+        let blocked = empty_blocked_memory();
+
+        let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
+        assert_eq!(hint, FeasibilityHint::Likely);
+    }
+
+    // ── Test: InvestigateMissing not co-located → Uncertain ──
+
+    #[test]
+    fn test_investigate_missing_not_colocated_uncertain() {
+        let place = entity(10);
+        let other_place = entity(11);
+        let view = MockView {
+            agent_place: Some(other_place),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::InvestigateMissing { place });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));

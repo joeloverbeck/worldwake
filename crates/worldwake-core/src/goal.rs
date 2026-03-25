@@ -60,6 +60,10 @@ pub enum GoalKind {
         office: EntityId,
         candidate: EntityId,
     },
+    /// Investigate why an expected entity or resource is missing at a location.
+    InvestigateMissing {
+        place: EntityId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -104,6 +108,7 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::ProduceCommodity { .. } => (None, None, None),
+            GoalKind::InvestigateMissing { place } => (None, None, Some(place)),
         };
 
         Self {
@@ -322,6 +327,27 @@ mod tests {
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(office));
         assert_eq!(key.place, Some(candidate));
+    }
+
+    #[test]
+    fn goal_key_extracts_place_for_investigate_missing() {
+        let place = entity_id(22, 0);
+        let key = GoalKey::from(GoalKind::InvestigateMissing { place });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, None);
+        assert_eq!(key.place, Some(place));
+    }
+
+    #[test]
+    fn investigate_missing_goal_roundtrips_through_bincode() {
+        let place = entity_id(23, 0);
+        let goal = GoalKind::InvestigateMissing { place };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
     }
 
     #[test]

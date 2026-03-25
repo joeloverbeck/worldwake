@@ -144,7 +144,8 @@ fn derive_blocking_fact(
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
-        | PlannerOpKind::YieldForceClaim => {}
+        | PlannerOpKind::YieldForceClaim
+        | PlannerOpKind::Investigate => {}
     }
 
     if danger_too_high(view, agent) {
@@ -368,7 +369,8 @@ fn classify_input_failure(
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
-        | PlannerOpKind::YieldForceClaim => None,
+        | PlannerOpKind::YieldForceClaim
+        | PlannerOpKind::Investigate => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -405,7 +407,8 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
-        | PlannerOpKind::YieldForceClaim => {
+        | PlannerOpKind::YieldForceClaim
+        | PlannerOpKind::Investigate => {
             view.entity_kind(target).is_none() || view.is_dead(target)
         }
         PlannerOpKind::Travel => false,
@@ -635,7 +638,8 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         PlannerOpKind::Travel
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
-        | PlannerOpKind::Wash => None,
+        | PlannerOpKind::Wash
+        | PlannerOpKind::Investigate => None,
         PlannerOpKind::Bury
         | PlannerOpKind::Consume
         | PlannerOpKind::QueueForFacilityUse
@@ -710,7 +714,8 @@ fn related_place(
         | PlannerOpKind::Threaten
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
-        | PlannerOpKind::YieldForceClaim => view.effective_place(agent),
+        | PlannerOpKind::YieldForceClaim
+        | PlannerOpKind::Investigate => view.effective_place(agent),
     }
 }
 

@@ -168,7 +168,8 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::ClaimOffice { .. }
-        | GoalKind::SupportCandidateForOffice { .. } => GoalFamilyPolicy {
+        | GoalKind::SupportCandidateForOffice { .. }
+        | GoalKind::InvestigateMissing { .. } => GoalFamilyPolicy {
             suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
             penalty_interrupt: PenaltyInterruptEligibility::Never,
             free_interrupt: FreeInterruptRole::Normal,
@@ -299,6 +300,9 @@ mod tests {
                 office: dummy_entity(),
                 candidate: dummy_entity(),
             },
+            GoalKind::InvestigateMissing {
+                place: dummy_entity(),
+            },
         ];
         for kind in &goals {
             assert_eq!(
@@ -386,6 +390,9 @@ mod tests {
                 office: dummy_entity(),
                 candidate: dummy_entity(),
             },
+            GoalKind::InvestigateMissing {
+                place: dummy_entity(),
+            },
         ];
         for kind in &goals {
             assert_eq!(
@@ -469,6 +476,9 @@ mod tests {
             GoalKind::SupportCandidateForOffice {
                 office: dummy_entity(),
                 candidate: dummy_entity(),
+            },
+            GoalKind::InvestigateMissing {
+                place: dummy_entity(),
             },
         ];
         for kind in &normal {

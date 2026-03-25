@@ -41,6 +41,7 @@ pub enum GoalKindTag {
     ShareBelief,
     ClaimOffice,
     SupportCandidateForOffice,
+    InvestigateMissing,
 }
 
 pub trait GoalKindPlannerExt {
@@ -163,6 +164,8 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::ConsultRecord,
     PlannerOpKind::DeclareSupport,
 ];
+const INVESTIGATE_OPS: &[PlannerOpKind] =
+    &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -350,6 +353,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { .. } => GoalKindTag::ShareBelief,
             GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
+            GoalKind::InvestigateMissing { .. } => GoalKindTag::InvestigateMissing,
         }
     }
 
@@ -372,6 +376,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
+            GoalKind::InvestigateMissing { .. } => INVESTIGATE_OPS,
         }
     }
 
@@ -403,7 +408,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::BuryCorpse { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::ClaimOffice { .. }
-            | GoalKind::SupportCandidateForOffice { .. } => Some(BTreeSet::new()),
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::InvestigateMissing { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -729,7 +735,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Defend
             | PlannerOpKind::Tell
             | PlannerOpKind::MoveCargo
-            | PlannerOpKind::YieldForceClaim => state,
+            | PlannerOpKind::YieldForceClaim
+            | PlannerOpKind::Investigate => state,
         }
     }
 
@@ -746,6 +753,12 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::ShareBelief { .. }) && step.op_kind == PlannerOpKind::Tell {
+            return true;
+        }
+
+        if matches!(self, GoalKind::InvestigateMissing { .. })
+            && step.op_kind == PlannerOpKind::Investigate
+        {
             return true;
         }
 
@@ -857,7 +870,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::SellCommodity { .. } => false,
+            | GoalKind::SellCommodity { .. }
+            | GoalKind::InvestigateMissing { .. } => false,
         }
     }
 
@@ -919,6 +933,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { listener, .. } => {
                 state.effective_place(*listener).into_iter().collect()
             }
+            GoalKind::InvestigateMissing { place } => vec![*place],
         }
     }
 
@@ -1006,7 +1021,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Defend
             | PlannerOpKind::Bribe
             | PlannerOpKind::Threaten
-            | PlannerOpKind::ConsultRecord => return true,
+            | PlannerOpKind::ConsultRecord
+            | PlannerOpKind::Investigate => return true,
             // Terminal ops — fall through to goal-specific binding check.
             PlannerOpKind::Attack
             | PlannerOpKind::Loot
@@ -1035,7 +1051,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::ClaimOffice { .. }
-            | GoalKind::SupportCandidateForOffice { .. } => true,
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::InvestigateMissing { .. } => true,
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
