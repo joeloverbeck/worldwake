@@ -2467,9 +2467,13 @@ mod tests {
             .unwrap()
             .social_observations
             .iter()
-            .any(|observation| observation.kind
+            .any(|observation| observation.kind()
                 == worldwake_core::SocialObservationKind::WitnessedObligation
-                && observation.subjects == (fx.actor, fx.target)));
+                && observation.detail
+                    == worldwake_core::SocialObservationDetail::WitnessedObligation {
+                        actor: fx.actor,
+                        target: fx.target,
+                    }));
     }
 
     #[test]
@@ -2498,9 +2502,13 @@ mod tests {
             .unwrap()
             .social_observations
             .iter()
-            .any(|observation| observation.kind
+            .any(|observation| observation.kind()
                 == worldwake_core::SocialObservationKind::WitnessedConflict
-                && observation.subjects == (fx.actor, fx.target)));
+                && observation.detail
+                    == worldwake_core::SocialObservationDetail::WitnessedConflict {
+                        actor: fx.actor,
+                        target: fx.target,
+                    }));
     }
 
     #[test]
@@ -2532,9 +2540,13 @@ mod tests {
             .unwrap()
             .social_observations
             .iter()
-            .any(|observation| observation.kind
+            .any(|observation| observation.kind()
                 == worldwake_core::SocialObservationKind::WitnessedCooperation
-                && observation.subjects == (fx.actor, fx.candidate)));
+                && observation.detail
+                    == worldwake_core::SocialObservationDetail::WitnessedCooperation {
+                        actor: fx.actor,
+                        counterpart: fx.candidate,
+                    }));
     }
 
     #[test]

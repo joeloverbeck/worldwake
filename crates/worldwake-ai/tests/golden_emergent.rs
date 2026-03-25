@@ -4288,7 +4288,9 @@ fn run_same_place_concurrent_violation_lifecycle(
     let first_absences = store_after_first_commit
         .social_observations
         .iter()
-        .filter(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedAbsence)
+        .filter(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         first_absences.len(),
@@ -4296,8 +4298,11 @@ fn run_same_place_concurrent_violation_lifecycle(
         "only the selected violation should leave aftermath after the first commit",
     );
     assert_eq!(
-        first_absences[0].subjects,
-        (selected_subject, VILLAGE_SQUARE),
+        first_absences[0].detail,
+        worldwake_core::SocialObservationDetail::WitnessedAbsence {
+            missing_entity: selected_subject,
+            expected_place: VILLAGE_SQUARE,
+        },
         "the first aftermath artifact must belong to the selected violation",
     );
 
@@ -4366,8 +4371,10 @@ fn run_same_place_concurrent_violation_lifecycle(
     let final_absence_subjects = final_store
         .social_observations
         .iter()
-        .filter(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedAbsence)
-        .map(|observation| observation.subjects)
+        .filter(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+        })
+        .map(|observation| observation.detail)
         .collect::<Vec<_>>();
     assert_eq!(
         final_absence_subjects.len(),
@@ -4375,11 +4382,21 @@ fn run_same_place_concurrent_violation_lifecycle(
         "both same-place incidents should leave distinct aftermath artifacts",
     );
     assert!(
-        final_absence_subjects.contains(&(selected_subject, VILLAGE_SQUARE)),
+        final_absence_subjects.contains(
+            &worldwake_core::SocialObservationDetail::WitnessedAbsence {
+                missing_entity: selected_subject,
+                expected_place: VILLAGE_SQUARE,
+            }
+        ),
         "selected violation aftermath should persist",
     );
     assert!(
-        final_absence_subjects.contains(&(sibling_subject, VILLAGE_SQUARE)),
+        final_absence_subjects.contains(
+            &worldwake_core::SocialObservationDetail::WitnessedAbsence {
+                missing_entity: sibling_subject,
+                expected_place: VILLAGE_SQUARE,
+            }
+        ),
         "sibling violation aftermath should be recorded after its own commit",
     );
 
@@ -4600,7 +4617,9 @@ fn run_entity_missing_triggers_investigation(
     let witnessed_absences = final_store
         .social_observations
         .iter()
-        .filter(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedAbsence)
+        .filter(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         witnessed_absences.len(),
@@ -4608,8 +4627,11 @@ fn run_entity_missing_triggers_investigation(
         "the single committed investigate should leave one witnessed-absence artifact",
     );
     assert_eq!(
-        witnessed_absences[0].subjects,
-        (missing_subject, VILLAGE_SQUARE),
+        witnessed_absences[0].detail,
+        worldwake_core::SocialObservationDetail::WitnessedAbsence {
+            missing_entity: missing_subject,
+            expected_place: VILLAGE_SQUARE,
+        },
         "the aftermath artifact should identify the missing subject and expected place",
     );
 

@@ -8,7 +8,8 @@ use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
     GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
-    RecipientKnowledgeStatus, ResourceSource, Seed, SocialObservationKind, TellMemoryKey,
+    RecipientKnowledgeStatus, ResourceSource, Seed, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey,
     TellProfile, Tick, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
@@ -979,8 +980,9 @@ fn run_bystander_witness_scenario(
             .social_observations
             .iter()
             .any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedTelling
-                    && observation.subjects == (speaker, listener)
+                observation.kind() == SocialObservationKind::WitnessedTelling
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedTelling { speaker, listener }
                     && observation.place == VILLAGE_SQUARE
             });
         let listener_learned_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
@@ -1000,8 +1002,9 @@ fn run_bystander_witness_scenario(
             .social_observations
             .iter()
             .any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedTelling
-                    && observation.subjects == (speaker, listener)
+                observation.kind() == SocialObservationKind::WitnessedTelling
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedTelling { speaker, listener }
                     && observation.place == VILLAGE_SQUARE
             }),
         "bystander should record the witnessed telling event"

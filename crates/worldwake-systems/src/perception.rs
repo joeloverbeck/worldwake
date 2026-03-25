@@ -4,8 +4,8 @@ use worldwake_core::{
     ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
     EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, MismatchKind, PendingEvent, PerceptionSource, RelationDelta,
-    RelationValue, SocialObservation, SocialObservationKind, StateDelta, VisibilitySpec,
-    WitnessData, World, WorldTxn,
+    RelationValue, SocialObservation, SocialObservationDetail, SocialObservationKind, StateDelta,
+    VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{PerceptionTraceEvent, SystemError, SystemExecutionContext};
 
@@ -500,8 +500,31 @@ fn social_observations_for_event(
     targets
         .into_iter()
         .map(|target| SocialObservation {
-            kind,
-            subjects: (actor, target),
+            detail: match kind {
+                SocialObservationKind::WitnessedCooperation => {
+                    SocialObservationDetail::WitnessedCooperation {
+                        actor,
+                        counterpart: target,
+                    }
+                }
+                SocialObservationKind::WitnessedConflict => {
+                    SocialObservationDetail::WitnessedConflict { actor, target }
+                }
+                SocialObservationKind::WitnessedObligation => {
+                    SocialObservationDetail::WitnessedObligation { actor, target }
+                }
+                SocialObservationKind::WitnessedTelling => {
+                    SocialObservationDetail::WitnessedTelling {
+                        speaker: actor,
+                        listener: target,
+                    }
+                }
+                SocialObservationKind::CoPresence
+                | SocialObservationKind::WitnessedAbsence
+                | SocialObservationKind::SuspectedTheft => {
+                    unreachable!("perception event mapping only constructs actor-target social detail")
+                }
+            },
             place,
             observed_tick: tick,
             source: PerceptionSource::DirectObservation,
@@ -706,8 +729,8 @@ mod tests {
         InstitutionalKnowledgeSource, MismatchKind, ObservedEntitySnapshot, OfficeForceState,
         PendingEvent, PerceptionProfile, PerceptionSource, Permille, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
-        ResourceSource, Seed, SocialObservationKind, StateDelta, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ResourceSource, Seed, SocialObservationDetail, SocialObservationKind, StateDelta, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -923,9 +946,13 @@ mod tests {
             .expect("observer should have a belief store");
         assert!(
             beliefs.social_observations.iter().any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedCooperation
+                observation.kind() == SocialObservationKind::WitnessedCooperation
                     && observation.place == place
-                    && observation.subjects == (actor, counterparty)
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedCooperation {
+                            actor,
+                            counterpart: counterparty,
+                        }
                     && observation.source == PerceptionSource::DirectObservation
                     && observation.observed_tick == Tick(4)
             }),
@@ -989,9 +1016,10 @@ mod tests {
             .expect("observer should have a belief store");
         assert!(
             beliefs.social_observations.iter().any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedTelling
+                observation.kind() == SocialObservationKind::WitnessedTelling
                     && observation.place == place
-                    && observation.subjects == (speaker, listener)
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedTelling { speaker, listener }
                     && observation.source == PerceptionSource::DirectObservation
                     && observation.observed_tick == Tick(4)
             }),
@@ -1055,9 +1083,10 @@ mod tests {
             .expect("observer should have a belief store");
         assert!(
             beliefs.social_observations.iter().any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedObligation
+                observation.kind() == SocialObservationKind::WitnessedObligation
                     && observation.place == place
-                    && observation.subjects == (actor, target)
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedObligation { actor, target }
                     && observation.source == PerceptionSource::DirectObservation
                     && observation.observed_tick == Tick(4)
             }),
@@ -1122,9 +1151,13 @@ mod tests {
             .expect("observer should have a belief store");
         assert!(
             beliefs.social_observations.iter().any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedCooperation
+                observation.kind() == SocialObservationKind::WitnessedCooperation
                     && observation.place == place
-                    && observation.subjects == (actor, candidate)
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedCooperation {
+                            actor,
+                            counterpart: candidate,
+                        }
                     && observation.source == PerceptionSource::DirectObservation
                     && observation.observed_tick == Tick(4)
             }),
@@ -1134,7 +1167,13 @@ mod tests {
             beliefs
                 .social_observations
                 .iter()
-                .all(|observation| observation.subjects != (actor, office)),
+                .all(|observation| {
+                    observation.detail
+                        != SocialObservationDetail::WitnessedCooperation {
+                            actor,
+                            counterpart: office,
+                        }
+                }),
             "non-agent office targets must not produce social observations"
         );
     }
@@ -1195,9 +1234,10 @@ mod tests {
             .expect("observer should have a belief store");
         assert!(
             beliefs.social_observations.iter().any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedConflict
+                observation.kind() == SocialObservationKind::WitnessedConflict
                     && observation.place == place
-                    && observation.subjects == (actor, target)
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedConflict { actor, target }
                     && observation.source == PerceptionSource::DirectObservation
                     && observation.observed_tick == Tick(4)
             }),
@@ -1367,10 +1407,13 @@ mod tests {
         let observations = social_observations_for_event(&world, &pending, Tick(6));
         assert_eq!(observations.len(), 1);
         assert_eq!(
-            observations[0].kind,
+            observations[0].kind(),
             SocialObservationKind::WitnessedTelling
         );
-        assert_eq!(observations[0].subjects, (speaker, listener));
+        assert_eq!(
+            observations[0].detail,
+            SocialObservationDetail::WitnessedTelling { speaker, listener }
+        );
         assert_eq!(observations[0].place, place);
         assert_eq!(observations[0].observed_tick, Tick(6));
     }

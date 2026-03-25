@@ -690,11 +690,64 @@ pub fn belief_confidence(
 /// A witnessed social fact retained in belief memory.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SocialObservation {
-    pub kind: SocialObservationKind,
-    pub subjects: (EntityId, EntityId),
+    pub detail: SocialObservationDetail,
     pub place: EntityId,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
+}
+
+impl SocialObservation {
+    #[must_use]
+    pub const fn kind(&self) -> SocialObservationKind {
+        self.detail.kind()
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SocialObservationDetail {
+    WitnessedCooperation {
+        actor: EntityId,
+        counterpart: EntityId,
+    },
+    WitnessedConflict {
+        actor: EntityId,
+        target: EntityId,
+    },
+    WitnessedObligation {
+        actor: EntityId,
+        target: EntityId,
+    },
+    WitnessedTelling {
+        speaker: EntityId,
+        listener: EntityId,
+    },
+    CoPresence {
+        other: EntityId,
+    },
+    WitnessedAbsence {
+        missing_entity: EntityId,
+        expected_place: EntityId,
+    },
+    SuspectedTheft {
+        missing_entity: EntityId,
+        expected_place: EntityId,
+        suspect: Option<EntityId>,
+    },
+}
+
+impl SocialObservationDetail {
+    #[must_use]
+    pub const fn kind(&self) -> SocialObservationKind {
+        match self {
+            Self::WitnessedCooperation { .. } => SocialObservationKind::WitnessedCooperation,
+            Self::WitnessedConflict { .. } => SocialObservationKind::WitnessedConflict,
+            Self::WitnessedObligation { .. } => SocialObservationKind::WitnessedObligation,
+            Self::WitnessedTelling { .. } => SocialObservationKind::WitnessedTelling,
+            Self::CoPresence { .. } => SocialObservationKind::CoPresence,
+            Self::WitnessedAbsence { .. } => SocialObservationKind::WitnessedAbsence,
+            Self::SuspectedTheft { .. } => SocialObservationKind::SuspectedTheft,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -822,8 +875,8 @@ mod tests {
         recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
         MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-        RecipientKnowledgeStatus, SocialObservation, SocialObservationKind, TellMemoryKey,
-        TellProfile, ToldBeliefMemory,
+        RecipientKnowledgeStatus, SocialObservation, SocialObservationDetail,
+        SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
@@ -905,8 +958,10 @@ mod tests {
 
     fn sample_social_observation(observed_tick: u64) -> SocialObservation {
         SocialObservation {
-            kind: SocialObservationKind::WitnessedConflict,
-            subjects: (entity(1), entity(2)),
+            detail: SocialObservationDetail::WitnessedConflict {
+                actor: entity(1),
+                target: entity(2),
+            },
             place: entity(10),
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
@@ -1105,7 +1160,7 @@ mod tests {
         let mut store = AgentBeliefStore::new();
         let first = sample_social_observation(3);
         let second = SocialObservation {
-            kind: SocialObservationKind::CoPresence,
+            detail: SocialObservationDetail::CoPresence { other: entity(7) },
             ..sample_social_observation(4)
         };
 
@@ -1545,6 +1600,22 @@ mod tests {
     }
 
     #[test]
+    fn social_observation_detail_roundtrips_and_derives_kind() {
+        let detail = SocialObservationDetail::SuspectedTheft {
+            missing_entity: entity(21),
+            expected_place: entity(22),
+            suspect: Some(entity(23)),
+        };
+
+        let bytes = bincode::serialize(&detail).unwrap();
+        let roundtrip: SocialObservationDetail = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, detail);
+        assert_eq!(detail.kind(), SocialObservationKind::SuspectedTheft);
+        assert_ne!(detail.kind(), SocialObservationKind::WitnessedAbsence);
+    }
+
+    #[test]
     fn mismatch_kind_variants_construct_and_sort_stably() {
         let mut variants = [
             MismatchKind::PlaceChanged {
@@ -1976,6 +2047,7 @@ mod tests {
         assert_serde_bounds::<BelievedEntityState>();
         assert_serde_bounds::<MismatchKind>();
         assert_serde_bounds::<SocialObservation>();
+        assert_serde_bounds::<SocialObservationDetail>();
         assert_serde_bounds::<TellProfile>();
     }
 

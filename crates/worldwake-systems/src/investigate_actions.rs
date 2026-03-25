@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag,
-    PerceptionSource, RecordedViolation, SocialObservation, SocialObservationKind, ViolationId,
+    PerceptionSource, RecordedViolation, SocialObservation, SocialObservationDetail, ViolationId,
     ViolationKind, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
@@ -126,8 +126,10 @@ fn commit_investigate(
             ))
         })?;
     store.record_social_observation(SocialObservation {
-        kind: SocialObservationKind::WitnessedAbsence,
-        subjects: (subject, place),
+        detail: SocialObservationDetail::WitnessedAbsence {
+            missing_entity: subject,
+            expected_place: place,
+        },
         place,
         observed_tick: txn.tick(),
         source: PerceptionSource::DirectObservation,
@@ -617,8 +619,12 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
         assert!(store.social_observations.iter().any(|observation| {
-            observation.kind == SocialObservationKind::WitnessedAbsence
-                && observation.subjects == (missing, place)
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+                && observation.detail
+                    == SocialObservationDetail::WitnessedAbsence {
+                        missing_entity: missing,
+                        expected_place: place,
+                    }
                 && observation.place == place
                 && observation.observed_tick == Tick(4)
                 && observation.source == PerceptionSource::DirectObservation

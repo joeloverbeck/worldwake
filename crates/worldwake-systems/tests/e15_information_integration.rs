@@ -690,8 +690,12 @@ fn bystander_observes_witnessed_telling_without_receiving_subject_belief() {
         .social_observations
         .iter()
         .any(|observation| {
-            observation.kind == SocialObservationKind::WitnessedTelling
-                && observation.subjects == (harness.speaker, harness.listener)
+            observation.kind() == SocialObservationKind::WitnessedTelling
+                && observation.detail
+                    == worldwake_core::SocialObservationDetail::WitnessedTelling {
+                        speaker: harness.speaker,
+                        listener: harness.listener,
+                    }
                 && observation.place == harness.destination
         }));
 }

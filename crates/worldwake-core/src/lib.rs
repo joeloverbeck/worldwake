@@ -78,7 +78,7 @@ pub use belief::{
     BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
     MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
     RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SocialObservation,
-    SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
+    SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,

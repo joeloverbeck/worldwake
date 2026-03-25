@@ -170,12 +170,11 @@ pub enum SocialObservationKind {
     //     WitnessedObligation, WitnessedTelling, CoPresence, WitnessedAbsence ...
 
     /// Investigation confirmed ownership mismatch -- suspected theft.
-    /// The `subjects` field carries `(missing_entity, suspect_or_place)`.
     SuspectedTheft,
 }
 ```
 
-Extends the existing enum in `belief.rs`. This observation kind is shareable via the Tell pipeline, allowing investigation results to propagate through the social system and reach authorities.
+Extends the existing enum in `belief.rs`. `SocialObservationKind` is only the family tag; the concrete payload must live in typed `SocialObservationDetail`, not overloaded tuple slots. Sharing this evidence through Tell is a separate extension, not something the existing entity-belief Tell pipeline can already do.
 
 #### RecordKind Extension
 
@@ -285,7 +284,7 @@ The existing S27 pipeline handles most of crime discovery without modification:
 2. **Owner investigates**: S27's `InvestigateViolation { violation_id, place }` goal triggers investigation.
 3. **Investigation commit (EXTENDED by E17)**: The existing investigate handler commits `SocialObservation(WitnessedAbsence)`. E17 extends this commit path: if the investigating agent owned the missing entity (`believed_owner_of(missing_entity) == Some(investigating_agent)`), the handler ALSO:
    - Records `ViolationKind::SuspectedTheft { missing_entity, expected_place, suspect: None }` in the agent's `ViolationMemory` (with TTL from `ViolationDispositionProfile.violation_memory_retention_ticks`).
-   - Records `SocialObservation(SuspectedTheft)` in the agent's `AgentBeliefStore` with `subjects: (missing_entity, expected_place)`.
+   - Records `SocialObservation(SuspectedTheft)` in the agent's `AgentBeliefStore` with typed theft detail carrying `missing_entity`, `expected_place`, and `suspect: None`.
    - The `suspect` field is `None` at this point -- the owner knows something was stolen but not by whom.
 
 **Suspect identification** occurs through concrete evidence arriving via lawful channels:
@@ -314,7 +313,7 @@ The existing S27 pipeline handles most of crime discovery without modification:
 1. Append `InstitutionalClaim::Accusation { accuser, accused, violation_id, effective_tick }` to the `CrimeRegister` `RecordData` entity at the current place.
 2. Emit event with `EventTag::Crime` and `VisibilitySpec::SamePlace`.
 
-**Evidence validation** (authoritative): The handler verifies that the accuser's `AgentBeliefStore` contains at least one of: (a) a `SocialObservation` with `SuspectedTheft` kind where the subject matches the accused, (b) a witnessed crime event where the perpetrator matches the accused, (c) a belief that the stolen item is in the accused's possession. This check uses the accuser's belief store (P12). Wrong accusations are possible if the accuser's evidence is flawed.
+**Evidence validation** (authoritative): The handler verifies that the accuser's `AgentBeliefStore` contains at least one of: (a) typed theft evidence identifying the accused, (b) a witnessed crime event where the perpetrator matches the accused, (c) a belief that the stolen item is in the accused's possession. This check uses the accuser's belief store (P12). Wrong accusations are possible if the accuser's evidence is flawed.
 
 ### Punishment Actions
 
@@ -453,7 +452,7 @@ No changes needed. The perception system already handles `VisibilitySpec::Hidden
 
 #### ShareBelief/Tell (E15)
 
-No changes needed. `SocialObservation(SuspectedTheft)` is shareable via the existing Tell action. Witnesses who observed the theft event can share their observation with the owner or authorities.
+Changes needed. The live Tell path only relays entity-belief subjects, not `SocialObservation` payloads. Witness-driven theft testimony therefore requires an explicit follow-up extension that adds typed social-evidence conversation topics. Do not assume `SocialObservation(SuspectedTheft)` is already relayable through the existing Tell action.
 
 #### Ownership (S01)
 
@@ -475,7 +474,7 @@ Add `TheftDispositionProfile`, `JusticeDispositionProfile`, and `PunishmentKind`
 
 ### E17-002: Extend ViolationKind with SuspectedTheft
 
-Add `ViolationKind::SuspectedTheft { missing_entity, expected_place, suspect }` to `violation.rs`. Add `SocialObservationKind::SuspectedTheft` to `belief.rs`. Update any exhaustive matches on these enums.
+Add `ViolationKind::SuspectedTheft { missing_entity, expected_place, suspect }` to `violation.rs`. Add `SocialObservationKind::SuspectedTheft` to `belief.rs`. Update any exhaustive matches on these enums. The concrete belief payload for theft evidence should be handled by typed `SocialObservationDetail`, not by tuple overloading.
 
 **Tests**: serde round-trip for new variant, `ViolationMemory` recording of `SuspectedTheft`, `Ord` stability.
 
@@ -529,7 +528,7 @@ New `steal_actions.rs` module. `register_steal_action()` following the `register
 
 Modify `investigate_actions.rs` commit handler. After existing `WitnessedAbsence` observation recording, add: if the investigating agent owned the missing entity (check `believed_owner_of()` on the agent's belief view), then:
 1. Record `ViolationKind::SuspectedTheft { missing_entity, expected_place, suspect: None }` in `ViolationMemory`.
-2. Record `SocialObservation(SuspectedTheft)` in `AgentBeliefStore`.
+2. Record `SocialObservation(SuspectedTheft)` in `AgentBeliefStore` using typed theft detail.
 
 **Tests**: owner investigating their own missing item produces `SuspectedTheft`; non-owner investigating does NOT produce `SuspectedTheft`; `SuspectedTheft` is recorded in both `ViolationMemory` and `AgentBeliefStore`.
 
