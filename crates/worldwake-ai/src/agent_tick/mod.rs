@@ -438,6 +438,23 @@ fn process_agent(
         }
     }
 
+    // ── Feasibility annotation and re-sort ──
+    let mut ranked_candidates = ranked_candidates;
+    {
+        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+        for ranked in &mut ranked_candidates {
+            ranked.feasibility = crate::feasibility::feasibility_hint(
+                &view,
+                agent,
+                ranked,
+                &blocked_memory,
+                current_frame.as_ref(),
+                tick,
+            );
+        }
+        ranked_candidates.sort_by(crate::ranking::compare_ranked_goals);
+    }
+
     let active_action = active_action_for_agent(ctx, agent);
     let frame_switch_margin = {
         let jc = ctx.world.get_component_intention_frame(agent);

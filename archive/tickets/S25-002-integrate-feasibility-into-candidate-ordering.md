@@ -1,6 +1,6 @@
 # S25-002: Integrate feasibility into candidate ordering
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — modifies ranking comparator and agent_tick integration point
@@ -97,3 +97,13 @@ This requires importing `feasibility_hint` and `compare_ranked_goals` into `agen
 1. `cargo test -p worldwake-ai ranking` — run ranking tests including new ones
 2. `cargo test -p worldwake-ai` — full AI crate (includes all golden tests)
 3. `cargo clippy -p worldwake-ai` — no new warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**:
+  - `ranking.rs`: `compare_ranked_goals` made `pub(crate)`, feasibility tier inserted between `priority_class` and `motive_score` in sort comparator.
+  - `agent_tick/mod.rs`: Feasibility annotation block added after deferred NoCriticalThreat evaluation, before active-action phase. Annotates each ranked candidate via `feasibility_hint()` then re-sorts.
+  - 3 new focused sort-order tests added in `ranking.rs`.
+- **Deviations from original plan**: None.
+- **Verification**: 955 tests pass (0 failures), clippy clean. All golden tests pass with no regressions.

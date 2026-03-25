@@ -686,10 +686,11 @@ fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
 }
 
-fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
+pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
     right
         .priority_class
         .cmp(&left.priority_class)
+        .then_with(|| left.feasibility.cmp(&right.feasibility))
         .then_with(|| right.motive_score.cmp(&left.motive_score))
         .then_with(|| {
             goal_kind_discriminant(left.grounded.key.kind)
@@ -2532,5 +2533,71 @@ mod tests {
             ranked[0].motive_score,
             u32::from(utility().social_weight.value()) * u32::from(pm(600).value())
         );
+    }
+
+    // ── Feasibility sort-order tests ──
+
+    fn make_ranked_goal(
+        priority_class: GoalPriorityClass,
+        motive: u32,
+        feasibility: crate::feasibility::FeasibilityHint,
+    ) -> crate::RankedGoal {
+        crate::RankedGoal {
+            grounded: GroundedGoal {
+                key: GoalKey {
+                    kind: GoalKind::Sleep,
+                    commodity: None,
+                    entity: None,
+                    place: None,
+                },
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            },
+            priority_class,
+            motive_score: motive,
+            provenance: None,
+            feasibility,
+        }
+    }
+
+    #[test]
+    fn test_feasibility_tiebreak_within_priority_class() {
+        use crate::feasibility::FeasibilityHint;
+        let mut goals = vec![
+            make_ranked_goal(GoalPriorityClass::Critical, 900, FeasibilityHint::Unlikely),
+            make_ranked_goal(GoalPriorityClass::Critical, 600, FeasibilityHint::Likely),
+        ];
+        goals.sort_by(super::compare_ranked_goals);
+        // Likely(600) should outrank Unlikely(900) within same priority class.
+        assert_eq!(goals[0].feasibility, FeasibilityHint::Likely);
+        assert_eq!(goals[0].motive_score, 600);
+        assert_eq!(goals[1].feasibility, FeasibilityHint::Unlikely);
+        assert_eq!(goals[1].motive_score, 900);
+    }
+
+    #[test]
+    fn test_feasibility_does_not_cross_priority_class() {
+        use crate::feasibility::FeasibilityHint;
+        let mut goals = vec![
+            make_ranked_goal(GoalPriorityClass::Low, 500, FeasibilityHint::Likely),
+            make_ranked_goal(GoalPriorityClass::Critical, 500, FeasibilityHint::Unlikely),
+        ];
+        goals.sort_by(super::compare_ranked_goals);
+        // Critical+Unlikely must still outrank Low+Likely.
+        assert_eq!(goals[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(goals[1].priority_class, GoalPriorityClass::Low);
+    }
+
+    #[test]
+    fn test_same_feasibility_falls_through_to_motive() {
+        use crate::feasibility::FeasibilityHint;
+        let mut goals = vec![
+            make_ranked_goal(GoalPriorityClass::High, 400, FeasibilityHint::Uncertain),
+            make_ranked_goal(GoalPriorityClass::High, 800, FeasibilityHint::Uncertain),
+        ];
+        goals.sort_by(super::compare_ranked_goals);
+        // Same priority class + same feasibility → higher motive wins.
+        assert_eq!(goals[0].motive_score, 800);
+        assert_eq!(goals[1].motive_score, 400);
     }
 }
