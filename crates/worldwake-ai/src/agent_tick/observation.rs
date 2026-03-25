@@ -70,7 +70,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
-    _tracing: bool,
+    tracing: bool,
 ) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
@@ -118,6 +118,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         phase.recipe_registry,
         phase.tick,
         phase.travel_horizon,
+        tracing,
     );
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
     let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();

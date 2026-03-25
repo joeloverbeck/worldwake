@@ -7,13 +7,13 @@ use crate::{
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
     institutional_queries::consulted_office_holder_read_for_record_data,
-    knowledge_path::KnowledgePath,
+    knowledge_path::{BeliefAspect, BeliefProvenance, KnowledgePath, SelfKnowledgeProvenance},
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
-    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
     InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecipientKnowledgeStatus,
     RecordKind, Tick,
 };
@@ -57,6 +57,7 @@ impl Evidence {
 struct EvidenceTrace {
     contributors: BTreeSet<CandidateEvidenceContributor>,
     exclusions: BTreeSet<CandidateEvidenceExclusion>,
+    knowledge_path: KnowledgePath,
 }
 
 impl EvidenceTrace {
@@ -86,6 +87,15 @@ impl EvidenceTrace {
     fn merge(&mut self, other: Self) {
         self.contributors.extend(other.contributors);
         self.exclusions.extend(other.exclusions);
+        self.knowledge_path
+            .entity_beliefs
+            .extend(other.knowledge_path.entity_beliefs);
+        self.knowledge_path
+            .self_knowledge
+            .extend(other.knowledge_path.self_knowledge);
+        self.knowledge_path
+            .institutional_beliefs
+            .extend(other.knowledge_path.institutional_beliefs);
     }
 
     fn is_empty(&self) -> bool {
@@ -97,7 +107,7 @@ impl EvidenceTrace {
             goal,
             contributors: self.contributors.into_iter().collect(),
             exclusions: self.exclusions.into_iter().collect(),
-            knowledge_path: KnowledgePath::default(),
+            knowledge_path: self.knowledge_path,
         }
     }
 }
@@ -117,6 +127,7 @@ struct GenerationContext<'a> {
     blocked: &'a BlockedIntentMemory,
     recipes: &'a RecipeRegistry,
     current_tick: Tick,
+    tracing_enabled: bool,
 }
 
 #[derive(Default)]
@@ -139,7 +150,7 @@ pub fn generate_candidates(
     recipes: &RecipeRegistry,
     current_tick: Tick,
 ) -> Vec<GroundedGoal> {
-    generate_candidates_with_travel_horizon(view, agent, blocked, recipes, current_tick, 6)
+    generate_candidates_with_travel_horizon(view, agent, blocked, recipes, current_tick, 6, false)
         .candidates
 }
 
@@ -151,6 +162,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     recipes: &RecipeRegistry,
     current_tick: Tick,
     travel_horizon: u8,
+    tracing_enabled: bool,
 ) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return CandidateGenerationResult {
@@ -173,6 +185,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         blocked,
         recipes,
         current_tick,
+        tracing_enabled,
     };
 
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
@@ -200,9 +213,9 @@ fn emit_need_candidates(
     };
 
     emit_self_consume_candidates(candidates, diagnostics, ctx, needs, thresholds);
-    emit_sleep_goal(candidates, ctx, needs, thresholds);
-    emit_relieve_goal(candidates, ctx, needs, thresholds);
-    emit_wash_goal(candidates, ctx, needs, thresholds);
+    emit_sleep_goal(candidates, diagnostics, ctx, needs, thresholds);
+    emit_relieve_goal(candidates, diagnostics, ctx, needs, thresholds);
+    emit_wash_goal(candidates, diagnostics, ctx, needs, thresholds);
 }
 
 fn emit_production_candidates(
@@ -692,6 +705,7 @@ fn emit_self_consume_candidates(
         candidates,
         diagnostics,
         ctx,
+        HomeostaticNeedId::Hunger,
         needs.hunger,
         thresholds.hunger.low(),
         relieves_hunger,
@@ -700,6 +714,7 @@ fn emit_self_consume_candidates(
         candidates,
         diagnostics,
         ctx,
+        HomeostaticNeedId::Thirst,
         needs.thirst,
         thresholds.thirst.low(),
         relieves_thirst,
@@ -710,6 +725,7 @@ fn emit_need_driven_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
+    need_id: HomeostaticNeedId,
     current_need: worldwake_core::Permille,
     low_threshold: worldwake_core::Permille,
     matches_need: fn(CommodityKind) -> bool,
@@ -756,7 +772,7 @@ fn emit_need_driven_candidates(
             continue;
         }
 
-        if let Some((evidence, evidence_trace)) = direct_acquisition_path_evidence(
+        if let Some((evidence, mut evidence_trace)) = direct_acquisition_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -764,6 +780,22 @@ fn emit_need_driven_candidates(
             ctx.recipes,
             ctx.travel_horizon,
         ) {
+            if ctx.tracing_enabled {
+                evidence_trace.knowledge_path.self_knowledge.push(
+                    SelfKnowledgeProvenance::NeedLevel {
+                        need: need_id,
+                        permille: current_need,
+                    },
+                );
+                evidence_trace.knowledge_path.entity_beliefs.extend(
+                    belief_provenance_for_contributors(
+                        ctx.view,
+                        ctx.agent,
+                        &evidence_trace.contributors,
+                        commodity,
+                    ),
+                );
+            }
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
@@ -782,15 +814,28 @@ fn emit_need_driven_candidates(
 
 fn emit_sleep_goal(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
     thresholds: DriveThresholds,
 ) {
     if needs.fatigue >= thresholds.fatigue.low() {
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Fatigue,
+                    permille: needs.fatigue,
+                });
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::Sleep,
             Evidence::with_entity(ctx.agent),
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -799,15 +844,28 @@ fn emit_sleep_goal(
 
 fn emit_relieve_goal(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
     thresholds: DriveThresholds,
 ) {
     if needs.bladder >= thresholds.bladder.low() {
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Bladder,
+                    permille: needs.bladder,
+                });
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::Relieve,
             Evidence::with_entity(ctx.agent),
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -816,6 +874,7 @@ fn emit_relieve_goal(
 
 fn emit_wash_goal(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
     thresholds: DriveThresholds,
@@ -827,10 +886,22 @@ fn emit_wash_goal(
     if let Some(evidence) =
         local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, CommodityKind::Water)
     {
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Dirtiness,
+                    permille: needs.dirtiness,
+                });
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::Wash,
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -1184,6 +1255,38 @@ fn emit_bury_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
     }
 }
 
+/// Build `BeliefProvenance` entries for evidence-trace contributors by cross-referencing
+/// them against `known_entity_beliefs()`. Only called when tracing is enabled.
+fn belief_provenance_for_contributors(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    contributors: &BTreeSet<CandidateEvidenceContributor>,
+    commodity: CommodityKind,
+) -> Vec<BeliefProvenance> {
+    let beliefs = view.known_entity_beliefs(agent);
+    let mut result = Vec::new();
+    for contributor in contributors {
+        let aspect = match contributor.kind {
+            CandidateEvidenceKind::Seller | CandidateEvidenceKind::LooseLot => {
+                BeliefAspect::HasCommodity { commodity }
+            }
+            CandidateEvidenceKind::ResourceSource => {
+                BeliefAspect::IsResourceSource { commodity }
+            }
+            _ => continue,
+        };
+        if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == contributor.entity) {
+            result.push(BeliefProvenance {
+                subject: contributor.entity,
+                aspect,
+                source: state.source,
+                observed_tick: state.observed_tick,
+            });
+        }
+    }
+    result
+}
+
 fn emit_candidate(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     kind: GoalKind,
@@ -1271,6 +1374,18 @@ fn merge_candidate_evidence_trace(
     }
     existing.contributors.sort();
     existing.exclusions.sort();
+    existing
+        .knowledge_path
+        .entity_beliefs
+        .extend(incoming.knowledge_path.entity_beliefs.iter().cloned());
+    existing
+        .knowledge_path
+        .self_knowledge
+        .extend(incoming.knowledge_path.self_knowledge.iter().cloned());
+    existing
+        .knowledge_path
+        .institutional_beliefs
+        .extend(incoming.knowledge_path.institutional_beliefs.iter().cloned());
 }
 
 fn acquisition_path_evidence(
@@ -1693,6 +1808,7 @@ mod tests {
     };
     use crate::{
         enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
+        knowledge_path::{BeliefAspect, KnowledgePath, SelfKnowledgeProvenance},
         PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -1701,7 +1817,8 @@ mod tests {
         BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead,
         InstitutionalClaim, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
         PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordEntryId, RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
@@ -2643,6 +2760,7 @@ mod tests {
             &recipes,
             Tick(5),
             2,
+            false,
         );
         let goal = candidates
             .candidates
@@ -3583,6 +3701,7 @@ mod tests {
             &recipes,
             Tick(5),
             6,
+            false,
         );
         let trace = result
             .diagnostics
@@ -3822,6 +3941,7 @@ mod tests {
             blocked: &blocked,
             recipes: &recipes,
             current_tick: Tick(5),
+            tracing_enabled: false,
         };
         let mut candidates = BTreeMap::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -4290,6 +4410,7 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(11),
             6,
+            false,
         );
 
         assert!(!contains_goal(
@@ -4342,6 +4463,7 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(11),
             6,
+            false,
         );
 
         assert!(contains_goal(
@@ -4392,6 +4514,7 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(11),
             6,
+            false,
         );
 
         assert!(!contains_goal(
@@ -4438,6 +4561,7 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(60),
             6,
+            false,
         );
 
         assert!(contains_goal(
@@ -4508,6 +4632,7 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(11),
             6,
+            false,
         );
 
         assert!(!contains_goal(
@@ -4937,6 +5062,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(
@@ -4977,6 +5103,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
         assert!(contains_goal(
             &with_certain_vacancy.candidates,
@@ -4998,6 +5125,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
         assert!(
             !contains_goal(&conflicted.candidates, GoalKind::ClaimOffice { office }),
@@ -5058,6 +5186,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(
@@ -5127,6 +5256,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(
@@ -5173,6 +5303,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
         assert!(!contains_goal(
             &occupied_with_stale_vacancy.candidates,
@@ -5205,6 +5336,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
         assert!(!contains_goal(
             &filled.candidates,
@@ -5239,6 +5371,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
         assert!(!contains_goal(
             &declared.candidates,
@@ -5291,6 +5424,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(
@@ -5357,6 +5491,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(
@@ -5416,6 +5551,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(contains_goal(
@@ -5473,6 +5609,7 @@ mod tests {
             &RecipeRegistry::default(),
             Tick(10),
             6,
+            false,
         );
 
         assert!(
@@ -5503,5 +5640,206 @@ mod tests {
             Some(ineligible_candidate),
             PoliticalCandidateOmissionReason::CandidateNotEligible,
         ));
+    }
+
+    // ── S28-002: Knowledge path instrumentation tests ──
+
+    #[test]
+    fn tracing_disabled_produces_empty_knowledge_paths() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false, // tracing DISABLED
+        );
+
+        // All evidence traces should have empty knowledge paths.
+        for trace in result.diagnostics.evidence.values() {
+            assert_eq!(
+                trace.knowledge_path,
+                KnowledgePath::default(),
+                "knowledge_path should be empty when tracing is disabled, but goal {:?} had {:?}",
+                trace.goal,
+                trace.knowledge_path,
+            );
+        }
+    }
+
+    #[test]
+    fn need_candidate_knowledge_path_records_self_need() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        // Provide belief provenance for the seller
+        view.beliefs.insert(
+            agent,
+            vec![(
+                seller,
+                believed_state(3, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true, // tracing ENABLED
+        );
+
+        let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&acquire_key)
+            .expect("should have evidence trace for AcquireCommodity(Bread, SelfConsume)");
+
+        assert!(
+            trace
+                .knowledge_path
+                .self_knowledge
+                .contains(&SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Hunger,
+                    permille: pm(250),
+                }),
+            "knowledge_path.self_knowledge should contain NeedLevel(Hunger, 250), got {:?}",
+            trace.knowledge_path.self_knowledge,
+        );
+    }
+
+    #[test]
+    fn need_candidate_knowledge_path_records_seller_belief() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        // Agent has belief about the seller from a report
+        view.beliefs.insert(
+            agent,
+            vec![(
+                seller,
+                believed_state(3, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true, // tracing ENABLED
+        );
+
+        let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&acquire_key)
+            .expect("should have evidence trace for AcquireCommodity(Bread, SelfConsume)");
+
+        assert!(
+            trace.knowledge_path.entity_beliefs.iter().any(|bp| {
+                bp.subject == seller
+                    && bp.aspect
+                        == BeliefAspect::HasCommodity {
+                            commodity: CommodityKind::Bread,
+                        }
+                    && bp.source == PerceptionSource::DirectObservation
+                    && bp.observed_tick == Tick(3)
+            }),
+            "entity_beliefs should contain BeliefProvenance for seller with HasCommodity(Bread), got {:?}",
+            trace.knowledge_path.entity_beliefs,
+        );
+    }
+
+    #[test]
+    fn sleep_goal_knowledge_path_records_fatigue() {
+        let agent = entity(1);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.homeostatic_needs.insert(agent, fatigue(600));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true, // tracing ENABLED
+        );
+
+        let sleep_key = GoalKey::from(GoalKind::Sleep);
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&sleep_key)
+            .expect("should have evidence trace for Sleep");
+
+        assert!(
+            trace
+                .knowledge_path
+                .self_knowledge
+                .contains(&SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Fatigue,
+                    permille: pm(600),
+                }),
+            "knowledge_path.self_knowledge should contain NeedLevel(Fatigue, 600), got {:?}",
+            trace.knowledge_path.self_knowledge,
+        );
     }
 }
