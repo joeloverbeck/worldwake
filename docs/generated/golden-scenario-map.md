@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 49
+- Scenario blocks with explicit metadata: 50
 - Files contributing scenario metadata: 10
-- `golden_*` tests associated with scenario blocks: 128
+- `golden_*` tests associated with scenario blocks: 130
 
 ## Scenario Inventory
 
@@ -42,6 +42,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `S22-007` | Save/load verification for IntentionFrame and | `golden_determinism.rs:748` | `golden_save_load_preserves_suspended_intention_frame`<br>`golden_save_load_preserves_intention_disposition_profile`<br>`golden_save_load_preserves_frame_assumptions` | — |
 | `35` | Same-Place Concurrent Violations Stay Distinct | `golden_emergent.rs:4059` | `golden_same_place_concurrent_violations_stay_distinct` | `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically` |
 | `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4422` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
+| `37` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:4652` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -503,6 +504,18 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Primary tests: `golden_entity_missing_triggers_investigation`
 - Replay tests: `golden_entity_missing_triggers_investigation_replays_deterministically`
 - All tests: `golden_entity_missing_triggers_investigation`, `golden_entity_missing_triggers_investigation_replays_deterministically`
+
+### Scenario 37: Supply Depletion Enables ShareBelief
+
+- Source: `golden_emergent.rs:4652`
+- Systems: Perception, AI, Generic Actions, Social Tell
+- GoalKinds: ShareBelief, InvestigateViolation
+- ActionDomains: Generic, Social
+- Places: VillageSquare
+- Principles: 1, 7, 12, 15
+- Primary tests: `golden_supply_depletion_enables_share_belief`
+- Replay tests: `golden_supply_depletion_enables_share_belief_replays_deterministically`
+- All tests: `golden_supply_depletion_enables_share_belief`, `golden_supply_depletion_enables_share_belief_replays_deterministically`
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 

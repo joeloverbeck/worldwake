@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S27: Expectation-Violation Goals
 
@@ -485,3 +485,26 @@ This loop does NOT amplify because:
 7. EntityDead records in ViolationMemory but does not emit InvestigateMissing (focused unit test in S27-003).
 8. Investigation produces SocialObservation(WitnessedAbsence) on commit (focused unit test in S27-004).
 9. `docs/golden-e2e-coverage.md` updated with new violation coverage entries.
+
+## Outcome
+
+Completion date: 2026-03-25
+
+What actually changed:
+
+1. Shipped belief-vs-observation expectation-violation detection with `ViolationMemory`, `ViolationDispositionProfile`, and `SocialObservationKind::WitnessedAbsence`.
+2. Refined the original place-scoped investigate draft into the cleaner shipped contract `GoalKind::InvestigateViolation { violation_id, place }`, so planning and execution bind to a concrete incident rather than a lossy place-only summary.
+3. Added explicit unresolved/resolved lifecycle to recorded violations so same-place sibling incidents remain distinct and investigable until their own commit.
+4. Shipped focused and golden coverage for the three important live S27 behaviors: single-incident investigation, local supply depletion enabling `ShareBelief`, and same-place concurrent violations staying distinct through the investigation lifecycle.
+
+Deviations from original plan:
+
+1. The draft spec still describes parts of the older `InvestigateMissing` design. Final delivery moved to exact `violation_id` identity because that architecture is cleaner, more robust, and more extensible than place-scoped investigation.
+2. The final lifecycle model is richer than the initial draft. `ViolationMemory` is not just a first-detection suppression cache; it now models unresolved vs resolved incidents explicitly.
+3. The expected documentation closeout changed shape. The canonical scenario/inventory docs are generated artifacts under `docs/generated/`, not a hand-maintained `docs/golden-e2e-scenarios.md` file.
+
+Verification results:
+
+1. `python3 scripts/golden_inventory.py --write --check-docs`
+2. `cargo test --workspace`
+3. `cargo clippy --workspace`

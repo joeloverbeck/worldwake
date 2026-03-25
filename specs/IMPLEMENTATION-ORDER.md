@@ -104,6 +104,9 @@ Added cheap feasibility pre-check (`FeasibilityHint`: Likely/Uncertain/Unlikely)
 ### S28: Knowledge-Path Traces — COMPLETED
 Extended decision traces with belief provenance: `HomeostaticNeedId` in core, `institutional_belief_claims()` on `GoalBeliefView`, knowledge path types (`BeliefProvenance`, `BeliefAspect`, `InstitutionalBeliefProvenance`, `SelfKnowledgeProvenance`, `KnowledgePath`) in worldwake-ai, all 6 candidate families instrumented (needs, production, enterprise, combat, social, political), social/political emitters upgraded to `emit_candidate_with_trace()`, `dump_agent()` extended with per-candidate evidence/knowledge-path rendering. Zero-cost when tracing disabled.
 
+### S27: Expectation-Violation Goals — COMPLETED
+Established belief-vs-observation violation detection, per-agent violation memory/disposition components, exact-id `GoalKind::InvestigateViolation { violation_id, place }`, authoritative investigate execution with `WitnessedAbsence` aftermath, explicit unresolved/resolved incident lifecycle, and golden coverage for single-incident investigation, local depletion-to-`ShareBelief`, and same-place concurrent-violation identity.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -155,7 +158,7 @@ S21 ✅ ──→ S22 ✅ (generalized intention frames — completed)
 S21 ✅ ──→ S24 ✅ (typed invalidation domains — completed)
 S21 ✅ ──→ S28 ✅ (knowledge-path traces — completed)
 S20 ✅, S23 ✅ ──→ S25 ✅ (feasibility sketching — completed)
-S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
+S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
 ```
 
 ---
@@ -263,10 +266,11 @@ S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
   - extended decision traces with belief provenance across all 6 candidate families
   - `dump_agent()` renders per-candidate evidence, feasibility, and knowledge paths
 
-**Step 13.5 Wave 3** (after S22 + S23 — all deps met):
-- **S27**: Expectation-Violation Goals
-  - new goal source family triggered by belief-vs-observation mismatch (FOUNDATIONS P15)
-  - needs ~~S22~~, ~~S23~~ (all deps met)
+**Step 13.5 Wave 3** — ✅ COMPLETED:
+- **S27**: Expectation-Violation Goals — ✅ COMPLETED
+  - belief-vs-observation mismatch now produces concrete recorded violation incidents
+  - shipped exact-id `InvestigateViolation` goals plus unresolved/resolved incident lifecycle
+  - golden coverage proves single-incident investigation, local depletion reporting, and same-place sibling isolation
 
 ---
 
@@ -323,7 +327,6 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | ~~`S24-typed-invalidation-domains.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
-| `S27-expectation-violation-goals.md` | 3+ | 13.5 W3 | ~~S22~~, ~~S23~~ (all deps met) |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, S02 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
@@ -353,6 +356,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
-| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S24, S25, S26, S28 complete) |
+| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S24, S25, S26, S27, S28 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

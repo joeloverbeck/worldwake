@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 164
+- Total `golden_*` tests: 166
 
 ## Per-File Inventory
 
@@ -17,7 +17,7 @@ Do not hand-edit it.
 | `golden_care.rs` | 16 |
 | `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 9 |
-| `golden_emergent.rs` | 34 |
+| `golden_emergent.rs` | 36 |
 | `golden_offices.rs` | 21 |
 | `golden_production.rs` | 21 |
 | `golden_social.rs` | 14 |
@@ -136,6 +136,8 @@ Do not hand-edit it.
 - `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically`
 - `golden_entity_missing_triggers_investigation`
 - `golden_entity_missing_triggers_investigation_replays_deterministically`
+- `golden_supply_depletion_enables_share_belief`
+- `golden_supply_depletion_enables_share_belief_replays_deterministically`
 
 ### `golden_offices.rs`
 
