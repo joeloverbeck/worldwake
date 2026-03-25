@@ -16,7 +16,11 @@ Phase 3+: AI Architecture Overhaul (Step 13.5, Wave 2)
 
 ## Dependencies
 
-- S20 (AI pipeline structural cleanup — cleaner module boundaries simplify insertion of the feasibility stage)
+- S20 (AI pipeline structural cleanup — cleaner module boundaries simplify insertion of the feasibility stage) — **COMPLETED**
+- S23 (Refined blocked intents — compound-keyed `BTreeMap<BlockerKey, BlockedIntent>` with `PatienceExhausted`/`AssumptionFailed` facts) — **COMPLETED**
+- S22 (Generalized intention frames — `IntentionFrame` with `FrameState::Exhausted` provides frame-exhaustion signals) — **COMPLETED**
+
+All dependencies are met.
 
 ## FOUNDATIONS Alignment
 
@@ -46,44 +50,111 @@ pub enum FeasibilityHint {
     Likely,
     /// Cannot determine feasibility cheaply — needs full GOAP search.
     Uncertain,
-    /// Blocker memory or missing prerequisites strongly suggest infeasibility.
+    /// Blocker memory, exhausted frame, or missing prerequisites strongly suggest infeasibility.
     Unlikely,
 }
 ```
 
-The `Ord` derivation gives `Likely < Uncertain < Unlikely` (enum variant order). The sorting comparator will reverse this so `Likely` sorts first.
+The `Ord` derivation gives `Likely < Uncertain < Unlikely` (enum variant order). The sorting comparator uses natural order so `Likely` sorts first within a priority class.
 
 ### Feasibility Sketch Function
 
 ```rust
 /// Derive a cheap feasibility estimate for a ranked goal using only the
-/// agent's beliefs and blocker memory. Never touches authoritative world state.
+/// agent's beliefs, blocker memory, and intention frame state.
+/// Never touches authoritative world state.
 pub fn feasibility_hint(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     goal: &RankedGoal,
     blocked_memory: &BlockedIntentMemory,
+    current_frame: Option<&IntentionFrame>,
     current_tick: Tick,
 ) -> FeasibilityHint
 ```
 
-The function takes `GoalBeliefView` (the same trait used by `rank_candidates`), not `RuntimeBeliefView` or `Topology`. This ensures it operates strictly within the agent's belief boundary.
+The function takes `GoalBeliefView` (the same trait used by `rank_candidates`), not `RuntimeBeliefView` or `Topology`. It additionally takes the agent's current `IntentionFrame` (read-only, already available in `process_agent()`). This ensures it operates strictly within the agent's belief boundary.
 
-**Checks (in order, short-circuit on first conclusive result):**
+### Two-Phase Check Architecture
 
-1. **Non-generation blocker check**: Is there an active non-expired blocker for this goal key where `blocks_goal_generation()` returns false (i.e., soft blockers like `ExclusiveFacilityUnavailable` or `SourceDepleted` that do not suppress candidate generation but indicate likely infeasibility)? -> `Unlikely`. Note: hard blockers that return `blocks_goal_generation() == true` already suppress the goal during candidate generation, so they will never appear here.
+Feasibility evaluation uses a two-phase architecture: **shared checks** that apply to all `GoalKind` variants, followed by a **per-GoalKind dispatch table** that returns `Option<FeasibilityHint>`.
 
-2. **Active hard blocker present but not yet expired**: Check `blocked_memory.intents` for any entry matching the goal key with `expires_tick > current_tick`, regardless of `blocks_goal_generation()`. If found -> `Unlikely`. This catches blockers like `NoKnownPath`, `NoKnownSeller`, `TargetGone` that have not yet expired but whose goal was re-generated (e.g., by a different evidence entity).
+```rust
+fn feasibility_hint(...) -> FeasibilityHint {
+    // Phase 1: Shared checks (short-circuit on first conclusive result)
+    if let Some(hint) = check_exhausted_frame(goal, current_frame) { return hint; }
+    if let Some(hint) = check_blocker_memory(goal, blocked_memory, current_tick) { return hint; }
 
-3. **Target at current location**: If `goal.grounded.evidence_places` contains the agent's current `effective_place` -> `Likely`. The goal has evidence at the agent's location, suggesting a local affordance.
+    // Phase 2: Per-GoalKind dispatch
+    if let Some(hint) = goal_specific_feasibility(view, agent, goal) { return hint; }
 
-4. **Possessed commodity for consume/relieve goals**: For `GoalKind::Consume` or `GoalKind::Relieve` or `GoalKind::Wash` goals with a known commodity, if the agent already possesses that commodity (`view.commodity_quantity(agent, commodity) > Quantity::ZERO`) -> `Likely`.
+    // Phase 3: Default
+    FeasibilityHint::Uncertain
+}
+```
 
-5. **No evidence places reachable**: If `goal.grounded.evidence_places` is non-empty and none of them are the agent's current location, and for each evidence place, no adjacent path exists from the agent's location (checking `view.adjacent_places_with_travel_ticks(agent_place)` does not include any evidence place as an immediate neighbor) -> `Unlikely`. Note: this is a one-hop adjacency check, not full pathfinding. It is intentionally conservative — a place two hops away gets `Uncertain`, not `Unlikely`.
+#### Phase 1: Shared Checks
 
-6. **Default** -> `Uncertain`.
+**Check 1 — Exhausted IntentionFrame**: If `current_frame` has `state == FrameState::Exhausted` and `frame.goal == goal.grounded.key` → `Unlikely`. An exhausted frame means the agent already committed patience budget to this exact goal and the frame's assumptions broke or patience ran out. Suspended frames are NOT treated as Unlikely — suspension indicates interruption by higher-priority needs, not infeasibility.
 
-**Cost**: Each call performs at most one `effective_place` lookup, one `commodity_quantity` lookup, one `adjacent_places_with_travel_ticks` call, and one linear scan of `BlockedIntentMemory.intents`. All are O(1) or O(small) relative to the GOAP search budget of 512 node expansions.
+**Check 2 — Blocker memory scan**: Iterate `blocked_memory.intents.values()` for any entry where `blocker_key.goal_key == goal.grounded.key` and `expires_tick > current_tick`. Any live blocker → `Unlikely`. This catches all `BlockingFact` variants:
+- Hard blockers (`blocks_goal_generation() == true`): `NoKnownPath`, `NoKnownSeller`, `TargetGone`, `CombatTooRisky`, `DangerTooHigh`, `TooExpensive`, `SellerOutOfStock`, `MissingTool`, `MissingInput`, `WorkstationBusy`, `ReservationConflict`, `Unknown`, `PatienceExhausted`, `AssumptionFailed`
+- Soft blockers (`blocks_goal_generation() == false`): `SourceDepleted`, `ExclusiveFacilityUnavailable`
+
+Note: Goals fully suppressed by hard blockers at candidate generation will not reach feasibility checking. However, goals re-generated through different evidence (e.g., a new seller appeared at a different place while the old place is still blocked) will reach here, and place-scoped blockers signal risk even for a different evidence path.
+
+#### Phase 2: Per-GoalKind Dispatch Table
+
+```rust
+fn goal_specific_feasibility(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    goal: &RankedGoal,
+) -> Option<FeasibilityHint>
+```
+
+This function dispatches on `goal.grounded.key.kind` via a `match` expression. Each arm returns `Option<FeasibilityHint>` — `None` means "no goal-specific opinion, fall through to `Uncertain`." New `GoalKind` variants added by future specs automatically get `None` (Uncertain) until a feasibility check is written.
+
+| GoalKind | Check | Result |
+|----------|-------|--------|
+| `ConsumeOwnedCommodity { commodity }` | `view.commodity_quantity(agent, commodity) > Quantity::ZERO` | `Likely` |
+| `AcquireCommodity { .. }` | `evidence_places` contains agent's `effective_place` | `Likely` |
+| `Sleep` | Always local (no target entity or place required) | `Likely` |
+| `Relieve` | Always local | `Likely` |
+| `Wash` | `view.commodity_quantity(agent, CommodityKind::Water) > Quantity::ZERO` | `Likely` |
+| `EngageHostile { target }` | Target co-located → `Likely`; target believed dead → `Unlikely` | |
+| `ReduceDanger` | No specific check (general intent) | `None` |
+| `TreatWounds { patient }` | Patient co-located → `Likely`; patient believed dead → `Unlikely` | |
+| `ProduceCommodity { .. }` | `evidence_places` contains agent's `effective_place` (workstation is here) | `Likely` |
+| `SellCommodity { commodity }` | Agent possesses commodity AND `evidence_places` local → `Likely`; no commodity → `Unlikely` | |
+| `RestockCommodity { .. }` | `evidence_places` contains agent's `effective_place` (supplier is here) | `Likely` |
+| `MoveCargo { commodity, destination }` | Agent possesses commodity → `Likely` if destination is adjacent; no commodity → `None` | |
+| `LootCorpse { corpse }` | `evidence_places` contains agent's `effective_place` (corpse is here) | `Likely` |
+| `BuryCorpse { corpse, burial_site }` | Corpse co-located AND burial_site is current place or adjacent → `Likely` | |
+| `ShareBelief { listener, .. }` | Listener co-located → `Likely`; listener believed dead → `Unlikely` | |
+| `ClaimOffice { .. }` | `evidence_places` contains agent's `effective_place` | `Likely` |
+| `SupportCandidateForOffice { candidate, .. }` | Candidate co-located → `Likely`; candidate believed dead → `Unlikely` | |
+
+**Co-location check pattern**: For goal kinds requiring co-location with a specific entity (EngageHostile, TreatWounds, ShareBelief, SupportCandidateForOffice), the check is:
+```rust
+let agent_place = view.effective_place(agent)?;
+let target_place = view.effective_place(target)?;
+if agent_place == target_place { return Some(FeasibilityHint::Likely); }
+if view.is_dead(target) { return Some(FeasibilityHint::Unlikely); }
+None
+```
+This is O(1) — two lookup calls.
+
+**Evidence-place check pattern**: For goal kinds where the relevant resource/entity is tracked via `evidence_places` (AcquireCommodity, ProduceCommodity, RestockCommodity, LootCorpse, ClaimOffice), the check is:
+```rust
+let agent_place = view.effective_place(agent)?;
+if goal.grounded.evidence_places.contains(&agent_place) {
+    return Some(FeasibilityHint::Likely);
+}
+None
+```
+
+**Cost**: Each call performs at most one `effective_place` lookup, one `commodity_quantity` lookup, one `is_dead` call, and one linear scan of `BlockedIntentMemory.intents`. All are O(1) or O(small) relative to the GOAP search budget of 512 node expansions.
 
 ### Integration with Ranking
 
@@ -105,17 +176,44 @@ fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
     right.priority_class.cmp(&left.priority_class)
         .then_with(|| left.feasibility.cmp(&right.feasibility))  // Likely < Uncertain < Unlikely
         .then_with(|| right.motive_score.cmp(&left.motive_score))
-        .then_with(|| /* existing tiebreakers */)
+        .then_with(|| goal_kind_discriminant(left.grounded.key.kind)
+            .cmp(&goal_kind_discriminant(right.grounded.key.kind)))
+        .then_with(|| left.grounded.key.commodity.cmp(&right.grounded.key.commodity))
+        .then_with(|| left.grounded.key.entity.cmp(&right.grounded.key.entity))
+        .then_with(|| left.grounded.key.place.cmp(&right.grounded.key.place))
 }
 ```
 
+Since `rank_candidates()` also calls `sort_unstable_by(compare_ranked_goals)` and feasibility is initialized to `Uncertain`, the initial sort is unaffected (all equal on feasibility). The re-sort after annotation is the one that reorders.
+
 ### Integration Point in agent_tick
 
-The feasibility annotation happens in `read_phase_result()` (agent_tick.rs ~line 832), between `rank_candidates()` and the return of `ReadPhaseResult`. The ranked goals are annotated and re-sorted before being passed to the planning phase that calls `.take(max_candidates_to_plan)`.
+The feasibility annotation happens in `process_agent()` (`agent_tick/mod.rs`), **after** the deferred `NoCriticalThreat` assumption evaluation (line ~439) and **before** the active-action phase that consumes `ranked_candidates` (line ~441). This placement ensures:
+
+1. `rank_candidates()` has already produced the initial ranking (line ~386-403)
+2. The deferred `NoCriticalThreat` evaluation has updated `current_frame` state if needed (lines ~407-439), so exhausted frames are visible to the feasibility check
+3. The annotated and re-sorted `ranked_candidates` is consumed by `build_candidate_plans()` which does `.take(max_candidates_to_plan)`
+
+```rust
+// ── Feasibility annotation and re-sort ──
+let mut ranked_candidates = ranked_candidates;
+{
+    let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+    for ranked in &mut ranked_candidates {
+        ranked.feasibility = feasibility_hint(
+            &view, agent, ranked, &blocked_memory,
+            current_frame.as_ref(), tick,
+        );
+    }
+    ranked_candidates.sort_by(compare_ranked_goals);
+}
+```
+
+The `runtime_belief_view()` call is cheap (constructs references, no allocation). A `PerAgentBeliefView` is used, which implements `GoalBeliefView`.
 
 ### Decision Trace Integration
 
-Add a `feasibility: FeasibilityHint` field to `RankedGoalSummary` in `decision_trace.rs`. The `dump_agent()` output will show feasibility alongside priority class and motive for each candidate, making it visible why ordering changed.
+Add a `feasibility: FeasibilityHint` field to `RankedGoalSummary` in `decision_trace.rs`. The `dump_agent()` output will show feasibility alongside priority class and motive for each candidate, making it visible why ordering changed. The `summary()` output mentions feasibility only when it is not `Uncertain` (to avoid noise in the common case).
 
 ### Budget Allocation (Future Extension, Not in Scope)
 
@@ -123,26 +221,41 @@ A future spec could give `Unlikely` goals a reduced `max_node_expansions` or `be
 
 ## Tickets
 
-### S25-001: Add FeasibilityHint enum and feasibility_hint() function
+### S25-001: Add FeasibilityHint enum, dispatch table, and feasibility_hint() function
 
-- Add `FeasibilityHint` enum to `worldwake-ai` (in a new `feasibility.rs` module or within `goal_model.rs`)
-- Implement `feasibility_hint()` with checks 1-6 as specified above
-- All checks use `GoalBeliefView`, never authoritative world state
-- Add `feasibility: FeasibilityHint` field to `RankedGoal` (default `Uncertain` for backward compat in tests that construct `RankedGoal` directly)
-- **Verify**: Focused unit tests with mock `GoalBeliefView` covering each check path (blocker present, target at current location, commodity possessed, no reachable evidence places, default uncertain)
+- Create `feasibility.rs` module in `worldwake-ai/src/`
+- Define `FeasibilityHint` enum with `Likely`, `Uncertain`, `Unlikely` (derive `Serialize`, `Deserialize`, `Ord`, etc.)
+- Implement `feasibility_hint()` with two-phase architecture:
+  - Phase 1: shared checks (exhausted frame, blocker memory scan)
+  - Phase 2: `goal_specific_feasibility()` match dispatch on all 17 `GoalKind` variants
+- All checks use `GoalBeliefView` + `BlockedIntentMemory` + `IntentionFrame`, never authoritative world state
+- Add `feasibility: FeasibilityHint` field to `RankedGoal` in `goal_model.rs` (default `Uncertain` for backward compat in tests that construct `RankedGoal` directly)
+- Re-export `FeasibilityHint` from `lib.rs`
+- **Verify**: Focused unit tests with mock `GoalBeliefView` covering each check path:
+  - Exhausted frame match → Unlikely
+  - Active blocker for goal → Unlikely
+  - ConsumeOwnedCommodity with possessed commodity → Likely
+  - Sleep / Relieve → Likely
+  - Wash with Water → Likely; without → Uncertain
+  - EngageHostile co-located → Likely; target dead → Unlikely
+  - TreatWounds co-located → Likely; patient dead → Unlikely
+  - ShareBelief co-located → Likely; listener dead → Unlikely
+  - ClaimOffice with evidence at current place → Likely
+  - SellCommodity without commodity → Unlikely
+  - Default (no opinion) → Uncertain
 - **Verify**: `cargo test -p worldwake-ai` — existing tests compile and pass (new field initialized to `Uncertain` where needed)
 
 ### S25-002: Integrate feasibility into candidate ordering
 
-- After `rank_candidates()` in `read_phase_result()`, compute `feasibility_hint()` for each `RankedGoal` and store in the new field
-- Update `compare_ranked_goals()` to include feasibility between priority class and motive score
+- In `process_agent()` in `agent_tick/mod.rs`, after the deferred NoCriticalThreat evaluation (~line 439), annotate each ranked candidate with `feasibility_hint()` and re-sort
+- Update `compare_ranked_goals()` in `ranking.rs` to include feasibility between priority_class and motive_score
 - Re-sort the ranked list with the updated comparator
 - **Verify**: `cargo test -p worldwake-ai` — all golden tests pass. Some may show changed tick counts if agents now find food faster; verify new behavior is strictly better (agent acts more sensibly)
 
 ### S25-003: Add feasibility to decision traces
 
 - Add `feasibility: FeasibilityHint` field to `RankedGoalSummary` in `decision_trace.rs`
-- Populate during trace construction in agent_tick planning phase
+- Populate during trace construction in `summarize_ranked_goal()` in `agent_tick/planning.rs`
 - Update `dump_agent()` format string to include feasibility hint per candidate
 - Update `summary()` output to mention feasibility if non-`Uncertain`
 - **Verify**: Enable tracing in one golden test, confirm feasibility hints appear in trace output
@@ -164,11 +277,11 @@ A future spec could give `Unlikely` goals a reduced `max_node_expansions` or `be
 
 ### Information-path analysis
 
-Feasibility sketching introduces no new information paths. It reads the agent's existing `GoalBeliefView` (effective place, commodity quantities, adjacent places) and `BlockedIntentMemory` — both of which are already populated by the perception and failure-handling systems. No agent gains information it would not otherwise have.
+Feasibility sketching introduces no new information paths. It reads the agent's existing `GoalBeliefView` (effective place, commodity quantities, entity liveness), `BlockedIntentMemory` (compound-keyed intents from S23), and `IntentionFrame` (frame state from S22) — all of which are already populated by the perception, failure-handling, and frame-evaluation systems. No agent gains information it would not otherwise have.
 
 ### Positive-feedback analysis
 
-None. Feasibility hints are stateless derived computations. They do not create new state, do not feed back into candidate generation, and do not alter blocker memory. A goal demoted by `Unlikely` this tick may be `Likely` next tick if the agent moves or a blocker expires. There are no amplifying loops.
+None. Feasibility hints are stateless derived computations computed fresh each tick. They do not create new state, do not feed back into candidate generation, do not alter blocker memory, and do not modify intention frames. A goal demoted by `Unlikely` this tick may be `Likely` next tick if the agent moves, a blocker expires, or a frame clears. There are no amplifying loops.
 
 ### Concrete dampeners
 
@@ -176,8 +289,8 @@ N/A — no positive-feedback loops to dampen.
 
 ### Stored state vs. derived read-model list
 
-- **Stored**: None. `FeasibilityHint` is a transient annotation computed fresh each tick from existing beliefs and blocker memory. It is not persisted in any component or serialized to save files.
-- **Derived**: `FeasibilityHint` per `RankedGoal` (derived from `GoalBeliefView` reads + `BlockedIntentMemory` scan).
+- **Stored**: None. `FeasibilityHint` is a transient annotation computed fresh each tick from existing beliefs, blocker memory, and frame state. It is not persisted in any component or serialized to save files.
+- **Derived**: `FeasibilityHint` per `RankedGoal` (derived from `GoalBeliefView` reads + `BlockedIntentMemory` scan + `IntentionFrame` state check).
 
 ## Verification
 
