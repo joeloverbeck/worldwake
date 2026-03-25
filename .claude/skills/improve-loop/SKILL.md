@@ -5,7 +5,7 @@ description: Iterative improvement loop — autonomously optimizes a mutable sys
 
 # Improve Loop Skill
 
-Implements Karpathy's iterative improvement pattern as an autonomous optimization loop, enhanced with UCB1 category selection, MAD confidence scoring, Goodhart's Law defenses, lightweight backtracking, intermediate metrics, cross-run lesson store, self-improving research strategy, near-miss tracking, plateau detection, structured reflection, multi-run averaging, and human steering.
+Implements Karpathy's iterative improvement pattern as an autonomous optimization loop, enhanced with UCB1 category selection, MAD confidence scoring, Goodhart's Law defenses, lightweight backtracking, intermediate metrics, cross-run lesson store, self-improving research strategy, near-miss tracking, plateau detection, structured reflection, multi-run averaging, human steering, condition drift anchoring, correctness guards, scope enforcement, lesson curation gating, and structured lesson categories.
 
 ## Invocation
 
@@ -22,6 +22,7 @@ Implements Karpathy's iterative improvement pattern as an autonomous optimizatio
 - Optional campaign files:
   - `musings.md` — structured reflection log (created automatically if missing)
   - `next-idea.md` — human-provided hypothesis override (consumed and renamed after use)
+  - `checks.sh` — correctness guard (tests, types, lint); blocks metric-improving changes that break correctness
 
 ### results.tsv Schema
 
@@ -70,6 +71,9 @@ Campaign Completes" step explicitly commits this file.
 | `META_TRIAL_WINDOW` | 10 | Trial period for meta-changes |
 | `NOISE_TOLERANCE` | 0.01 | Assumed noise floor for single-run campaigns (1% as decimal) |
 | `PIVOT_CHECK_INTERVAL` | 10 | Experiments between PROCEED/REFINE/PIVOT checks |
+| `METRIC_DIRECTION` | `lower-is-better` | Optimization direction (`lower-is-better` or `higher-is-better`) |
+| `MAX_ITERATIONS` | `unlimited` | Hard cap on total experiments (graceful stop when reached) |
+| `CHECKS_TIMEOUT` | 120 | Timeout in seconds for correctness checks (`checks.sh`) |
 
 ## Worktree Requirement (NON-NEGOTIABLE)
 
@@ -95,7 +99,9 @@ Set `WT` = the worktree root path. Every file path in every tool call below is p
 7. Ensure `$WT/campaigns/<campaign>/musings.md` exists (create with `# Musings` header if missing).
 8. Initialize strategy state: `strategy = "normal"`, `consecutive_rejects = 0`, `total_accepts = 0`.
 9. Read `campaigns/lessons-global.jsonl` if it exists — inject relevant global lessons into context alongside the instruction spec.
-10. Read `$WT/campaigns/<campaign>/lessons.jsonl` if resuming — prune lessons with `decay_weight < 0.3`.
+10. Read `$WT/campaigns/<campaign>/lessons.jsonl` if resuming — prune lessons with `decay_weight < 0.3`. For lessons lacking a `type` field (backward compatibility), treat as `finding` (if `polarity: positive`) or `negative` (if `polarity: negative`).
+11. **Metric direction validation**: Read `METRIC_DIRECTION` from program.md (default: `lower-is-better`). Verify the accept/reject logic in program.md is consistent with this direction (e.g., "improved" means lower for `lower-is-better`, higher for `higher-is-better`). **Hard error** if mismatched — do not proceed.
+12. Read `MAX_ITERATIONS` from program.md (default: `unlimited`). Initialize `experiment_count = 0` (or resume from results.tsv row count if resuming).
 
 ## Phase 1 — Baseline
 
@@ -122,11 +128,27 @@ Set `WT` = the worktree root path. Every file path in every tool call below is p
 
 ## Phase 2 — Improvement Loop
 
-Run this loop INDEFINITELY. Never stop. Never ask permission. Never pause at "natural stopping points."
+Run this loop INDEFINITELY (or until `MAX_ITERATIONS` reached). Never stop. Never ask permission. Never pause at "natural stopping points."
+
+### Step 0: ANCHOR (Condition Drift Prevention)
+
+- Re-read `$WT/campaigns/<campaign>/program.md` objective section from disk.
+- Compare the last 5 experiment descriptions (from results.tsv) against the declared objective.
+- If the recent experiments are exploring tangential goals not aligned with the stated objective:
+  - Append `**DRIFT WARNING**: Recent experiments drifted toward <tangent>. Refocusing on declared objective: <objective>.` to musings.md.
+  - Force the next hypothesis to directly target the declared objective.
+- This step prevents the proven failure mode where overnight loops abandon the original objective (documented by Cerebras and AutoResearchClaw).
+
+### Step 0b: ITERATION CAP CHECK
+
+- If `MAX_ITERATIONS` is set (not `unlimited`) and `experiment_count >= MAX_ITERATIONS`:
+  - Append to musings: `**ITERATION CAP**: Reached MAX_ITERATIONS (${MAX_ITERATIONS}). Exiting loop gracefully.`
+  - Exit the loop and proceed to "After Campaign Completes" section.
 
 ### Step 1: OBSERVE
 
-- Re-read mutable files if they've changed since last read.
+- Re-read mutable files **from disk** (not from stale context). This ensures each iteration operates on fresh state.
+- Verify that no immutable files have been modified since baseline. If any have, **hard error** — abort the loop.
 - Review experiment history in results.tsv — what's been tried, what worked, what failed.
 - Note the current `best_ms` and cumulative `lines_delta`.
 
@@ -235,6 +257,11 @@ Append to `$WT/campaigns/<campaign>/musings.md`:
 ### Step 3: IMPLEMENT
 
 - Apply the change to the mutable files in the worktree.
+- **Scope check**: Verify that ONLY declared mutable files were modified (`git diff --name-only` against mutable file list from program.md). If any non-mutable file was changed:
+  - Rollback: `cd $WT && git checkout -- <all-changed-files>`
+  - Log as `REJECT` with description `"scope violation: touched immutable file <path>"`
+  - Append to musings: `**SCOPE VIOLATION**: Attempted to modify <path>, which is not in the mutable file list.`
+  - Skip to Step 8 (REPEAT).
 - Count `lines_delta` for this change (net lines added minus lines removed across all mutable files).
 - Tag the change with a `category` from program.md's experiment categories list.
 
@@ -336,7 +363,22 @@ Apply the accept/reject logic from program.md:
 - Metric worsened >1%
 - Tiny improvement with large complexity cost
 
-**On ACCEPT:**
+**On ACCEPT (or SUSPICIOUS_ACCEPT) — before committing, run Step 6b:**
+
+### Step 6b: CORRECTNESS CHECK
+
+- If `$WT/campaigns/<campaign>/checks.sh` exists:
+  ```bash
+  cd $WT && timeout $CHECKS_TIMEOUT bash campaigns/<campaign>/checks.sh
+  ```
+- If checks **fail** (non-zero exit) or **timeout**:
+  - Downgrade ACCEPT to REJECT. Log description: `"correctness check failed after metric improvement (<improvement_pct>%)"`.
+  - Append to musings: `**CORRECTNESS FAILURE**: Metric improved <improvement_pct>% but checks.sh failed. Change breaks correctness.`
+  - Rollback: `cd $WT && git checkout -- <changed-files>`
+  - Skip to Step 7 (LOG) with REJECT status.
+- If checks **pass** (or `checks.sh` does not exist): proceed with ACCEPT.
+
+**On ACCEPT (after passing Step 6b):**
 ```bash
 cd $WT && git add <changed-files> && git commit -m "improve-loop: <description> (<old_ms> -> <new_ms> ms)"
 ```
@@ -374,20 +416,46 @@ Append to `$WT/campaigns/<campaign>/musings.md`:
 **Learning**: <what was learned — confirmed/refuted hypothesis, surprising observations, what to try differently>
 ```
 
-### Step 7.6: EXTRACT LESSON
+### Step 7.6: EXTRACT LESSON (with Curation Gate)
 
-**On ACCEPT**: Extract a positive lesson from the successful change:
+Before persisting ANY lesson, apply the **curation gate** — answer all 3 questions:
+1. **Generalizable?** Would this lesson apply to a different experiment in this category, or is it specific to this one change?
+2. **Non-obvious?** Does this add information beyond what the accept/reject status already communicates?
+3. **Actionable?** Could a fresh agent use this lesson to make a better hypothesis?
+
+If ANY answer is NO, do not persist the lesson. Log in musings: `"Lesson suppressed (failed curation gate: <which question>)"`
+
+**Lesson types** (replaces flat `polarity` field):
+- `finding`: a reusable pattern or insight (replaces `polarity: positive`)
+- `decision`: a choice between alternatives with rationale
+- `experiment`: a tried approach and its outcome pattern
+- `question`: an open problem identified during the experiment
+- `negative`: a pattern that consistently fails (replaces `polarity: negative`)
+
+**On ACCEPT** (if curation gate passes): Extract a typed lesson:
 ```json
-{"lesson": "<what pattern worked and why>", "confidence": 0.7, "source_exp": "exp-NNN", "category": "<category>", "timestamp": "<ISO-8601>", "decay_weight": 1.0, "polarity": "positive"}
+{"lesson": "<what pattern worked and why>", "type": "finding", "confidence": 0.7, "source_exp": "exp-NNN", "category": "<category>", "timestamp": "<ISO-8601>", "decay_weight": 1.0}
 ```
 Append to `$WT/campaigns/<campaign>/lessons.jsonl`.
 
-**On 3+ consecutive REJECT in same category**: Extract a negative lesson:
+**On 3+ consecutive REJECT in same category** (if curation gate passes): Extract a negative lesson:
 ```json
-{"lesson": "<what approach consistently fails in this category and why>", "confidence": 0.6, "source_exp": "exp-NNN", "category": "<category>", "timestamp": "<ISO-8601>", "decay_weight": 1.0, "polarity": "negative"}
+{"lesson": "<what approach consistently fails in this category and why>", "type": "negative", "confidence": 0.6, "source_exp": "exp-NNN", "category": "<category>", "timestamp": "<ISO-8601>", "decay_weight": 1.0}
 ```
 
-**On successful meta-review KEEP**: Extract a meta-lesson with `"category": "meta"`.
+**On surprising observations or open problems** (if curation gate passes): Extract a question:
+```json
+{"lesson": "<what remains unexplained or worth investigating>", "type": "question", "confidence": 0.5, "source_exp": "exp-NNN", "category": "<category>", "timestamp": "<ISO-8601>", "decay_weight": 1.0}
+```
+
+**On strategic choices** (if curation gate passes): Extract a decision:
+```json
+{"lesson": "<why X was chosen over Y and the outcome>", "type": "decision", "confidence": 0.7, "source_exp": "exp-NNN", "category": "<category>", "timestamp": "<ISO-8601>", "decay_weight": 1.0}
+```
+
+**On successful meta-review KEEP**: Extract a meta-lesson with `"category": "meta"` and `"type": "finding"`.
+
+**Backward compatibility**: If resuming a campaign whose lessons.jsonl uses the old `polarity` field, treat `polarity: positive` as `type: finding` and `polarity: negative` as `type: negative`.
 
 **Lesson decay**: Every 50 experiments, decrease `decay_weight` by 0.1 for all lessons in `lessons.jsonl`. Prune lessons with `decay_weight < 0.3`.
 
@@ -418,7 +486,7 @@ Go back to Step 1. Do NOT stop.
 
 ## After Campaign Completes
 
-When the human decides to stop the loop:
+When the human decides to stop the loop (or `MAX_ITERATIONS` is reached):
 1. Review the worktree branch: `git log --oneline` shows all accepted improvements.
 2. Promote high-confidence lessons to global store (if not already done by Step 7.6).
 3. **Commit `campaigns/lessons-global.jsonl`** with `git add -f campaigns/lessons-global.jsonl && git commit -m "chore: promote global lessons from <campaign>"`. This file persists across campaigns — without this commit, lessons are lost when the worktree is removed.
@@ -430,10 +498,15 @@ When the human decides to stop the loop:
 - **Never modify immutable files** (harness.sh, engine source, game data, other tests).
 - **Never weaken assertions** — the tests must remain equally rigorous.
 - **Never add dependencies** — optimize with what's available.
-- **Never stop the loop** — run until externally interrupted.
+- **Never stop the loop** — run until externally interrupted or `MAX_ITERATIONS` reached.
 - **Always use worktree paths** — never operate on the main working tree.
 - **Always tag experiments with a category** from program.md's taxonomy.
 - **Always record hypothesis and learning** in musings.md.
-- **Always extract lessons** on ACCEPT and on repeated category failures.
+- **Always extract lessons** on ACCEPT and on repeated category failures (subject to curation gate).
 - **Never modify safety-critical config during meta-review** (see Step 1f forbidden list).
 - **Never accept improvements within noise floor** without additional confirmation runs.
+- **Always re-read program.md objective at each iteration** (Step 0: ANCHOR) — prevents condition drift.
+- **Always verify scope after IMPLEMENT** (Step 3) — reject any change that touches immutable files.
+- **Always run correctness checks** (Step 6b) if `checks.sh` exists — metric improvement that breaks correctness is not real improvement.
+- **Always apply curation gate before persisting lessons** — not every observation is worth keeping.
+- **Always validate metric direction at startup** (Phase 0, step 11) — optimizing the wrong direction is a silent, expensive bug.
