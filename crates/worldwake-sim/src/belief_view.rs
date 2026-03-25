@@ -7,7 +7,7 @@ use worldwake_core::{
     CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecordedViolation,
     RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick,
     TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
     UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
@@ -309,6 +309,10 @@ pub trait RuntimeBeliefView {
     ) -> Option<ViolationDispositionProfile> {
         let _ = agent;
         None
+    }
+    fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
+        let _ = agent;
+        Vec::new()
     }
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {

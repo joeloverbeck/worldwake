@@ -157,7 +157,7 @@ pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;
 pub use verification::{verify_completeness, VerificationError};
 pub use violation::{
-    RecordedViolation, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    RecordedViolation, ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
 };
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;

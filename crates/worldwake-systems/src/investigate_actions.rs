@@ -1,26 +1,31 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag,
-    PerceptionSource, SocialObservation, SocialObservationKind, Tick, ViolationKind,
-    ViolationMemory, VisibilitySpec, WorldTxn,
+    PerceptionSource, RecordedViolation, SocialObservation, SocialObservationKind, ViolationId,
+    ViolationKind, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition,
-    TargetSpec,
+    CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
+    InvestigateActionPayload, Precondition, RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_investigate_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_investigate,
-        tick_investigate,
-        commit_investigate,
-        abort_investigate,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(
+            start_investigate,
+            tick_investigate,
+            commit_investigate,
+            abort_investigate,
+        )
+        .with_affordance_payloads(enumerate_investigate_payloads)
+        .with_payload_override_validator(validate_investigate_payload_override)
+        .with_authoritative_payload_validator(validate_investigate_payload_authoritatively),
+    );
     let id = ActionDefId(defs.len() as u32);
     defs.register(investigate_action_def(id, handler))
 }
@@ -67,6 +72,9 @@ fn start_investigate(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    let violation_id = investigate_payload(&instance.payload)
+        .map_err(ActionError::PreconditionFailed)?
+        .violation_id;
     let memory = txn
         .get_component_violation_memory(instance.actor)
         .ok_or_else(|| {
@@ -75,10 +83,16 @@ fn start_investigate(
                 instance.actor
             ))
         })?;
-    let Some(state) = investigable_state_for_place(memory, place, txn.tick()) else {
+    let Some(record) = memory.active_by_id(violation_id, txn.tick()) else {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {} has no investigable violation at place {}",
-            instance.actor, place
+            "actor {} has no active violation {}",
+            instance.actor, violation_id.0
+        )));
+    };
+    let Some(state) = investigable_state_for_record(record, place) else {
+        return Err(ActionError::PreconditionFailed(format!(
+            "violation {} is not investigable at place {}",
+            violation_id.0, place
         )));
     };
     Ok(Some(state))
@@ -100,7 +114,7 @@ fn commit_investigate(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let (subject, place, commodity) = investigate_state(instance)?;
+    let (violation_id, subject, place, commodity) = investigate_state(instance)?;
 
     let mut store = txn
         .get_component_agent_belief_store(instance.actor)
@@ -130,12 +144,36 @@ fn commit_investigate(
                 instance.actor
             ))
         })?;
+    let Some(record) = memory.active_by_id(violation_id, txn.tick()) else {
+        return Err(ActionError::PreconditionFailed(format!(
+            "violation {} is no longer active at commit",
+            violation_id.0
+        )));
+    };
+    let Some((expected_subject, expected_commodity)) = investigable_binding(record, place) else {
+        return Err(ActionError::PreconditionFailed(format!(
+            "violation {} no longer matches place {}",
+            violation_id.0, place
+        )));
+    };
+    if expected_subject != subject || expected_commodity != commodity {
+        return Err(ActionError::PreconditionFailed(format!(
+            "violation {} no longer matches bound investigate state",
+            violation_id.0
+        )));
+    }
     if let Some(profile) = txn.get_component_violation_disposition_profile(instance.actor) {
-        memory.record(
-            investigate_violation(subject, place, commodity),
+        let refreshed = memory.refresh_id(
+            violation_id,
             txn.tick(),
             profile.violation_memory_retention_ticks,
         );
+        if !refreshed {
+            return Err(ActionError::PreconditionFailed(format!(
+                "violation {} expired before refresh",
+                violation_id.0
+            )));
+        }
         txn.set_component_violation_memory(instance.actor, memory)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
@@ -154,54 +192,119 @@ fn abort_investigate(
     Ok(())
 }
 
-fn investigable_state_for_place(
-    memory: &ViolationMemory,
-    place: EntityId,
-    current_tick: Tick,
-) -> Option<ActionState> {
-    memory
+fn enumerate_investigate_payloads(
+    _def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    view: &dyn RuntimeBeliefView,
+) -> Vec<ActionPayload> {
+    let Some(place) = targets.first().copied() else {
+        return Vec::new();
+    };
+    view.active_violation_records(actor)
+        .into_iter()
+        .filter(|record| investigable_binding(record, place).is_some())
+        .map(|record| {
+            ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id: record.id,
+            })
+        })
+        .collect()
+}
+
+fn validate_investigate_payload_override(
+    _def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    view: &dyn RuntimeBeliefView,
+) -> bool {
+    let Some(place) = targets.first().copied() else {
+        return false;
+    };
+    let Some(payload) = payload.as_investigate() else {
+        return false;
+    };
+    view.active_violation_records(actor)
+        .into_iter()
+        .any(|record| record.id == payload.violation_id && investigable_binding(&record, place).is_some())
+}
+
+fn validate_investigate_payload_authoritatively(
+    _def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    world: &World,
+) -> Result<(), ActionError> {
+    let Some(place) = targets.first().copied() else {
+        return Err(ActionError::InvalidTarget(actor));
+    };
+    let payload = investigate_payload(payload).map_err(ActionError::PreconditionFailed)?;
+    let memory = world.get_component_violation_memory(actor).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("actor {actor} lacks ViolationMemory"))
+    })?;
+    let Some(record) = memory
         .violations
         .iter()
-        .filter(|record| record.expires_tick > current_tick)
-        .filter_map(|record| match &record.kind {
-            ViolationKind::EntityMissing {
-                entity,
-                expected_place,
-            } if *expected_place == place => Some((
-                record.observed_tick,
-                ActionState::Investigate {
-                    subject: *entity,
-                    place,
-                    commodity: None,
-                },
-            )),
-            ViolationKind::SupplyDepleted {
-                commodity,
-                source,
-                place: violation_place,
-            } if *violation_place == place => Some((
-                record.observed_tick,
-                ActionState::Investigate {
-                    subject: *source,
-                    place,
-                    commodity: Some(*commodity),
-                },
-            )),
-            _ => None,
-        })
-        .max_by_key(|(observed_tick, _)| *observed_tick)
-        .map(|(_, state)| state)
+        .find(|record| record.id == payload.violation_id)
+    else {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {} has no violation {}",
+            actor, payload.violation_id.0
+        )));
+    };
+    if investigable_binding(record, place).is_none() {
+        return Err(ActionError::PreconditionFailed(format!(
+            "violation {} is not investigable at place {}",
+            payload.violation_id.0, place
+        )));
+    }
+    Ok(())
+}
+
+fn investigable_state_for_record(
+    record: &RecordedViolation,
+    place: EntityId,
+) -> Option<ActionState> {
+    let (subject, commodity) = investigable_binding(record, place)?;
+    Some(ActionState::Investigate {
+        violation_id: record.id,
+        subject,
+        place,
+        commodity,
+    })
+}
+
+fn investigable_binding(
+    record: &RecordedViolation,
+    place: EntityId,
+) -> Option<(EntityId, Option<CommodityKind>)> {
+    match &record.kind {
+        ViolationKind::EntityMissing {
+            entity,
+            expected_place,
+        } if *expected_place == place => Some((*entity, None)),
+        ViolationKind::SupplyDepleted {
+            commodity,
+            source,
+            place: violation_place,
+        } if *violation_place == place => Some((*source, Some(*commodity))),
+        _ => None,
+    }
 }
 
 fn investigate_state(
     instance: &ActionInstance,
-) -> Result<(EntityId, EntityId, Option<CommodityKind>), ActionError> {
+) -> Result<(ViolationId, EntityId, EntityId, Option<CommodityKind>), ActionError> {
     match instance.local_state {
         Some(ActionState::Investigate {
+            violation_id,
             subject,
             place,
             commodity,
-        }) => Ok((subject, place, commodity)),
+        }) => Ok((violation_id, subject, place, commodity)),
         _ => Err(ActionError::InternalError(format!(
             "investigate action instance {} is missing investigate state",
             instance.instance_id
@@ -209,22 +312,10 @@ fn investigate_state(
     }
 }
 
-fn investigate_violation(
-    subject: EntityId,
-    place: EntityId,
-    commodity: Option<CommodityKind>,
-) -> ViolationKind {
-    match commodity {
-        Some(commodity) => ViolationKind::SupplyDepleted {
-            commodity,
-            source: subject,
-            place,
-        },
-        None => ViolationKind::EntityMissing {
-            entity: subject,
-            expected_place: place,
-        },
-    }
+fn investigate_payload(payload: &ActionPayload) -> Result<&InvestigateActionPayload, String> {
+    payload
+        .as_investigate()
+        .ok_or_else(|| "investigate action requires investigate payload".to_string())
 }
 
 #[cfg(test)]
@@ -234,8 +325,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, AgentBeliefStore, CauseRef, CombatProfile, ControlSource, EventLog,
-        Permille, Seed, ViolationDispositionProfile, WitnessData, World, Wound, WoundCause,
-        WoundId, WoundList,
+        Permille, Seed, Tick, ViolationDispositionProfile, ViolationMemory, WitnessData, World,
+        Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -334,15 +425,16 @@ mod tests {
         violation: ViolationKind,
         observed_tick: u64,
         ttl: u32,
-    ) {
+    ) -> ViolationId {
         let mut txn = new_txn(world, observed_tick);
         let mut memory = txn
             .get_component_violation_memory(actor)
             .cloned()
             .unwrap_or_default();
-        memory.record(violation, Tick(observed_tick), ttl);
+        let violation_id = memory.record(violation, Tick(observed_tick), ttl);
         txn.set_component_violation_memory(actor, memory).unwrap();
         commit_txn(txn);
+        violation_id
     }
 
     fn set_incapacitated(world: &mut World, actor: EntityId) {
@@ -386,6 +478,26 @@ mod tests {
             .expect("investigate affordance should exist")
     }
 
+    fn investigate_affordance_for_id(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        violation_id: ViolationId,
+    ) -> Affordance {
+        get_affordances(&PerAgentBeliefView::from_world(actor, world), actor, defs, handlers)
+            .into_iter()
+            .find(|affordance| {
+                defs.get(affordance.def_id).unwrap().name == "investigate"
+                    && affordance
+                        .payload_override
+                        .as_ref()
+                        .and_then(ActionPayload::as_investigate)
+                        .is_some_and(|payload| payload.violation_id == violation_id)
+            })
+            .expect("investigate affordance should exist for violation id")
+    }
+
     #[test]
     fn register_investigate_action_creates_expected_definition() {
         let (defs, handlers, def_id) = setup_registries();
@@ -412,7 +524,7 @@ mod tests {
         let missing = entity(30);
         let actor = spawn_actor(&mut world, place);
         set_violation_profile(&mut world, actor, 2, 50);
-        record_violation(
+        let violation_id = record_violation(
             &mut world,
             actor,
             ViolationKind::EntityMissing {
@@ -427,6 +539,10 @@ mod tests {
         let affordance = investigate_affordance(&world, actor, &defs, &handlers);
         assert_eq!(affordance.def_id, def_id);
         assert_eq!(affordance.bound_targets, vec![place]);
+        assert_eq!(
+            affordance.payload_override,
+            Some(ActionPayload::Investigate(InvestigateActionPayload { violation_id }))
+        );
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -507,6 +623,8 @@ mod tests {
 
         let memory = world.get_component_violation_memory(actor).unwrap();
         assert!(memory.violations.iter().any(|record| {
+            record.id == violation_id
+                &&
             record.kind
                 == ViolationKind::EntityMissing {
                     entity: missing,
@@ -528,7 +646,7 @@ mod tests {
         let (_, other_place) = first_two_places(&world);
         let expected_place = first_two_places(&world).0;
         let actor = spawn_actor(&mut world, other_place);
-        record_violation(
+        let violation_id = record_violation(
             &mut world,
             actor,
             ViolationKind::EntityMissing {
@@ -540,7 +658,20 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+        let def_id = defs
+            .iter()
+            .find(|def| def.name == "investigate")
+            .map(|def| def.id)
+            .unwrap();
+        let affordance = Affordance {
+            def_id,
+            actor,
+            bound_targets: vec![other_place],
+            payload_override: Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id,
+            })),
+            explanation: None,
+        };
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -567,9 +698,108 @@ mod tests {
         assert_eq!(
             err,
             ActionError::PreconditionFailed(format!(
-                "actor {} has no investigable violation at place {}",
-                actor,
-                other_place
+                "violation {} is not investigable at place {}",
+                violation_id.0, other_place
+            ))
+        );
+    }
+
+    #[test]
+    fn investigate_affordances_remain_distinct_for_same_place_violations() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        let first_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: entity(30),
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+        let second_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::SupplyDepleted {
+                commodity: CommodityKind::Apple,
+                source: entity(31),
+                place,
+            },
+            2,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let payload_ids = get_affordances(&PerAgentBeliefView::from_world(actor, &world), actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
+            .filter_map(|affordance| {
+                affordance
+                    .payload_override
+                    .and_then(|payload| payload.as_investigate().cloned())
+                    .map(|payload| payload.violation_id)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(payload_ids, vec![first_id, second_id]);
+    }
+
+    #[test]
+    fn investigate_action_rejects_stale_violation_payload() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: entity(30),
+                expected_place: place,
+            },
+            1,
+            1,
+        );
+
+        let (defs, handlers, def_id) = setup_registries();
+        let affordance = Affordance {
+            def_id,
+            actor,
+            bound_targets: vec![place],
+            payload_override: Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id,
+            })),
+            explanation: None,
+        };
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::PreconditionFailed(format!(
+                "actor {} has no active violation {}",
+                actor, violation_id.0
             ))
         );
     }
@@ -579,7 +809,7 @@ mod tests {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place);
-        record_violation(
+        let violation_id = record_violation(
             &mut world,
             actor,
             ViolationKind::EntityMissing {
@@ -591,7 +821,7 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+        let affordance = investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -627,7 +857,7 @@ mod tests {
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place);
         set_violation_profile(&mut world, actor, 2, 50);
-        record_violation(
+        let violation_id = record_violation(
             &mut world,
             actor,
             ViolationKind::EntityMissing {
@@ -644,7 +874,9 @@ mod tests {
             def_id,
             actor,
             bound_targets: vec![place],
-            payload_override: None,
+            payload_override: Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id,
+            })),
             explanation: None,
         };
 
@@ -683,7 +915,7 @@ mod tests {
         let missing = entity(30);
         let actor = spawn_actor(&mut world, place);
         set_violation_profile(&mut world, actor, 2, 50);
-        record_violation(
+        let violation_id = record_violation(
             &mut world,
             actor,
             ViolationKind::EntityMissing {
@@ -695,7 +927,7 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+        let affordance = investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();

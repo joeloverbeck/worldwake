@@ -169,7 +169,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         | GoalKind::ShareBelief { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
-        | GoalKind::InvestigateMissing { .. } => GoalFamilyPolicy {
+        | GoalKind::InvestigateViolation { .. } => GoalFamilyPolicy {
             suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
             penalty_interrupt: PenaltyInterruptEligibility::Never,
             free_interrupt: FreeInterruptRole::Normal,
@@ -300,7 +300,8 @@ mod tests {
                 office: dummy_entity(),
                 candidate: dummy_entity(),
             },
-            GoalKind::InvestigateMissing {
+            GoalKind::InvestigateViolation {
+                violation_id: worldwake_core::ViolationId(1),
                 place: dummy_entity(),
             },
         ];
@@ -390,7 +391,8 @@ mod tests {
                 office: dummy_entity(),
                 candidate: dummy_entity(),
             },
-            GoalKind::InvestigateMissing {
+            GoalKind::InvestigateViolation {
+                violation_id: worldwake_core::ViolationId(2),
                 place: dummy_entity(),
             },
         ];
@@ -477,7 +479,8 @@ mod tests {
                 office: dummy_entity(),
                 candidate: dummy_entity(),
             },
-            GoalKind::InvestigateMissing {
+            GoalKind::InvestigateViolation {
+                violation_id: worldwake_core::ViolationId(3),
                 place: dummy_entity(),
             },
         ];

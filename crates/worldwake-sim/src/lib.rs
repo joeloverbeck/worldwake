@@ -67,9 +67,10 @@ pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
     ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-    CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
-    PressForceClaimActionPayload, QueueForFacilityUsePayload, TellActionPayload,
-    ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+    CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload,
+    InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
+    QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+    TransportActionPayload,
     YieldForceClaimActionPayload,
 };
 pub use action_semantics::{

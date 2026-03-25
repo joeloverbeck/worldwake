@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{CommodityKind, EntityId, Tick, TravelEdgeId};
+use worldwake_core::{CommodityKind, EntityId, Tick, TravelEdgeId, ViolationId};
 
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,
@@ -11,6 +11,7 @@ pub enum ActionState {
         medicine_spent: bool,
     },
     Investigate {
+        violation_id: ViolationId,
         subject: EntityId,
         place: EntityId,
         commodity: Option<CommodityKind>,
@@ -61,6 +62,7 @@ mod tests {
                 medicine_spent: true,
             },
             ActionState::Investigate {
+                violation_id: ViolationId(6),
                 subject: EntityId {
                     slot: 3,
                     generation: 0,

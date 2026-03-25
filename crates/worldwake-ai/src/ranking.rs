@@ -310,7 +310,7 @@ fn priority_class(
         | GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::SupportCandidateForOffice { .. }
-        | GoalKind::InvestigateMissing { .. } => GoalPriorityClass::Low,
+        | GoalKind::InvestigateViolation { .. } => GoalPriorityClass::Low,
     }
 }
 
@@ -484,7 +484,7 @@ fn motive_score(
             social_pressure_for_subject(context, subject),
         ),
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
-        GoalKind::InvestigateMissing { .. } => {
+        GoalKind::InvestigateViolation { .. } => {
             investigation_motive(candidate, context)
         }
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
@@ -746,7 +746,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::ShareBelief { .. } => 14,
         GoalKind::ClaimOffice { .. } => 15,
         GoalKind::SupportCandidateForOffice { .. } => 16,
-        GoalKind::InvestigateMissing { .. } => 17,
+        GoalKind::InvestigateViolation { .. } => 17,
     }
 }
 

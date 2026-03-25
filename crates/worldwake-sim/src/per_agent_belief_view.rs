@@ -11,9 +11,9 @@ use worldwake_core::{
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
     MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind,
-    WorkstationTag, World, Wound,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, TellMemoryKey, TellProfile,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
+    UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -625,6 +625,24 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .cloned()
             })
             .flatten()
+    }
+
+    fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_violation_memory(agent)
+            .map(|memory| {
+                memory
+                    .violations
+                    .iter()
+                    .filter(|record| record.expires_tick > self.current_tick)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn courage(&self, agent: EntityId) -> Option<Permille> {

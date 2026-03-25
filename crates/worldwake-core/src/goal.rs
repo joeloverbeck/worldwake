@@ -1,6 +1,6 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
-use crate::{CommodityKind, EntityId, RecipeId};
+use crate::{CommodityKind, EntityId, RecipeId, ViolationId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -60,8 +60,9 @@ pub enum GoalKind {
         office: EntityId,
         candidate: EntityId,
     },
-    /// Investigate why an expected entity or resource is missing at a location.
-    InvestigateMissing {
+    /// Investigate a concrete recorded expectation violation.
+    InvestigateViolation {
+        violation_id: ViolationId,
         place: EntityId,
     },
 }
@@ -108,7 +109,7 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::ProduceCommodity { .. } => (None, None, None),
-            GoalKind::InvestigateMissing { place } => (None, None, Some(place)),
+            GoalKind::InvestigateViolation { place, .. } => (None, None, Some(place)),
         };
 
         Self {
@@ -128,7 +129,7 @@ impl From<&GoalKind> for GoalKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommodityPurpose, GoalKey, GoalKind};
+    use super::{CommodityPurpose, GoalKey, GoalKind, ViolationId};
     use crate::{test_utils::entity_id, CommodityKind, RecipeId};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
@@ -330,9 +331,12 @@ mod tests {
     }
 
     #[test]
-    fn goal_key_extracts_place_for_investigate_missing() {
+    fn goal_key_extracts_place_for_investigate_violation() {
         let place = entity_id(22, 0);
-        let key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: ViolationId(7),
+            place,
+        });
 
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, None);
@@ -340,9 +344,12 @@ mod tests {
     }
 
     #[test]
-    fn investigate_missing_goal_roundtrips_through_bincode() {
+    fn investigate_violation_goal_roundtrips_through_bincode() {
         let place = entity_id(23, 0);
-        let goal = GoalKind::InvestigateMissing { place };
+        let goal = GoalKind::InvestigateViolation {
+            violation_id: ViolationId(8),
+            place,
+        };
 
         let bytes = bincode::serialize(&goal).unwrap();
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();

@@ -68,7 +68,7 @@ const GOALS_TRAVEL: &[GoalKindTag] = &[
     GoalKindTag::RestockCommodity,
     GoalKindTag::MoveCargo,
     GoalKindTag::LootCorpse,
-    GoalKindTag::InvestigateMissing,
+    GoalKindTag::InvestigateViolation,
 ];
 const GOALS_ACQUIRE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
@@ -123,7 +123,7 @@ const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
     GoalKindTag::SupportCandidateForOffice,
 ];
 const GOALS_PRESS_FORCE_CLAIM: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
-const GOALS_INVESTIGATE: &[GoalKindTag] = &[GoalKindTag::InvestigateMissing];
+const GOALS_INVESTIGATE: &[GoalKindTag] = &[GoalKindTag::InvestigateViolation];
 
 #[must_use]
 pub fn build_semantics_table(

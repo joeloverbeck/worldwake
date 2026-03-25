@@ -166,6 +166,7 @@ impl ActionTraceDetail {
             | ActionPayload::Trade(_)
             | ActionPayload::Combat(_)
             | ActionPayload::Loot(_)
+            | ActionPayload::Investigate(_)
             | ActionPayload::QueueForFacilityUse(_) => None,
         }
     }

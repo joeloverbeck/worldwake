@@ -18,8 +18,8 @@ use worldwake_core::{
     load_per_unit, BelievedEntityState, BlockedIntentMemory, CommodityKind, CommodityPurpose,
     DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId,
     HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData,
-    PerceptionSource, Quantity, RecipientKnowledgeStatus, RecordKind, Tick, ViolationKind,
-    ViolationMemory,
+    PerceptionSource, Quantity, RecipientKnowledgeStatus, RecordKind, Tick, ViolationId,
+    ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
@@ -154,6 +154,7 @@ pub(crate) struct CandidateGenerationResult {
 /// A violation detected during candidate generation, to be recorded in
 /// [`ViolationMemory`] by the caller after the generation pass completes.
 pub(crate) struct PendingViolationRecord {
+    pub id: ViolationId,
     pub kind: ViolationKind,
     pub observed_tick: Tick,
     pub ttl: u32,
@@ -1597,6 +1598,7 @@ fn emit_expectation_violation_candidates(
     ctx: &GenerationContext<'_>,
 ) -> Vec<PendingViolationRecord> {
     let mut pending = Vec::new();
+    let mut next_violation_id = ctx.violation_memory.next_violation_id();
 
     // Early return: agent must have a current place (not in transit).
     let Some(current_place) = ctx.place else {
@@ -1683,28 +1685,35 @@ fn emit_expectation_violation_candidates(
         if ctx.violation_memory.is_recorded(&kind, ctx.current_tick) {
             continue;
         }
+        if pending.iter().any(|record: &PendingViolationRecord| record.kind == kind) {
+            continue;
+        }
 
         // Always record the violation for future suppression.
+        let violation_id = next_violation_id;
+        next_violation_id = ViolationId(next_violation_id.0 + 1);
         pending.push(PendingViolationRecord {
+            id: violation_id,
             kind: kind.clone(),
             observed_tick: ctx.current_tick,
             ttl,
         });
 
         if emits_goal {
-            emit_violation_goal(candidates, diagnostics, &beliefs, &kind, ctx);
+            emit_violation_goal(candidates, diagnostics, &beliefs, violation_id, &kind, ctx);
         }
     }
 
     pending
 }
 
-/// Emit an `InvestigateMissing` goal candidate for an `EntityMissing` or
+/// Emit an `InvestigateViolation` goal candidate for an `EntityMissing` or
 /// `SupplyDepleted` violation, with belief-observation contradiction provenance.
 fn emit_violation_goal(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     beliefs: &[(EntityId, BelievedEntityState)],
+    violation_id: ViolationId,
     kind: &ViolationKind,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1756,7 +1765,8 @@ fn emit_violation_goal(
     emit_candidate_with_trace(
         candidates,
         diagnostics,
-        GoalKind::InvestigateMissing {
+        GoalKind::InvestigateViolation {
+            violation_id,
             place: investigation_place,
         },
         evidence,
@@ -7227,7 +7237,7 @@ mod tests {
         }
     }
 
-    // Test 1: EntityMissing violation detected, InvestigateMissing candidate emitted
+    // Test 1: EntityMissing violation detected, InvestigateViolation candidate emitted
     #[test]
     fn violation_entity_missing_emits_investigate_candidate() {
         let agent = entity(1);
@@ -7262,10 +7272,14 @@ mod tests {
             false,
         );
 
-        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let violation_id = result.pending_violations[0].id;
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        });
         assert!(
             result.candidates.iter().any(|c| c.key == goal_key),
-            "Expected InvestigateMissing candidate, got: {:?}",
+            "Expected InvestigateViolation candidate, got: {:?}",
             result.candidates.iter().map(|c| c.key).collect::<Vec<_>>()
         );
         assert!(
@@ -7274,7 +7288,7 @@ mod tests {
         );
     }
 
-    // Test 2: SupplyDepleted violation detected, InvestigateMissing candidate emitted
+    // Test 2: SupplyDepleted violation detected, InvestigateViolation candidate emitted
     #[test]
     fn violation_supply_depleted_emits_investigate_candidate() {
         let agent = entity(1);
@@ -7313,14 +7327,76 @@ mod tests {
             false,
         );
 
-        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let violation_id = result.pending_violations[0].id;
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        });
         assert!(
             result.candidates.iter().any(|c| c.key == goal_key),
-            "Expected InvestigateMissing candidate for depleted supply"
+            "Expected InvestigateViolation candidate for depleted supply"
         );
     }
 
-    // Test 3: EntityDead records in ViolationMemory but does NOT emit InvestigateMissing
+    #[test]
+    fn same_place_distinct_violations_emit_distinct_investigate_goals() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+        let source_entity = entity(3);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![
+                (missing_entity, belief_at_place(place, Tick(1))),
+                (
+                    source_entity,
+                    belief_resource_at_place(place, CommodityKind::Apple, 5, Tick(2)),
+                ),
+            ],
+        );
+        view.entities_at.insert(place, vec![agent, source_entity]);
+        view.effective_places.insert(missing_entity, entity(20));
+        view.effective_places.insert(source_entity, place);
+        view.commodity_quantities
+            .insert((source_entity, CommodityKind::Apple), Quantity(0));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert_eq!(result.pending_violations.len(), 2);
+        assert_eq!(result.candidates.len(), 2);
+        assert_ne!(result.pending_violations[0].id, result.pending_violations[1].id);
+        assert!(result.candidates.iter().any(|candidate| {
+            candidate.key
+                == GoalKey::from(GoalKind::InvestigateViolation {
+                    violation_id: result.pending_violations[0].id,
+                    place,
+                })
+        }));
+        assert!(result.candidates.iter().any(|candidate| {
+            candidate.key
+                == GoalKey::from(GoalKind::InvestigateViolation {
+                    violation_id: result.pending_violations[1].id,
+                    place,
+                })
+        }));
+    }
+
+    // Test 3: EntityDead records in ViolationMemory but does NOT emit InvestigateViolation
     #[test]
     fn violation_entity_dead_records_only_no_goal() {
         let agent = entity(1);
@@ -7353,10 +7429,13 @@ mod tests {
             false,
         );
 
-        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(0),
+            place,
+        });
         assert!(
             !result.candidates.iter().any(|c| c.key == goal_key),
-            "EntityDead should NOT emit InvestigateMissing"
+            "EntityDead should NOT emit InvestigateViolation"
         );
         // But should still produce a pending violation record.
         assert!(
@@ -7410,7 +7489,10 @@ mod tests {
             false,
         );
 
-        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(0),
+            place,
+        });
         assert!(
             !result.candidates.iter().any(|c| c.key == goal_key),
             "Already-recorded violation should not emit candidate"
@@ -7444,7 +7526,10 @@ mod tests {
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
             blocker_key: BlockerKey {
-                goal_key: GoalKey::from(GoalKind::InvestigateMissing { place }),
+                goal_key: GoalKey::from(GoalKind::InvestigateViolation {
+                    violation_id: worldwake_core::ViolationId(0),
+                    place,
+                }),
                 place: None,
                 target: None,
                 action_def: None,
@@ -7467,7 +7552,10 @@ mod tests {
             false,
         );
 
-        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(0),
+            place,
+        });
         assert!(
             !result.candidates.iter().any(|c| c.key == goal_key),
             "Blocked investigation should not emit candidate"
@@ -7660,7 +7748,11 @@ mod tests {
             true, // enable tracing
         );
 
-        let goal_key = GoalKey::from(GoalKind::InvestigateMissing { place });
+        let violation_id = result.pending_violations[0].id;
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        });
         let trace = result
             .diagnostics
             .evidence

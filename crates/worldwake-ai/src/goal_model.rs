@@ -17,8 +17,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-    DeclareSupportActionPayload, LootActionPayload, PressForceClaimActionPayload, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
+    DeclareSupportActionPayload, InvestigateActionPayload, LootActionPayload,
+    PressForceClaimActionPayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+    TellActionPayload, TradeActionPayload,
     TransportActionPayload,
 };
 
@@ -41,7 +42,7 @@ pub enum GoalKindTag {
     ShareBelief,
     ClaimOffice,
     SupportCandidateForOffice,
-    InvestigateMissing,
+    InvestigateViolation,
 }
 
 pub trait GoalKindPlannerExt {
@@ -189,6 +190,11 @@ fn payload_override_from_affordance(
         GoalKind::EngageHostile { target } => payload
             .as_combat()
             .filter(|combat| combat.target == *target)
+            .map(|_| Some(payload.clone()))
+            .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
+        GoalKind::InvestigateViolation { violation_id, .. } => payload
+            .as_investigate()
+            .filter(|investigate| investigate.violation_id == *violation_id)
             .map(|_| Some(payload.clone()))
             .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
         _ => Ok(Some(payload.clone())),
@@ -353,7 +359,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { .. } => GoalKindTag::ShareBelief,
             GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
-            GoalKind::InvestigateMissing { .. } => GoalKindTag::InvestigateMissing,
+            GoalKind::InvestigateViolation { .. } => GoalKindTag::InvestigateViolation,
         }
     }
 
@@ -376,7 +382,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
-            GoalKind::InvestigateMissing { .. } => INVESTIGATE_OPS,
+            GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
         }
     }
 
@@ -409,7 +415,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ShareBelief { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. }
-            | GoalKind::InvestigateMissing { .. } => Some(BTreeSet::new()),
+            | GoalKind::InvestigateViolation { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -496,6 +502,14 @@ impl GoalKindPlannerExt for GoalKind {
                     requested_quantity: Quantity(1),
                 })))
             }
+            PlannerOpKind::Investigate => match self {
+                GoalKind::InvestigateViolation { violation_id, .. } => {
+                    Ok(Some(ActionPayload::Investigate(InvestigateActionPayload {
+                        violation_id: *violation_id,
+                    })))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
             PlannerOpKind::Tell => match self {
                 GoalKind::ShareBelief { listener, subject } => {
@@ -756,7 +770,7 @@ impl GoalKindPlannerExt for GoalKind {
             return true;
         }
 
-        if matches!(self, GoalKind::InvestigateMissing { .. })
+        if matches!(self, GoalKind::InvestigateViolation { .. })
             && step.op_kind == PlannerOpKind::Investigate
         {
             return true;
@@ -871,7 +885,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
-            | GoalKind::InvestigateMissing { .. } => false,
+            | GoalKind::InvestigateViolation { .. } => false,
         }
     }
 
@@ -933,7 +947,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { listener, .. } => {
                 state.effective_place(*listener).into_iter().collect()
             }
-            GoalKind::InvestigateMissing { place } => vec![*place],
+            GoalKind::InvestigateViolation { place, .. } => vec![*place],
         }
     }
 
@@ -1053,7 +1067,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. } => true,
 
-            GoalKind::InvestigateMissing { place } => authoritative_targets.contains(place),
+            GoalKind::InvestigateViolation { place, .. } => authoritative_targets.contains(place),
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
@@ -1529,9 +1543,9 @@ mod tests {
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
         ActionHandlerId, ActionPayload, BribeActionPayload, ConsultRecordActionPayload,
-        DurationExpr, Interruptibility, QueueForFacilityUsePayload, RecipeRegistry,
-        RuntimeBeliefView, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload,
+        DurationExpr, Interruptibility, InvestigateActionPayload, QueueForFacilityUsePayload,
+        RecipeRegistry, RuntimeBeliefView, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -2570,6 +2584,127 @@ mod tests {
                 subject_entity: subject,
             }))
         );
+    }
+
+    #[test]
+    fn investigate_goal_builds_investigate_payload_override() {
+        let actor = entity(1);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(7),
+            place,
+        };
+        let def = ActionDef {
+            id: ActionDefId(11),
+            name: "investigate".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Investigate,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[place], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id: worldwake_core::ViolationId(7),
+            }))
+        );
+    }
+
+    #[test]
+    fn investigate_goal_rejects_mismatched_affordance_payload() {
+        let actor = entity(1);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(7),
+            place,
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "investigate".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Investigate,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        let result = goal.build_payload_override(
+            Some(&ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id: worldwake_core::ViolationId(8),
+            })),
+            &state,
+            &[place],
+            &def,
+            &semantics,
+        );
+
+        assert_eq!(result, Err(GoalPayloadOverrideError::UnsupportedGoal));
     }
 
     #[test]
@@ -4025,15 +4160,21 @@ mod tests {
         }
 
         #[test]
-        fn investigate_missing_matches_place_for_investigate_op() {
+        fn investigate_violation_matches_place_for_investigate_op() {
             let place = id(35);
-            let goal = GoalKind::InvestigateMissing { place };
+            let goal = GoalKind::InvestigateViolation {
+                violation_id: worldwake_core::ViolationId(1),
+                place,
+            };
             assert!(goal.matches_binding(&[place], PlannerOpKind::Investigate));
         }
 
         #[test]
-        fn investigate_missing_rejects_other_place_for_investigate_op() {
-            let goal = GoalKind::InvestigateMissing { place: id(35) };
+        fn investigate_violation_rejects_other_place_for_investigate_op() {
+            let goal = GoalKind::InvestigateViolation {
+                violation_id: worldwake_core::ViolationId(2),
+                place: id(35),
+            };
             assert!(!goal.matches_binding(&[id(36)], PlannerOpKind::Investigate));
         }
 

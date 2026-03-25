@@ -165,7 +165,7 @@ fn goal_specific_feasibility(
         GoalKind::SupportCandidateForOffice { candidate, .. } => {
             check_colocated_or_dead(view, agent, *candidate)
         }
-        GoalKind::InvestigateMissing { place } => {
+        GoalKind::InvestigateViolation { place, .. } => {
             let agent_place = view.effective_place(agent)?;
             if agent_place == *place {
                 Some(FeasibilityHint::Likely)
@@ -858,7 +858,7 @@ mod tests {
         assert_eq!(hint, FeasibilityHint::Uncertain);
     }
 
-    // ── Test: InvestigateMissing co-located → Likely ──
+    // ── Test: InvestigateViolation co-located → Likely ──
 
     #[test]
     fn test_investigate_missing_colocated_likely() {
@@ -867,14 +867,17 @@ mod tests {
             agent_place: Some(place),
             ..Default::default()
         };
-        let goal = ranked_goal(GoalKind::InvestigateMissing { place });
+        let goal = ranked_goal(GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(1),
+            place,
+        });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
         assert_eq!(hint, FeasibilityHint::Likely);
     }
 
-    // ── Test: InvestigateMissing not co-located → Uncertain ──
+    // ── Test: InvestigateViolation not co-located → Uncertain ──
 
     #[test]
     fn test_investigate_missing_not_colocated_uncertain() {
@@ -884,7 +887,10 @@ mod tests {
             agent_place: Some(other_place),
             ..Default::default()
         };
-        let goal = ranked_goal(GoalKind::InvestigateMissing { place });
+        let goal = ranked_goal(GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(2),
+            place,
+        });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));

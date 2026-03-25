@@ -125,7 +125,9 @@ pub(super) fn refresh_runtime_for_read_phase(
 
     // Apply deferred violation records from candidate generation.
     for pending in &candidates.pending_violations {
-        violation_memory.record(pending.kind.clone(), pending.observed_tick, pending.ttl);
+        let recorded_id =
+            violation_memory.record(pending.kind.clone(), pending.observed_tick, pending.ttl);
+        debug_assert_eq!(recorded_id, pending.id);
     }
 
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
