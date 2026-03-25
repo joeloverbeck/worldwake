@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S25: Feasibility Sketching
 
@@ -299,3 +299,10 @@ N/A — no positive-feedback loops to dampen.
 3. Decision traces show feasibility hints per candidate when tracing is enabled
 4. Agents no longer waste all planning slots on unreachable goals in scenarios where local alternatives exist
 5. No goal is permanently excluded — `Unlikely` goals are still searched if budget permits (they appear after `Likely` and `Uncertain` goals within the same priority class)
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**: Added `feasibility.rs` module in `worldwake-ai` with `FeasibilityHint` enum (Likely/Uncertain/Unlikely), two-phase `feasibility_hint()` function (shared checks + per-GoalKind dispatch), `feasibility` field on `RankedGoal`, updated `compare_ranked_goals()` ordering, integration in `process_agent()` after frame evaluation, and `feasibility` field in `RankedGoalSummary` for decision traces.
+- **Deviations from plan**: None — all 5 tickets (S25-001 through S25-005) implemented as specified.
+- **Verification**: `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace` all pass clean.
