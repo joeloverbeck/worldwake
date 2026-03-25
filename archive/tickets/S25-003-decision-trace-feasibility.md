@@ -1,6 +1,6 @@
 # S25-003: Add feasibility to decision traces
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — extends decision trace output
@@ -94,3 +94,14 @@ All inline `RankedGoalSummary` constructions in `decision_trace.rs` tests must a
 1. `cargo test -p worldwake-ai decision_trace` — decision trace tests
 2. `cargo test -p worldwake-ai` — full AI crate
 3. `cargo clippy -p worldwake-ai` — no new warnings
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**:
+  - Added `pub feasibility: FeasibilityHint` field to `RankedGoalSummary` in `decision_trace.rs`
+  - Updated `summarize_ranked_goal()` in `agent_tick/planning.rs` to copy feasibility from `RankedGoal`
+  - Updated `summary()` and `format_outcome()` to append feasibility hint when non-`Uncertain`
+  - Updated 7 test construction sites with `feasibility: FeasibilityHint::Uncertain`
+- **Deviations from original plan**: None
+- **Verification results**: `cargo test -p worldwake-ai` 32/32 pass, 21/21 golden tests pass, `cargo clippy -p worldwake-ai` zero warnings

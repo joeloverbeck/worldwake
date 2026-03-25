@@ -119,6 +119,7 @@ pub(super) fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
         provenance: ranked.provenance.clone(),
+        feasibility: ranked.feasibility,
     }
 }
 

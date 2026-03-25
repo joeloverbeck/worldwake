@@ -10,6 +10,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
+use crate::feasibility::FeasibilityHint;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
@@ -117,9 +118,14 @@ impl DecisionOutcome {
                     .iter()
                     .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                     .count();
-                let selected_provenance = selected_ranked_goal_summary(planning)
+                let selected_summary = selected_ranked_goal_summary(planning);
+                let selected_provenance = selected_summary
                     .and_then(|summary| summary.provenance.as_ref())
                     .map_or_else(String::new, format_ranked_goal_provenance_summary);
+                let selected_feasibility = selected_summary
+                    .map(|s| s.feasibility)
+                    .filter(|f| *f != FeasibilityHint::Uncertain)
+                    .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
                 let unknown_suffix = if planning.unknown_blockers.is_empty() {
                     String::new()
                 } else {
@@ -129,7 +135,7 @@ impl DecisionOutcome {
                     format_frame_transition_summary(planning.frame_transition.as_ref());
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -245,6 +251,7 @@ pub struct RankedGoalSummary {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
+    pub feasibility: FeasibilityHint,
 }
 
 /// Actionable evidence contributor kind for one generated goal.
@@ -852,12 +859,17 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .iter()
                 .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                 .count();
-            let selected_provenance = selected_ranked_goal_summary(planning)
+            let selected_summary = selected_ranked_goal_summary(planning);
+            let selected_provenance = selected_summary
                 .and_then(|summary| summary.provenance.as_ref())
                 .map_or_else(String::new, format_ranked_goal_provenance_summary);
+            let selected_feasibility = selected_summary
+                .map(|s| s.feasibility)
+                .filter(|f| *f != FeasibilityHint::Uncertain)
+                .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
             let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}"
             );
             for attempt in &planning.planning.attempts {
                 for rej in &attempt.binding_rejections {
@@ -1237,12 +1249,14 @@ mod tests {
                     priority_class: GoalPriorityClass::High,
                     motive_score: 900,
                     provenance: None,
+                    feasibility: FeasibilityHint::Uncertain,
                 },
                 RankedGoalSummary {
                     goal: GoalKey::from(&outranked_goal),
                     priority_class: GoalPriorityClass::Medium,
                     motive_score: 600,
                     provenance: None,
+                    feasibility: FeasibilityHint::Uncertain,
                 },
             ],
             Some(GoalKey::from(&selected_goal)),
@@ -1392,6 +1406,7 @@ mod tests {
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
+                feasibility: FeasibilityHint::Uncertain,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SearchSelection),
@@ -1409,6 +1424,7 @@ mod tests {
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
+                feasibility: FeasibilityHint::Uncertain,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SnapshotContinuation),
@@ -1489,6 +1505,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
                     provenance: None,
+                    feasibility: FeasibilityHint::Uncertain,
                 }],
                 suppressed: vec![],
                 zero_motive: vec![],
@@ -1582,6 +1599,7 @@ mod tests {
                         has_wounds: true,
                         is_incapacitated: false,
                     })),
+                    feasibility: FeasibilityHint::Uncertain,
                 }],
                 suppressed: vec![],
                 zero_motive: vec![],
@@ -1647,6 +1665,7 @@ mod tests {
                             }],
                         },
                     )),
+                    feasibility: FeasibilityHint::Uncertain,
                 }],
                 suppressed: vec![],
                 zero_motive: vec![],
