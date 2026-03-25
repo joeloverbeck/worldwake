@@ -226,6 +226,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -1589,6 +1590,32 @@ fn emit_candidate(
     }
 }
 
+fn emit_recorded_violation_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    if ctx
+        .view
+        .violation_disposition_profile(ctx.agent)
+        .is_none()
+    {
+        return;
+    }
+
+    let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
+    for record in ctx.violation_memory.unresolved_records(ctx.current_tick) {
+        emit_violation_goal(
+            candidates,
+            diagnostics,
+            &beliefs,
+            record.id,
+            &record.kind,
+            ctx,
+        );
+    }
+}
+
 /// Detect expectation violations by comparing stale beliefs against current
 /// perception at the agent's current location.  Returns pending violation
 /// records for the caller to apply to [`ViolationMemory`].
@@ -1613,7 +1640,7 @@ fn emit_expectation_violation_candidates(
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
     let observed_at_place: BTreeSet<EntityId> = ctx
         .view
-        .entities_at(current_place)
+        .locally_observed_entities_at(ctx.agent, current_place)
         .into_iter()
         .collect();
 
@@ -1646,7 +1673,7 @@ fn emit_expectation_violation_candidates(
         if believed_state.last_known_place == Some(current_place)
             && believed_state.alive
             && observed_at_place.contains(entity_id)
-            && ctx.view.is_dead(*entity_id)
+            && ctx.view.locally_observed_is_dead(ctx.agent, *entity_id)
         {
             violations.push((
                 ViolationKind::EntityDead {
@@ -1663,7 +1690,10 @@ fn emit_expectation_violation_candidates(
         {
             for (commodity, believed_qty) in &believed_state.last_known_inventory {
                 if *believed_qty > Quantity(0)
-                    && ctx.view.commodity_quantity(*entity_id, *commodity) == Quantity(0)
+                    && ctx
+                        .view
+                        .locally_observed_commodity_quantity(ctx.agent, *entity_id, *commodity)
+                        == Quantity(0)
                 {
                     violations.push((
                         ViolationKind::SupplyDepleted {
@@ -7447,9 +7477,9 @@ mod tests {
         );
     }
 
-    // Test 4: Already-recorded violation is skipped
+    // Test 4: Already-recorded unresolved violation re-emits candidate without a new pending record
     #[test]
-    fn violation_already_recorded_is_skipped() {
+    fn unresolved_recorded_violation_reemits_candidate_without_new_pending_record() {
         let agent = entity(1);
         let place = entity(10);
         let missing_entity = entity(2);
@@ -7494,12 +7524,67 @@ mod tests {
             place,
         });
         assert!(
-            !result.candidates.iter().any(|c| c.key == goal_key),
-            "Already-recorded violation should not emit candidate"
+            result.candidates.iter().any(|c| c.key == goal_key),
+            "Unresolved recorded violation should remain candidate-eligible"
         );
         assert!(
             result.pending_violations.is_empty(),
             "Already-recorded violation should not produce pending record"
+        );
+    }
+
+    #[test]
+    fn resolved_recorded_violation_does_not_emit_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(missing_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let mut vm = ViolationMemory::default();
+        let id = vm.record(
+            worldwake_core::ViolationKind::EntityMissing {
+                entity: missing_entity,
+                expected_place: place,
+            },
+            Tick(3),
+            50,
+        );
+        assert!(vm.resolve_id(id, Tick(4), 50));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: id,
+            place,
+        });
+        assert!(
+            !result.candidates.iter().any(|c| c.key == goal_key),
+            "Resolved recorded violation should not emit a fresh investigate candidate"
+        );
+        assert!(
+            result.pending_violations.is_empty(),
+            "Resolved recorded violation should not be rediscovered while unexpired"
         );
     }
 

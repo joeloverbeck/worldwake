@@ -229,6 +229,17 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         entities
     }
 
+    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
+            return self.entities_at(place);
+        }
+
+        let mut entities = self.world.entities_effectively_at(place);
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         if agent != self.agent {
             return Vec::new();
@@ -277,6 +288,32 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.believed_entity(holder)
             .and_then(|state| state.last_known_inventory.get(&kind).copied())
             .unwrap_or(Quantity(0))
+    }
+
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        if agent != self.agent {
+            return self.commodity_quantity(holder, kind);
+        }
+
+        let Some(agent_place) = self.world.effective_place(agent) else {
+            return self.commodity_quantity(holder, kind);
+        };
+        if self.world.effective_place(holder) != Some(agent_place) {
+            return self.commodity_quantity(holder, kind);
+        }
+
+        if let Some(source) = self.world.get_component_resource_source(holder) {
+            if source.commodity == kind {
+                return source.available_quantity;
+            }
+        }
+
+        self.world.controlled_commodity_quantity(holder, kind)
     }
 
     fn controlled_commodity_quantity_at_place(
@@ -463,6 +500,21 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .is_some_and(|state| !state.alive)
     }
 
+    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+        if agent != self.agent {
+            return self.is_dead(entity);
+        }
+
+        let Some(agent_place) = self.world.effective_place(agent) else {
+            return self.is_dead(entity);
+        };
+        if self.world.effective_place(entity) != Some(agent_place) {
+            return self.is_dead(entity);
+        }
+
+        self.world.get_component_dead_at(entity).is_some()
+    }
+
     fn is_incapacitated(&self, entity: EntityId) -> bool {
         if entity == self.agent {
             let Some(wounds) = self.world.get_component_wound_list(entity) else {
@@ -636,9 +688,8 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .get_component_violation_memory(agent)
             .map(|memory| {
                 memory
-                    .violations
-                    .iter()
-                    .filter(|record| record.expires_tick > self.current_tick)
+                    .unresolved_records(self.current_tick)
+                    .into_iter()
                     .cloned()
                     .collect()
             })

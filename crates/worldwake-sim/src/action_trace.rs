@@ -6,7 +6,7 @@
 
 use crate::{ActionInstanceId, ActionPayload, CommitOutcome, ResolvedRequestTrace};
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityId, Tick};
+use worldwake_core::{ActionDefId, EntityId, Tick, ViolationId};
 
 /// A single action lifecycle event recorded during `step_tick()`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +26,9 @@ pub enum ActionTraceDetail {
     Tell {
         listener: EntityId,
         subject: EntityId,
+    },
+    Investigate {
+        violation_id: ViolationId,
     },
 }
 
@@ -153,6 +156,9 @@ impl ActionTraceDetail {
                 listener: payload.listener,
                 subject: payload.subject_entity,
             }),
+            ActionPayload::Investigate(payload) => Some(Self::Investigate {
+                violation_id: payload.violation_id,
+            }),
             ActionPayload::None
             | ActionPayload::ConsultRecord(_)
             | ActionPayload::Bribe(_)
@@ -166,7 +172,6 @@ impl ActionTraceDetail {
             | ActionPayload::Trade(_)
             | ActionPayload::Combat(_)
             | ActionPayload::Loot(_)
-            | ActionPayload::Investigate(_)
             | ActionPayload::QueueForFacilityUse(_) => None,
         }
     }
@@ -176,6 +181,9 @@ impl ActionTraceDetail {
         match self {
             Self::Tell { listener, subject } => {
                 format!("tell listener {listener} subject {subject}")
+            }
+            Self::Investigate { violation_id } => {
+                format!("investigate violation {}", violation_id.0)
             }
         }
     }
@@ -449,6 +457,20 @@ mod tests {
     }
 
     #[test]
+    fn detail_from_payload_extracts_investigate_identity() {
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::Investigate(
+                crate::InvestigateActionPayload {
+                    violation_id: ViolationId(9),
+                }
+            )),
+            Some(ActionTraceDetail::Investigate {
+                violation_id: ViolationId(9),
+            })
+        );
+    }
+
+    #[test]
     fn summary_includes_typed_detail_when_present() {
         let listener = EntityId {
             slot: 7,
@@ -472,6 +494,24 @@ mod tests {
         assert!(summary.contains("tell listener"));
         assert!(summary.contains(&listener.to_string()));
         assert!(summary.contains(&subject.to_string()));
+    }
+
+    #[test]
+    fn summary_includes_investigate_detail_when_present() {
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::Investigate {
+            violation_id: ViolationId(11),
+        }));
+
+        let summary = committed.summary();
+        assert!(summary.contains("committed"));
+        assert!(summary.contains("investigate violation 11"));
     }
 
     #[test]

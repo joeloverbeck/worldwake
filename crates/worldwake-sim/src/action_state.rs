@@ -29,7 +29,7 @@ pub enum ActionState {
 mod tests {
     use super::ActionState;
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{EntityId, Tick, TravelEdgeId};
+    use worldwake_core::{EntityId, Tick, TravelEdgeId, ViolationId};
 
     fn assert_traits<
         T: Copy

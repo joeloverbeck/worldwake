@@ -31,9 +31,17 @@ pub trait GoalBeliefView {
     }
     fn is_alive(&self, entity: EntityId) -> bool;
     fn is_dead(&self, entity: EntityId) -> bool;
+    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+        let _ = agent;
+        self.is_dead(entity)
+    }
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+        let _ = agent;
+        self.entities_at(place)
+    }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
@@ -44,6 +52,15 @@ pub trait GoalBeliefView {
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        let _ = agent;
+        self.commodity_quantity(holder, kind)
+    }
     fn controlled_commodity_quantity_at_place(
         &self,
         agent: EntityId,
@@ -195,10 +212,18 @@ pub trait RuntimeBeliefView {
         Tick(0)
     }
     fn is_alive(&self, entity: EntityId) -> bool;
+    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+        let _ = agent;
+        self.is_dead(entity)
+    }
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+        let _ = agent;
+        self.entities_at(place)
+    }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
@@ -208,6 +233,15 @@ pub trait RuntimeBeliefView {
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        let _ = agent;
+        self.commodity_quantity(holder, kind)
+    }
     fn controlled_commodity_quantity_at_place(
         &self,
         agent: EntityId,
@@ -258,7 +292,9 @@ pub trait RuntimeBeliefView {
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
     fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange>;
-    fn is_dead(&self, entity: EntityId) -> bool;
+    fn is_dead(&self, entity: EntityId) -> bool {
+        !self.is_alive(entity)
+    }
     fn is_incapacitated(&self, entity: EntityId) -> bool;
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
@@ -415,6 +451,14 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::is_dead(self, entity)
             }
 
+            fn locally_observed_is_dead(
+                &self,
+                agent: worldwake_core::EntityId,
+                entity: worldwake_core::EntityId,
+            ) -> bool {
+                $crate::RuntimeBeliefView::locally_observed_is_dead(self, agent, entity)
+            }
+
             fn entity_kind(
                 &self,
                 entity: worldwake_core::EntityId,
@@ -434,6 +478,14 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::entities_at(self, place)
+            }
+
+            fn locally_observed_entities_at(
+                &self,
+                agent: worldwake_core::EntityId,
+                place: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::locally_observed_entities_at(self, agent, place)
             }
 
             fn direct_possessions(
@@ -489,6 +541,17 @@ macro_rules! impl_goal_belief_view {
                 kind: worldwake_core::CommodityKind,
             ) -> worldwake_core::Quantity {
                 $crate::RuntimeBeliefView::commodity_quantity(self, holder, kind)
+            }
+
+            fn locally_observed_commodity_quantity(
+                &self,
+                agent: worldwake_core::EntityId,
+                holder: worldwake_core::EntityId,
+                kind: worldwake_core::CommodityKind,
+            ) -> worldwake_core::Quantity {
+                $crate::RuntimeBeliefView::locally_observed_commodity_quantity(
+                    self, agent, holder, kind,
+                )
             }
 
             fn controlled_commodity_quantity_at_place(

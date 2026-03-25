@@ -17,7 +17,7 @@ use worldwake_core::{
     KnownRecipes,
     MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
     RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile,
-    ThresholdBand, Tick, UtilityProfile,
+    ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -78,6 +78,18 @@ fn set_control_source(
 ) {
     let mut txn = new_txn(&mut h.world, tick);
     txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_violation_profile(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    profile: ViolationDispositionProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_violation_disposition_profile(agent, profile)
         .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
@@ -4040,5 +4052,368 @@ fn golden_contested_force_state_propagates_through_belief_system_replays_determi
     assert_eq!(
         first, second,
         "contested force state belief propagation should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 13: Same-Place Concurrent Violations Stay Distinct
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, AI, Generic Actions
+// GoalKinds: InvestigateViolation
+// ActionDomains: Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 9, 15
+//
+// Proves two same-place violated expectations remain distinct incidents through
+// planning, start binding, first commit aftermath, and sibling follow-up.
+
+#[allow(clippy::too_many_lines)]
+fn run_same_place_concurrent_violation_lifecycle(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let investigator = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Investigator",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let first_missing = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "FirstMissing",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let second_missing = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SecondMissing",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, first_missing, ControlSource::None, 0);
+    set_control_source(&mut h, second_missing, ControlSource::None, 0);
+
+    let mut keen = default_perception_profile();
+    keen.observation_fidelity = pm(1000);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, investigator, keen);
+    set_violation_profile(
+        &mut h,
+        investigator,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        investigator,
+        first_missing,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        investigator,
+        second_missing,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_ground_location(first_missing, ORCHARD_FARM).unwrap();
+        txn.set_ground_location(second_missing, ORCHARD_FARM).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let first_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(investigator, Tick(0))
+        .expect("tick 0 decision trace should exist");
+    let first_planning = match &first_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    let generated_violation_ids = first_planning
+        .candidates
+        .generated
+        .iter()
+        .filter_map(|goal| match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some(violation_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        generated_violation_ids.len(),
+        2,
+        "tick 0 should generate two same-place investigate candidates"
+    );
+    assert_ne!(
+        generated_violation_ids[0], generated_violation_ids[1],
+        "same-place incidents must keep distinct violation ids"
+    );
+
+    let initial_selected_violation_id = match first_planning
+        .selection
+        .selected
+        .expect("one investigate goal should be selected")
+        .kind
+    {
+        GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        } => {
+            assert_eq!(place, VILLAGE_SQUARE);
+            violation_id
+        }
+        other => panic!("expected InvestigateViolation selection, got {other:?}"),
+    };
+    assert_eq!(
+        first_planning
+            .selection
+            .selected_plan
+            .as_ref()
+            .and_then(|plan| plan.next_step.as_ref())
+            .map(|step| step.action_name.as_str()),
+        Some("investigate"),
+        "the winning plan should bind an investigate step for the selected violation",
+    );
+    assert!(
+        generated_violation_ids.contains(&initial_selected_violation_id),
+        "the initial selected investigate goal must come from the generated same-place incident set",
+    );
+
+    let mut first_committed_violation_id = None;
+    for _ in 0..8 {
+        h.step_once();
+        let events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(investigator);
+        first_committed_violation_id = events.iter().find_map(|event| {
+            (event.action_name == "investigate"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then(|| match event.detail {
+                Some(ActionTraceDetail::Investigate { violation_id }) => Some(violation_id),
+                _ => None,
+            })
+            .flatten()
+        });
+        if first_committed_violation_id.is_some() {
+            break;
+        }
+    }
+    assert!(
+        first_committed_violation_id.is_some(),
+        "the first same-place violation should commit investigation",
+    );
+    let first_committed_violation_id =
+        first_committed_violation_id.expect("first investigate commit id should be recorded");
+    assert!(
+        generated_violation_ids.contains(&first_committed_violation_id),
+        "the first committed investigate must bind one of the generated same-place violation ids",
+    );
+    let sibling_violation_id = generated_violation_ids
+        .iter()
+        .copied()
+        .find(|id| *id != first_committed_violation_id)
+        .expect("one sibling violation id should remain after the first commit");
+
+    let memory_after_first_commit = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    let selected_record = memory_after_first_commit
+        .violations
+        .iter()
+        .find(|record| record.id == first_committed_violation_id)
+        .expect("first committed violation should remain recorded");
+    let sibling_record = memory_after_first_commit
+        .violations
+        .iter()
+        .find(|record| record.id == sibling_violation_id)
+        .expect("sibling violation should remain recorded");
+    assert!(
+        selected_record.resolved_tick.is_some(),
+        "selected violation should be resolved after the first commit",
+    );
+    assert_eq!(
+        sibling_record.resolved_tick, None,
+        "sibling violation should remain unresolved after the first commit",
+    );
+
+    let selected_subject = match &selected_record.kind {
+        worldwake_core::ViolationKind::EntityMissing { entity, .. } => *entity,
+        other => panic!("expected entity-missing violation, got {other:?}"),
+    };
+    let sibling_subject = match &sibling_record.kind {
+        worldwake_core::ViolationKind::EntityMissing { entity, .. } => *entity,
+        other => panic!("expected entity-missing violation, got {other:?}"),
+    };
+
+    let store_after_first_commit = h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should keep a belief store");
+    let first_absences = store_after_first_commit
+        .social_observations
+        .iter()
+        .filter(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedAbsence)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        first_absences.len(),
+        1,
+        "only the selected violation should leave aftermath after the first commit",
+    );
+    assert_eq!(
+        first_absences[0].subjects,
+        (selected_subject, VILLAGE_SQUARE),
+        "the first aftermath artifact must belong to the selected violation",
+    );
+
+    let mut sibling_selected = false;
+    let mut sibling_committed = false;
+    for _ in 0..8 {
+        h.step_once();
+        let just_ran_tick = Tick(h.scheduler.current_tick().0.saturating_sub(1));
+
+        let trace = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .trace_at(investigator, just_ran_tick)
+            .expect("decision trace should exist for each stepped tick");
+        if let DecisionOutcome::Planning(planning) = &trace.outcome {
+            if planning.selection.selected
+                == Some(
+                    GoalKind::InvestigateViolation {
+                        violation_id: sibling_violation_id,
+                        place: VILLAGE_SQUARE,
+                    }
+                    .into(),
+                )
+            {
+                sibling_selected = true;
+            }
+        }
+
+        let committed_ids = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(investigator)
+            .into_iter()
+            .filter_map(|event| {
+                if event.action_name != "investigate"
+                    || !matches!(event.kind, ActionTraceKind::Committed { .. })
+                {
+                    return None;
+                }
+                match event.detail {
+                    Some(ActionTraceDetail::Investigate { violation_id }) => Some(violation_id),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        sibling_committed = committed_ids.contains(&sibling_violation_id);
+        if committed_ids.len() >= 2 && sibling_committed {
+            break;
+        }
+    }
+
+    assert!(
+        sibling_selected,
+        "the sibling same-place violation should later be selected by its own id",
+    );
+    assert!(
+        sibling_committed,
+        "the sibling same-place violation should later commit its own investigation",
+    );
+
+    let final_store = h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should keep a belief store");
+    let final_absence_subjects = final_store
+        .social_observations
+        .iter()
+        .filter(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedAbsence)
+        .map(|observation| observation.subjects)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        final_absence_subjects.len(),
+        2,
+        "both same-place incidents should leave distinct aftermath artifacts",
+    );
+    assert!(
+        final_absence_subjects.contains(&(selected_subject, VILLAGE_SQUARE)),
+        "selected violation aftermath should persist",
+    );
+    assert!(
+        final_absence_subjects.contains(&(sibling_subject, VILLAGE_SQUARE)),
+        "sibling violation aftermath should be recorded after its own commit",
+    );
+
+    let final_memory = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    assert!(
+        final_memory
+            .violations
+            .iter()
+            .filter(|record| record.resolved_tick.is_some())
+            .count()
+            >= 2,
+        "both recorded violations should be resolved by the end of the scenario",
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_same_place_concurrent_violations_stay_distinct() {
+    let _ = run_same_place_concurrent_violation_lifecycle(Seed([55; 32]));
+}
+
+#[test]
+fn golden_same_place_concurrent_violations_stay_distinct_replays_deterministically() {
+    let first = run_same_place_concurrent_violation_lifecycle(Seed([56; 32]));
+    let second = run_same_place_concurrent_violation_lifecycle(Seed([56; 32]));
+    assert_eq!(
+        first, second,
+        "same-place concurrent violation scenario should replay deterministically"
     );
 }

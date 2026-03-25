@@ -42,6 +42,7 @@ pub struct RecordedViolation {
     pub id: ViolationId,
     pub kind: ViolationKind,
     pub observed_tick: Tick,
+    pub resolved_tick: Option<Tick>,
     pub expires_tick: Tick,
 }
 
@@ -61,7 +62,7 @@ impl Component for ViolationMemory {}
 impl ViolationMemory {
     /// Returns `true` if an unexpired record exists for this violation kind.
     pub fn is_recorded(&self, kind: &ViolationKind, current_tick: Tick) -> bool {
-        self.active_by_kind(kind, current_tick).is_some()
+        self.recorded_by_kind(kind, current_tick).is_some()
     }
 
     /// Records a violation, replacing any existing entry for the same kind.
@@ -78,6 +79,7 @@ impl ViolationMemory {
             let id = self.allocate_id();
             self.violations[index].id = id;
             self.violations[index].observed_tick = observed_tick;
+            self.violations[index].resolved_tick = None;
             self.violations[index].expires_tick = new_expires_tick;
             return id;
         }
@@ -87,6 +89,7 @@ impl ViolationMemory {
             id,
             kind,
             observed_tick,
+            resolved_tick: None,
             expires_tick: Tick(observed_tick.0 + u64::from(ttl)),
         });
         id
@@ -102,7 +105,7 @@ impl ViolationMemory {
         self.next_violation_id
     }
 
-    pub fn active_by_kind(
+    pub fn recorded_by_kind(
         &self,
         kind: &ViolationKind,
         current_tick: Tick,
@@ -112,26 +115,33 @@ impl ViolationMemory {
             .find(|r| &r.kind == kind && r.expires_tick > current_tick)
     }
 
-    pub fn active_by_id(
+    pub fn unresolved_by_id(
         &self,
         id: ViolationId,
         current_tick: Tick,
     ) -> Option<&RecordedViolation> {
         self.violations
             .iter()
-            .find(|r| r.id == id && r.expires_tick > current_tick)
+            .find(|r| r.id == id && r.expires_tick > current_tick && r.resolved_tick.is_none())
     }
 
-    pub fn refresh_id(&mut self, id: ViolationId, observed_tick: Tick, ttl: u32) -> bool {
+    pub fn unresolved_records(&self, current_tick: Tick) -> Vec<&RecordedViolation> {
+        self.violations
+            .iter()
+            .filter(|record| record.expires_tick > current_tick && record.resolved_tick.is_none())
+            .collect()
+    }
+
+    pub fn resolve_id(&mut self, id: ViolationId, resolved_tick: Tick, ttl: u32) -> bool {
         let Some(record) = self
             .violations
             .iter_mut()
-            .find(|record| record.id == id && record.expires_tick > observed_tick)
+            .find(|record| record.id == id && record.expires_tick > resolved_tick)
         else {
             return false;
         };
-        record.observed_tick = observed_tick;
-        record.expires_tick = Tick(observed_tick.0 + u64::from(ttl));
+        record.resolved_tick = Some(resolved_tick);
+        record.expires_tick = Tick(resolved_tick.0 + u64::from(ttl));
         true
     }
 
@@ -311,27 +321,55 @@ mod tests {
         let mut mem = ViolationMemory::default();
         let id = mem.record(sample_missing(), Tick(5), 10);
 
-        assert_eq!(mem.active_by_id(id, Tick(6)).map(|record| record.id), Some(id));
-        assert!(mem.active_by_id(id, Tick(15)).is_none());
+        assert_eq!(
+            mem.unresolved_by_id(id, Tick(6)).map(|record| record.id),
+            Some(id)
+        );
+        assert!(mem.unresolved_by_id(id, Tick(15)).is_none());
     }
 
     #[test]
-    fn refresh_id_extends_existing_record_without_changing_identity() {
+    fn resolve_id_marks_record_resolved_and_extends_expiry() {
         let mut mem = ViolationMemory::default();
         let id = mem.record(sample_missing(), Tick(5), 10);
 
-        assert!(mem.refresh_id(id, Tick(9), 10));
-        assert_eq!(mem.active_by_id(id, Tick(18)).map(|record| record.id), Some(id));
-        assert_eq!(mem.violations[0].observed_tick, Tick(9));
+        assert!(mem.resolve_id(id, Tick(9), 10));
+        assert!(mem.unresolved_by_id(id, Tick(10)).is_none());
+        assert_eq!(mem.violations[0].resolved_tick, Some(Tick(9)));
         assert_eq!(mem.violations[0].expires_tick, Tick(19));
     }
 
     #[test]
-    fn refresh_id_fails_for_expired_record() {
+    fn resolve_id_fails_for_expired_record() {
         let mut mem = ViolationMemory::default();
         let id = mem.record(sample_missing(), Tick(5), 5);
 
-        assert!(!mem.refresh_id(id, Tick(10), 5));
+        assert!(!mem.resolve_id(id, Tick(10), 5));
+    }
+
+    #[test]
+    fn resolved_record_remains_recorded_until_expiry() {
+        let mut mem = ViolationMemory::default();
+        let kind = sample_missing();
+        let id = mem.record(kind.clone(), Tick(5), 10);
+
+        assert!(mem.resolve_id(id, Tick(8), 10));
+        assert!(mem.is_recorded(&kind, Tick(9)));
+        assert!(mem.is_recorded(&kind, Tick(17)));
+        assert!(!mem.is_recorded(&kind, Tick(18)));
+    }
+
+    #[test]
+    fn unresolved_records_exclude_resolved_entries() {
+        let mut mem = ViolationMemory::default();
+        let first = mem.record(sample_missing(), Tick(5), 10);
+        let _second = mem.record(sample_depleted(), Tick(6), 10);
+
+        assert!(mem.resolve_id(first, Tick(8), 10));
+
+        let unresolved = mem.unresolved_records(Tick(9));
+        assert_eq!(unresolved.len(), 1);
+        assert_eq!(unresolved[0].kind, sample_depleted());
     }
 
     // --- ViolationKind serde round-trip ---

@@ -83,7 +83,7 @@ fn start_investigate(
                 instance.actor
             ))
         })?;
-    let Some(record) = memory.active_by_id(violation_id, txn.tick()) else {
+    let Some(record) = memory.unresolved_by_id(violation_id, txn.tick()) else {
         return Err(ActionError::PreconditionFailed(format!(
             "actor {} has no active violation {}",
             instance.actor, violation_id.0
@@ -144,7 +144,7 @@ fn commit_investigate(
                 instance.actor
             ))
         })?;
-    let Some(record) = memory.active_by_id(violation_id, txn.tick()) else {
+    let Some(record) = memory.unresolved_by_id(violation_id, txn.tick()) else {
         return Err(ActionError::PreconditionFailed(format!(
             "violation {} is no longer active at commit",
             violation_id.0
@@ -163,14 +163,14 @@ fn commit_investigate(
         )));
     }
     if let Some(profile) = txn.get_component_violation_disposition_profile(instance.actor) {
-        let refreshed = memory.refresh_id(
+        let resolved = memory.resolve_id(
             violation_id,
             txn.tick(),
             profile.violation_memory_retention_ticks,
         );
-        if !refreshed {
+        if !resolved {
             return Err(ActionError::PreconditionFailed(format!(
-                "violation {} expired before refresh",
+                "violation {} expired before resolution",
                 violation_id.0
             )));
         }
@@ -630,7 +630,8 @@ mod tests {
                     entity: missing,
                     expected_place: place,
                 }
-                && record.observed_tick == Tick(4)
+                && record.observed_tick == Tick(1)
+                && record.resolved_tick == Some(Tick(4))
                 && record.expires_tick == Tick(54)
         }));
 
@@ -744,6 +745,142 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(payload_ids, vec![first_id, second_id]);
+    }
+
+    #[test]
+    fn investigate_commit_resolves_only_selected_same_place_violation() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        let first_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: entity(30),
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+        let second_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::SupplyDepleted {
+                commodity: CommodityKind::Apple,
+                source: entity(31),
+                place,
+            },
+            2,
+            5,
+        );
+
+        let (defs, handlers, def_id) = setup_registries();
+        let affordance = Affordance {
+            def_id,
+            actor,
+            bound_targets: vec![place],
+            payload_override: Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id: first_id,
+            })),
+            explanation: None,
+        };
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    active_actions: &mut active_actions,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    tick: Tick(3),
+                    cause: CauseRef::Bootstrap,
+                },
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+
+        match tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                tick: Tick(4),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap()
+        {
+            TickOutcome::Committed { .. } => {}
+            other => panic!("expected committed investigate action, got {other:?}"),
+        }
+
+        let memory = world.get_component_violation_memory(actor).unwrap();
+        let first_record = memory
+            .violations
+            .iter()
+            .find(|record| record.id == first_id)
+            .expect("first violation should remain recorded");
+        let second_record = memory
+            .violations
+            .iter()
+            .find(|record| record.id == second_id)
+            .expect("second violation should remain recorded");
+
+        assert_eq!(first_record.resolved_tick, Some(Tick(4)));
+        assert_eq!(second_record.resolved_tick, None);
+
+        let payload_ids = get_affordances(
+            &PerAgentBeliefView::from_world(actor, &world),
+            actor,
+            &defs,
+            &handlers,
+        )
+        .into_iter()
+        .filter(|next_affordance| next_affordance.def_id == def_id)
+        .filter_map(|next_affordance| {
+            next_affordance
+                .payload_override
+                .and_then(|payload| payload.as_investigate().cloned())
+                .map(|payload| payload.violation_id)
+        })
+        .collect::<Vec<_>>();
+
+        assert_eq!(payload_ids, vec![second_id]);
     }
 
     #[test]
