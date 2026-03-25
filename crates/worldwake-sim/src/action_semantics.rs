@@ -30,6 +30,7 @@ pub enum Constraint {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum TargetSpec {
     SpecificEntity(EntityId),
+    ActorPlace,
     EntityAtActorPlace { kind: EntityKind },
     EntityDirectlyPossessedByActor { kind: EntityKind },
     AdjacentPlace,
@@ -109,6 +110,7 @@ pub enum DurationExpr {
         kind: MetabolismDurationKind,
     },
     ActorTradeDisposition,
+    ActorInvestigationDisposition,
     ActorDefendStance,
     CombatWeapon,
     TargetTreatment {
@@ -127,12 +129,14 @@ impl DurationExpr {
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
+            | Self::ActorInvestigationDisposition
             | Self::ActorDefendStance
             | Self::CombatWeapon
             | Self::TargetTreatment { .. } => None,
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn resolve_for(
         self,
         world: &World,
@@ -187,6 +191,11 @@ impl DurationExpr {
                 .get_component_trade_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
+            Self::ActorInvestigationDisposition => Ok(ActionDuration::new(
+                world
+                    .get_component_violation_disposition_profile(actor)
+                    .map_or(3, |profile| profile.investigation_duration_ticks.get()),
+            )),
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
                 .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
@@ -329,8 +338,9 @@ mod tests {
         Constraint::ActorKind(EntityKind::Agent),
     ];
 
-    const ALL_TARGET_SPECS: [TargetSpec; 4] = [
+    const ALL_TARGET_SPECS: [TargetSpec; 5] = [
         TargetSpec::SpecificEntity(ENTITY_B),
+        TargetSpec::ActorPlace,
         TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
         },
@@ -382,7 +392,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 10] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 11] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -392,6 +402,7 @@ mod tests {
             kind: MetabolismDurationKind::Wash,
         },
         DurationExpr::ActorTradeDisposition,
+        DurationExpr::ActorInvestigationDisposition,
         DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
         DurationExpr::TargetTreatment {
@@ -450,6 +461,7 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
+        assert_eq!(DurationExpr::ActorInvestigationDisposition.fixed_ticks(), None);
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(
@@ -720,6 +732,12 @@ mod tests {
             ActionDuration::new(11)
         );
         assert_eq!(
+            DurationExpr::ActorInvestigationDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(3)
+        );
+        assert_eq!(
             DurationExpr::ActorDefendStance
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
@@ -772,6 +790,12 @@ mod tests {
             actor
         };
 
+        assert_eq!(
+            DurationExpr::ActorInvestigationDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(3)
+        );
         assert_eq!(
             DurationExpr::ActorDefendStance
                 .resolve_for(&world, actor, &[], &ActionPayload::None)

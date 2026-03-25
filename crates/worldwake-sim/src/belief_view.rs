@@ -852,6 +852,10 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
+        DurationExpr::ActorInvestigationDisposition => Some(ActionDuration::new(
+            view.violation_disposition_profile(actor)
+                .map_or(3, |profile| profile.investigation_duration_ticks.get()),
+        )),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
             .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),

@@ -1021,8 +1021,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Defend
             | PlannerOpKind::Bribe
             | PlannerOpKind::Threaten
-            | PlannerOpKind::ConsultRecord
-            | PlannerOpKind::Investigate => return true,
+            | PlannerOpKind::ConsultRecord => return true,
             // Terminal ops — fall through to goal-specific binding check.
             PlannerOpKind::Attack
             | PlannerOpKind::Loot
@@ -1031,6 +1030,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::DeclareSupport
             | PlannerOpKind::PressForceClaim
             | PlannerOpKind::YieldForceClaim
+            | PlannerOpKind::Investigate
             | PlannerOpKind::Bury => {}
         }
 
@@ -1051,8 +1051,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::ClaimOffice { .. }
-            | GoalKind::SupportCandidateForOffice { .. }
-            | GoalKind::InvestigateMissing { .. } => true,
+            | GoalKind::SupportCandidateForOffice { .. } => true,
+
+            GoalKind::InvestigateMissing { place } => authoritative_targets.contains(place),
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
@@ -4021,6 +4022,19 @@ mod tests {
                 subject: id(99),
             };
             assert!(!goal.matches_binding(&[id(31)], PlannerOpKind::Tell));
+        }
+
+        #[test]
+        fn investigate_missing_matches_place_for_investigate_op() {
+            let place = id(35);
+            let goal = GoalKind::InvestigateMissing { place };
+            assert!(goal.matches_binding(&[place], PlannerOpKind::Investigate));
+        }
+
+        #[test]
+        fn investigate_missing_rejects_other_place_for_investigate_op() {
+            let goal = GoalKind::InvestigateMissing { place: id(35) };
+            assert!(!goal.matches_binding(&[id(36)], PlannerOpKind::Investigate));
         }
 
         // ── MoveCargo ─────────────────────────────────────────────────

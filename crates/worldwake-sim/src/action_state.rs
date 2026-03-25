@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EntityId, Tick, TravelEdgeId};
+use worldwake_core::{CommodityKind, EntityId, Tick, TravelEdgeId};
 
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,
@@ -9,6 +9,11 @@ pub enum ActionState {
     Empty,
     Heal {
         medicine_spent: bool,
+    },
+    Investigate {
+        subject: EntityId,
+        place: EntityId,
+        commodity: Option<CommodityKind>,
     },
     Travel {
         edge_id: TravelEdgeId,
@@ -54,6 +59,17 @@ mod tests {
             ActionState::Empty,
             ActionState::Heal {
                 medicine_spent: true,
+            },
+            ActionState::Investigate {
+                subject: EntityId {
+                    slot: 3,
+                    generation: 0,
+                },
+                place: EntityId {
+                    slot: 4,
+                    generation: 0,
+                },
+                commodity: Some(worldwake_core::CommodityKind::Apple),
             },
             ActionState::Travel {
                 edge_id: TravelEdgeId(5),

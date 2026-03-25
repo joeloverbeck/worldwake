@@ -1,0 +1,753 @@
+use std::collections::BTreeSet;
+use worldwake_core::{
+    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag,
+    PerceptionSource, SocialObservation, SocialObservationKind, Tick, ViolationKind,
+    ViolationMemory, VisibilitySpec, WorldTxn,
+};
+use worldwake_sim::{
+    AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
+    CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition,
+    TargetSpec,
+};
+
+pub fn register_investigate_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_investigate,
+        tick_investigate,
+        commit_investigate,
+        abort_investigate,
+    ));
+    let id = ActionDefId(defs.len() as u32);
+    defs.register(investigate_action_def(id, handler))
+}
+
+fn investigate_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    ActionDef {
+        id,
+        name: "investigate".to_string(),
+        domain: worldwake_sim::ActionDomain::Generic,
+        actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotIncapacitated],
+        targets: vec![TargetSpec::ActorPlace],
+        preconditions: vec![
+            Precondition::TargetExists(0),
+            Precondition::TargetKind {
+                target_index: 0,
+                kind: EntityKind::Place,
+            },
+        ],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::ActorInvestigationDisposition,
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: vec![
+            Precondition::TargetExists(0),
+            Precondition::TargetKind {
+                target_index: 0,
+                kind: EntityKind::Place,
+            },
+        ],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::Discovery]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
+fn start_investigate(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let place = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    let memory = txn
+        .get_component_violation_memory(instance.actor)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "actor {} lacks ViolationMemory",
+                instance.actor
+            ))
+        })?;
+    let Some(state) = investigable_state_for_place(memory, place, txn.tick()) else {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {} has no investigable violation at place {}",
+            instance.actor, place
+        )));
+    };
+    Ok(Some(state))
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_investigate(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_investigate(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let (subject, place, commodity) = investigate_state(instance)?;
+
+    let mut store = txn
+        .get_component_agent_belief_store(instance.actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "live agent {} lacks AgentBeliefStore",
+                instance.actor
+            ))
+        })?;
+    store.record_social_observation(SocialObservation {
+        kind: SocialObservationKind::WitnessedAbsence,
+        subjects: (subject, place),
+        place,
+        observed_tick: txn.tick(),
+        source: PerceptionSource::DirectObservation,
+    });
+    txn.set_component_agent_belief_store(instance.actor, store)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    let mut memory = txn
+        .get_component_violation_memory(instance.actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "live agent {} lacks ViolationMemory",
+                instance.actor
+            ))
+        })?;
+    if let Some(profile) = txn.get_component_violation_disposition_profile(instance.actor) {
+        memory.record(
+            investigate_violation(subject, place, commodity),
+            txn.tick(),
+            profile.violation_memory_retention_ticks,
+        );
+        txn.set_component_violation_memory(instance.actor, memory)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_investigate(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+fn investigable_state_for_place(
+    memory: &ViolationMemory,
+    place: EntityId,
+    current_tick: Tick,
+) -> Option<ActionState> {
+    memory
+        .violations
+        .iter()
+        .filter(|record| record.expires_tick > current_tick)
+        .filter_map(|record| match &record.kind {
+            ViolationKind::EntityMissing {
+                entity,
+                expected_place,
+            } if *expected_place == place => Some((
+                record.observed_tick,
+                ActionState::Investigate {
+                    subject: *entity,
+                    place,
+                    commodity: None,
+                },
+            )),
+            ViolationKind::SupplyDepleted {
+                commodity,
+                source,
+                place: violation_place,
+            } if *violation_place == place => Some((
+                record.observed_tick,
+                ActionState::Investigate {
+                    subject: *source,
+                    place,
+                    commodity: Some(*commodity),
+                },
+            )),
+            _ => None,
+        })
+        .max_by_key(|(observed_tick, _)| *observed_tick)
+        .map(|(_, state)| state)
+}
+
+fn investigate_state(
+    instance: &ActionInstance,
+) -> Result<(EntityId, EntityId, Option<CommodityKind>), ActionError> {
+    match instance.local_state {
+        Some(ActionState::Investigate {
+            subject,
+            place,
+            commodity,
+        }) => Ok((subject, place, commodity)),
+        _ => Err(ActionError::InternalError(format!(
+            "investigate action instance {} is missing investigate state",
+            instance.instance_id
+        ))),
+    }
+}
+
+fn investigate_violation(
+    subject: EntityId,
+    place: EntityId,
+    commodity: Option<CommodityKind>,
+) -> ViolationKind {
+    match commodity {
+        Some(commodity) => ViolationKind::SupplyDepleted {
+            commodity,
+            source: subject,
+            place,
+        },
+        None => ViolationKind::EntityMissing {
+            entity: subject,
+            expected_place: place,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroU32;
+    use worldwake_core::{
+        build_prototype_world, AgentBeliefStore, CauseRef, CombatProfile, ControlSource, EventLog,
+        Permille, Seed, ViolationDispositionProfile, WitnessData, World, Wound, WoundCause,
+        WoundId, WoundList,
+    };
+    use worldwake_sim::{
+        abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
+        ActionExecutionContext, ActionInstanceId, Affordance, DeterministicRng,
+        ExternalAbortReason, PerAgentBeliefView, TickOutcome,
+    };
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn pm(value: u16) -> Permille {
+        Permille::new(value).unwrap()
+    }
+
+    fn nz(value: u32) -> NonZeroU32 {
+        NonZeroU32::new(value).unwrap()
+    }
+
+    fn new_world() -> World {
+        World::new(build_prototype_world()).unwrap()
+    }
+
+    fn first_two_places(world: &World) -> (EntityId, EntityId) {
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        (places[0], places[1])
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
+    fn spawn_actor(world: &mut World, place: EntityId) -> EntityId {
+        let mut txn = new_txn(world, 1);
+        let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(actor, place).unwrap();
+        txn.set_component_agent_belief_store(actor, AgentBeliefStore::default())
+            .unwrap();
+        txn.set_component_violation_memory(actor, ViolationMemory::default())
+            .unwrap();
+        txn.set_component_combat_profile(
+            actor,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(600),
+                pm(550),
+                pm(75),
+                pm(20),
+                pm(15),
+                pm(120),
+                pm(30),
+                nz(6),
+                nz(10),
+            ),
+        )
+        .unwrap();
+        commit_txn(txn);
+        actor
+    }
+
+    fn set_violation_profile(world: &mut World, actor: EntityId, duration: u32, retention: u32) {
+        let mut txn = new_txn(world, 1);
+        txn.set_component_violation_disposition_profile(
+            actor,
+            ViolationDispositionProfile {
+                investigation_duration_ticks: nz(duration),
+                violation_memory_retention_ticks: retention,
+                investigation_motive_weight: pm(500),
+                ownership_motive_bonus: pm(200),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    fn record_violation(
+        world: &mut World,
+        actor: EntityId,
+        violation: ViolationKind,
+        observed_tick: u64,
+        ttl: u32,
+    ) {
+        let mut txn = new_txn(world, observed_tick);
+        let mut memory = txn
+            .get_component_violation_memory(actor)
+            .cloned()
+            .unwrap_or_default();
+        memory.record(violation, Tick(observed_tick), ttl);
+        txn.set_component_violation_memory(actor, memory).unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_incapacitated(world: &mut World, actor: EntityId) {
+        let mut txn = new_txn(world, 1);
+        txn.set_component_wound_list(
+            actor,
+            WoundList {
+                wounds: vec![Wound {
+                    id: WoundId(1),
+                    body_part: worldwake_core::BodyPart::Torso,
+                    cause: WoundCause::Combat {
+                        attacker: actor,
+                        weapon: worldwake_core::CombatWeaponRef::Unarmed,
+                    },
+                    severity: pm(700),
+                    inflicted_at: Tick(1),
+                    bleed_rate_per_tick: pm(0),
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    fn setup_registries() -> (ActionDefRegistry, ActionHandlerRegistry, ActionDefId) {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let def_id = register_investigate_action(&mut defs, &mut handlers);
+        (defs, handlers, def_id)
+    }
+
+    fn investigate_affordance(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> Affordance {
+        get_affordances(&PerAgentBeliefView::from_world(actor, world), actor, defs, handlers)
+            .into_iter()
+            .find(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
+            .expect("investigate affordance should exist")
+    }
+
+    #[test]
+    fn register_investigate_action_creates_expected_definition() {
+        let (defs, handlers, def_id) = setup_registries();
+        let def = defs.get(def_id).unwrap();
+
+        assert!(handlers.get(def.handler).is_some());
+        assert_eq!(def.name, "investigate");
+        assert_eq!(def.domain, worldwake_sim::ActionDomain::Generic);
+        assert_eq!(def.targets, vec![TargetSpec::ActorPlace]);
+        assert_eq!(def.duration, DurationExpr::ActorInvestigationDisposition);
+        assert_eq!(def.interruptibility, Interruptibility::FreelyInterruptible);
+        assert_eq!(def.visibility, VisibilitySpec::SamePlace);
+        assert_eq!(def.causal_event_tags, BTreeSet::from([EventTag::Discovery]));
+        assert!(
+            def.actor_constraints
+                .contains(&Constraint::ActorNotIncapacitated)
+        );
+    }
+
+    #[test]
+    fn investigate_action_commits_witnessed_absence_and_extends_violation_memory() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let missing = entity(30);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, def_id) = setup_registries();
+        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+        assert_eq!(affordance.def_id, def_id);
+        assert_eq!(affordance.bound_targets, vec![place]);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([7; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            active_actions.get(&instance_id).unwrap().remaining_duration.ticks(),
+            2
+        );
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    active_actions: &mut active_actions,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    tick: Tick(3),
+                    cause: CauseRef::Bootstrap,
+                },
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+
+        match tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                tick: Tick(4),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap()
+        {
+            TickOutcome::Committed { .. } => {}
+            other => panic!("expected committed investigate action, got {other:?}"),
+        }
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        assert!(store.social_observations.iter().any(|observation| {
+            observation.kind == SocialObservationKind::WitnessedAbsence
+                && observation.subjects == (missing, place)
+                && observation.place == place
+                && observation.observed_tick == Tick(4)
+                && observation.source == PerceptionSource::DirectObservation
+        }));
+
+        let memory = world.get_component_violation_memory(actor).unwrap();
+        assert!(memory.violations.iter().any(|record| {
+            record.kind
+                == ViolationKind::EntityMissing {
+                    entity: missing,
+                    expected_place: place,
+                }
+                && record.observed_tick == Tick(4)
+                && record.expires_tick == Tick(54)
+        }));
+
+        assert!(
+            !event_log.events_by_tag(EventTag::Discovery).is_empty(),
+            "investigate commit should emit a discovery-tagged event"
+        );
+    }
+
+    #[test]
+    fn investigate_action_fails_when_actor_is_not_at_the_violation_place() {
+        let mut world = new_world();
+        let (_, other_place) = first_two_places(&world);
+        let expected_place = first_two_places(&world).0;
+        let actor = spawn_actor(&mut world, other_place);
+        record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: entity(30),
+                expected_place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([8; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::PreconditionFailed(format!(
+                "actor {} has no investigable violation at place {}",
+                actor,
+                other_place
+            ))
+        );
+    }
+
+    #[test]
+    fn investigate_action_falls_back_to_three_ticks_without_profile() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: entity(30),
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([9; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            active_actions.get(&instance_id).unwrap().remaining_duration.ticks(),
+            3
+        );
+    }
+
+    #[test]
+    fn investigate_action_start_gate_rejects_incapacitated_actor() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: entity(30),
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+        set_incapacitated(&mut world, actor);
+
+        let (defs, handlers, def_id) = setup_registries();
+        let affordance = Affordance {
+            def_id,
+            actor,
+            bound_targets: vec![place],
+            payload_override: None,
+            explanation: None,
+        };
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([10; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::ConstraintFailed("ActorNotIncapacitated".to_string())
+        );
+    }
+
+    #[test]
+    fn aborting_investigate_produces_no_social_observation() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let missing = entity(30);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([11; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        let before_abort = world
+            .get_component_violation_memory(actor)
+            .unwrap()
+            .violations
+            .clone();
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                tick: Tick(3),
+                cause: CauseRef::Bootstrap,
+            },
+            ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        assert!(store.social_observations.is_empty());
+        assert_eq!(
+            world.get_component_violation_memory(actor).unwrap().violations,
+            before_abort
+        );
+    }
+}

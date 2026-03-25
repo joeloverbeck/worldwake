@@ -9,6 +9,7 @@ pub mod consult_record_actions;
 pub mod facility_queue;
 pub mod facility_queue_actions;
 mod inventory;
+pub mod investigate_actions;
 pub mod needs;
 pub mod needs_actions;
 pub mod office_actions;
@@ -30,6 +31,7 @@ pub use combat::{
 pub use consult_record_actions::register_consult_record_action;
 pub use facility_queue::facility_queue_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
+pub use investigate_actions::register_investigate_action;
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
 pub use office_actions::register_office_actions;
