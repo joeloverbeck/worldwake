@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
-    ViolationId, WorkstationTag,
+    TellTopic, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -365,7 +365,7 @@ pub struct ConsultRecordActionPayload {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct TellActionPayload {
     pub listener: EntityId,
-    pub subject_entity: EntityId,
+    pub topic: TellTopic,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -462,7 +462,7 @@ mod tests {
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
         ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
-        ViolationId, WorkstationTag,
+        TellTopic, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -483,9 +483,11 @@ mod tests {
                 slot: 5,
                 generation: 0,
             },
-            subject_entity: EntityId {
-                slot: 8,
-                generation: 2,
+            topic: TellTopic::EntityBelief {
+                subject: EntityId {
+                    slot: 8,
+                    generation: 2,
+                },
             },
         }
     }

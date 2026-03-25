@@ -25,9 +25,9 @@ use worldwake_core::{
     MetabolismProfile,
     OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
     Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind, RelationDelta,
-    RelationValue, ResourceSource, Seed, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile,
-    Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    RelationValue, ResourceSource, Seed, SharedTellState, StateDelta, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -422,10 +422,10 @@ pub fn seed_told_belief_memory(
     store.record_told_belief(
         TellMemoryKey {
             counterparty: listener,
-            subject,
+            topic: TellTopic::EntityBelief { subject },
         },
         ToldBeliefMemory {
-            shared_state: to_shared_belief_snapshot(shared_state),
+            shared_state: SharedTellState::EntityBelief(to_shared_belief_snapshot(shared_state)),
             told_tick,
         },
     );
@@ -1660,14 +1660,14 @@ mod tests {
             .told_beliefs
             .get(&TellMemoryKey {
                 counterparty: listener,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
             })
             .expect("told memory should be recorded for the requested listener and subject");
 
         assert_eq!(memory.told_tick, Tick(9));
         assert_eq!(
             memory.shared_state,
-            to_shared_belief_snapshot(&subject_belief)
+            SharedTellState::EntityBelief(to_shared_belief_snapshot(&subject_belief))
         );
         assert_eq!(
             agent_belief_about(&h.world, speaker, listener),

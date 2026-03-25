@@ -18,11 +18,13 @@ use worldwake_core::{
     load_per_unit, BelievedEntityState, BlockedIntentMemory, CommodityKind, CommodityPurpose,
     DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId,
     HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData,
-    PerceptionSource, Quantity, RecipientKnowledgeStatus, RecordKind, Tick, ViolationId,
-    ViolationKind, ViolationMemory,
+    PerceptionSource, Quantity, RecipientKnowledgeStatus, RecordKind,
+    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
+    TellTopic, Tick,
+    ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
-    belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
+    belief_chain_len, listener_aware_relayable_tell_topics, GoalBeliefView, RecipeDefinition,
     RecipeRegistry,
 };
 
@@ -297,59 +299,78 @@ fn emit_social_candidates(
         return;
     };
     let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
+    let known_social_observations = ctx.view.known_social_observations(ctx.agent);
 
     for listener in social_listeners_at(ctx.view, ctx.agent, place) {
-        let subjects = listener_aware_relayable_subjects(
-            known_beliefs.clone(),
+        let relayable_entity_beliefs = known_beliefs
+            .iter()
+            .filter(|(subject, _)| {
+                !subject_is_listener_observable_entity_belief(ctx.view, listener, *subject)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let relayable_social_observations = known_social_observations
+            .iter()
+            .copied()
+            .filter(|observation| {
+                !social_observation_is_redundant_for_listener(observation, listener)
+            })
+            .collect::<Vec<_>>();
+        let topics = listener_aware_relayable_tell_topics(
+            relayable_entity_beliefs.clone(),
+            relayable_social_observations,
             profile.max_relay_chain_len,
             profile.max_tell_candidates,
-            |subject, _| {
+            |topic| {
                 ctx.view
-                    .recipient_knowledge_status(ctx.agent, listener, subject)
+                    .recipient_knowledge_status(ctx.agent, listener, topic)
                     .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker)
             },
         );
-        let selected = subjects.iter().copied().collect::<BTreeSet<_>>();
-        for (subject, belief) in &known_beliefs {
+        let selected = topics.iter().copied().collect::<BTreeSet<_>>();
+        for (subject, belief) in &relayable_entity_beliefs {
             if belief_chain_len(belief.source) > profile.max_relay_chain_len {
                 continue;
             }
+            let topic = TellTopic::EntityBelief { subject: *subject };
             let status = ctx
                 .view
-                .recipient_knowledge_status(ctx.agent, listener, *subject)
+                .recipient_knowledge_status(ctx.agent, listener, &topic)
                 .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker);
-            if !selected.contains(subject)
+            if !selected.contains(&topic)
                 && status == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
             {
                 diagnostics.omitted_social.push(SocialCandidateOmission {
                     listener,
-                    subject: *subject,
+                    topic,
                     status,
                 });
             }
         }
 
-        for subject in subjects.iter().copied() {
+        for topic in topics.iter().copied() {
             let mut evidence = Evidence::with_entity(listener);
-            evidence.entities.insert(subject);
             evidence.places.insert(place);
             let mut trace = EvidenceTrace::default();
             trace.contributor(CandidateEvidenceKind::Listener, place, listener);
-            trace.contributor(CandidateEvidenceKind::TellSubject, place, subject);
-            if ctx.tracing_enabled {
-                if let Some((_, state)) = known_beliefs.iter().find(|(id, _)| *id == subject) {
-                    trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                        subject,
-                        aspect: BeliefAspect::LocationAt { place },
-                        source: state.source,
-                        observed_tick: state.observed_tick,
-                    });
+            if let TellTopic::EntityBelief { subject } = topic {
+                evidence.entities.insert(subject);
+                trace.contributor(CandidateEvidenceKind::TellSubject, place, subject);
+                if ctx.tracing_enabled {
+                    if let Some((_, state)) = known_beliefs.iter().find(|(id, _)| *id == subject) {
+                        trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                            subject,
+                            aspect: BeliefAspect::LocationAt { place },
+                            source: state.source,
+                            observed_tick: state.observed_tick,
+                        });
+                    }
                 }
             }
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
-                GoalKind::ShareBelief { listener, subject },
+                GoalKind::ShareBelief { listener, topic },
                 evidence,
                 trace,
                 ctx.blocked,
@@ -357,6 +378,21 @@ fn emit_social_candidates(
             );
         }
     }
+}
+
+fn subject_is_listener_observable_entity_belief(
+    view: &dyn GoalBeliefView,
+    listener: EntityId,
+    subject: EntityId,
+) -> bool {
+    tell_subject_is_directly_observable_by_listener(
+        subject,
+        view.entity_kind(subject),
+        view.effective_place(subject),
+        listener,
+        view.effective_place(listener),
+        view.observation_fidelity(listener),
+    )
 }
 
 fn emit_political_candidates(
@@ -2310,9 +2346,9 @@ mod tests {
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
         MerchandiseProfile, MetabolismProfile, OfficeData,
         PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationMemory, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        RecordEntryId, RecordKind, ResourceSource, SharedTellState, TellMemoryKey, TellProfile,
+        TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -2646,7 +2682,7 @@ mod tests {
             &self,
             actor: EntityId,
             counterparty: EntityId,
-            subject: EntityId,
+            topic: &TellTopic,
         ) -> Option<ToldBeliefMemory> {
             let profile = self.tell_profile(actor)?;
             self.told_beliefs
@@ -2657,7 +2693,7 @@ mod tests {
                         .find(|(key, _)| {
                             *key == TellMemoryKey {
                                 counterparty,
-                                subject,
+                                topic: *topic,
                             }
                         })
                         .map(|(_, memory)| memory)
@@ -2673,29 +2709,35 @@ mod tests {
             &self,
             actor: EntityId,
             counterparty: EntityId,
-            subject: EntityId,
+            topic: &TellTopic,
         ) -> Option<RecipientKnowledgeStatus> {
-            let current_belief = self
-                .beliefs
-                .get(&actor)?
-                .iter()
-                .find(|(known_subject, _)| *known_subject == subject)
-                .map(|(_, belief)| belief)?;
-            let remembered = self.told_belief_memory(actor, counterparty, subject);
+            let current_state = match topic {
+                TellTopic::EntityBelief { subject } => SharedTellState::EntityBelief(
+                    worldwake_core::to_shared_belief_snapshot(
+                        self.beliefs
+                            .get(&actor)?
+                            .iter()
+                            .find(|(known_subject, _)| *known_subject == *subject)
+                            .map(|(_, belief)| belief)?,
+                    ),
+                ),
+                TellTopic::SocialObservation { observation } => {
+                    SharedTellState::SocialObservation(*observation)
+                }
+            };
+            let remembered = self.told_belief_memory(actor, counterparty, topic);
             let had_raw_memory = self.told_beliefs.get(&actor).is_some_and(|memories| {
                 memories.iter().any(|(key, _)| {
                     *key == TellMemoryKey {
                         counterparty,
-                        subject,
+                        topic: *topic,
                     }
                 })
             });
             self.tell_profile(actor)?;
 
             Some(match remembered.as_ref() {
-                Some(memory) => {
-                    worldwake_core::recipient_knowledge_status(current_belief, Some(memory))
-                }
+                Some(memory) => worldwake_core::recipient_knowledge_status(&current_state, Some(memory)),
                 None if had_raw_memory => {
                     RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
                 }
@@ -2954,7 +2996,7 @@ mod tests {
             *omission
                 == SocialCandidateOmission {
                     listener,
-                    subject,
+                    topic: TellTopic::EntityBelief { subject },
                     status,
                 }
         })
@@ -2993,10 +3035,12 @@ mod tests {
         (
             TellMemoryKey {
                 counterparty,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
             },
             ToldBeliefMemory {
-                shared_state: worldwake_core::to_shared_belief_snapshot(belief),
+                shared_state: SharedTellState::EntityBelief(
+                    worldwake_core::to_shared_belief_snapshot(belief),
+                ),
                 told_tick: Tick(told_tick),
             },
         )
@@ -4747,6 +4791,9 @@ mod tests {
         let subject_b = entity(21);
         let too_deep = entity(22);
         let place = entity(10);
+        let remote_a = entity(11);
+        let remote_b = entity(12);
+        let remote_c = entity(13);
         let mut view = TestBeliefView::default();
         view.alive
             .extend([speaker, listener_a, listener_b, crate_lot]);
@@ -4755,8 +4802,14 @@ mod tests {
         view.entity_kinds.insert(listener_a, EntityKind::Agent);
         view.entity_kinds.insert(listener_b, EntityKind::Agent);
         view.entity_kinds.insert(dead_listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject_a, EntityKind::Agent);
+        view.entity_kinds.insert(subject_b, EntityKind::Agent);
+        view.entity_kinds.insert(too_deep, EntityKind::Agent);
         view.entity_kinds.insert(crate_lot, EntityKind::ItemLot);
         view.effective_places.insert(speaker, place);
+        view.effective_places.insert(subject_a, remote_a);
+        view.effective_places.insert(subject_b, remote_b);
+        view.effective_places.insert(too_deep, remote_c);
         view.entities_at.insert(
             place,
             vec![speaker, listener_a, listener_b, dead_listener, crate_lot],
@@ -4803,42 +4856,42 @@ mod tests {
             &candidates,
             GoalKind::ShareBelief {
                 listener: listener_a,
-                subject: subject_b,
+                topic: TellTopic::EntityBelief { subject: subject_b },
             }
         ));
         assert!(contains_goal(
             &candidates,
             GoalKind::ShareBelief {
                 listener: listener_a,
-                subject: subject_a,
+                topic: TellTopic::EntityBelief { subject: subject_a },
             }
         ));
         assert!(contains_goal(
             &candidates,
             GoalKind::ShareBelief {
                 listener: listener_b,
-                subject: subject_b,
+                topic: TellTopic::EntityBelief { subject: subject_b },
             }
         ));
         assert!(contains_goal(
             &candidates,
             GoalKind::ShareBelief {
                 listener: listener_b,
-                subject: subject_a,
+                topic: TellTopic::EntityBelief { subject: subject_a },
             }
         ));
         assert!(!contains_goal(
             &candidates,
             GoalKind::ShareBelief {
                 listener: dead_listener,
-                subject: subject_b,
+                topic: TellTopic::EntityBelief { subject: subject_b },
             }
         ));
         assert!(!contains_goal(
             &candidates,
             GoalKind::ShareBelief {
                 listener: listener_a,
-                subject: too_deep,
+                topic: TellTopic::EntityBelief { subject: too_deep },
             }
         ));
     }
@@ -4872,14 +4925,20 @@ mod tests {
         );
         assert!(!contains_goal(
             &none,
-            GoalKind::ShareBelief { listener, subject }
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
         ));
 
         view.tell_profiles.insert(speaker, TellProfile::default());
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
             blocker_key: BlockerKey {
-                goal_key: GoalKey::from(GoalKind::ShareBelief { listener, subject }),
+                goal_key: GoalKey::from(GoalKind::ShareBelief {
+                    listener,
+                    topic: TellTopic::EntityBelief { subject },
+                }),
                 place: None,
                 target: None,
                 action_def: None,
@@ -4894,7 +4953,10 @@ mod tests {
             generate_candidates(&view, speaker, &blocked, &RecipeRegistry::new(), Tick(11));
         assert!(!contains_goal(
             &blocked_candidates,
-            GoalKind::ShareBelief { listener, subject }
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
         ));
     }
 
@@ -4904,6 +4966,7 @@ mod tests {
         let listener = entity(2);
         let subject = entity(20);
         let place = entity(10);
+        let remote_place = entity(11);
         let mut view = TestBeliefView {
             current_tick: Tick(11),
             ..Default::default()
@@ -4913,9 +4976,8 @@ mod tests {
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, place)]);
-        view.entities_at
-            .insert(place, vec![speaker, listener, subject]);
+            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let belief = known_entity(subject, place).1;
         view.beliefs
@@ -4936,7 +4998,10 @@ mod tests {
 
         assert!(!contains_goal(
             &result.candidates,
-            GoalKind::ShareBelief { listener, subject }
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
         ));
         assert!(contains_social_omission(
             &result.diagnostics,
@@ -4952,6 +5017,7 @@ mod tests {
         let listener = entity(2);
         let subject = entity(20);
         let place = entity(10);
+        let remote_place = entity(11);
         let mut view = TestBeliefView {
             current_tick: Tick(11),
             ..Default::default()
@@ -4961,9 +5027,8 @@ mod tests {
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, place)]);
-        view.entities_at
-            .insert(place, vec![speaker, listener, subject]);
+            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
         let mut new_belief = old_belief.clone();
@@ -4990,7 +5055,10 @@ mod tests {
 
         assert!(contains_goal(
             &result.candidates,
-            GoalKind::ShareBelief { listener, subject }
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
         ));
         assert!(!contains_social_omission(
             &result.diagnostics,
@@ -5006,6 +5074,7 @@ mod tests {
         let listener = entity(2);
         let subject = entity(20);
         let place = entity(10);
+        let remote_place = entity(11);
         let mut view = TestBeliefView {
             current_tick: Tick(11),
             ..Default::default()
@@ -5015,9 +5084,8 @@ mod tests {
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, place)]);
-        view.entities_at
-            .insert(place, vec![speaker, listener, subject]);
+            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
         let mut refreshed_belief = old_belief.clone();
@@ -5042,7 +5110,10 @@ mod tests {
 
         assert!(!contains_goal(
             &result.candidates,
-            GoalKind::ShareBelief { listener, subject }
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
         ));
         assert!(contains_social_omission(
             &result.diagnostics,
@@ -5058,6 +5129,7 @@ mod tests {
         let listener = entity(2);
         let subject = entity(20);
         let place = entity(10);
+        let remote_place = entity(11);
         let mut view = TestBeliefView {
             current_tick: Tick(60),
             ..Default::default()
@@ -5067,9 +5139,8 @@ mod tests {
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, place)]);
-        view.entities_at
-            .insert(place, vec![speaker, listener, subject]);
+            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let belief = known_entity(subject, place).1;
         view.beliefs
@@ -5090,7 +5161,10 @@ mod tests {
 
         assert!(contains_goal(
             &result.candidates,
-            GoalKind::ShareBelief { listener, subject }
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            }
         ));
         assert!(!contains_social_omission(
             &result.diagnostics,
@@ -5107,6 +5181,8 @@ mod tests {
         let recent_subject = entity(20);
         let older_subject = entity(21);
         let place = entity(10);
+        let recent_place = entity(11);
+        let older_place = entity(12);
         let mut view = TestBeliefView {
             current_tick: Tick(11),
             ..Default::default()
@@ -5120,13 +5196,10 @@ mod tests {
         view.effective_places.extend([
             (speaker, place),
             (listener, place),
-            (recent_subject, place),
-            (older_subject, place),
+            (recent_subject, recent_place),
+            (older_subject, older_place),
         ]);
-        view.entities_at.insert(
-            place,
-            vec![speaker, listener, recent_subject, older_subject],
-        );
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(
             speaker,
             TellProfile {
@@ -5164,14 +5237,18 @@ mod tests {
             &result.candidates,
             GoalKind::ShareBelief {
                 listener,
-                subject: recent_subject,
+                topic: TellTopic::EntityBelief {
+                    subject: recent_subject,
+                },
             }
         ));
         assert!(contains_goal(
             &result.candidates,
             GoalKind::ShareBelief {
                 listener,
-                subject: older_subject,
+                topic: TellTopic::EntityBelief {
+                    subject: older_subject,
+                },
             }
         ));
     }
@@ -6863,14 +6940,16 @@ mod tests {
         let listener = entity(2);
         let subject = entity(3);
         let place = entity(10);
+        let remote_place = entity(11);
         let mut view = TestBeliefView::default();
         view.alive.extend([speaker, listener, subject]);
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places.insert(speaker, place);
-        view.entities_at
-            .insert(place, vec![speaker, listener, subject]);
+        view.effective_places.insert(listener, place);
+        view.effective_places.insert(subject, remote_place);
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(
             speaker,
             TellProfile {
@@ -6897,7 +6976,7 @@ mod tests {
 
         let key = GoalKey::from(GoalKind::ShareBelief {
             listener,
-            subject,
+            topic: TellTopic::EntityBelief { subject },
         });
         let trace = result
             .diagnostics
@@ -6929,14 +7008,16 @@ mod tests {
         let listener = entity(2);
         let subject = entity(3);
         let place = entity(10);
+        let remote_place = entity(11);
         let mut view = TestBeliefView::default();
         view.alive.extend([speaker, listener, subject]);
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places.insert(speaker, place);
-        view.entities_at
-            .insert(place, vec![speaker, listener, subject]);
+        view.effective_places.insert(listener, place);
+        view.effective_places.insert(subject, remote_place);
+        view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(
             speaker,
             TellProfile {
@@ -6975,7 +7056,7 @@ mod tests {
 
         let key = GoalKey::from(GoalKind::ShareBelief {
             listener,
-            subject,
+            topic: TellTopic::EntityBelief { subject },
         });
         let trace = result
             .diagnostics

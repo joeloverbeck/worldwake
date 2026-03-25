@@ -1065,7 +1065,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::Social]),
             payload: ActionPayload::Tell(TellActionPayload {
                 listener: entity(7),
-                subject_entity: entity(8),
+                topic: worldwake_core::TellTopic::EntityBelief { subject: entity(8) },
             }),
             handler: ActionHandlerId(1),
         });
@@ -2379,7 +2379,7 @@ mod tests {
             tick_events[0].detail.as_ref(),
             Some(&ActionTraceDetail::Tell {
                 listener: entity(7),
-                subject: entity(8),
+                topic: worldwake_core::TellTopic::EntityBelief { subject: entity(8) },
             })
         );
         assert_eq!(

@@ -23,7 +23,7 @@ No mechanism exists for agents to formally accuse another agent of theft. The ac
 9. N/A.
 10. N/A.
 11. Mismatch: the original ticket assumed `SocialObservation(SuspectedTheft)` could be matched directly against an accused agent. The live ticket set records theft observations as `(missing_entity, expected_place)` in `E17CRITHEJUS-007`, which is incompatible. Correct scope is to validate against typed theft evidence from `E17CRITHEJUS-015`, and to allow witness-reported evidence only after `E17CRITHEJUS-016` adds relayable social-evidence topics.
-12. N/A.
+12. Follow-up architectural note: institutional beliefs still travel through Tell as sidecar data on `TellTopic::EntityBelief { subject: office_or_record }` rather than as first-class tell topics. This accuse handler must consume the actor's current belief surfaces without expanding that coupling; cleanup is tracked separately in `E17CRITHEJUS-017`.
 
 ## Architecture Check
 
@@ -76,6 +76,7 @@ Wire into `register_all_actions()` in `action_registry.rs`. Export from `lib.rs`
 - CrimeRegister entity creation in world setup (handled in test_utils for now; production setup in a future integration ticket)
 - Contest or appeal of accusations (future spec)
 - Validating evidence accuracy against world truth (accusations use belief store — P12)
+- Refactoring institutional Tell topics; handled by `E17CRITHEJUS-017`
 
 ## Acceptance Criteria
 

@@ -1,6 +1,6 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
-use crate::{CommodityKind, EntityId, RecipeId, ViolationId};
+use crate::{CommodityKind, EntityId, RecipeId, TellTopic, ViolationId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -51,7 +51,7 @@ pub enum GoalKind {
     },
     ShareBelief {
         listener: EntityId,
-        subject: EntityId,
+        topic: TellTopic,
     },
     ClaimOffice {
         office: EntityId,
@@ -100,7 +100,7 @@ impl From<GoalKind> for GoalKey {
                 corpse,
                 burial_site,
             } => (None, Some(corpse), Some(burial_site)),
-            GoalKind::ShareBelief { listener, subject } => (None, Some(listener), Some(subject)),
+            GoalKind::ShareBelief { listener, .. } => (None, Some(listener), None),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 (None, Some(office), Some(candidate))
             }
@@ -129,7 +129,7 @@ impl From<&GoalKind> for GoalKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommodityPurpose, GoalKey, GoalKind, ViolationId};
+    use super::{CommodityPurpose, GoalKey, GoalKind, TellTopic, ViolationId};
     use crate::{test_utils::entity_id, CommodityKind, RecipeId};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
@@ -253,11 +253,14 @@ mod tests {
     fn goal_key_extracts_listener_and_subject_for_share_belief() {
         let listener = entity_id(11, 0);
         let subject = entity_id(12, 0);
-        let key = GoalKey::from(GoalKind::ShareBelief { listener, subject });
+        let key = GoalKey::from(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        });
 
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(listener));
-        assert_eq!(key.place, Some(subject));
+        assert_eq!(key.place, None);
     }
 
     #[test]
@@ -269,21 +272,21 @@ mod tests {
 
         let first = GoalKey::from(GoalKind::ShareBelief {
             listener: listener_a,
-            subject: subject_a,
+            topic: TellTopic::EntityBelief { subject: subject_a },
         });
         let second = GoalKey::from(GoalKind::ShareBelief {
             listener: listener_b,
-            subject: subject_a,
+            topic: TellTopic::EntityBelief { subject: subject_a },
         });
         let third = GoalKey::from(GoalKind::ShareBelief {
             listener: listener_a,
-            subject: subject_b,
+            topic: TellTopic::EntityBelief { subject: subject_b },
         });
 
         assert_ne!(first, second);
         assert_ne!(first, third);
         assert_eq!(first.entity, Some(listener_a));
-        assert_eq!(first.place, Some(subject_a));
+        assert_eq!(first.place, None);
     }
 
     #[test]

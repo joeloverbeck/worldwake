@@ -8,9 +8,9 @@ use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
     GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
-    RecipientKnowledgeStatus, ResourceSource, Seed, SocialObservationDetail,
-    SocialObservationKind, TellMemoryKey,
-    TellProfile, Tick, UtilityProfile, WorkstationTag,
+    RecipientKnowledgeStatus, ResourceSource, Seed, SharedTellState, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile,
+    WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -259,7 +259,10 @@ fn build_social_retell_fixture(
 }
 
 fn share_goal(listener: EntityId, subject: EntityId) -> GoalKind {
-    GoalKind::ShareBelief { listener, subject }
+    GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::EntityBelief { subject },
+    }
 }
 
 fn told_memory(
@@ -273,7 +276,7 @@ fn told_memory(
         .and_then(|store| {
             store.told_beliefs.get(&TellMemoryKey {
                 counterparty: listener,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
             })
         })
         .cloned()
@@ -1453,12 +1456,14 @@ fn run_retell_after_subject_belief_change_scenario(
         "re-tell after belief change should refresh the told-memory tick"
     );
     assert_eq!(
-        final_memory
-            .shared_state
-            .resource_source
-            .as_ref()
-            .expect("shared subject snapshot should retain resource source")
-            .available_quantity,
+        match &final_memory.shared_state {
+            SharedTellState::EntityBelief(state) => state
+                .resource_source
+                .as_ref()
+                .expect("shared subject snapshot should retain resource source")
+                .available_quantity,
+            SharedTellState::SocialObservation(_) => panic!("expected entity-belief tell state"),
+        },
         Quantity(6),
         "re-tell should store the materially changed shared content"
     );
@@ -1810,9 +1815,10 @@ fn run_chain_length_filtering_scenario(
     assert!(
         matches!(
             bob_belief.source,
-            PerceptionSource::Report { chain_len: 1, .. }
+            PerceptionSource::Report { chain_len: 1, .. } | PerceptionSource::Rumor { chain_len: 2 }
         ),
-        "Bob should hold first-order hearsay about the subject"
+        "Bob should retain relayed hearsay about the subject after Alice's first-hop tell and any later echo, got {:?}",
+        bob_belief.source
     );
 
     let carol_belief = agent_belief_about(&h.world, carol, subject).unwrap();

@@ -142,7 +142,7 @@ fn process_witness_event(
     }
 
     for observation in social_observations {
-        store.record_social_observation(observation.clone());
+        store.record_social_observation(*observation);
     }
 
     for (key, claim) in institutional_claims {

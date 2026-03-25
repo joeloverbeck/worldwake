@@ -8,9 +8,10 @@ use worldwake_core::{
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
     MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecordedViolation,
-    RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    RecipientKnowledgeStatus, RecordData, ResourceSource, SocialObservation, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    IntentionDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag,
+    Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -43,6 +44,10 @@ pub trait GoalBeliefView {
         self.entities_at(place)
     }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
         Vec::new()
     }
@@ -91,6 +96,10 @@ pub trait GoalBeliefView {
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
+    fn observation_fidelity(&self, agent: EntityId) -> Permille {
+        let _ = agent;
+        Permille::new_unchecked(1000)
+    }
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
         None
@@ -103,18 +112,18 @@ pub trait GoalBeliefView {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<ToldBeliefMemory> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn recipient_knowledge_status(
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn courage(&self, agent: EntityId) -> Option<Permille> {
@@ -228,6 +237,10 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
+        let _ = agent;
+        Vec::new()
+    }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
@@ -300,6 +313,10 @@ pub trait RuntimeBeliefView {
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
+    fn observation_fidelity(&self, agent: EntityId) -> Permille {
+        let _ = agent;
+        Permille::new_unchecked(1000)
+    }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn intention_disposition_profile(&self, agent: EntityId) -> Option<IntentionDispositionProfile>;
@@ -316,18 +333,18 @@ pub trait RuntimeBeliefView {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<ToldBeliefMemory> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn recipient_knowledge_status(
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
@@ -503,6 +520,13 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::BelievedEntityState,
             )> {
                 $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
+            }
+
+            fn known_social_observations(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::SocialObservation> {
+                $crate::RuntimeBeliefView::known_social_observations(self, agent)
             }
 
             fn adjacent_places_with_travel_ticks(
@@ -694,6 +718,13 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::belief_confidence_policy(self, agent)
             }
 
+            fn observation_fidelity(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> worldwake_core::Permille {
+                $crate::RuntimeBeliefView::observation_fidelity(self, agent)
+            }
+
             fn tell_profile(
                 &self,
                 agent: worldwake_core::EntityId,
@@ -715,22 +746,22 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 actor: worldwake_core::EntityId,
                 counterparty: worldwake_core::EntityId,
-                subject: worldwake_core::EntityId,
+                topic: &worldwake_core::TellTopic,
             ) -> Option<worldwake_core::ToldBeliefMemory> {
-                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, subject)
+                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, topic)
             }
 
             fn recipient_knowledge_status(
                 &self,
                 actor: worldwake_core::EntityId,
                 counterparty: worldwake_core::EntityId,
-                subject: worldwake_core::EntityId,
+                topic: &worldwake_core::TellTopic,
             ) -> Option<worldwake_core::RecipientKnowledgeStatus> {
                 $crate::RuntimeBeliefView::recipient_knowledge_status(
                     self,
                     actor,
                     counterparty,
-                    subject,
+                    topic,
                 )
             }
 

@@ -421,6 +421,9 @@ fn golden_bribe_support_coalition() {
         beam_width: 16,
         ..worldwake_ai::PlanningBudget::default()
     });
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    h.enable_politics_tracing();
 
     // Agent A — claimant with high enterprise weight, holds 5 bread.
     let agent_a = seed_agent(
@@ -3140,8 +3143,9 @@ fn run_force_control_locality_and_tell(seed: Seed) -> (StateHash, StateHash) {
                 event.detail,
                 Some(ActionTraceDetail::Tell {
                     listener: told_listener,
-                    subject
-                }) if told_listener == listener && subject == office
+                    topic
+                }) if told_listener == listener
+                    && topic == worldwake_core::TellTopic::EntityBelief { subject: office }
             )
     });
     let tell_event = tell_event.expect("witness should commit tell for the office subject");

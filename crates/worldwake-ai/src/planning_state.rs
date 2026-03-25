@@ -2,11 +2,12 @@ use crate::planning_snapshot::PlanningSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    load_per_unit, ActionDefId, BelievedEntityState, CombatProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData, Permille,
-    PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource,
-    SuccessionLaw, TellMemoryKey, TellProfile, TickRange, ToldBeliefMemory,
+    load_per_unit, to_shared_belief_snapshot, ActionDefId, BelievedEntityState, CombatProfile,
+    CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile,
+    OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, TickRange, ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
@@ -1003,6 +1004,14 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .collect()
     }
 
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_known_social_observations.clone()
+    }
+
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         let mut entities = self
             .snapshot
@@ -1312,7 +1321,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<ToldBeliefMemory> {
         if actor != self.snapshot.actor() {
             return None;
@@ -1323,7 +1332,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .actor_told_beliefs
             .get(&TellMemoryKey {
                 counterparty,
-                subject,
+                topic: *topic,
             })
             .filter(|memory| {
                 self.snapshot
@@ -1339,24 +1348,31 @@ impl RuntimeBeliefView for PlanningState<'_> {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
         if actor != self.snapshot.actor() {
             return None;
         }
 
-        let current_belief = self.snapshot.actor_known_entity_beliefs.get(&subject)?;
+        let current_state = match topic {
+            TellTopic::EntityBelief { subject } => SharedTellState::EntityBelief(
+                to_shared_belief_snapshot(self.snapshot.actor_known_entity_beliefs.get(subject)?),
+            ),
+            TellTopic::SocialObservation { observation } => self
+                .snapshot
+                .actor_known_social_observations
+                .contains(observation)
+                .then_some(SharedTellState::SocialObservation(*observation))?,
+        };
         let key = TellMemoryKey {
             counterparty,
-            subject,
+            topic: *topic,
         };
         self.tell_profile(actor)?;
-        let remembered = self.told_belief_memory(actor, counterparty, subject);
+        let remembered = self.told_belief_memory(actor, counterparty, topic);
 
         Some(match remembered.as_ref() {
-            Some(memory) => {
-                worldwake_core::recipient_knowledge_status(current_belief, Some(memory))
-            }
+            Some(memory) => worldwake_core::recipient_knowledge_status(&current_state, Some(memory)),
             None if self.snapshot.actor_told_beliefs.contains_key(&key) => {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }
@@ -1611,9 +1627,9 @@ mod tests {
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
         MetabolismProfile, OfficeData, Permille, Quantity, RecipeId, RecipientKnowledgeStatus,
-        RecordData, RecordKind, ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        RecordData, RecordKind, ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey,
+        TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -2561,20 +2577,22 @@ mod tests {
             vec![(
                 TellMemoryKey {
                     counterparty: listener,
-                    subject: bread,
+                    topic: TellTopic::EntityBelief { subject: bread },
                 },
                 ToldBeliefMemory {
-                    shared_state: worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
-                        last_known_place: Some(town),
-                        last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        observed_tick: Tick(4),
-                        source: worldwake_core::PerceptionSource::DirectObservation,
-                    }),
+                    shared_state: SharedTellState::EntityBelief(
+                        worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
+                            last_known_place: Some(town),
+                            last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                            workstation_tag: None,
+                            resource_source: None,
+                            alive: true,
+                            wounds: Vec::new(),
+                            last_known_courage: None,
+                            observed_tick: Tick(4),
+                            source: worldwake_core::PerceptionSource::DirectObservation,
+                        }),
+                    ),
                     told_tick: Tick(6),
                 },
             )],
@@ -2585,12 +2603,22 @@ mod tests {
 
         assert_eq!(RuntimeBeliefView::current_tick(&state), Tick(8));
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&state, actor, listener, bread)
+            RuntimeBeliefView::told_belief_memory(
+                &state,
+                actor,
+                listener,
+                &TellTopic::EntityBelief { subject: bread },
+            )
                 .map(|m| m.told_tick),
             Some(Tick(6))
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&state, actor, listener, bread),
+            RuntimeBeliefView::recipient_knowledge_status(
+                &state,
+                actor,
+                listener,
+                &TellTopic::EntityBelief { subject: bread },
+            ),
             Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
         );
     }

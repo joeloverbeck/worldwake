@@ -11,9 +11,10 @@ use worldwake_core::{
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
     MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, TellMemoryKey, TellProfile,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
-    UniqueItemKind, WorkstationTag, World, Wound,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind, WorkstationTag, World,
+    Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -250,6 +251,14 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .iter()
             .map(|(entity, state)| (*entity, state.clone()))
             .collect()
+    }
+
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.belief_store.social_observations.clone()
     }
 
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
@@ -566,6 +575,14 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             )
     }
 
+    fn observation_fidelity(&self, agent: EntityId) -> Permille {
+        self.world
+            .get_component_perception_profile(agent)
+            .map_or(Permille::new_unchecked(1000), |profile| {
+                profile.observation_fidelity
+            })
+    }
+
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_metabolism_profile(agent).copied())
@@ -618,7 +635,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<ToldBeliefMemory> {
         if actor != self.agent {
             return None;
@@ -629,7 +646,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .told_belief_memory(
                 &TellMemoryKey {
                     counterparty,
-                    subject,
+                    topic: *topic,
                 },
                 self.current_tick,
                 &profile,
@@ -641,23 +658,27 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
         if actor != self.agent {
             return None;
         }
 
-        let current_belief = self.belief_store.get_entity(&subject)?;
         let profile = self.tell_profile(actor)?;
-        Some(self.belief_store.recipient_knowledge_status(
-            &TellMemoryKey {
-                counterparty,
-                subject,
-            },
-            current_belief,
-            self.current_tick,
-            &profile,
-        ))
+        let current_state = self
+            .belief_store
+            .shared_tell_state_for_topic(topic, profile.max_relay_chain_len)?;
+        Some(
+            self.belief_store.recipient_knowledge_status(
+                &TellMemoryKey {
+                    counterparty,
+                    topic: *topic,
+                },
+                &current_state,
+                self.current_tick,
+                &profile,
+            ),
+        )
     }
 
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -994,7 +1015,7 @@ mod tests {
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
         Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
-        TellMemoryKey, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData,
+        TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     };
 
@@ -1297,33 +1318,41 @@ mod tests {
         beliefs.record_told_belief(
             TellMemoryKey {
                 counterparty: listener,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
             },
             ToldBeliefMemory {
-                shared_state: worldwake_core::to_shared_belief_snapshot(&stale_belief),
+                shared_state: worldwake_core::SharedTellState::EntityBelief(
+                    worldwake_core::to_shared_belief_snapshot(&stale_belief),
+                ),
                 told_tick: Tick(4),
             },
         );
+        let topic = TellTopic::EntityBelief { subject };
 
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, agent, listener, subject)
+            RuntimeBeliefView::told_belief_memory(&view, agent, listener, &topic)
                 .map(|m| m.told_tick),
             Some(Tick(4))
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&view, agent, listener, subject),
+            RuntimeBeliefView::recipient_knowledge_status(&view, agent, listener, &topic),
             Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
         );
 
         let expired_view = PerAgentBeliefView::new_at_tick(agent, Tick(60), &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&expired_view, agent, listener, subject),
+            RuntimeBeliefView::told_belief_memory(&expired_view, agent, listener, &topic),
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&expired_view, agent, listener, subject),
+            RuntimeBeliefView::recipient_knowledge_status(
+                &expired_view,
+                agent,
+                listener,
+                &topic,
+            ),
             Some(RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired)
         );
     }
@@ -1350,15 +1379,16 @@ mod tests {
         beliefs.record_told_belief(
             TellMemoryKey {
                 counterparty: listener,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
             },
             ToldBeliefMemory {
-                shared_state: worldwake_core::to_shared_belief_snapshot(&entity_belief(
-                    place, true, 1, 4,
-                )),
+                shared_state: worldwake_core::SharedTellState::EntityBelief(
+                    worldwake_core::to_shared_belief_snapshot(&entity_belief(place, true, 1, 4)),
+                ),
                 told_tick: Tick(4),
             },
         );
+        let topic = TellTopic::EntityBelief { subject };
 
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
@@ -1371,11 +1401,11 @@ mod tests {
             "conversation memory should remain actor-local"
         );
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, other, listener, subject),
+            RuntimeBeliefView::told_belief_memory(&view, other, listener, &topic),
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&view, other, listener, subject),
+            RuntimeBeliefView::recipient_knowledge_status(&view, other, listener, &topic),
             None
         );
     }

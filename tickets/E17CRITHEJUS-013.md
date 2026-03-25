@@ -24,6 +24,7 @@ No end-to-end proof exists that the full crime-to-punishment chain works: steal 
 10. Isolation: Agent A (thief with `TheftDispositionProfile`), Agent C (witness with `PerceptionProfile`), Agent D (authority — office holder with `JusticeDispositionProfile`). CrimeRegister at authority's seat. Minimize survival-pressure profiles to keep the scenario focused on crime/justice.
 11. Mismatch: the original ticket assumed the witnessed theft fact could already travel through Tell. The live Tell path is entity-belief-only. Correct scope is to run this golden after `E17CRITHEJUS-015` and `E17CRITHEJUS-016` land so witness testimony is concrete typed social evidence, not an implied side effect of entity gossip.
 12. Timing: A steals (multi-tick). C witnesses (same tick via perception). C travels to authority. C Tells authority. Authority travels to CrimeRegister. Authority accuses. Authority travels to accused. Authority punishes. Total tick budget needs to be generous (40-80 ticks depending on travel distances).
+13. Follow-up architectural note: if the scenario needs political or record knowledge beyond the crime testimony itself, it should use existing direct consultation/setup surfaces and must not introduce new office-or-record entity Tell shims. First-class institutional Tell topics are tracked separately in `E17CRITHEJUS-017`.
 
 ## Architecture Check
 
@@ -81,6 +82,7 @@ Standard replay test.
 - Guard patrol response (E19)
 - Exile cascade behavior (exiled agent stealing again)
 - Appeal or reversal of verdict
+- Refactoring institutional Tell topics; handled by `E17CRITHEJUS-017`
 
 ## Acceptance Criteria
 

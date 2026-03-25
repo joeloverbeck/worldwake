@@ -23,7 +23,7 @@ Agents cannot form accusation or punishment goals. No candidate generation funct
 9. N/A.
 10. N/A.
 11. Mismatch: the original ticket scoped accusation candidates to local `ViolationMemory` only. That is too narrow for the spec and would exclude witness-to-authority accusation chains. Correct scope is to generate accusation candidates from concrete typed evidence available in the actor's belief state, including local `SuspectedTheft`, relayed typed theft testimony, and possession evidence after `E17CRITHEJUS-015`/`016`.
-12. N/A.
+12. Follow-up architectural note: office/control and record-related institutional knowledge still propagates through Tell via `TellTopic::EntityBelief { subject: office_or_record }` sidecar claims. `emit_justice_candidates()` may consume those belief surfaces if present, but it must not add new entity-topic special cases; the Tell-boundary cleanup is tracked in `E17CRITHEJUS-017`.
 
 ## Architecture Check
 
@@ -74,6 +74,7 @@ Add call to `emit_justice_candidates()` in the main dispatch function.
 - CrimeRegister entity setup (test infrastructure)
 - Guard patrol crime response (E19)
 - Appeal or contest logic (future spec)
+- Refactoring institutional Tell topics; handled by `E17CRITHEJUS-017`
 
 ## Acceptance Criteria
 

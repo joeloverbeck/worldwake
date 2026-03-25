@@ -12,8 +12,8 @@ use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
     BlockerKey, BlockingFact, BodyPart, CommodityKind, DeprivationKind, EntityId, GoalKey,
     HomeostaticNeeds,
-    MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, Tick, UtilityProfile, Wound,
-    WoundCause, WoundId, WoundList,
+    MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, TellTopic, Tick,
+    UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     get_affordances, step_tick, ActionStartFailureReason, ActionTraceKind,
@@ -304,7 +304,7 @@ fn setup_remote_ground_medicine_care_scenario(
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener: patient,
-                    subject: patient,
+                    topic: TellTopic::EntityBelief { subject: patient },
                 }),
                 place: Some(VILLAGE_SQUARE),
                 target: Some(patient),
@@ -319,7 +319,7 @@ fn setup_remote_ground_medicine_care_scenario(
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener: patient,
-                    subject: medicine,
+                    topic: TellTopic::EntityBelief { subject: medicine },
                 }),
                 place: Some(VILLAGE_SQUARE),
                 target: Some(patient),

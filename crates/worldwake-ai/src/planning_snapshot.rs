@@ -5,7 +5,8 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SuccessionLaw,
+    Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SocialObservation,
+    SuccessionLaw,
     TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
     UniqueItemKind, WorkstationTag, Wound,
 };
@@ -204,6 +205,7 @@ pub struct PlanningSnapshot {
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
+    pub(crate) actor_known_social_observations: Vec<SocialObservation>,
     pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub(crate) actor_office_holder_beliefs: BTreeMap<EntityId, SupportBeliefRead>,
     pub(crate) actor_force_controller_beliefs: BTreeMap<EntityId, ForceControllerBeliefRead>,
@@ -277,6 +279,7 @@ impl PlanningSnapshot {
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
+            actor_known_social_observations: view.known_social_observations(actor),
             actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
             actor_office_holder_beliefs: included_entities
                 .iter()
@@ -1185,20 +1188,22 @@ mod tests {
             vec![(
                 TellMemoryKey {
                     counterparty: listener,
-                    subject,
+                    topic: worldwake_core::TellTopic::EntityBelief { subject },
                 },
                 ToldBeliefMemory {
-                    shared_state: worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
-                        last_known_place: Some(place),
-                        last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        observed_tick: Tick(6),
-                        source: worldwake_core::PerceptionSource::DirectObservation,
-                    }),
+                    shared_state: worldwake_core::SharedTellState::EntityBelief(
+                        worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
+                            last_known_place: Some(place),
+                            last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                            workstation_tag: None,
+                            resource_source: None,
+                            alive: true,
+                            wounds: Vec::new(),
+                            last_known_courage: None,
+                            observed_tick: Tick(6),
+                            source: worldwake_core::PerceptionSource::DirectObservation,
+                        }),
+                    ),
                     told_tick: Tick(7),
                 },
             )],
@@ -1212,7 +1217,7 @@ mod tests {
                 .actor_told_beliefs
                 .get(&TellMemoryKey {
                     counterparty: listener,
-                    subject,
+                    topic: worldwake_core::TellTopic::EntityBelief { subject },
                 })
                 .map(|memory| memory.told_tick),
             Some(Tick(7))

@@ -8,7 +8,8 @@ use crate::{
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, Permille, ThresholdBand, Tick, UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, PerceptionSource, Permille, TellTopic,
+    ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -479,9 +480,9 @@ fn motive_score(
                 market_signal_for_place(context.view, context.agent, commodity, destination);
             score_product(context.utility.enterprise_weight, signal)
         }
-        GoalKind::ShareBelief { subject, .. } => score_product(
+        GoalKind::ShareBelief { topic, .. } => score_product(
             context.utility.social_weight,
-            social_pressure_for_subject(context, subject),
+            social_pressure_for_topic(context, topic),
         ),
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
         GoalKind::InvestigateViolation { .. } => {
@@ -497,20 +498,24 @@ fn motive_score(
     }
 }
 
-fn social_pressure_for_subject(context: &RankingContext<'_>, subject: EntityId) -> Permille {
-    let belief = context
-        .view
-        .known_entity_beliefs(context.agent)
-        .into_iter()
-        .find_map(|(entity, belief)| (entity == subject).then_some(belief));
+fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> Permille {
+    let policy = context.view.belief_confidence_policy(context.agent);
+    match topic {
+        TellTopic::EntityBelief { subject } => {
+            let belief = context
+                .view
+                .known_entity_beliefs(context.agent)
+                .into_iter()
+                .find_map(|(entity, belief)| (entity == subject).then_some(belief));
 
-    belief.map_or(Permille::new_unchecked(0), |belief| {
-        belief_pressure_from_state(
-            &belief,
-            context.current_tick,
-            &context.view.belief_confidence_policy(context.agent),
-        )
-    })
+            belief.map_or(Permille::new_unchecked(0), |belief| {
+                belief_pressure_from_state(&belief, context.current_tick, &policy)
+            })
+        }
+        TellTopic::SocialObservation { observation } => {
+            belief_pressure_from_source(observation.source, observation.observed_tick, context.current_tick, &policy)
+        }
+    }
 }
 
 fn belief_pressure_from_state(
@@ -518,8 +523,17 @@ fn belief_pressure_from_state(
     current_tick: Tick,
     policy: &worldwake_core::BeliefConfidencePolicy,
 ) -> Permille {
-    let staleness_ticks = current_tick.0.saturating_sub(state.observed_tick.0);
-    belief_confidence(&state.source, staleness_ticks, policy)
+    belief_pressure_from_source(state.source, state.observed_tick, current_tick, policy)
+}
+
+fn belief_pressure_from_source(
+    source: PerceptionSource,
+    observed_tick: Tick,
+    current_tick: Tick,
+    policy: &worldwake_core::BeliefConfidencePolicy,
+) -> Permille {
+    let staleness_ticks = current_tick.0.saturating_sub(observed_tick.0);
+    belief_confidence(&source, staleness_ticks, policy)
 }
 
 fn investigation_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
@@ -764,9 +778,9 @@ mod tests {
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
         EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1295,7 +1309,10 @@ mod tests {
         );
 
         let ranked = rank(
-            &[goal(GoalKind::ShareBelief { listener, subject })],
+            &[goal(GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            })],
             &danger_view,
             agent,
             current_tick(),
@@ -1320,7 +1337,10 @@ mod tests {
         );
 
         let ranked = rank(
-            &[goal(GoalKind::ShareBelief { listener, subject })],
+            &[goal(GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            })],
             &self_care_view,
             agent,
             current_tick(),
@@ -1339,7 +1359,10 @@ mod tests {
             )],
         );
         let ranked = rank(
-            &[goal(GoalKind::ShareBelief { listener, subject })],
+            &[goal(GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+            })],
             &calm_view,
             agent,
             current_tick(),
@@ -1390,11 +1413,15 @@ mod tests {
         };
         let fresh_goal = goal(GoalKind::ShareBelief {
             listener,
-            subject: fresh_subject,
+            topic: TellTopic::EntityBelief {
+                subject: fresh_subject,
+            },
         });
         let rumor_goal = goal(GoalKind::ShareBelief {
             listener,
-            subject: rumor_subject,
+            topic: TellTopic::EntityBelief {
+                subject: rumor_subject,
+            },
         });
 
         let baseline_ranked = rank(
@@ -1477,7 +1504,10 @@ mod tests {
             },
         );
 
-        let goal = goal(GoalKind::ShareBelief { listener, subject });
+        let goal = goal(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        });
         let skeptical_ranked = rank(
             std::slice::from_ref(&goal),
             &skeptical_view,
@@ -1526,11 +1556,15 @@ mod tests {
             &[
                 goal(GoalKind::ShareBelief {
                     listener,
-                    subject: known_subject,
+                    topic: TellTopic::EntityBelief {
+                        subject: known_subject,
+                    },
                 }),
                 goal(GoalKind::ShareBelief {
                     listener,
-                    subject: missing_subject,
+                    topic: TellTopic::EntityBelief {
+                        subject: missing_subject,
+                    },
                 }),
             ],
             &view,
@@ -1574,7 +1608,10 @@ mod tests {
 
         let enterprise_first = rank(
             &[
-                goal(GoalKind::ShareBelief { listener, subject }),
+                goal(GoalKind::ShareBelief {
+                    listener,
+                    topic: TellTopic::EntityBelief { subject },
+                }),
                 goal(GoalKind::RestockCommodity {
                     commodity: CommodityKind::Bread,
                 }),
@@ -1605,7 +1642,10 @@ mod tests {
         );
         let self_care_first = rank(
             &[
-                goal(GoalKind::ShareBelief { listener, subject }),
+                goal(GoalKind::ShareBelief {
+                    listener,
+                    topic: TellTopic::EntityBelief { subject },
+                }),
                 goal(GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Bread,
                 }),

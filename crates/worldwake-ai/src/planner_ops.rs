@@ -778,7 +778,7 @@ mod tests {
         load_per_unit, ActionDefId, BodyCostPerTick, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
         InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
+        RecipeId, ResourceSource, TellTopic, TickRange, TradeDispositionProfile, UniqueItemKind,
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -1455,7 +1455,7 @@ mod tests {
                 "tell",
                 ActionPayload::Tell(TellActionPayload {
                     listener: entity(2),
-                    subject_entity: entity(3),
+                    topic: TellTopic::EntityBelief { subject: entity(3) },
                 }),
                 PlannerOpKind::Tell,
             ),

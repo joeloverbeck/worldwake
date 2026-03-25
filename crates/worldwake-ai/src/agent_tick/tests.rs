@@ -37,8 +37,8 @@
         KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent,
         PerceptionProfile, QueuedFacilityIntent,
         PerceptionSource, Permille, Place, Quantity, RecipeId, RecipientKnowledgeStatus,
-        ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, Tick, ToldBeliefMemory,
-        Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
+        ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
+        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
         UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
@@ -3999,6 +3999,12 @@
             .world
             .effective_place(harness.actor)
             .expect("harness actor should start at a place");
+        let remote_place = harness
+            .world
+            .topology()
+            .place_ids()
+            .find(|candidate| *candidate != place)
+            .expect("prototype world should expose a second place");
         let (listener, subject) = {
             let mut txn = new_txn(&mut harness.world, 2);
             txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
@@ -4008,7 +4014,7 @@
             let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
             let subject = txn.create_agent("Subject", ControlSource::Ai).unwrap();
             txn.set_ground_location(listener, place).unwrap();
-            txn.set_ground_location(subject, place).unwrap();
+            txn.set_ground_location(subject, remote_place).unwrap();
             commit_txn(txn);
             (listener, subject)
         };
@@ -4033,10 +4039,12 @@
             store.record_told_belief(
                 TellMemoryKey {
                     counterparty: listener,
-                    subject,
+                    topic: TellTopic::EntityBelief { subject },
                 },
                 ToldBeliefMemory {
-                    shared_state: worldwake_core::to_shared_belief_snapshot(&current),
+                    shared_state: worldwake_core::SharedTellState::EntityBelief(
+                        worldwake_core::to_shared_belief_snapshot(&current),
+                    ),
                     told_tick: Tick(2),
                 },
             );
@@ -4057,7 +4065,10 @@
             .into_iter()
             .next()
             .expect("expected one decision trace");
-        let share_goal = GoalKind::ShareBelief { listener, subject };
+        let share_goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        };
 
         match &trace.outcome {
             crate::DecisionOutcome::Planning(planning) => {
@@ -4072,7 +4083,7 @@
                 assert!(
                     planning.candidates.omitted_social.iter().any(|omission| {
                         omission.listener == listener
-                            && omission.subject == subject
+                            && omission.topic == TellTopic::EntityBelief { subject }
                             && omission.status
                                 == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
                     }),

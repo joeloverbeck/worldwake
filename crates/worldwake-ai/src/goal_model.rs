@@ -512,7 +512,7 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
             PlannerOpKind::Tell => match self {
-                GoalKind::ShareBelief { listener, subject } => {
+                GoalKind::ShareBelief { listener, topic } => {
                     let Some(target_listener) = targets.first().copied() else {
                         return Err(GoalPayloadOverrideError::MissingTarget);
                     };
@@ -521,7 +521,7 @@ impl GoalKindPlannerExt for GoalKind {
                     }
                     Ok(Some(ActionPayload::Tell(TellActionPayload {
                         listener: *listener,
-                        subject_entity: *subject,
+                        topic: *topic,
                     })))
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
@@ -1536,8 +1536,8 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        Permille, Quantity, RecipeId, RecordKind, ResourceSource, SuccessionLaw, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        Permille, Quantity, RecipeId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -1648,7 +1648,9 @@ mod tests {
         assert_eq!(
             GoalKind::ShareBelief {
                 listener: entity_id(3, 0),
-                subject: entity_id(4, 0),
+                topic: TellTopic::EntityBelief {
+                    subject: entity_id(4, 0),
+                },
             }
             .goal_kind_tag(),
             GoalKindTag::ShareBelief
@@ -1693,7 +1695,9 @@ mod tests {
     fn share_belief_goal_relevant_ops_are_tell_only() {
         let goal = GoalKind::ShareBelief {
             listener: entity_id(4, 0),
-            subject: entity_id(5, 0),
+            topic: TellTopic::EntityBelief {
+                subject: entity_id(5, 0),
+            },
         };
 
         assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Tell]);
@@ -1716,7 +1720,9 @@ mod tests {
         assert_eq!(
             GoalKind::ShareBelief {
                 listener: entity_id(6, 0),
-                subject: entity_id(7, 0),
+                topic: TellTopic::EntityBelief {
+                    subject: entity_id(7, 0),
+                },
             }
             .relevant_observed_commodities(&recipes),
             Some(BTreeSet::new())
@@ -1727,7 +1733,9 @@ mod tests {
     fn share_belief_tell_step_is_a_progress_barrier() {
         let goal = GoalKind::ShareBelief {
             listener: entity_id(6, 0),
-            subject: entity_id(7, 0),
+            topic: TellTopic::EntityBelief {
+                subject: entity_id(7, 0),
+            },
         };
         let step = PlannedStep {
             def_id: ActionDefId(77),
@@ -2547,7 +2555,10 @@ mod tests {
             1,
         );
         let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ShareBelief { listener, subject };
+        let goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        };
         let def = ActionDef {
             id: ActionDefId(10),
             name: "tell".to_string(),
@@ -2581,7 +2592,7 @@ mod tests {
             payload,
             Some(ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }))
         );
     }
@@ -3976,7 +3987,9 @@ mod tests {
             },
             GoalKind::ShareBelief {
                 listener: entity(99),
-                subject: entity(98),
+                topic: TellTopic::EntityBelief {
+                    subject: entity(98),
+                },
             },
             GoalKind::ClaimOffice { office: entity(99) },
             GoalKind::SupportCandidateForOffice {
@@ -4034,7 +4047,7 @@ mod tests {
             },
             GoalKind::ShareBelief {
                 listener: place_b,
-                subject: actor,
+                topic: TellTopic::EntityBelief { subject: actor },
             },
             GoalKind::ClaimOffice { office: place_b },
             GoalKind::SupportCandidateForOffice {
@@ -4145,7 +4158,7 @@ mod tests {
             let listener = id(30);
             let goal = GoalKind::ShareBelief {
                 listener,
-                subject: id(99),
+                topic: TellTopic::EntityBelief { subject: id(99) },
             };
             assert!(goal.matches_binding(&[listener], PlannerOpKind::Tell));
         }
@@ -4154,7 +4167,7 @@ mod tests {
         fn share_belief_mismatch() {
             let goal = GoalKind::ShareBelief {
                 listener: id(30),
-                subject: id(99),
+                topic: TellTopic::EntityBelief { subject: id(99) },
             };
             assert!(!goal.matches_binding(&[id(31)], PlannerOpKind::Tell));
         }

@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, PerceptionSource,
-    RecipientKnowledgeStatus, SuspensionReason, Tick,
+    RecipientKnowledgeStatus, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
@@ -69,6 +69,7 @@ pub struct AgentDecisionTrace {
 
 /// What the decision pipeline produced for this agent this tick.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DecisionOutcome {
     /// Agent is dead — no decision pipeline ran.
     Dead,
@@ -245,7 +246,7 @@ pub struct PoliticalCandidateOmission {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SocialCandidateOmission {
     pub listener: EntityId,
-    pub subject: EntityId,
+    pub topic: TellTopic,
     pub status: RecipientKnowledgeStatus,
 }
 
@@ -856,8 +857,8 @@ fn omitted_social_status_for_goal(
     goal: &crate::GoalKind,
 ) -> Option<RecipientKnowledgeStatus> {
     omissions.iter().find_map(|omission| match goal {
-        crate::GoalKind::ShareBelief { listener, subject }
-            if omission.listener == *listener && omission.subject == *subject =>
+        crate::GoalKind::ShareBelief { listener, topic }
+            if omission.listener == *listener && omission.topic == *topic =>
         {
             Some(omission.status)
         }
@@ -1564,7 +1565,10 @@ mod tests {
     fn goal_status_reports_social_omission_reason() {
         let listener = entity(10);
         let subject = entity(11);
-        let share_goal = GoalKind::ShareBelief { listener, subject };
+        let share_goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        };
 
         let trace = goal_trace(
             Tick(7),
@@ -1578,7 +1582,7 @@ mod tests {
             Vec::new(),
             vec![SocialCandidateOmission {
                 listener,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
                 status: RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
             }],
         );

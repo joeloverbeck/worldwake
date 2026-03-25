@@ -291,7 +291,9 @@ mod tests {
             },
             GoalKind::ShareBelief {
                 listener: dummy_entity(),
-                subject: dummy_entity(),
+                topic: worldwake_core::TellTopic::EntityBelief {
+                    subject: dummy_entity(),
+                },
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),
@@ -382,7 +384,9 @@ mod tests {
             },
             GoalKind::ShareBelief {
                 listener: dummy_entity(),
-                subject: dummy_entity(),
+                topic: worldwake_core::TellTopic::EntityBelief {
+                    subject: dummy_entity(),
+                },
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),
@@ -470,7 +474,9 @@ mod tests {
             },
             GoalKind::ShareBelief {
                 listener: dummy_entity(),
-                subject: dummy_entity(),
+                topic: worldwake_core::TellTopic::EntityBelief {
+                    subject: dummy_entity(),
+                },
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),

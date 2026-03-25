@@ -3,9 +3,10 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CombatProfile, CommodityKind, EligibilityRule, EntityId,
-    EntityKind, EventTag, InstitutionalBeliefRead, Permille, Quantity, SuccessionLaw,
-    VisibilitySpec, World, WorldTxn,
+    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, CombatProfile, CommodityKind,
+    EligibilityRule, EntityId, EntityKind, EventTag, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
+    SuccessionLaw, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -767,6 +768,25 @@ fn commit_declare_support(
     validate_declare_support_context_in_world(txn, instance.actor, payload)?;
     txn.declare_support(instance.actor, payload.office, payload.candidate)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    txn.project_institutional_belief(
+        instance.actor,
+        InstitutionalBeliefKey::SupportFor {
+            supporter: instance.actor,
+            office: payload.office,
+        },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office: payload.office,
+                supporter: instance.actor,
+                candidate: Some(payload.candidate),
+                effective_tick: txn.tick(),
+            },
+            source: InstitutionalKnowledgeSource::SelfDeclaration,
+            learned_tick: txn.tick(),
+            learned_at: txn.effective_place(instance.actor),
+        },
+    )
+    .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.add_target(payload.office);
     txn.add_target(payload.candidate);
     Ok(CommitOutcome::empty())
@@ -1189,9 +1209,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
         BelievedEntityState, CauseRef, CombatProfile, CommodityKind, ControlSource,
-        EligibilityRule, EntityId, EventLog, EventTag, EventView, OfficeData, PerceptionSource,
-        Permille, Quantity, RecordData, RecordKind, Seed, SuccessionLaw, Tick, UtilityProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        EligibilityRule, EntityId, EventLog, EventTag, EventView, InstitutionalBeliefRead,
+        OfficeData, PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed,
+        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
@@ -2099,6 +2119,13 @@ mod tests {
             fx.world.support_declaration(fx.actor, fx.office),
             Some(fx.candidate)
         );
+        assert_eq!(
+            fx.world
+                .get_component_agent_belief_store(fx.actor)
+                .expect("actor should retain a belief store")
+                .believed_support_declaration(fx.office, fx.actor),
+            InstitutionalBeliefRead::Certain(Some(fx.candidate))
+        );
         let after_first = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
         assert_eq!(after_first.entries.len(), 1);
 
@@ -2106,6 +2133,13 @@ mod tests {
         assert_eq!(
             fx.world.support_declaration(fx.actor, fx.office),
             Some(second_candidate)
+        );
+        assert_eq!(
+            fx.world
+                .get_component_agent_belief_store(fx.actor)
+                .expect("actor should retain a belief store")
+                .believed_support_declaration(fx.office, fx.actor),
+            InstitutionalBeliefRead::Certain(Some(second_candidate))
         );
         let after_second = record_at_place(&fx.world, fx.place, RecordKind::SupportLedger);
         assert_eq!(after_second.entries.len(), 2);

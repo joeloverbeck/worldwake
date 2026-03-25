@@ -6,7 +6,7 @@
 
 use crate::{ActionInstanceId, ActionPayload, CommitOutcome, ResolvedRequestTrace};
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityId, Tick, ViolationId};
+use worldwake_core::{ActionDefId, EntityId, TellTopic, Tick, ViolationId};
 
 /// A single action lifecycle event recorded during `step_tick()`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,7 +25,7 @@ pub struct ActionTraceEvent {
 pub enum ActionTraceDetail {
     Tell {
         listener: EntityId,
-        subject: EntityId,
+        topic: TellTopic,
     },
     Investigate {
         violation_id: ViolationId,
@@ -154,7 +154,7 @@ impl ActionTraceDetail {
         match payload {
             ActionPayload::Tell(payload) => Some(Self::Tell {
                 listener: payload.listener,
-                subject: payload.subject_entity,
+                topic: payload.topic,
             }),
             ActionPayload::Investigate(payload) => Some(Self::Investigate {
                 violation_id: payload.violation_id,
@@ -179,8 +179,8 @@ impl ActionTraceDetail {
     #[must_use]
     pub fn summary(&self) -> String {
         match self {
-            Self::Tell { listener, subject } => {
-                format!("tell listener {listener} subject {subject}")
+            Self::Tell { listener, topic } => {
+                format!("tell listener {listener} topic {topic:?}")
             }
             Self::Investigate { violation_id } => {
                 format!("investigate violation {}", violation_id.0)
@@ -441,17 +441,19 @@ mod tests {
             slot: 7,
             generation: 0,
         };
-        let subject = EntityId {
-            slot: 8,
-            generation: 0,
+        let topic = TellTopic::EntityBelief {
+            subject: EntityId {
+                slot: 8,
+                generation: 0,
+            },
         };
 
         assert_eq!(
             ActionTraceDetail::from_payload(&ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic,
             })),
-            Some(ActionTraceDetail::Tell { listener, subject })
+            Some(ActionTraceDetail::Tell { listener, topic })
         );
         assert_eq!(ActionTraceDetail::from_payload(&ActionPayload::None), None);
     }
@@ -476,9 +478,11 @@ mod tests {
             slot: 7,
             generation: 0,
         };
-        let subject = EntityId {
-            slot: 8,
-            generation: 0,
+        let topic = TellTopic::EntityBelief {
+            subject: EntityId {
+                slot: 8,
+                generation: 0,
+            },
         };
         let committed = sample_event(
             2,
@@ -487,13 +491,13 @@ mod tests {
                 outcome: CommitOutcome::empty(),
             },
         )
-        .with_detail(Some(ActionTraceDetail::Tell { listener, subject }));
+        .with_detail(Some(ActionTraceDetail::Tell { listener, topic }));
 
         let summary = committed.summary();
         assert!(summary.contains("committed"));
         assert!(summary.contains("tell listener"));
         assert!(summary.contains(&listener.to_string()));
-        assert!(summary.contains(&subject.to_string()));
+        assert!(summary.contains("EntityBelief"));
     }
 
     #[test]

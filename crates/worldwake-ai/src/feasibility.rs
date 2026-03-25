@@ -215,7 +215,7 @@ mod tests {
     use worldwake_core::{
         BeliefConfidencePolicy, BlockedIntent, BlockerKey, BlockingFact,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, IntentionDomain,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, IntentionDomain, TellTopic,
         IntentionFrame, LoadUnits, MerchandiseProfile, RecipeId, ResourceSource,
         Tick, UniqueItemKind, WorkstationTag,
     };
@@ -743,7 +743,10 @@ mod tests {
             entity_places: vec![(listener, place)],
             ..Default::default()
         };
-        let goal = ranked_goal(GoalKind::ShareBelief { listener, subject });
+        let goal = ranked_goal(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
@@ -764,7 +767,10 @@ mod tests {
             dead: vec![listener],
             ..Default::default()
         };
-        let goal = ranked_goal(GoalKind::ShareBelief { listener, subject });
+        let goal = ranked_goal(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));

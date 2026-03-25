@@ -16,7 +16,7 @@ use worldwake_core::{
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
     Quantity, RecipientKnowledgeStatus, RelationValue, ResourceSource, Seed, StateHash,
-    SuccessionLaw, TellProfile, ThresholdBand, Tick, UtilityProfile,
+    SuccessionLaw, TellProfile, TellTopic, ThresholdBand, Tick, UtilityProfile,
     ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
@@ -60,6 +60,13 @@ fn accepting_tell_profile() -> TellProfile {
         max_relay_chain_len: 3,
         acceptance_fidelity: pm(1000),
         ..TellProfile::default()
+    }
+}
+
+fn broad_accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 6,
+        ..accepting_tell_profile()
     }
 }
 
@@ -1184,9 +1191,10 @@ fn golden_loot_corpse_self_care_chain_replays_deterministically() {
 // ===========================================================================
 // Suite 5: combat_death_triggers_force_succession
 //
-// Proves: combat, death, and political succession interact only through
-// authoritative world state and event history. No combat-specific political
-// hook or political action alias is involved.
+// Proves: challenger AI can open combat against an incumbent, and the resulting
+// death drives force-law succession entirely through authoritative world state
+// and event history. No combat-specific political hook or political action
+// alias is involved.
 // Foundation: Principle 1, Principle 9, Principle 24.
 // Cross-systems: Combat + Politics + AI combat goal generation.
 // ===========================================================================
@@ -1218,6 +1226,21 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         UtilityProfile::default(),
         KnownRecipes::new(),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_data(
+            incumbent,
+            AgentData {
+                control_source: ControlSource::None,
+            },
+        )
+        .unwrap();
+        txn.set_component_combat_profile(challenger, lethal_combat_attacker_profile())
+            .unwrap();
+        txn.set_component_combat_profile(incumbent, fragile_office_holder_profile())
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -1230,14 +1253,6 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         incumbent,
         default_perception_profile(),
     );
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_combat_profile(challenger, lethal_combat_attacker_profile())
-            .unwrap();
-        txn.set_component_combat_profile(incumbent, fragile_office_holder_profile())
-            .unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
 
     give_commodity(
         &mut h.world,
@@ -1909,7 +1924,7 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
                 speaker,
                 &GoalKind::ShareBelief {
                     listener,
-                    subject: office,
+                    topic: TellTopic::EntityBelief { subject: office },
                 },
             )
             .into_iter()
@@ -2521,11 +2536,13 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
 
     let share_recent = GoalKind::ShareBelief {
         listener,
-        subject: recent_subject,
+        topic: TellTopic::EntityBelief {
+            subject: recent_subject,
+        },
     };
     let share_office = GoalKind::ShareBelief {
         listener,
-        subject: office,
+        topic: TellTopic::EntityBelief { subject: office },
     };
 
     assert!(
@@ -2655,7 +2672,9 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 && event.detail.as_ref()
                     == Some(&ActionTraceDetail::Tell {
                         listener,
-                        subject: recent_subject,
+                        topic: TellTopic::EntityBelief {
+                            subject: recent_subject,
+                        },
                     })
         })
         .count();
@@ -2668,7 +2687,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 && event.detail.as_ref()
                     == Some(&ActionTraceDetail::Tell {
                         listener,
-                        subject: office,
+                        topic: TellTopic::EntityBelief { subject: office },
                     })
         })
         .expect("speaker should commit a tell for the office fact");
@@ -3167,7 +3186,7 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
         &mut h.world,
         &mut h.event_log,
         witness,
-        focused_accepting_tell_profile(),
+        broad_accepting_tell_profile(),
     );
 
     // -- Agent D ("Remote Listener"): at BanditCamp, passive reception --
@@ -3469,8 +3488,9 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
                     event.detail,
                     Some(ActionTraceDetail::Tell {
                         listener: told_listener,
-                        subject,
-                    }) if told_listener == remote_listener && subject == office
+                        topic,
+                    }) if told_listener == remote_listener
+                        && topic == TellTopic::EntityBelief { subject: office }
                 ))
             .then_some((event.tick, event.sequence_in_tick))
         })
@@ -3490,7 +3510,7 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
 
     let share_belief_goal = GoalKind::ShareBelief {
         listener: remote_listener,
-        subject: office,
+        topic: TellTopic::EntityBelief { subject: office },
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
@@ -3636,7 +3656,7 @@ fn run_contested_force_state_propagates_through_belief_system(
         &mut h.world,
         &mut h.event_log,
         witness,
-        focused_accepting_tell_profile(),
+        broad_accepting_tell_profile(),
     );
 
     // -- Agent D ("Remote Listener"): at OrchardFarm, passive reception --
@@ -3996,8 +4016,9 @@ fn run_contested_force_state_propagates_through_belief_system(
                     event.detail,
                     Some(ActionTraceDetail::Tell {
                         listener: told_listener,
-                        subject,
-                    }) if told_listener == remote_listener && subject == office
+                        topic,
+                    }) if told_listener == remote_listener
+                        && topic == TellTopic::EntityBelief { subject: office }
                 ))
             .then_some((event.tick, event.sequence_in_tick))
         })
@@ -4017,7 +4038,7 @@ fn run_contested_force_state_propagates_through_belief_system(
 
     let share_belief_goal = GoalKind::ShareBelief {
         listener: remote_listener,
-        subject: office,
+        topic: TellTopic::EntityBelief { subject: office },
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
@@ -4851,7 +4872,7 @@ fn run_supply_depletion_enables_share_belief(
 
     let share_goal = GoalKind::ShareBelief {
         listener,
-        subject: source,
+        topic: TellTopic::EntityBelief { subject: source },
     };
     assert!(
         first_planning
@@ -4888,7 +4909,7 @@ fn run_supply_depletion_enables_share_belief(
                 && event.detail
                     == Some(ActionTraceDetail::Tell {
                         listener,
-                        subject: source,
+                        topic: TellTopic::EntityBelief { subject: source },
                     })
         }) {
             tell_commit_tick = Some(h.scheduler.current_tick());
