@@ -191,7 +191,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_combat_candidates(&mut candidates, &ctx);
+    emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -239,13 +239,14 @@ fn emit_enterprise_candidates(
 
 fn emit_combat_candidates(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
-    emit_engage_hostile_goals(candidates, ctx);
-    emit_reduce_danger_goal(candidates, ctx);
-    emit_care_goals(candidates, ctx);
-    emit_loot_goals(candidates, ctx);
-    emit_bury_goals(candidates, ctx);
+    emit_engage_hostile_goals(candidates, diagnostics, ctx);
+    emit_reduce_danger_goal(candidates, diagnostics, ctx);
+    emit_care_goals(candidates, diagnostics, ctx);
+    emit_loot_goals(candidates, diagnostics, ctx);
+    emit_bury_goals(candidates, diagnostics, ctx);
 }
 
 fn emit_social_candidates(
@@ -657,6 +658,7 @@ fn candidate_is_eligible(
 
 fn emit_engage_hostile_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     if ctx
@@ -675,6 +677,12 @@ fn emit_engage_hostile_goals(
         .into_iter()
         .collect::<BTreeSet<_>>();
 
+    let beliefs = if ctx.tracing_enabled {
+        ctx.view.known_entity_beliefs(ctx.agent)
+    } else {
+        Vec::new()
+    };
+
     for target in local_hostility_targets(ctx.view, ctx.agent, ctx.place) {
         if current_attackers.contains(&target) {
             continue;
@@ -684,10 +692,23 @@ fn emit_engage_hostile_goals(
         if let Some(place) = ctx.place {
             evidence.places.insert(place);
         }
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == target) {
+                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                    subject: target,
+                    aspect: BeliefAspect::Hostile,
+                    source: state.source,
+                    observed_tick: state.observed_tick,
+                });
+            }
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::EngageHostile { target },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -910,6 +931,7 @@ fn emit_wash_goal(
 
 fn emit_reduce_danger_goal(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(thresholds) = ctx.view.drive_thresholds(ctx.agent) else {
@@ -946,27 +968,55 @@ fn emit_reduce_danger_goal(
         .extend(ctx.view.current_attackers_of(ctx.agent));
 
     if !evidence.is_empty() {
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            let wound_count = ctx.view.wounds(ctx.agent).len() as u16;
+            trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::OwnWounds {
+                    count: wound_count,
+                });
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::ReduceDanger,
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
     }
 }
 
-fn emit_care_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
+fn emit_care_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
     // Self-care: emit if agent believes self wounded (no medicine gate).
     if ctx.view.has_wounds(ctx.agent) {
         let mut evidence = Evidence::with_entity(ctx.agent);
         if let Some(place) = ctx.place {
             evidence.places.insert(place);
         }
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            let wound_count = ctx.view.wounds(ctx.agent).len() as u16;
+            trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::OwnWounds {
+                    count: wound_count,
+                });
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::TreatWounds { patient: ctx.agent },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -987,10 +1037,21 @@ fn emit_care_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         if let Some(place) = ctx.place {
             evidence.places.insert(place);
         }
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject: entity,
+                aspect: BeliefAspect::Wounded,
+                source: belief.source,
+                observed_tick: belief.observed_tick,
+            });
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::TreatWounds { patient: entity },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -1237,9 +1298,19 @@ fn deliverable_quantity(
     Quantity(local_quantity.0.min(restock_gap.0).min(carry_fit.0))
 }
 
-fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
+fn emit_loot_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
     let Some(place) = ctx.place else {
         return;
+    };
+
+    let beliefs = if ctx.tracing_enabled {
+        ctx.view.known_entity_beliefs(ctx.agent)
+    } else {
+        Vec::new()
     };
 
     for corpse in ctx.view.corpse_entities_at(place) {
@@ -1248,10 +1319,23 @@ fn emit_loot_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         }
         let mut evidence = Evidence::with_entity(corpse);
         evidence.places.insert(place);
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == corpse) {
+                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                    subject: corpse,
+                    aspect: BeliefAspect::Dead,
+                    source: state.source,
+                    observed_tick: state.observed_tick,
+                });
+            }
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::LootCorpse { corpse },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -1269,7 +1353,11 @@ fn corpse_has_known_loot(view: &dyn GoalBeliefView, corpse: EntityId) -> bool {
         .any(|commodity| corpse_has_known_commodity(view, corpse, commodity))
 }
 
-fn emit_bury_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &GenerationContext<'_>) {
+fn emit_bury_goals(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
     let Some(place) = ctx.place else {
         return;
     };
@@ -1282,17 +1370,36 @@ fn emit_bury_goals(candidates: &mut BTreeMap<GoalKey, GroundedGoal>, ctx: &Gener
         return;
     };
 
+    let beliefs = if ctx.tracing_enabled {
+        ctx.view.known_entity_beliefs(ctx.agent)
+    } else {
+        Vec::new()
+    };
+
     for corpse in ctx.view.corpse_entities_at(place) {
         let mut evidence = Evidence::with_entity(corpse);
         evidence.entities.insert(burial_site);
         evidence.places.insert(place);
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == corpse) {
+                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                    subject: corpse,
+                    aspect: BeliefAspect::Dead,
+                    source: state.source,
+                    observed_tick: state.observed_tick,
+                });
+            }
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::BuryCorpse {
                 corpse,
                 burial_site,
             },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -6121,6 +6228,222 @@ mod tests {
                 .contains(&SelfKnowledgeProvenance::MerchantIdentity),
             "knowledge_path.self_knowledge should contain MerchantIdentity, got {:?}",
             trace.knowledge_path.self_knowledge,
+        );
+    }
+
+    #[test]
+    fn engage_hostile_knowledge_path_records_hostile_belief() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![hostile]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                hostile,
+                believed_state(3, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::EngageHostile { target: hostile });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for EngageHostile");
+
+        assert!(
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .contains(&crate::knowledge_path::BeliefProvenance {
+                    subject: hostile,
+                    aspect: BeliefAspect::Hostile,
+                    source: PerceptionSource::DirectObservation,
+                    observed_tick: Tick(3),
+                }),
+            "knowledge_path.entity_beliefs should contain Hostile belief for hostile target, got {:?}",
+            trace.knowledge_path.entity_beliefs,
+        );
+    }
+
+    #[test]
+    fn reduce_danger_knowledge_path_records_own_wounds() {
+        let agent = entity(1);
+        let attacker = entity(2);
+        let place = entity(10);
+        let adjacent = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, attacker]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(attacker, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(attacker, place);
+        view.entities_at.insert(place, vec![agent, attacker]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.wounds
+            .insert(agent, vec![wound(1), wound(2)]);
+        view.attackers.insert(agent, vec![attacker]);
+        view.adjacent_places.insert(place, vec![adjacent]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::ReduceDanger);
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for ReduceDanger");
+
+        assert!(
+            trace
+                .knowledge_path
+                .self_knowledge
+                .contains(&SelfKnowledgeProvenance::OwnWounds { count: 2 }),
+            "knowledge_path.self_knowledge should contain OwnWounds {{ count: 2 }}, got {:?}",
+            trace.knowledge_path.self_knowledge,
+        );
+    }
+
+    #[test]
+    fn care_knowledge_path_records_wounded_belief() {
+        let agent = entity(1);
+        let patient = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, patient]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(patient, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(patient, place);
+        view.entities_at.insert(place, vec![agent, patient]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                patient,
+                BelievedEntityState {
+                    wounds: vec![wound(1)],
+                    alive: true,
+                    ..believed_state(4, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::TreatWounds { patient });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for TreatWounds(patient)");
+
+        assert!(
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .contains(&crate::knowledge_path::BeliefProvenance {
+                    subject: patient,
+                    aspect: BeliefAspect::Wounded,
+                    source: PerceptionSource::DirectObservation,
+                    observed_tick: Tick(4),
+                }),
+            "knowledge_path.entity_beliefs should contain Wounded belief for patient, got {:?}",
+            trace.knowledge_path.entity_beliefs,
+        );
+    }
+
+    #[test]
+    fn loot_knowledge_path_records_corpse_belief() {
+        let agent = entity(1);
+        let corpse = entity(2);
+        let bread = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(corpse, place);
+        view.corpses_at.insert(place, vec![corpse]);
+        view.direct_possessions.insert(corpse, vec![bread]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                corpse,
+                BelievedEntityState {
+                    alive: false,
+                    ..believed_state(2, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::LootCorpse { corpse });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for LootCorpse");
+
+        assert!(
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .contains(&crate::knowledge_path::BeliefProvenance {
+                    subject: corpse,
+                    aspect: BeliefAspect::Dead,
+                    source: PerceptionSource::DirectObservation,
+                    observed_tick: Tick(2),
+                }),
+            "knowledge_path.entity_beliefs should contain Dead belief for corpse, got {:?}",
+            trace.knowledge_path.entity_beliefs,
         );
     }
 
