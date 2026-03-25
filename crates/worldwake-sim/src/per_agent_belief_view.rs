@@ -6,9 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
-    BelievedEntityState, CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+    BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
     MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
     RecipientKnowledgeStatus, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
     ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind,
@@ -840,6 +841,21 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
         self.belief_store
             .believed_support_declarations_for_office(office)
+    }
+
+    fn institutional_belief_claims(
+        &self,
+        agent: EntityId,
+        key: InstitutionalBeliefKey,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+        self.belief_store
+            .institutional_beliefs
+            .get(&key)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
@@ -2188,5 +2204,71 @@ mod tests {
             RuntimeBeliefView::believed_membership(&view, faction, agent),
             InstitutionalBeliefRead::Certain(true)
         );
+    }
+
+    #[test]
+    fn institutional_belief_claims_returns_claims_from_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Town Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            (agent, office)
+        };
+
+        let holder = {
+            let mut txn = new_txn(&mut world, 2);
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            commit_txn(txn);
+            holder
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        let key = InstitutionalBeliefKey::OfficeHolderOf { office };
+        let claim = worldwake_core::BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office,
+                holder: Some(holder),
+                effective_tick: Tick(1),
+            },
+            source: InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: Tick(2),
+            learned_at: Some(place),
+        };
+        beliefs
+            .institutional_beliefs
+            .insert(key.clone(), vec![claim.clone()]);
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let result = GoalBeliefView::institutional_belief_claims(&view, agent, key);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], claim);
+    }
+
+    #[test]
+    fn institutional_belief_claims_returns_empty_for_other_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Town Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other, office)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        // Querying for a different agent should return empty.
+        let key = InstitutionalBeliefKey::OfficeHolderOf { office };
+        let result = GoalBeliefView::institutional_belief_claims(&view, other, key);
+        assert!(result.is_empty());
     }
 }

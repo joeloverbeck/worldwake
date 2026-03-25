@@ -3,13 +3,14 @@ use crate::{
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
-    BeliefConfidencePolicy, BelievedEntityState, CombatProfile, CommodityConsumableProfile,
-    CommodityKind, CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId,
-    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    IntentionDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile, DemandObservation,
+    DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick,
+    TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
+    UniqueItemKind, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -162,6 +163,16 @@ pub trait GoalBeliefView {
         office: EntityId,
     ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
         let _ = office;
+        Vec::new()
+    }
+    /// Return the raw institutional belief claims for a key, with provenance.
+    /// Default returns empty (backward compatible).
+    fn institutional_belief_claims(
+        &self,
+        agent: EntityId,
+        key: InstitutionalBeliefKey,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        let _ = (agent, key);
         Vec::new()
     }
 }
@@ -349,6 +360,14 @@ pub trait RuntimeBeliefView {
         office: EntityId,
     ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
         let _ = office;
+        Vec::new()
+    }
+    fn institutional_belief_claims(
+        &self,
+        agent: EntityId,
+        key: InstitutionalBeliefKey,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        let _ = (agent, key);
         Vec::new()
     }
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
@@ -753,6 +772,14 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>>,
             )> {
                 $crate::RuntimeBeliefView::believed_support_declarations_for_office(self, office)
+            }
+
+            fn institutional_belief_claims(
+                &self,
+                agent: worldwake_core::EntityId,
+                key: worldwake_core::InstitutionalBeliefKey,
+            ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
+                $crate::RuntimeBeliefView::institutional_belief_claims(self, agent, key)
             }
         }
     };

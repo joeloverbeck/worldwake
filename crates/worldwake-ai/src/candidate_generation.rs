@@ -234,7 +234,7 @@ fn emit_enterprise_candidates(
     ctx: &GenerationContext<'_>,
 ) {
     emit_restock_goals(candidates, diagnostics, ctx);
-    emit_move_cargo_goals(candidates, ctx);
+    emit_move_cargo_goals(candidates, diagnostics, ctx);
 }
 
 fn emit_combat_candidates(
@@ -1064,7 +1064,7 @@ fn emit_produce_goals(
             continue;
         }
 
-        if let Some((mut evidence, evidence_trace)) = recipe_path_evidence(
+        if let Some((mut evidence, mut evidence_trace)) = recipe_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -1074,6 +1074,19 @@ fn emit_produce_goals(
         ) {
             if let Some(place) = ctx.place {
                 evidence.places.insert(place);
+            }
+            if ctx.tracing_enabled {
+                let primary_commodity = recipe.outputs.first().map(|(c, _)| *c);
+                if let Some(commodity) = primary_commodity {
+                    evidence_trace.knowledge_path.entity_beliefs.extend(
+                        belief_provenance_for_contributors(
+                            ctx.view,
+                            ctx.agent,
+                            &evidence_trace.contributors,
+                            commodity,
+                        ),
+                    );
+                }
             }
             emit_candidate_with_trace(
                 candidates,
@@ -1101,7 +1114,7 @@ fn emit_restock_goals(
         if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
-        if let Some((evidence, evidence_trace)) = acquisition_path_evidence(
+        if let Some((evidence, mut evidence_trace)) = acquisition_path_evidence(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -1109,6 +1122,20 @@ fn emit_restock_goals(
             ctx.recipes,
             ctx.travel_horizon,
         ) {
+            if ctx.tracing_enabled {
+                evidence_trace
+                    .knowledge_path
+                    .self_knowledge
+                    .push(SelfKnowledgeProvenance::MerchantIdentity);
+                evidence_trace.knowledge_path.entity_beliefs.extend(
+                    belief_provenance_for_contributors(
+                        ctx.view,
+                        ctx.agent,
+                        &evidence_trace.contributors,
+                        commodity,
+                    ),
+                );
+            }
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
@@ -1124,6 +1151,7 @@ fn emit_restock_goals(
 
 fn emit_move_cargo_goals(
     candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(profile) = ctx.view.merchandise_profile(ctx.agent) else {
@@ -1154,14 +1182,30 @@ fn emit_move_cargo_goals(
 
         let mut evidence = Evidence::with_place(current_place);
         evidence.places.insert(destination);
-        evidence.entities.extend(local_lots);
-        emit_candidate(
+        evidence.entities.extend(local_lots.iter().copied());
+        let mut trace = EvidenceTrace::default();
+        for &lot in &local_lots {
+            trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
+        }
+        if ctx.tracing_enabled {
+            trace.knowledge_path.entity_beliefs.extend(
+                belief_provenance_for_contributors(
+                    ctx.view,
+                    ctx.agent,
+                    &trace.contributors,
+                    commodity,
+                ),
+            );
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::MoveCargo {
                 commodity,
                 destination,
             },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -1272,6 +1316,13 @@ fn belief_provenance_for_contributors(
             }
             CandidateEvidenceKind::ResourceSource => {
                 BeliefAspect::IsResourceSource { commodity }
+            }
+            CandidateEvidenceKind::RecipeWorkstation => {
+                if let Some(tag) = view.workstation_tag(contributor.entity) {
+                    BeliefAspect::HasWorkstation { tag }
+                } else {
+                    continue;
+                }
             }
             _ => continue,
         };
@@ -5840,6 +5891,256 @@ mod tests {
                 }),
             "knowledge_path.self_knowledge should contain NeedLevel(Fatigue, 600), got {:?}",
             trace.knowledge_path.self_knowledge,
+        );
+    }
+
+    #[test]
+    fn produce_candidate_knowledge_path_records_resource_source() {
+        let agent = entity(1);
+        let workstation = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        // Provide belief provenance for the workstation/resource-source entity
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                believed_state(3, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+            6,
+            true, // tracing ENABLED
+        );
+
+        let produce_key = GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: RecipeId(0),
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&produce_key)
+            .expect("should have evidence trace for ProduceCommodity");
+
+        assert!(
+            trace.knowledge_path.entity_beliefs.iter().any(|bp| {
+                bp.subject == workstation
+                    && bp.aspect
+                        == BeliefAspect::IsResourceSource {
+                            commodity: CommodityKind::Apple,
+                        }
+                    && bp.source == PerceptionSource::DirectObservation
+                    && bp.observed_tick == Tick(3)
+            }),
+            "entity_beliefs should contain BeliefProvenance for resource source with IsResourceSource(Apple), got {:?}",
+            trace.knowledge_path.entity_beliefs,
+        );
+    }
+
+    #[test]
+    fn produce_candidate_knowledge_path_records_workstation() {
+        let agent = entity(1);
+        let workstation = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.known_recipes.insert(agent, vec![RecipeId(0)]);
+        view.unique_item_counts
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+        view.workstations
+            .insert((place, WorkstationTag::Forge), vec![workstation]);
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::Forge);
+        // Agent is a merchant selling Swords (triggers serves_restock)
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Sword]),
+                home_market: Some(place),
+            },
+        );
+        // Demand memory creates the restock gap
+        view.demand_memory.insert(
+            agent,
+            vec![demand(place, CommodityKind::Sword, 3)],
+        );
+        // Crafting recipe: Firewood -> Sword at Forge (has inputs, workstation is NOT resource source)
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Firewood), Quantity(5));
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                believed_state(2, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Sword, Quantity(1))],
+            vec![(CommodityKind::Firewood, Quantity(2))],
+            WorkstationTag::Forge,
+        ));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &recipes,
+            Tick(5),
+            6,
+            true, // tracing ENABLED
+        );
+
+        let produce_key = GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: RecipeId(0),
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&produce_key)
+            .expect("should have evidence trace for ProduceCommodity");
+
+        assert!(
+            trace.knowledge_path.entity_beliefs.iter().any(|bp| {
+                bp.subject == workstation
+                    && bp.aspect
+                        == BeliefAspect::HasWorkstation {
+                            tag: WorkstationTag::Forge,
+                        }
+                    && bp.source == PerceptionSource::DirectObservation
+                    && bp.observed_tick == Tick(2)
+            }),
+            "entity_beliefs should contain BeliefProvenance for workstation with HasWorkstation(Forge), got {:?}",
+            trace.knowledge_path.entity_beliefs,
+        );
+    }
+
+    #[test]
+    fn restock_candidate_knowledge_path_records_merchant_identity() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place),
+            },
+        );
+        // Demand memory creates the restock gap
+        view.demand_memory.insert(
+            agent,
+            vec![demand(place, CommodityKind::Bread, 5)],
+        );
+        // Seller has bread for sale
+        view.sellers
+            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                seller,
+                believed_state(4, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true, // tracing ENABLED
+        );
+
+        let restock_key = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&restock_key)
+            .expect("should have evidence trace for RestockCommodity(Bread)");
+
+        assert!(
+            trace
+                .knowledge_path
+                .self_knowledge
+                .contains(&SelfKnowledgeProvenance::MerchantIdentity),
+            "knowledge_path.self_knowledge should contain MerchantIdentity, got {:?}",
+            trace.knowledge_path.self_knowledge,
+        );
+    }
+
+    #[test]
+    fn institutional_belief_claims_default_returns_empty() {
+        // The default GoalBeliefView implementation returns empty vec.
+        // TestBeliefView uses the macro-generated impl which delegates to RuntimeBeliefView,
+        // and RuntimeBeliefView's default returns empty.
+        let view = TestBeliefView::default();
+        let result = worldwake_sim::GoalBeliefView::institutional_belief_claims(
+            &view,
+            entity(1),
+            worldwake_core::InstitutionalBeliefKey::OfficeHolderOf {
+                office: entity(99),
+            },
+        );
+        assert!(
+            result.is_empty(),
+            "default institutional_belief_claims() should return empty, got {:?}",
+            result,
         );
     }
 }
