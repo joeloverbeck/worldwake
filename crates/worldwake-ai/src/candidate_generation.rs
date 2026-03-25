@@ -7,6 +7,7 @@ use crate::{
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
     institutional_queries::consulted_office_holder_read_for_record_data,
+    knowledge_path::KnowledgePath,
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
@@ -96,6 +97,7 @@ impl EvidenceTrace {
             goal,
             contributors: self.contributors.into_iter().collect(),
             exclusions: self.exclusions.into_iter().collect(),
+            knowledge_path: KnowledgePath::default(),
         }
     }
 }

@@ -14,6 +14,16 @@ pub struct HomeostaticNeeds {
     pub dirtiness: Permille,
 }
 
+/// Identifies a specific homeostatic need field by name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum HomeostaticNeedId {
+    Hunger,
+    Thirst,
+    Fatigue,
+    Bladder,
+    Dirtiness,
+}
+
 impl HomeostaticNeeds {
     #[must_use]
     pub const fn new(

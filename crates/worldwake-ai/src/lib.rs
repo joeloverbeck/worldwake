@@ -18,6 +18,7 @@ pub mod goal_policy;
 mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
+pub mod knowledge_path;
 mod frame_switch_policy;
 pub mod plan_revalidation;
 pub mod plan_selection;

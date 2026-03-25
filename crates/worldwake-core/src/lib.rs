@@ -132,7 +132,9 @@ pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
-pub use needs::{BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile};
+pub use needs::{
+    BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
+};
 pub use numerics::{LoadUnits, Permille, Quantity};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,

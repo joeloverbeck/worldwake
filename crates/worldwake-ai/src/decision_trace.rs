@@ -11,6 +11,7 @@ use worldwake_core::{
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
 use crate::feasibility::FeasibilityHint;
+use crate::knowledge_path::KnowledgePath;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
@@ -262,6 +263,12 @@ pub enum CandidateEvidenceKind {
     ResourceSource,
     Corpse,
     RecipeWorkstation,
+    /// Listener in a Tell/ShareBelief interaction.
+    Listener,
+    /// Subject of a Tell/ShareBelief interaction.
+    TellSubject,
+    /// Office holder or candidate in political candidate generation.
+    OfficeParticipant,
 }
 
 /// Why a candidate evidence contributor was excluded.
@@ -293,6 +300,9 @@ pub struct CandidateEvidenceTrace {
     pub goal: GoalKey,
     pub contributors: Vec<CandidateEvidenceContributor>,
     pub exclusions: Vec<CandidateEvidenceExclusion>,
+    /// Knowledge path: which beliefs motivated this candidate and where they came from.
+    /// Empty when tracing is disabled.
+    pub knowledge_path: KnowledgePath,
 }
 
 // ── Stage 2: Plan Search ────────────────────────────────────────
