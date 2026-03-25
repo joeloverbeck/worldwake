@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S24: Typed Invalidation Domains
 
@@ -453,3 +453,10 @@ N/A -- no positive-feedback loops.
 5. `summary()` includes dirty domain names for planning outcomes
 6. No `DirtyReason` enum references remain in the codebase after S24-004
 7. `is_snapshot_only()` correctly returns `false` when any frame or structural bit is set
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**: Replaced `dirty: bool` + `Vec<DirtyReason>` dual-tracking with `DirtySet` (u16 bitflag newtype) across the entire AI pipeline. `DirtyReason` enum removed. 14 typed domains: 6 structural (NO_PLAN, PLAN_FINISHED, REPLAN_SIGNAL, QUEUE_TRANSITION, BLOCKER_CLEANUP, QUEUE_PATIENCE) + 6 snapshot (POSITION, NEEDS, WOUNDS, COMMODITY, UNIQUE_ITEMS, FACILITIES) + 2 frame lifecycle (FRAME_BLOCKAGE, FRAME_PATIENCE) + ASSUMPTION_FAILED. Trace output now shows specific domain names instead of opaque `SnapshotChanged`. `is_snapshot_only()` enables plan-continuation optimization when only snapshot domains changed.
+- **Deviations**: None — all 5 tickets (S24TYPINVDOM-001 through -005) implemented as specified.
+- **Verification**: All workspace build/test/clippy clean. Zero `DirtyReason` residue. All golden tests pass unchanged (behavioral equivalence confirmed).

@@ -1,6 +1,6 @@
 # S24TYPINVDOM-005: Workspace verification and trace output validation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -92,3 +92,15 @@ None — documentation-only ticket; verification is command-based and existing r
 2. `cargo test --workspace` — full workspace regression
 3. `cargo clippy --workspace` — lint check
 4. `grep -r "DirtyReason" crates/` — residue check (expect zero Rust source hits)
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**: Verification-only — no code changes required. All checks passed on first run.
+- **Verification results**:
+  - `cargo build --workspace` — clean compile
+  - `cargo test --workspace` — all tests pass (0 failures)
+  - `cargo clippy --workspace` — no warnings
+  - `grep -r "DirtyReason" crates/` — zero hits in Rust source files
+  - Trace output quality confirmed: `summary()` and `dump_agent()` show typed domain names (e.g., `NEEDS|POSITION`, `NO_PLAN`, `FRAME_BLOCKAGE`) via `DirtySet::display_names()`
+- **Deviations**: None — all acceptance criteria met as specified

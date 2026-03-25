@@ -95,6 +95,9 @@ Refactored `BlockedIntentMemory` from `Vec<BlockedIntent>` to `BTreeMap<BlockerK
 ### S22: Generalized Intention Frames — COMPLETED
 Replaced travel-specific `JourneyCommitment` + `TravelDispositionProfile` with domain-agnostic `IntentionFrame` + `IntentionDispositionProfile`. Added `IntentionDomain` (Travel, Care, Generic), `FrameAssumption` evaluation with critical/recoverable distinction, progress detection via `PlannerOpKind`, frame exhaustion → `BlockedIntent` integration with `PatienceExhausted` and `AssumptionFailed` blocking facts, `FrameTransitionTrace` in decision traces, save/load round-trip coverage, and workspace-wide verification. All 8 old journey types removed.
 
+### S24: Typed Invalidation Domains — COMPLETED
+Replaced `dirty: bool` + `Vec<DirtyReason>` dual-tracking with `DirtySet` (u16 bitflag newtype) across the entire AI pipeline. `DirtyReason` enum removed. 14 typed domains: 6 structural + 6 snapshot + 2 frame lifecycle. Trace output now shows specific domain names (e.g., `NEEDS|POSITION`) instead of opaque `SnapshotChanged`. `is_snapshot_only()` enables plan-continuation optimization when only snapshot domains changed.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -143,7 +146,7 @@ S26 ✅ (planner conformance tests completed — 32 tests across all action fami
 S20 ✅ ──→ S21 ✅ (promote causal runtime state — completed)
 S20 ✅ ──→ S23 ✅ (refined blocked intents — completed)
 S21 ✅ ──→ S22 ✅ (generalized intention frames — completed)
-S21 ✅ ──→ S24 (typed invalidation domains — replaces dirty field in restructured runtime)
+S21 ✅ ──→ S24 ✅ (typed invalidation domains — completed)
 S21 ✅ ──→ S28 (knowledge-path traces — authoritative belief sources make traces meaningful)
 S20 ✅, S23 ✅ ──→ S25 (feasibility sketching — needs cleaner search + refined blockers)
 S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
@@ -245,9 +248,8 @@ S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
 - **S22**: Generalized Intention Frames — ✅ COMPLETED
   - replaced travel-specific journey commitment with domain-agnostic IntentionFrame + IntentionDispositionProfile
   - removed all 8 old journey types; added assumption evaluation, progress detection, exhaustion→BlockedIntent, frame traces, save/load coverage
-- **S24**: Typed Invalidation Domains
-  - replaces `dirty: bool` with `DirtyReasons` bitflag set for typed replan triggers
-  - needs S21
+- **S24**: Typed Invalidation Domains — ✅ COMPLETED
+  - replaced `dirty: bool` + `Vec<DirtyReason>` with `DirtySet` bitflag newtype for typed replan triggers
 - **S25**: Feasibility Sketching
   - cheap feasibility pre-check before GOAP search budget allocation
   - needs S20, S23
@@ -312,7 +314,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | ~~`S21-promote-causal-runtime-state.md`~~ | 3+ | 13.5 W1 | ✅ COMPLETED |
 | ~~`S23-refined-blocked-intents.md`~~ | 3+ | 13.5 W1 | ✅ COMPLETED |
 | ~~`S22-generalized-intention-frames.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
-| `S24-typed-invalidation-domains.md` | 3+ | 13.5 W2 | S21 |
+| ~~`S24-typed-invalidation-domains.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | `S25-feasibility-sketching.md` | 3+ | 13.5 W2 | ~~S20~~, ~~S23~~ (all deps met) |
 | `S28-knowledge-path-traces.md` | 3+ | 13.5 W2 | S21 |
 | `S27-expectation-violation-goals.md` | 3+ | 13.5 W3 | ~~S22~~, ~~S23~~ (all deps met) |
@@ -345,6 +347,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
-| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S26 complete) |
+| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S24, S26 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
