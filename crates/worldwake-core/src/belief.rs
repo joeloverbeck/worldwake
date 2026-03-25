@@ -706,6 +706,8 @@ pub enum SocialObservationKind {
     CoPresence,
     /// Agent confirmed the absence of an expected entity at a location through investigation.
     WitnessedAbsence,
+    /// Agent confirmed an owned entity is missing under theft suspicion.
+    SuspectedTheft,
 }
 
 /// Concrete differences between a prior belief and a new observation.
@@ -1528,6 +1530,18 @@ mod tests {
         assert_eq!(roundtrip, kind);
         assert_ne!(kind, SocialObservationKind::WitnessedTelling);
         assert_ne!(kind, SocialObservationKind::CoPresence);
+    }
+
+    #[test]
+    fn suspected_theft_roundtrips_and_differs_from_witnessed_absence() {
+        let kind = SocialObservationKind::SuspectedTheft;
+
+        let bytes = bincode::serialize(&kind).unwrap();
+        let roundtrip: SocialObservationKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, kind);
+        assert_ne!(kind, SocialObservationKind::WitnessedAbsence);
+        assert_ne!(kind, SocialObservationKind::WitnessedTelling);
     }
 
     #[test]

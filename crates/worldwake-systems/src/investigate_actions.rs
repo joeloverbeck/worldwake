@@ -291,7 +291,10 @@ fn investigable_binding(
             source,
             place: violation_place,
         } if *violation_place == place => Some((*source, Some(*commodity))),
-        _ => None,
+        ViolationKind::EntityMissing { .. }
+        | ViolationKind::SupplyDepleted { .. }
+        | ViolationKind::EntityDead { .. }
+        | ViolationKind::SuspectedTheft { .. } => None,
     }
 }
 
@@ -745,6 +748,100 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(payload_ids, vec![first_id, second_id]);
+    }
+
+    #[test]
+    fn suspected_theft_violation_is_not_exposed_as_generic_investigate_affordance() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        let suspected_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::SuspectedTheft {
+                missing_entity: entity(30),
+                expected_place: place,
+                suspect: None,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let payload_ids = get_affordances(&PerAgentBeliefView::from_world(actor, &world), actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
+            .filter_map(|affordance| {
+                affordance
+                    .payload_override
+                    .and_then(|payload| payload.as_investigate().cloned())
+                    .map(|payload| payload.violation_id)
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            !payload_ids.contains(&suspected_id),
+            "SuspectedTheft should not be exposed as a generic investigate affordance"
+        );
+    }
+
+    #[test]
+    fn suspected_theft_payload_fails_authoritative_investigate_validation() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::SuspectedTheft {
+                missing_entity: entity(30),
+                expected_place: place,
+                suspect: Some(entity(40)),
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, def_id) = setup_registries();
+        let affordance = Affordance {
+            def_id,
+            actor,
+            bound_targets: vec![place],
+            payload_override: Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id,
+            })),
+            explanation: None,
+        };
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([21; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::PreconditionFailed(format!(
+                "violation {} is not investigable at place {}",
+                violation_id.0, place
+            ))
+        );
     }
 
     #[test]

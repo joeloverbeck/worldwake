@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: E17CRITHEJUS-006 (steal action), E17CRITHEJUS-007 (investigate SuspectedTheft), E17CRITHEJUS-010 (theft candidates)
+**Deps**: E17CRITHEJUS-006 (steal action), E17CRITHEJUS-007 (investigate SuspectedTheft), E17CRITHEJUS-010 (theft candidates), E17CRITHEJUS-015 (typed social-evidence detail)
 
 ## Problem
 
@@ -22,7 +22,7 @@ No end-to-end proof exists that the theft-to-discovery pipeline works: steal -> 
 8. N/A.
 9. N/A.
 10. Isolation: scenario needs Agent A (thief with `TheftDispositionProfile`), Agent B (owner, arrives later), an item lot owned by B at a place. No other agents needed initially. Exclude other goal-generating profiles to isolate theft/investigation behavior.
-11. No mismatches found.
+11. Mismatch: the original ticket only asserted that `AgentBeliefStore` contains `SocialObservation(SuspectedTheft)`. After reassessment, the meaningful contract is stronger and more precise: the stored crime evidence must use explicit typed theft detail from `E17CRITHEJUS-015`, not a tuple convention.
 12. Timing: A steals (multi-tick based on `steal_duration_ticks`). B must arrive AFTER steal commits. B's violation detection fires on perception refresh. B's investigation takes `investigation_duration_ticks`. Ensure enough ticks for full pipeline.
 
 ## Architecture Check
@@ -35,7 +35,7 @@ No end-to-end proof exists that the theft-to-discovery pipeline works: steal -> 
 1. Steal commits -> item possession transferred -> action trace check
 2. Owner arrives at theft location -> EntityMissing violation fires -> decision trace check
 3. Owner investigates -> SuspectedTheft recorded in ViolationMemory -> authoritative state check
-4. SuspectedTheft recorded in AgentBeliefStore -> authoritative state check
+4. Typed theft evidence recorded in AgentBeliefStore -> authoritative state check
 5. SuspectedTheft.suspect is None (no witness, thief not seen) -> authoritative state check
 6. Deterministic replay -> replay companion test
 
@@ -62,7 +62,7 @@ Create a scenario in `golden_emergent.rs` (or new `golden_crime.rs` if the file 
 - After A's steal commits: `possessor_of(item) == A`, `owner_of(item) == B`
 - After B arrives at P1: B's `ViolationMemory` contains `EntityMissing` violation
 - After B investigates: B's `ViolationMemory` contains `SuspectedTheft { missing_entity: item, expected_place: P1, suspect: None }`
-- B's `AgentBeliefStore` contains `SocialObservation(SuspectedTheft)`
+- B's `AgentBeliefStore` contains typed theft evidence observation
 - Conservation: `verify_live_lot_conservation()` passes throughout
 
 ### 2. Deterministic replay companion

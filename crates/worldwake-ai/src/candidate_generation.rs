@@ -1751,7 +1751,7 @@ fn emit_violation_goal(
             expected_place,
         } => (*expected_place, *entity),
         ViolationKind::SupplyDepleted { source, place, .. } => (*place, *source),
-        ViolationKind::EntityDead { .. } => return,
+        ViolationKind::EntityDead { .. } | ViolationKind::SuspectedTheft { .. } => return,
     };
 
     let belief_entry = beliefs.iter().find(|(id, _)| *id == entity_id);
@@ -1767,7 +1767,7 @@ fn emit_violation_goal(
         ViolationKind::SupplyDepleted { commodity, .. } => BeliefAspect::HasCommodity {
             commodity: *commodity,
         },
-        ViolationKind::EntityDead { .. } => return,
+        ViolationKind::EntityDead { .. } | ViolationKind::SuspectedTheft { .. } => return,
     };
 
     let trace = EvidenceTrace {
@@ -7581,6 +7581,64 @@ mod tests {
         assert!(
             result.pending_violations.is_empty(),
             "Resolved recorded violation should not be rediscovered while unexpired"
+        );
+    }
+
+    #[test]
+    fn suspected_theft_record_does_not_emit_generic_investigate_goal() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.entities_at.insert(place, vec![agent]);
+        view.effective_places.insert(missing_entity, entity(20));
+
+        let blocked = BlockedIntentMemory::default();
+        let mut vm = ViolationMemory::default();
+        let id = vm.record(
+            worldwake_core::ViolationKind::SuspectedTheft {
+                missing_entity,
+                expected_place: place,
+                suspect: None,
+            },
+            Tick(3),
+            50,
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: id,
+            place,
+        });
+        assert!(
+            !result.candidates.iter().any(|c| c.key == goal_key),
+            "SuspectedTheft should not re-enter the generic investigate goal pipeline"
+        );
+        assert!(
+            !result.pending_violations.iter().any(|record| matches!(
+                record.kind,
+                worldwake_core::ViolationKind::SuspectedTheft { .. }
+            )),
+            "Candidate generation should not synthesize new SuspectedTheft pending records"
         );
     }
 

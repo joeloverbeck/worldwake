@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new candidate generation function in AI crate
-**Deps**: E17CRITHEJUS-005 (needs planner support for Accuse/PunishAccused), E17CRITHEJUS-001 (needs JusticeDispositionProfile), E17CRITHEJUS-002 (needs SuspectedTheft in ViolationKind)
+**Deps**: E17CRITHEJUS-005 (needs planner support for Accuse/PunishAccused), E17CRITHEJUS-001 (needs JusticeDispositionProfile), E17CRITHEJUS-002 (needs SuspectedTheft in ViolationKind), E17CRITHEJUS-015 (typed social-evidence detail), E17CRITHEJUS-016 (relayable social evidence)
 
 ## Problem
 
@@ -13,7 +13,7 @@ Agents cannot form accusation or punishment goals. No candidate generation funct
 ## Assumption Reassessment (2026-03-25)
 
 1. `candidate_generation.rs` follows the established `emit_*` pattern. Justice candidates are a new family guarded by `JusticeDispositionProfile`.
-2. `ViolationMemory` stores `SuspectedTheft` entries with `suspect: Option<EntityId>`. Only entries with `suspect: Some(entity)` produce accusation candidates (you can't accuse unknown suspects).
+2. `ViolationMemory` stores local `SuspectedTheft` entries with `suspect: Option<EntityId>`, but that is not the whole accusation evidence surface. Witness-driven accusation also needs relayed social evidence, which the live Tell path does not yet support.
 3. `AgentBeliefStore` can be queried for known `CrimeRegister` contents (from prior record consultation).
 4. Institutional authority is checked via `can_exercise_control()` or office holder/controller queries on the belief view.
 5. Punishment kind selection: prefer `Fine` when accused has commodities, otherwise `Exile`.
@@ -22,12 +22,12 @@ Agents cannot form accusation or punishment goals. No candidate generation funct
 8. N/A.
 9. N/A.
 10. N/A.
-11. No mismatches found.
+11. Mismatch: the original ticket scoped accusation candidates to local `ViolationMemory` only. That is too narrow for the spec and would exclude witness-to-authority accusation chains. Correct scope is to generate accusation candidates from concrete typed evidence available in the actor's belief state, including local `SuspectedTheft`, relayed typed theft testimony, and possession evidence after `E17CRITHEJUS-015`/`016`.
 12. N/A.
 
 ## Architecture Check
 
-1. A new `emit_justice_candidates()` function follows the exact `emit_*` pattern. Two sub-algorithms: one for accusation candidates (from ViolationMemory), one for punishment candidates (from known CrimeRegister entries). Both guarded by `JusticeDispositionProfile`.
+1. A new `emit_justice_candidates()` function still follows the `emit_*` pattern, but accusation candidate generation must consume the full concrete evidence surface in belief state, not only `ViolationMemory`.
 2. No backwards-compatibility aliasing.
 
 ## Verification Layers
@@ -46,9 +46,12 @@ Agents cannot form accusation or punishment goals. No candidate generation funct
 Guard: return early if agent has no `JusticeDispositionProfile` component.
 
 **Accusation sub-algorithm**:
-1. Scan agent's `ViolationMemory` for `ViolationKind::SuspectedTheft` entries with `suspect: Some(entity)`
-2. For each: check that no existing accusation has been filed (query belief view for known CrimeRegister entries matching accused + violation)
-3. Emit `GroundedGoal { kind: GoalKind::Accuse { accused: suspect, violation_id }, motive: accusation_motive_weight, priority_class: GoalPriorityClass::Low }` via `emit_candidate_with_trace()`
+1. Scan the actor's concrete crime evidence surfaces:
+   - local `ViolationMemory` `SuspectedTheft` entries with `suspect: Some(entity)`
+   - typed relayed theft evidence in belief state from `E17CRITHEJUS-016`
+   - possession evidence if the stolen item is believed to be in another agent's possession
+2. For each accusation-worthy evidence bundle: check that no existing accusation has been filed (query belief view for known CrimeRegister entries matching accused + violation)
+3. Emit `GroundedGoal { kind: GoalKind::Accuse { accused, violation_id }, motive: accusation_motive_weight, priority_class: GoalPriorityClass::Low }` via `emit_candidate_with_trace()`
 
 **Punishment sub-algorithm**:
 1. Scan agent's known `CrimeRegister` entries (from `AgentBeliefStore` institutional record observations) for unresolved `Accusation` entries
@@ -76,7 +79,7 @@ Add call to `emit_justice_candidates()` in the main dispatch function.
 
 ### Tests That Must Pass
 
-1. Agent with `JusticeDispositionProfile` and `SuspectedTheft { suspect: Some(x) }` -> `Accuse { accused: x }` candidate emitted
+1. Agent with `JusticeDispositionProfile` and accusation-worthy typed theft evidence -> `Accuse { accused: x }` candidate emitted
 2. Agent with `SuspectedTheft { suspect: None }` -> no accusation candidate
 3. Agent without `JusticeDispositionProfile` -> no justice candidates at all
 4. Accusation already filed for same accused + violation -> no duplicate candidate
@@ -90,7 +93,7 @@ Add call to `emit_justice_candidates()` in the main dispatch function.
 ### Invariants
 
 1. Only agents with `JusticeDispositionProfile` ever generate justice candidates
-2. Accusation requires `suspect: Some(entity)` — can't accuse unknown suspect (P14)
+2. Accusation requires concrete evidence naming a suspect; unknown-suspect theft evidence cannot produce `Accuse` (P14)
 3. Punishment requires institutional authority (P21)
 4. Motive is profile-driven (P2)
 5. No `HashMap`/`HashSet` in candidate scanning

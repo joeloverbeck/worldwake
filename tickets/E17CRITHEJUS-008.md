@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new action definition + handler in systems crate
-**Deps**: E17CRITHEJUS-003 (needs `InstitutionalClaim::Accusation`, `RecordKind::CrimeRegister`), E17CRITHEJUS-002 (needs `SocialObservationKind::SuspectedTheft`)
+**Deps**: E17CRITHEJUS-003 (needs `InstitutionalClaim::Accusation`, `RecordKind::CrimeRegister`), E17CRITHEJUS-015 (typed social-evidence detail), E17CRITHEJUS-016 (social-evidence relay through Tell)
 
 ## Problem
 
@@ -14,7 +14,7 @@ No mechanism exists for agents to formally accuse another agent of theft. The ac
 
 1. `consult_record_actions.rs` and `office_actions.rs` in worldwake-systems provide the closest structural precedent for actions that interact with institutional records.
 2. `RecordData` entities have `append_entry()` for adding `InstitutionalRecordEntry` items. The CrimeRegister follows the same pattern.
-3. `AgentBeliefStore` provides queries for `SocialObservation` entries. The accuser's evidence is validated from their belief store (P12).
+3. `AgentBeliefStore` currently stores `SocialObservation`, but the live tuple shape cannot support accused-aware theft evidence reliably. `E17CRITHEJUS-015` must land first so accusation validation reads typed evidence detail instead of tuple conventions.
 4. `ActionDomain::Social` exists and is used by Tell and office actions.
 5. The accuse action is 1-tick (`Fixed(1)`) — filing an accusation is a brief administrative act.
 6. N/A — no heuristic changes.
@@ -22,7 +22,7 @@ No mechanism exists for agents to formally accuse another agent of theft. The ac
 8. N/A.
 9. N/A.
 10. N/A.
-11. No mismatches found.
+11. Mismatch: the original ticket assumed `SocialObservation(SuspectedTheft)` could be matched directly against an accused agent. The live ticket set records theft observations as `(missing_entity, expected_place)` in `E17CRITHEJUS-007`, which is incompatible. Correct scope is to validate against typed theft evidence from `E17CRITHEJUS-015`, and to allow witness-reported evidence only after `E17CRITHEJUS-016` adds relayable social-evidence topics.
 12. N/A.
 
 ## Architecture Check
@@ -35,7 +35,7 @@ No mechanism exists for agents to formally accuse another agent of theft. The ac
 1. Accusation creates `InstitutionalClaim::Accusation` in CrimeRegister -> authoritative record state
 2. Duplicate accusation rejected (same accused + same violation) -> start-failure
 3. Accusation without evidence rejected -> start-failure
-4. Accusation with `SuspectedTheft` evidence accepted -> event log delta
+4. Accusation with typed theft evidence accepted -> event log delta
 5. Wrong accusation possible when accuser has flawed evidence -> focused test proving P14
 
 ## What to Change
@@ -49,7 +49,7 @@ No mechanism exists for agents to formally accuse another agent of theft. The ac
 
 Validate authoritatively:
 - Actor at same place as a `CrimeRegister` record entity
-- Actor's `AgentBeliefStore` contains concrete evidence: (a) `SocialObservation(SuspectedTheft)` with subject matching accused, OR (b) witnessed crime event where perpetrator matches accused, OR (c) belief that stolen item is in accused's possession
+- Actor's `AgentBeliefStore` contains concrete evidence: (a) typed theft evidence naming the accused, OR (b) witnessed crime event where perpetrator matches accused, OR (c) belief that the stolen item is in the accused's possession
 - Accused entity is believed alive
 - No existing unresolved `Accusation` against same accused for same violation in the CrimeRegister
 
@@ -85,7 +85,7 @@ Wire into `register_all_actions()` in `action_registry.rs`. Export from `lib.rs`
 2. Accusation entry has correct `accuser`, `accused`, `violation_id`, `effective_tick`
 3. Duplicate accusation (same accused + same violation) rejected at start
 4. Accusation without any evidence in accuser's belief store rejected at start
-5. Accusation with `SuspectedTheft` observation matching accused succeeds
+5. Accusation with typed theft evidence matching accused succeeds
 6. Accusation event emitted with `EventTag::Crime` and `VisibilitySpec::SamePlace`
 7. Existing suite: `cargo test -p worldwake-systems`
 

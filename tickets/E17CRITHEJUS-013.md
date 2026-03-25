@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None
-**Deps**: E17CRITHEJUS-008 (accuse action), E17CRITHEJUS-009 (fine/exile actions), E17CRITHEJUS-011 (justice candidates), E17CRITHEJUS-012 (theft golden as validation baseline)
+**Deps**: E17CRITHEJUS-008 (accuse action), E17CRITHEJUS-009 (fine/exile actions), E17CRITHEJUS-011 (justice candidates), E17CRITHEJUS-012 (theft golden as validation baseline), E17CRITHEJUS-015 (typed social-evidence detail), E17CRITHEJUS-016 (relayable social evidence)
 
 ## Problem
 
@@ -13,7 +13,7 @@ No end-to-end proof exists that the full crime-to-punishment chain works: steal 
 ## Assumption Reassessment (2026-03-25)
 
 1. This is the most complex E17 golden test, requiring 4+ agents and multiple system interactions (theft, perception, social Tell, travel, accusation, punishment). It validates the full P1 emergent chain.
-2. The golden harness supports multi-agent scenarios with Tell propagation (proven by E15b golden tests).
+2. The golden harness supports multi-agent Tell propagation for entity beliefs, but witness-driven crime testimony additionally requires `E17CRITHEJUS-016` to relay typed social evidence through Tell.
 3. Accusation requires the accuser to be at a `CrimeRegister` location. The test setup must create a `CrimeRegister` entity at the authority's jurisdiction.
 4. Punishment (Fine or Exile) requires institutional authority + co-location with accused. This may require multiple travel legs or a constrained place graph.
 5. AI-layer ticket: full action registries required. Decision traces essential for debugging the multi-agent sequence.
@@ -22,7 +22,7 @@ No end-to-end proof exists that the full crime-to-punishment chain works: steal 
 8. N/A.
 9. N/A.
 10. Isolation: Agent A (thief with `TheftDispositionProfile`), Agent C (witness with `PerceptionProfile`), Agent D (authority — office holder with `JusticeDispositionProfile`). CrimeRegister at authority's seat. Minimize survival-pressure profiles to keep the scenario focused on crime/justice.
-11. No mismatches found.
+11. Mismatch: the original ticket assumed the witnessed theft fact could already travel through Tell. The live Tell path is entity-belief-only. Correct scope is to run this golden after `E17CRITHEJUS-015` and `E17CRITHEJUS-016` land so witness testimony is concrete typed social evidence, not an implied side effect of entity gossip.
 12. Timing: A steals (multi-tick). C witnesses (same tick via perception). C travels to authority. C Tells authority. Authority travels to CrimeRegister. Authority accuses. Authority travels to accused. Authority punishes. Total tick budget needs to be generous (40-80 ticks depending on travel distances).
 
 ## Architecture Check

@@ -34,6 +34,12 @@ pub enum ViolationKind {
     },
     /// Agent believed entity was alive; entity is now dead.
     EntityDead { entity: EntityId },
+    /// Investigation confirmed a suspected theft of an owned entity.
+    SuspectedTheft {
+        missing_entity: EntityId,
+        expected_place: EntityId,
+        suspect: Option<EntityId>,
+    },
 }
 
 /// A single recorded violation with expiry.
@@ -199,6 +205,14 @@ mod tests {
         ViolationKind::EntityDead { entity: entity(3) }
     }
 
+    fn sample_suspected_theft(suspect: Option<EntityId>) -> ViolationKind {
+        ViolationKind::SuspectedTheft {
+            missing_entity: entity(4),
+            expected_place: entity(10),
+            suspect,
+        }
+    }
+
     // --- ViolationMemory::record deduplicates by kind ---
 
     #[test]
@@ -225,10 +239,12 @@ mod tests {
         let missing_id = mem.record(sample_missing(), Tick(1), 10);
         let depleted_id = mem.record(sample_depleted(), Tick(2), 10);
         let dead_id = mem.record(sample_dead(), Tick(3), 10);
-        assert_eq!(mem.violations.len(), 3);
+        let theft_id = mem.record(sample_suspected_theft(Some(entity(8))), Tick(4), 10);
+        assert_eq!(mem.violations.len(), 4);
         assert_ne!(missing_id, depleted_id);
         assert_ne!(missing_id, dead_id);
         assert_ne!(depleted_id, dead_id);
+        assert_ne!(dead_id, theft_id);
     }
 
     #[test]
@@ -396,6 +412,59 @@ mod tests {
         let bytes = bincode::serialize(&kind).unwrap();
         let roundtrip: ViolationKind = bincode::deserialize(&bytes).unwrap();
         assert_eq!(roundtrip, kind);
+    }
+
+    #[test]
+    fn suspected_theft_roundtrips_with_known_suspect() {
+        let kind = sample_suspected_theft(Some(entity(9)));
+        let bytes = bincode::serialize(&kind).unwrap();
+        let roundtrip: ViolationKind = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, kind);
+    }
+
+    #[test]
+    fn suspected_theft_roundtrips_with_unknown_suspect() {
+        let kind = sample_suspected_theft(None);
+        let bytes = bincode::serialize(&kind).unwrap();
+        let roundtrip: ViolationKind = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, kind);
+    }
+
+    #[test]
+    fn suspected_theft_records_and_retrieves_from_violation_memory() {
+        let mut mem = ViolationMemory::default();
+        let kind = sample_suspected_theft(None);
+        let id = mem.record(kind.clone(), Tick(7), 11);
+
+        let record = mem.recorded_by_kind(&kind, Tick(10)).unwrap();
+        assert_eq!(record.id, id);
+        assert_eq!(record.kind, kind);
+        assert_eq!(record.observed_tick, Tick(7));
+        assert_eq!(record.expires_tick, Tick(18));
+    }
+
+    #[test]
+    fn violation_kind_ord_is_stable_with_suspected_theft() {
+        let mut variants = vec![
+            sample_suspected_theft(Some(entity(8))),
+            sample_dead(),
+            sample_depleted(),
+            sample_missing(),
+            sample_suspected_theft(None),
+        ];
+
+        variants.sort();
+
+        assert_eq!(
+            variants,
+            vec![
+                sample_missing(),
+                sample_depleted(),
+                sample_dead(),
+                sample_suspected_theft(None),
+                sample_suspected_theft(Some(entity(8))),
+            ]
+        );
     }
 
     // --- ViolationDispositionProfile ---
