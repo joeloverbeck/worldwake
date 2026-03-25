@@ -7,15 +7,18 @@ use crate::{
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
     institutional_queries::consulted_office_holder_read_for_record_data,
-    knowledge_path::{BeliefAspect, BeliefProvenance, KnowledgePath, SelfKnowledgeProvenance},
+    knowledge_path::{
+        BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
+        SelfKnowledgeProvenance,
+    },
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     load_per_unit, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
     EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecipientKnowledgeStatus,
-    RecordKind, Tick,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity,
+    RecipientKnowledgeStatus, RecordKind, Tick,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_relayable_subjects, GoalBeliefView, RecipeDefinition,
@@ -297,10 +300,25 @@ fn emit_social_candidates(
             let mut evidence = Evidence::with_entity(listener);
             evidence.entities.insert(subject);
             evidence.places.insert(place);
-            emit_candidate(
+            let mut trace = EvidenceTrace::default();
+            trace.contributor(CandidateEvidenceKind::Listener, place, listener);
+            trace.contributor(CandidateEvidenceKind::TellSubject, place, subject);
+            if ctx.tracing_enabled {
+                if let Some((_, state)) = known_beliefs.iter().find(|(id, _)| *id == subject) {
+                    trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                        subject,
+                        aspect: BeliefAspect::LocationAt { place },
+                        source: state.source,
+                        observed_tick: state.observed_tick,
+                    });
+                }
+            }
+            emit_candidate_with_trace(
                 candidates,
+                diagnostics,
                 GoalKind::ShareBelief { listener, subject },
                 evidence,
+                trace,
                 ctx.blocked,
                 ctx.current_tick,
             );
@@ -539,10 +557,40 @@ fn emit_claim_office_candidate(
     evidence.entities.insert(office);
     evidence.entities.insert(ctx.agent);
     evidence.places.insert(office_data.jurisdiction);
-    emit_candidate(
+    let mut trace = EvidenceTrace::default();
+    trace.contributor(
+        CandidateEvidenceKind::OfficeParticipant,
+        office_data.jurisdiction,
+        office,
+    );
+    trace.contributor(
+        CandidateEvidenceKind::OfficeParticipant,
+        office_data.jurisdiction,
+        ctx.agent,
+    );
+    if ctx.tracing_enabled {
+        let claims = ctx.view.institutional_belief_claims(
+            ctx.agent,
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+        );
+        for claim in claims {
+            trace
+                .knowledge_path
+                .institutional_beliefs
+                .push(InstitutionalBeliefProvenance {
+                    claim: claim.claim,
+                    source: claim.source,
+                    learned_tick: claim.learned_tick,
+                    learned_at: claim.learned_at,
+                });
+        }
+    }
+    emit_candidate_with_trace(
         candidates,
+        diagnostics,
         GoalKind::ClaimOffice { office },
         evidence,
+        trace,
         ctx.blocked,
         ctx.current_tick,
     );
@@ -606,10 +654,43 @@ fn emit_support_candidate_goals(
         evidence.entities.insert(office);
         evidence.entities.insert(candidate);
         evidence.places.insert(office_data.jurisdiction);
-        emit_candidate(
+        let mut trace = EvidenceTrace::default();
+        trace.contributor(
+            CandidateEvidenceKind::OfficeParticipant,
+            office_data.jurisdiction,
+            office,
+        );
+        trace.contributor(
+            CandidateEvidenceKind::OfficeParticipant,
+            office_data.jurisdiction,
+            candidate,
+        );
+        if ctx.tracing_enabled {
+            let claims = ctx.view.institutional_belief_claims(
+                ctx.agent,
+                InstitutionalBeliefKey::SupportFor {
+                    supporter: ctx.agent,
+                    office,
+                },
+            );
+            for claim in claims {
+                trace
+                    .knowledge_path
+                    .institutional_beliefs
+                    .push(InstitutionalBeliefProvenance {
+                        claim: claim.claim,
+                        source: claim.source,
+                        learned_tick: claim.learned_tick,
+                        learned_at: claim.learned_at,
+                    });
+            }
+        }
+        emit_candidate_with_trace(
             candidates,
+            diagnostics,
             GoalKind::SupportCandidateForOffice { office, candidate },
             evidence,
+            trace,
             ctx.blocked,
             ctx.current_tick,
         );
@@ -1966,18 +2047,21 @@ mod tests {
     };
     use crate::{
         enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
-        knowledge_path::{BeliefAspect, KnowledgePath, SelfKnowledgeProvenance},
+        knowledge_path::{
+            BeliefAspect, InstitutionalBeliefProvenance, KnowledgePath, SelfKnowledgeProvenance,
+        },
         PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead,
-        InstitutionalClaim, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory,
+        BlockerKey, BlockingFact, BodyPart, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, CommodityPurpose, DemandObservation, DemandObservationReason,
+        DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData,
         PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordEntryId, RecordKind, ResourceSource, TellMemoryKey, TellProfile, Tick, TickRange,
         ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
@@ -2037,6 +2121,8 @@ mod tests {
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+        institutional_claims:
+            BTreeMap<(EntityId, InstitutionalBeliefKey), Vec<BelievedInstitutionalClaim>>,
     }
 
     impl Default for TestBeliefView {
@@ -2088,6 +2174,7 @@ mod tests {
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
+                institutional_claims: BTreeMap::new(),
             }
         }
     }
@@ -2496,6 +2583,17 @@ mod tests {
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
             None
+        }
+
+        fn institutional_belief_claims(
+            &self,
+            agent: EntityId,
+            key: InstitutionalBeliefKey,
+        ) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_claims
+                .get(&(agent, key))
+                .cloned()
+                .unwrap_or_default()
         }
     }
 
@@ -6464,6 +6562,357 @@ mod tests {
             result.is_empty(),
             "default institutional_belief_claims() should return empty, got {:?}",
             result,
+        );
+    }
+
+    #[test]
+    fn social_candidate_produces_evidence_trace() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.insert(speaker, place);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 5,
+                max_relay_chain_len: 3,
+                ..TellProfile::default()
+            },
+        );
+        view.beliefs.insert(
+            speaker,
+            vec![known_entity(subject, place)],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::ShareBelief {
+            listener,
+            subject,
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for ShareBelief");
+
+        let has_listener = trace.contributors.iter().any(|c| {
+            c.kind == super::CandidateEvidenceKind::Listener && c.entity == listener
+        });
+        let has_subject = trace.contributors.iter().any(|c| {
+            c.kind == super::CandidateEvidenceKind::TellSubject && c.entity == subject
+        });
+        assert!(
+            has_listener,
+            "evidence trace should contain Listener contributor, got {:?}",
+            trace.contributors,
+        );
+        assert!(
+            has_subject,
+            "evidence trace should contain TellSubject contributor, got {:?}",
+            trace.contributors,
+        );
+    }
+
+    #[test]
+    fn social_candidate_knowledge_path_records_subject_belief() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.insert(speaker, place);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
+        view.tell_profiles.insert(
+            speaker,
+            TellProfile {
+                max_tell_candidates: 5,
+                max_relay_chain_len: 3,
+                ..TellProfile::default()
+            },
+        );
+        view.beliefs.insert(
+            speaker,
+            vec![(
+                subject,
+                BelievedEntityState {
+                    last_known_place: Some(place),
+                    ..believed_state(
+                        7,
+                        PerceptionSource::Report {
+                            from: listener,
+                            chain_len: 1,
+                        },
+                    )
+                },
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::ShareBelief {
+            listener,
+            subject,
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for ShareBelief");
+
+        assert!(
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .contains(&crate::knowledge_path::BeliefProvenance {
+                    subject,
+                    aspect: BeliefAspect::LocationAt { place },
+                    source: PerceptionSource::Report {
+                        from: listener,
+                        chain_len: 1,
+                    },
+                    observed_tick: Tick(7),
+                }),
+            "knowledge_path.entity_beliefs should contain belief about subject, got {:?}",
+            trace.knowledge_path.entity_beliefs,
+        );
+    }
+
+    #[test]
+    fn claim_office_candidate_produces_evidence_trace() {
+        let agent = entity(1);
+        let office = entity(2);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.entities_at.insert(town, vec![agent]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.beliefs
+            .insert(agent, vec![known_entity(office, town)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::ClaimOffice { office });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for ClaimOffice");
+
+        let has_office = trace.contributors.iter().any(|c| {
+            c.kind == super::CandidateEvidenceKind::OfficeParticipant && c.entity == office
+        });
+        let has_agent = trace.contributors.iter().any(|c| {
+            c.kind == super::CandidateEvidenceKind::OfficeParticipant && c.entity == agent
+        });
+        assert!(
+            has_office,
+            "evidence trace should contain OfficeParticipant for office, got {:?}",
+            trace.contributors,
+        );
+        assert!(
+            has_agent,
+            "evidence trace should contain OfficeParticipant for agent, got {:?}",
+            trace.contributors,
+        );
+    }
+
+    #[test]
+    fn claim_office_knowledge_path_records_institutional_provenance() {
+        let agent = entity(1);
+        let office = entity(2);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.entities_at.insert(town, vec![agent]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.beliefs
+            .insert(agent, vec![known_entity(office, town)]);
+        // Configure institutional belief claims
+        let claim = InstitutionalClaim::OfficeHolder {
+            office,
+            holder: None,
+            effective_tick: Tick(5),
+        };
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::OfficeHolderOf { office },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim: claim.clone(),
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(6),
+                learned_at: Some(town),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::ClaimOffice { office });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for ClaimOffice");
+
+        assert!(
+            trace
+                .knowledge_path
+                .institutional_beliefs
+                .contains(&InstitutionalBeliefProvenance {
+                    claim,
+                    source: InstitutionalKnowledgeSource::WitnessedEvent,
+                    learned_tick: Tick(6),
+                    learned_at: Some(town),
+                }),
+            "knowledge_path.institutional_beliefs should contain office holder provenance, got {:?}",
+            trace.knowledge_path.institutional_beliefs,
+        );
+    }
+
+    #[test]
+    fn support_candidate_knowledge_path_records_institutional_provenance() {
+        let agent = entity(1);
+        let office = entity(2);
+        let candidate = entity(3);
+        let town = entity(10);
+        let faction = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, candidate]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(candidate, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places.insert(agent, town);
+        view.effective_places.insert(candidate, town);
+        view.entities_at.insert(town, vec![agent, candidate]);
+        view.office_data
+            .insert(office, vacant_office("Ruler", town, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(candidate, vec![faction]);
+        view.loyalties.insert((agent, candidate), pm(650));
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(office, town), known_entity(candidate, town)],
+        );
+        // Configure institutional belief claims for support declaration
+        let claim = InstitutionalClaim::SupportDeclaration {
+            office,
+            supporter: agent,
+            candidate: None,
+            effective_tick: Tick(4),
+        };
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::SupportFor {
+                    supporter: agent,
+                    office,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim: claim.clone(),
+                source: InstitutionalKnowledgeSource::SelfDeclaration,
+                learned_tick: Tick(4),
+                learned_at: Some(town),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            true,
+        );
+
+        let key = GoalKey::from(GoalKind::SupportCandidateForOffice {
+            office,
+            candidate,
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&key)
+            .expect("should have evidence trace for SupportCandidateForOffice");
+
+        assert!(
+            trace
+                .knowledge_path
+                .institutional_beliefs
+                .contains(&InstitutionalBeliefProvenance {
+                    claim,
+                    source: InstitutionalKnowledgeSource::SelfDeclaration,
+                    learned_tick: Tick(4),
+                    learned_at: Some(town),
+                }),
+            "knowledge_path.institutional_beliefs should contain support declaration provenance, got {:?}",
+            trace.knowledge_path.institutional_beliefs,
         );
     }
 }
