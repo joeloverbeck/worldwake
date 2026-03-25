@@ -6,6 +6,7 @@ use crate::{
     combat::{CombatProfile, CombatStance, DeadAt},
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
+    crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,

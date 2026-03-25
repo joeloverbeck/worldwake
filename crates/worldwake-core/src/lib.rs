@@ -35,6 +35,7 @@ pub mod component_tables;
 pub mod components;
 pub mod conservation;
 pub mod control;
+pub mod crime;
 pub mod delta;
 pub mod drives;
 pub mod entity;
@@ -95,6 +96,7 @@ pub use conservation::{
     verify_authoritative_conservation, verify_live_lot_conservation,
 };
 pub use control::ControlSource;
+pub use crime::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile};
 pub use delta::{
     ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta,

@@ -6,11 +6,11 @@ use crate::{
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
     FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, KnownRecipes, MerchandiseProfile,
+    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile,
     Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity, RecordData,
     ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, TradeDispositionProfile,
-    UniqueItem, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
+    TheftDispositionProfile, UniqueItem, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
     WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -247,13 +247,12 @@ mod tests {
         IntentionDispositionProfile, IntentionDomain, IntentionDomainTag, IntentionFrame,
         InstitutionalRecordEntry, ItemLot, KnownRecipes,
         LoadUnits, LotOperation, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
-        OfficeForceState, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
-        QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource,
-        TellProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
-        ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        JusticeDispositionProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
+        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        ProvenanceEntry, Quantity, QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind,
+        ReservationId, ReservationRecord, ResourceSource, TellProfile, TheftDispositionProfile,
+        Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile,
+        ViolationMemory, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -310,6 +309,15 @@ mod tests {
             ComponentValue::FacilityQueueDispositionProfile(
                 sample_facility_queue_disposition_profile(),
             ),
+            ComponentValue::TheftDispositionProfile(TheftDispositionProfile {
+                steal_duration_ticks: std::num::NonZeroU32::new(5).unwrap(),
+                theft_motive_weight: Permille::new(620).unwrap(),
+                witness_risk_penalty: Permille::new(180).unwrap(),
+            }),
+            ComponentValue::JusticeDispositionProfile(JusticeDispositionProfile {
+                accusation_motive_weight: Permille::new(700).unwrap(),
+                fine_severity: Permille::new(450).unwrap(),
+            }),
             ComponentValue::UtilityProfile(sample_utility_profile()),
             ComponentValue::OfficeData(OfficeData {
                 title: "Granary Chair".to_string(),
@@ -609,6 +617,8 @@ mod tests {
                 ComponentKind::DeadAt,
                 ComponentKind::CombatStance,
                 ComponentKind::FacilityQueueDispositionProfile,
+                ComponentKind::TheftDispositionProfile,
+                ComponentKind::JusticeDispositionProfile,
                 ComponentKind::UtilityProfile,
                 ComponentKind::OfficeData,
                 ComponentKind::OfficeForceProfile,
