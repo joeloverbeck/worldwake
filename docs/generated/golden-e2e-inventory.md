@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 155
+- Total `golden_*` tests: 164
 
 ## Per-File Inventory
 
@@ -16,8 +16,8 @@ Do not hand-edit it.
 | `golden_ai_decisions.rs` | 14 |
 | `golden_care.rs` | 16 |
 | `golden_combat.rs` | 25 |
-| `golden_determinism.rs` | 4 |
-| `golden_emergent.rs` | 30 |
+| `golden_determinism.rs` | 9 |
+| `golden_emergent.rs` | 34 |
 | `golden_offices.rs` | 21 |
 | `golden_production.rs` | 21 |
 | `golden_social.rs` | 14 |
@@ -94,6 +94,11 @@ Do not hand-edit it.
 - `golden_save_load_round_trip_under_ai`
 - `golden_world_runs_without_observers`
 - `golden_world_runs_without_observers_replays_deterministically`
+- `golden_save_load_preserves_promoted_commitments`
+- `golden_save_load_preserves_promoted_commitments_replays_deterministically`
+- `golden_save_load_preserves_suspended_intention_frame`
+- `golden_save_load_preserves_intention_disposition_profile`
+- `golden_save_load_preserves_frame_assumptions`
 
 ### `golden_emergent.rs`
 
@@ -127,6 +132,10 @@ Do not hand-edit it.
 - `golden_force_claim_creates_hostility_witnessed_and_propagated_replays_deterministically`
 - `golden_contested_force_state_propagates_through_belief_system`
 - `golden_contested_force_state_propagates_through_belief_system_replays_deterministically`
+- `golden_same_place_concurrent_violations_stay_distinct`
+- `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically`
+- `golden_entity_missing_triggers_investigation`
+- `golden_entity_missing_triggers_investigation_replays_deterministically`
 
 ### `golden_offices.rs`
 

@@ -4056,7 +4056,7 @@ fn golden_contested_force_state_propagates_through_belief_system_replays_determi
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 13: Same-Place Concurrent Violations Stay Distinct
+// Scenario 35: Same-Place Concurrent Violations Stay Distinct
 // ---------------------------------------------------------------------------
 //
 // Systems: Perception, AI, Generic Actions
@@ -4415,5 +4415,235 @@ fn golden_same_place_concurrent_violations_stay_distinct_replays_deterministical
     assert_eq!(
         first, second,
         "same-place concurrent violation scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 36: Entity Missing Triggers Investigation
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, AI, Generic Actions
+// GoalKinds: InvestigateViolation
+// ActionDomains: Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 9, 15
+//
+// Proves the baseline single-incident violation pipeline: stale local belief,
+// mismatch detection, investigate planning, committed investigate aftermath,
+// and exact violation-id resolution.
+
+#[allow(clippy::too_many_lines)]
+fn run_entity_missing_triggers_investigation(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let investigator = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Investigator",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let missing_subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "MissingSubject",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, missing_subject, ControlSource::None, 0);
+
+    let mut keen = default_perception_profile();
+    keen.observation_fidelity = pm(1000);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, investigator, keen);
+    set_violation_profile(
+        &mut h,
+        investigator,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        investigator,
+        missing_subject,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_ground_location(missing_subject, ORCHARD_FARM).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let first_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(investigator, Tick(0))
+        .expect("tick 0 decision trace should exist");
+    let first_planning = match &first_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    let generated_goal = first_planning
+        .candidates
+        .generated
+        .iter()
+        .find_map(|goal| match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some((violation_id, place)),
+            _ => None,
+        })
+        .expect("tick 0 should generate an investigate goal for the missing entity");
+    let generated_violation_id = generated_goal.0;
+
+    assert_eq!(
+        first_planning.selection.selected,
+        Some(
+            GoalKind::InvestigateViolation {
+                violation_id: generated_violation_id,
+                place: VILLAGE_SQUARE,
+            }
+            .into(),
+        ),
+        "the missing-entity violation should be selected for investigation",
+    );
+    assert_eq!(
+        first_planning
+            .selection
+            .selected_plan
+            .as_ref()
+            .and_then(|plan| plan.next_step.as_ref())
+            .map(|step| step.action_name.as_str()),
+        Some("investigate"),
+        "the selected violation should bind an investigate step",
+    );
+
+    let memory_after_detection = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    let detected_record = memory_after_detection
+        .violations
+        .iter()
+        .find(|record| record.id == generated_violation_id)
+        .expect("generated violation should be recorded in memory");
+    match &detected_record.kind {
+        worldwake_core::ViolationKind::EntityMissing {
+            entity,
+            expected_place,
+        } => {
+            assert_eq!(*entity, missing_subject);
+            assert_eq!(*expected_place, VILLAGE_SQUARE);
+        }
+        other => panic!("expected entity-missing violation, got {other:?}"),
+    }
+    assert_eq!(
+        detected_record.resolved_tick, None,
+        "the violation should remain unresolved until investigate commits",
+    );
+
+    let mut committed_violation_id = None;
+    for _ in 0..8 {
+        h.step_once();
+        let events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(investigator);
+        committed_violation_id = events.iter().find_map(|event| {
+            (event.action_name == "investigate"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then(|| match event.detail {
+                Some(ActionTraceDetail::Investigate { violation_id }) => Some(violation_id),
+                _ => None,
+            })
+            .flatten()
+        });
+        if committed_violation_id.is_some() {
+            break;
+        }
+    }
+
+    assert_eq!(
+        committed_violation_id,
+        Some(generated_violation_id),
+        "the committed investigate action should resolve the same violation id that planning selected",
+    );
+
+    let final_store = h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should keep a belief store");
+    let witnessed_absences = final_store
+        .social_observations
+        .iter()
+        .filter(|observation| observation.kind == worldwake_core::SocialObservationKind::WitnessedAbsence)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        witnessed_absences.len(),
+        1,
+        "the single committed investigate should leave one witnessed-absence artifact",
+    );
+    assert_eq!(
+        witnessed_absences[0].subjects,
+        (missing_subject, VILLAGE_SQUARE),
+        "the aftermath artifact should identify the missing subject and expected place",
+    );
+
+    let final_memory = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    let resolved_record = final_memory
+        .violations
+        .iter()
+        .find(|record| record.id == generated_violation_id)
+        .expect("the investigated violation should remain in memory after resolution");
+    assert!(
+        resolved_record.resolved_tick.is_some(),
+        "investigate commit should resolve the selected violation record",
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_entity_missing_triggers_investigation() {
+    let _ = run_entity_missing_triggers_investigation(Seed([57; 32]));
+}
+
+#[test]
+fn golden_entity_missing_triggers_investigation_replays_deterministically() {
+    let first = run_entity_missing_triggers_investigation(Seed([58; 32]));
+    let second = run_entity_missing_triggers_investigation(Seed([58; 32]));
+    assert_eq!(
+        first, second,
+        "entity-missing investigation scenario should replay deterministically"
     );
 }
