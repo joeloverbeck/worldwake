@@ -84,3 +84,13 @@ pub struct KnowledgePath {
     /// Institutional beliefs that motivated the candidate.
     pub institutional_beliefs: Vec<InstitutionalBeliefProvenance>,
 }
+
+impl KnowledgePath {
+    /// Returns `true` if all three provenance vectors are empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.self_knowledge.is_empty()
+            && self.entity_beliefs.is_empty()
+            && self.institutional_beliefs.is_empty()
+    }
+}

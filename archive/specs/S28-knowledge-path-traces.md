@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S28: Knowledge-Path Traces
 
@@ -385,3 +385,10 @@ No feedback loops to dampen.
 7. Knowledge paths are empty when tracing is disabled (zero-cost guarantee)
 8. No behavioral changes -- all golden tests produce identical outcomes with and without tracing enabled
 9. Social and political candidates now produce `CandidateEvidenceTrace` records (upgraded from trace-less `emit_candidate()`)
+
+## Outcome
+
+- **Completion date**: 2026-03-25
+- **What changed**: All 6 tickets (S28-001 through S28-006) implemented. `HomeostaticNeedId` added to core. `institutional_belief_claims()` added to `GoalBeliefView`. Knowledge path types (`BeliefProvenance`, `BeliefAspect`, `InstitutionalBeliefProvenance`, `SelfKnowledgeProvenance`, `KnowledgePath`) added to `knowledge_path.rs` in worldwake-ai. `CandidateEvidenceTrace` extended with `knowledge_path` field. All 6 candidate families instrumented (needs, production, enterprise, combat, social, political). Social and political emitters upgraded to `emit_candidate_with_trace()`. `dump_agent()` extended with per-candidate evidence/knowledge-path rendering. 3 new `CandidateEvidenceKind` variants (Listener, TellSubject, OfficeParticipant). `tracing_enabled` flag threaded through `GenerationContext`.
+- **Deviations**: None. All deliverables implemented as specified.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` no warnings, no behavioral changes, zero-cost when tracing disabled.

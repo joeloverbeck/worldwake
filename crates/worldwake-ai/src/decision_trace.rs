@@ -6,12 +6,16 @@
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
-    IntentionDomainTag, RecipientKnowledgeStatus, SuspensionReason, Tick,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, PerceptionSource,
+    RecipientKnowledgeStatus, SuspensionReason, Tick,
 };
 use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
 
 use crate::feasibility::FeasibilityHint;
-use crate::knowledge_path::KnowledgePath;
+use crate::knowledge_path::{
+    BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
+    SelfKnowledgeProvenance,
+};
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
 use crate::interrupts::InterruptDecision;
@@ -714,6 +718,45 @@ impl DecisionTraceSink {
                 trace.tick.0,
                 format_outcome(&trace.outcome, action_defs)
             );
+            // Render per-candidate evidence and knowledge paths for Planning outcomes.
+            if let DecisionOutcome::Planning(ref planning) = trace.outcome {
+                for ev in &planning.candidates.evidence {
+                    let feasibility = planning
+                        .candidates
+                        .ranked
+                        .iter()
+                        .find(|r| r.goal == ev.goal)
+                        .map_or(FeasibilityHint::Uncertain, |r| r.feasibility);
+                    eprintln!(
+                        "  Candidate: {:?} [feasibility={feasibility:?}]",
+                        ev.goal.kind
+                    );
+                    if !ev.contributors.is_empty() {
+                        let contrib_strs: Vec<String> = ev
+                            .contributors
+                            .iter()
+                            .map(|c| format!("{:?}({:?} @ {:?})", c.kind, c.entity, c.place))
+                            .collect();
+                        eprintln!("    Evidence: {}", contrib_strs.join(", "));
+                    }
+                    if !ev.exclusions.is_empty() {
+                        let excl_strs: Vec<String> = ev
+                            .exclusions
+                            .iter()
+                            .map(|e| {
+                                format!(
+                                    "{:?}({:?} @ {:?}) reason={:?}",
+                                    e.kind, e.entity, e.place, e.reason
+                                )
+                            })
+                            .collect();
+                        eprintln!("    Exclusions: {}", excl_strs.join(", "));
+                    }
+                    for line in format_knowledge_path(&ev.knowledge_path) {
+                        eprintln!("{line}");
+                    }
+                }
+            }
         }
     }
 }
@@ -1104,6 +1147,153 @@ fn format_frame_transition_summary(trace: Option<&FrameTransitionTrace>) -> Stri
         })
         .collect();
     format!(", frame=[{}]", kinds.join(","))
+}
+
+// ── Knowledge Path Formatting ────────────────────────────────────
+
+fn format_perception_source(source: &PerceptionSource) -> String {
+    match source {
+        PerceptionSource::DirectObservation => "DirectObservation".to_string(),
+        PerceptionSource::Report { from, chain_len } => {
+            format!("Report(from={from:?}, chain={chain_len})")
+        }
+        PerceptionSource::Rumor { chain_len } => format!("Rumor(chain={chain_len})"),
+        PerceptionSource::Inference => "Inference".to_string(),
+    }
+}
+
+fn format_institutional_knowledge_source(source: &InstitutionalKnowledgeSource) -> String {
+    match source {
+        InstitutionalKnowledgeSource::WitnessedEvent => "WitnessedEvent".to_string(),
+        InstitutionalKnowledgeSource::Report { from, chain_len } => {
+            format!("Report(from={from:?}, chain={chain_len})")
+        }
+        InstitutionalKnowledgeSource::RecordConsultation { record, entry_id } => {
+            format!("RecordConsultation(record={record:?}, entry={})", entry_id.0)
+        }
+        InstitutionalKnowledgeSource::SelfDeclaration => "SelfDeclaration".to_string(),
+    }
+}
+
+fn format_belief_aspect(aspect: &BeliefAspect) -> String {
+    match aspect {
+        BeliefAspect::LocationAt { place } => format!("at {place:?}"),
+        BeliefAspect::HasCommodity { commodity } => format!("has {commodity:?}"),
+        BeliefAspect::HasWorkstation { tag } => format!("has workstation {tag:?}"),
+        BeliefAspect::IsResourceSource { commodity } => {
+            format!("resource source for {commodity:?}")
+        }
+        BeliefAspect::Alive => "alive".to_string(),
+        BeliefAspect::Dead => "dead".to_string(),
+        BeliefAspect::Wounded => "wounded".to_string(),
+        BeliefAspect::Hostile => "hostile".to_string(),
+    }
+}
+
+fn format_self_knowledge(sk: &SelfKnowledgeProvenance) -> String {
+    match sk {
+        SelfKnowledgeProvenance::NeedLevel { need, permille } => {
+            format!("NeedLevel({need:?}, {} permille)", permille.value())
+        }
+        SelfKnowledgeProvenance::OwnWounds { count } => format!("OwnWounds(count={count})"),
+        SelfKnowledgeProvenance::OwnCommodity {
+            commodity,
+            quantity,
+        } => format!("OwnCommodity({commodity:?}, qty={})", quantity.0),
+        SelfKnowledgeProvenance::MerchantIdentity => "MerchantIdentity".to_string(),
+    }
+}
+
+fn format_belief_provenance(bp: &BeliefProvenance) -> String {
+    let aspect = format_belief_aspect(&bp.aspect);
+    let source = format_perception_source(&bp.source);
+    format!(
+        "{:?} {aspect} — {source} @ tick {}",
+        bp.subject, bp.observed_tick.0
+    )
+}
+
+fn format_institutional_belief_provenance(ibp: &InstitutionalBeliefProvenance) -> String {
+    let claim = format_institutional_claim(&ibp.claim);
+    let source = format_institutional_knowledge_source(&ibp.source);
+    let learned_at = ibp
+        .learned_at
+        .map_or_else(String::new, |place| format!(", learned_at={place:?}"));
+    format!("{claim} — {source} @ tick {}{learned_at}", ibp.learned_tick.0)
+}
+
+fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
+    match claim {
+        InstitutionalClaim::OfficeHolder {
+            office,
+            holder,
+            effective_tick,
+        } => {
+            let holder_str =
+                holder.map_or_else(|| "vacant".to_string(), |h| format!("{h:?}"));
+            format!(
+                "OfficeHolder(office={office:?}, holder={holder_str}, tick={})",
+                effective_tick.0
+            )
+        }
+        InstitutionalClaim::FactionMembership {
+            faction,
+            member,
+            active,
+            effective_tick,
+        } => format!(
+            "FactionMembership(faction={faction:?}, member={member:?}, active={active}, tick={})",
+            effective_tick.0
+        ),
+        InstitutionalClaim::SupportDeclaration {
+            office,
+            supporter,
+            candidate,
+            effective_tick,
+        } => {
+            let cand_str =
+                candidate.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
+            format!(
+                "SupportDeclaration(office={office:?}, supporter={supporter:?}, candidate={cand_str}, tick={})",
+                effective_tick.0
+            )
+        }
+        InstitutionalClaim::ForceControl {
+            office,
+            controller,
+            contested,
+            effective_tick,
+        } => {
+            let ctrl_str =
+                controller.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
+            format!(
+                "ForceControl(office={office:?}, controller={ctrl_str}, contested={contested}, tick={})",
+                effective_tick.0
+            )
+        }
+    }
+}
+
+/// Render knowledge path lines for a candidate. Returns the lines to append
+/// (including the "Knowledge path:" header). Empty if path is empty.
+fn format_knowledge_path(kp: &KnowledgePath) -> Vec<String> {
+    if kp.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec!["    Knowledge path:".to_string()];
+    for sk in &kp.self_knowledge {
+        lines.push(format!("      self: {}", format_self_knowledge(sk)));
+    }
+    for bp in &kp.entity_beliefs {
+        lines.push(format!("      belief: {}", format_belief_provenance(bp)));
+    }
+    for ibp in &kp.institutional_beliefs {
+        lines.push(format!(
+            "      institutional: {}",
+            format_institutional_belief_provenance(ibp)
+        ));
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -1977,5 +2167,181 @@ mod tests {
         };
         let summary = outcome.summary();
         assert!(!summary.contains("frame="));
+    }
+
+    #[test]
+    fn knowledge_path_format_perception_source() {
+        use worldwake_core::PerceptionSource;
+
+        assert_eq!(
+            format_perception_source(&PerceptionSource::DirectObservation),
+            "DirectObservation"
+        );
+        let from = entity(42);
+        assert_eq!(
+            format_perception_source(&PerceptionSource::Report {
+                from,
+                chain_len: 2
+            }),
+            format!("Report(from={from:?}, chain=2)")
+        );
+        assert_eq!(
+            format_perception_source(&PerceptionSource::Rumor { chain_len: 3 }),
+            "Rumor(chain=3)"
+        );
+        assert_eq!(
+            format_perception_source(&PerceptionSource::Inference),
+            "Inference"
+        );
+    }
+
+    #[test]
+    fn knowledge_path_format_institutional_source() {
+        use worldwake_core::{InstitutionalKnowledgeSource, RecordEntryId};
+
+        assert_eq!(
+            format_institutional_knowledge_source(&InstitutionalKnowledgeSource::WitnessedEvent),
+            "WitnessedEvent"
+        );
+        let from = entity(7);
+        assert_eq!(
+            format_institutional_knowledge_source(&InstitutionalKnowledgeSource::Report {
+                from,
+                chain_len: 1
+            }),
+            format!("Report(from={from:?}, chain=1)")
+        );
+        let record = entity(20);
+        assert_eq!(
+            format_institutional_knowledge_source(
+                &InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: RecordEntryId(5),
+                }
+            ),
+            format!("RecordConsultation(record={record:?}, entry=5)")
+        );
+        assert_eq!(
+            format_institutional_knowledge_source(&InstitutionalKnowledgeSource::SelfDeclaration),
+            "SelfDeclaration"
+        );
+    }
+
+    #[test]
+    fn dump_agent_renders_knowledge_path_when_nonempty() {
+        use crate::knowledge_path::{
+            BeliefAspect, BeliefProvenance, KnowledgePath, SelfKnowledgeProvenance,
+        };
+        use worldwake_core::{CommodityKind, HomeostaticNeedId, PerceptionSource, Permille};
+
+        let mut sink = DecisionTraceSink::new();
+        let agent = entity(1);
+        let seller = entity(10);
+        let place = entity(20);
+
+        let goal_key = GoalKey {
+            kind: GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            },
+            commodity: Some(CommodityKind::Apple),
+            entity: Some(seller),
+            place: Some(place),
+        };
+        let evidence = CandidateEvidenceTrace {
+            goal: goal_key,
+            contributors: vec![CandidateEvidenceContributor {
+                kind: CandidateEvidenceKind::Seller,
+                place,
+                entity: seller,
+            }],
+            exclusions: vec![],
+            knowledge_path: KnowledgePath {
+                self_knowledge: vec![SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Hunger,
+                    permille: Permille::new(900).unwrap(),
+                }],
+                entity_beliefs: vec![BeliefProvenance {
+                    subject: seller,
+                    aspect: BeliefAspect::HasCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
+                    source: PerceptionSource::DirectObservation,
+                    observed_tick: Tick(8),
+                }],
+                institutional_beliefs: vec![],
+            },
+        };
+
+        let trace = AgentDecisionTrace {
+            agent,
+            tick: Tick(5),
+            outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                dirty: crate::DirtySet::default(),
+                plan_continued: false,
+                candidates: CandidateTrace {
+                    generated: vec![goal_key],
+                    evidence: vec![evidence],
+                    ranked: vec![RankedGoalSummary {
+                        goal: goal_key,
+                        priority_class: GoalPriorityClass::Medium,
+                        motive_score: 100,
+                        provenance: None,
+                        feasibility: FeasibilityHint::Likely,
+                    }],
+                    suppressed: vec![],
+                    zero_motive: vec![],
+                    omitted_political: vec![],
+                    omitted_social: vec![],
+                },
+                planning: PlanSearchTrace {
+                    attempts: vec![],
+                },
+                selection: SelectionTrace {
+                    selected: None,
+                    selected_plan: None,
+                    selected_plan_source: None,
+                    goal_switch: None,
+                    previous_goal: None,
+                    plan_replacement: None,
+                },
+                execution: ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                },
+                action_start_failures: vec![],
+                unknown_blockers: vec![],
+                frame_transition: None,
+            })),
+        };
+        sink.record(trace);
+
+        // Capture stderr output by calling format_knowledge_path directly
+        // (dump_agent writes to stderr which is harder to capture in test).
+        let planning = match &sink.traces()[0].outcome {
+            DecisionOutcome::Planning(p) => p,
+            _ => panic!("expected Planning"),
+        };
+        let ev = &planning.candidates.evidence[0];
+        let lines = format_knowledge_path(&ev.knowledge_path);
+        assert!(!lines.is_empty(), "knowledge path should produce output");
+        assert_eq!(lines[0], "    Knowledge path:");
+        assert!(lines[1].contains("self: NeedLevel(Hunger, 900 permille)"));
+        assert!(lines[2].contains("belief:"));
+        assert!(lines[2].contains("DirectObservation"));
+        assert!(lines[2].contains("tick 8"));
+    }
+
+    #[test]
+    fn dump_agent_omits_knowledge_path_when_empty() {
+        use crate::knowledge_path::KnowledgePath;
+
+        let kp = KnowledgePath::default();
+        let lines = format_knowledge_path(&kp);
+        assert!(
+            lines.is_empty(),
+            "empty knowledge path should produce no output"
+        );
     }
 }
