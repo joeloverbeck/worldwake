@@ -131,6 +131,19 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
         InstitutionalClaim::SupportDeclaration {
             supporter, office, ..
         } => InstitutionalBeliefKey::SupportFor { supporter, office },
+        InstitutionalClaim::Accusation {
+            accused,
+            violation_id,
+            ..
+        }
+        | InstitutionalClaim::Verdict {
+            accused,
+            violation_id,
+            ..
+        } => InstitutionalBeliefKey::CrimeCase {
+            accused,
+            violation_id,
+        },
     }
 }
 

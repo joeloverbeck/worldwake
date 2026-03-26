@@ -24,6 +24,10 @@ enum InstitutionalTellTopicKey {
         supporter: EntityId,
         office: EntityId,
     },
+    CrimeCase {
+        accused: EntityId,
+        violation_id: crate::ViolationId,
+    },
 }
 
 /// Per-agent subjective view of observed entities and social evidence.
@@ -545,6 +549,19 @@ fn institutional_tell_topic_key(claim: InstitutionalClaim) -> InstitutionalTellT
         InstitutionalClaim::SupportDeclaration {
             supporter, office, ..
         } => InstitutionalTellTopicKey::SupportDeclaration { supporter, office },
+        InstitutionalClaim::Accusation {
+            accused,
+            violation_id,
+            ..
+        }
+        | InstitutionalClaim::Verdict {
+            accused,
+            violation_id,
+            ..
+        } => InstitutionalTellTopicKey::CrimeCase {
+            accused,
+            violation_id,
+        },
     }
 }
 
@@ -565,7 +582,9 @@ fn institutional_claim_effective_tick(claim: InstitutionalClaim) -> Tick {
         InstitutionalClaim::OfficeHolder { effective_tick, .. }
         | InstitutionalClaim::ForceControl { effective_tick, .. }
         | InstitutionalClaim::FactionMembership { effective_tick, .. }
-        | InstitutionalClaim::SupportDeclaration { effective_tick, .. } => effective_tick,
+        | InstitutionalClaim::SupportDeclaration { effective_tick, .. }
+        | InstitutionalClaim::Accusation { effective_tick, .. }
+        | InstitutionalClaim::Verdict { effective_tick, .. } => effective_tick,
     }
 }
 
@@ -714,6 +733,9 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
         | InstitutionalClaim::ForceControl { office, .. }
         | InstitutionalClaim::SupportDeclaration { office, .. } => office,
         InstitutionalClaim::FactionMembership { faction, .. } => faction,
+        InstitutionalClaim::Accusation { accused, .. } | InstitutionalClaim::Verdict { accused, .. } => {
+            accused
+        }
     }
 }
 
@@ -904,6 +926,42 @@ fn institutional_claim_same_content(left: InstitutionalClaim, right: Institution
             left_supporter == right_supporter
                 && left_office == right_office
                 && left_candidate == right_candidate
+        }
+        (
+            InstitutionalClaim::Accusation {
+                accuser: left_filer,
+                accused: left_target,
+                violation_id: left_case_violation_id,
+                ..
+            },
+            InstitutionalClaim::Accusation {
+                accuser: right_filer,
+                accused: right_target,
+                violation_id: right_case_violation_id,
+                ..
+            },
+        ) => {
+            left_filer == right_filer
+                && left_target == right_target
+                && left_case_violation_id == right_case_violation_id
+        }
+        (
+            InstitutionalClaim::Verdict {
+                accused: left_accused,
+                violation_id: left_violation_id,
+                punishment: left_punishment,
+                ..
+            },
+            InstitutionalClaim::Verdict {
+                accused: right_accused,
+                violation_id: right_violation_id,
+                punishment: right_punishment,
+                ..
+            },
+        ) => {
+            left_accused == right_accused
+                && left_violation_id == right_violation_id
+                && left_punishment == right_punishment
         }
         _ => false,
     }
@@ -1235,6 +1293,7 @@ mod tests {
         CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
         Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
+        current_institutional_belief_topics, institutional_claim_same_memory_lane,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -1386,6 +1445,50 @@ mod tests {
             source,
             learned_tick: Tick(learned_tick),
             learned_at: Some(entity(9)),
+        }
+    }
+
+    fn accusation_belief(
+        accused: u32,
+        violation_id: u64,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::Accusation {
+                accuser: entity(70),
+                accused: entity(accused),
+                violation_id: crate::ViolationId(violation_id),
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(71),
+                entry_id: crate::RecordEntryId(1),
+            },
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(72)),
+        }
+    }
+
+    fn verdict_belief(
+        accused: u32,
+        violation_id: u64,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::Verdict {
+                accused: entity(accused),
+                violation_id: crate::ViolationId(violation_id),
+                punishment: crate::PunishmentKind::Exile {
+                    from_faction: entity(73),
+                },
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record: entity(71),
+                entry_id: crate::RecordEntryId(2),
+            },
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(72)),
         }
     }
 
@@ -2439,6 +2542,45 @@ mod tests {
             ),
             RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
         );
+    }
+
+    #[test]
+    fn crime_case_claims_share_a_memory_lane_by_accused_and_violation() {
+        let accusation = InstitutionalClaim::Accusation {
+            accuser: entity(70),
+            accused: entity(80),
+            violation_id: crate::ViolationId(9),
+            effective_tick: Tick(5),
+        };
+        let verdict = InstitutionalClaim::Verdict {
+            accused: entity(80),
+            violation_id: crate::ViolationId(9),
+            punishment: crate::PunishmentKind::Fine {
+                commodity: CommodityKind::Coin,
+                amount: Quantity(4),
+            },
+            effective_tick: Tick(7),
+        };
+        let other_case = InstitutionalClaim::Accusation {
+            accuser: entity(70),
+            accused: entity(80),
+            violation_id: crate::ViolationId(10),
+            effective_tick: Tick(8),
+        };
+
+        assert!(institutional_claim_same_memory_lane(accusation, verdict));
+        assert!(!institutional_claim_same_memory_lane(accusation, other_case));
+    }
+
+    #[test]
+    fn current_institutional_belief_topics_prefers_newer_verdict_for_same_crime_case() {
+        let current = current_institutional_belief_topics(vec![
+            accusation_belief(80, 9, 5),
+            verdict_belief(80, 9, 7),
+        ]);
+
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0], verdict_belief(80, 9, 7));
     }
 
     #[test]

@@ -1309,6 +1309,24 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
                 effective_tick.0
             )
         }
+        InstitutionalClaim::Accusation {
+            accuser,
+            accused,
+            violation_id,
+            effective_tick,
+        } => format!(
+            "Accusation(accuser={accuser:?}, accused={accused:?}, violation_id={violation_id:?}, tick={})",
+            effective_tick.0
+        ),
+        InstitutionalClaim::Verdict {
+            accused,
+            violation_id,
+            punishment,
+            effective_tick,
+        } => format!(
+            "Verdict(accused={accused:?}, violation_id={violation_id:?}, punishment={punishment:?}, tick={})",
+            effective_tick.0
+        ),
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{Component, EntityId, Tick};
+use crate::{Component, EntityId, PunishmentKind, Tick, ViolationId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -8,6 +8,7 @@ pub enum RecordKind {
     OfficeRegister,
     FactionRoster,
     SupportLedger,
+    CrimeRegister,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -36,6 +37,18 @@ pub enum InstitutionalClaim {
         office: EntityId,
         controller: Option<EntityId>,
         contested: bool,
+        effective_tick: Tick,
+    },
+    Accusation {
+        accuser: EntityId,
+        accused: EntityId,
+        violation_id: ViolationId,
+        effective_tick: Tick,
+    },
+    Verdict {
+        accused: EntityId,
+        violation_id: ViolationId,
+        punishment: PunishmentKind,
         effective_tick: Tick,
     },
 }
@@ -158,6 +171,10 @@ pub enum InstitutionalBeliefKey {
         supporter: EntityId,
         office: EntityId,
     },
+    CrimeCase {
+        accused: EntityId,
+        violation_id: ViolationId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -196,7 +213,7 @@ mod tests {
         InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
         InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
     };
-    use crate::{traits::Component, EntityId, Tick};
+    use crate::{traits::Component, CommodityKind, EntityId, PunishmentKind, Quantity, Tick, ViolationId};
     use serde::{de::DeserializeOwned, Serialize};
 
     fn entity(slot: u32) -> EntityId {
@@ -232,6 +249,27 @@ mod tests {
             office: entity(10),
             controller,
             contested,
+            effective_tick: Tick(effective_tick),
+        }
+    }
+
+    fn accusation_claim(effective_tick: u64) -> InstitutionalClaim {
+        InstitutionalClaim::Accusation {
+            accuser: entity(40),
+            accused: entity(41),
+            violation_id: ViolationId(7),
+            effective_tick: Tick(effective_tick),
+        }
+    }
+
+    fn verdict_claim(effective_tick: u64) -> InstitutionalClaim {
+        InstitutionalClaim::Verdict {
+            accused: entity(41),
+            violation_id: ViolationId(7),
+            punishment: PunishmentKind::Fine {
+                commodity: CommodityKind::Coin,
+                amount: Quantity(9),
+            },
             effective_tick: Tick(effective_tick),
         }
     }
@@ -368,6 +406,10 @@ mod tests {
             InstitutionalBeliefKey::OfficeHolderOf { office: entity(7) },
             InstitutionalBeliefKey::ForceControllerOf { office: entity(6) },
             InstitutionalBeliefKey::FactionMembersOf { faction: entity(2) },
+            InstitutionalBeliefKey::CrimeCase {
+                accused: entity(5),
+                violation_id: ViolationId(9),
+            },
         ];
 
         keys.sort();
@@ -381,6 +423,10 @@ mod tests {
                 InstitutionalBeliefKey::SupportFor {
                     supporter: entity(4),
                     office: entity(3),
+                },
+                InstitutionalBeliefKey::CrimeCase {
+                    accused: entity(5),
+                    violation_id: ViolationId(9),
                 },
             ]
         );
@@ -448,6 +494,66 @@ mod tests {
                 assert!(contested);
             }
             other => panic!("expected force control claim, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accusation_and_verdict_roundtrip_through_bincode() {
+        let accusation = accusation_claim(13);
+        let verdict = verdict_claim(21);
+
+        let accusation_bytes = bincode::serialize(&accusation).unwrap();
+        let verdict_bytes = bincode::serialize(&verdict).unwrap();
+
+        let accusation_roundtrip: InstitutionalClaim =
+            bincode::deserialize(&accusation_bytes).unwrap();
+        let verdict_roundtrip: InstitutionalClaim = bincode::deserialize(&verdict_bytes).unwrap();
+
+        assert_eq!(accusation_roundtrip, accusation);
+        assert_eq!(verdict_roundtrip, verdict);
+    }
+
+    #[test]
+    fn crime_register_record_data_supports_append_and_supersede() {
+        let mut record = RecordData {
+            record_kind: RecordKind::CrimeRegister,
+            home_place: entity(1),
+            issuer: entity(2),
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        };
+
+        let accusation_entry = record.append_entry(accusation_claim(13), Tick(13));
+        let verdict_entry = record
+            .supersede_entry(accusation_entry, verdict_claim(21), Tick(21))
+            .unwrap();
+
+        assert_eq!(accusation_entry, RecordEntryId(0));
+        assert_eq!(verdict_entry, RecordEntryId(1));
+        assert_eq!(record.entries[0].supersedes, None);
+        assert_eq!(record.entries[1].supersedes, Some(accusation_entry));
+
+        match record.entries[1].claim {
+            InstitutionalClaim::Verdict {
+                accused,
+                violation_id,
+                punishment,
+                effective_tick,
+            } => {
+                assert_eq!(accused, entity(41));
+                assert_eq!(violation_id, ViolationId(7));
+                assert_eq!(
+                    punishment,
+                    PunishmentKind::Fine {
+                        commodity: CommodityKind::Coin,
+                        amount: Quantity(9),
+                    }
+                );
+                assert_eq!(effective_tick, Tick(21));
+            }
+            other => panic!("expected verdict claim, got {other:?}"),
         }
     }
 }

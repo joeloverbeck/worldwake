@@ -533,6 +533,14 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                         | worldwake_core::InstitutionalClaim::SupportDeclaration {
                             effective_tick,
                             ..
+                        }
+                        | worldwake_core::InstitutionalClaim::Accusation {
+                            effective_tick,
+                            ..
+                        }
+                        | worldwake_core::InstitutionalClaim::Verdict {
+                            effective_tick,
+                            ..
                         } => effective_tick.0,
                     }),
                     std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
@@ -895,6 +903,8 @@ fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u
         worldwake_core::InstitutionalClaim::OfficeHolder { .. } => 1,
         worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 2,
         worldwake_core::InstitutionalClaim::FactionMembership { .. } => 3,
+        worldwake_core::InstitutionalClaim::Accusation { .. } => 4,
+        worldwake_core::InstitutionalClaim::Verdict { .. } => 5,
     }
 }
 

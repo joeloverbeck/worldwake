@@ -24,7 +24,7 @@ pub struct JusticeDispositionProfile {
 impl Component for JusticeDispositionProfile {}
 
 /// The kind of punishment imposed by institutional authority.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum PunishmentKind {
     Fine {
         commodity: CommodityKind,

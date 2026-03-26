@@ -5,8 +5,8 @@
 
 use std::collections::BTreeMap;
 use worldwake_core::{
-    AgentBeliefStore, EntityId, InstitutionalBeliefKey, InstitutionalBeliefRead, RecordData,
-    RecordEntryId, Tick,
+    AgentBeliefStore, EntityId, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, RecordData, RecordEntryId, Tick,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -58,6 +58,9 @@ pub enum InstitutionalBeliefReadSummary {
     },
     SupportDeclarationConflicted {
         candidates: Vec<Option<EntityId>>,
+    },
+    CrimeCaseClaims {
+        claims: Vec<InstitutionalClaim>,
     },
 }
 
@@ -271,6 +274,27 @@ pub fn summarize_institutional_read(
                 }
             }
         }
+        InstitutionalBeliefKey::CrimeCase {
+            accused,
+            violation_id,
+        } => {
+            let claims = store
+                .institutional_beliefs
+                .get(&InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                })
+                .into_iter()
+                .flatten()
+                .map(|belief| belief.claim)
+                .collect::<Vec<_>>();
+
+            if claims.is_empty() {
+                InstitutionalBeliefReadSummary::Unknown
+            } else {
+                InstitutionalBeliefReadSummary::CrimeCaseClaims { claims }
+            }
+        }
     }
 }
 
@@ -288,6 +312,19 @@ fn institutional_belief_key(claim: worldwake_core::InstitutionalClaim) -> Instit
         worldwake_core::InstitutionalClaim::SupportDeclaration {
             supporter, office, ..
         } => InstitutionalBeliefKey::SupportFor { supporter, office },
+        worldwake_core::InstitutionalClaim::Accusation {
+            accused,
+            violation_id,
+            ..
+        }
+        | worldwake_core::InstitutionalClaim::Verdict {
+            accused,
+            violation_id,
+            ..
+        } => InstitutionalBeliefKey::CrimeCase {
+            accused,
+            violation_id,
+        },
     }
 }
 
@@ -296,7 +333,7 @@ mod tests {
     use super::*;
     use worldwake_core::{
         BelievedInstitutionalClaim, InstitutionalClaim, InstitutionalKnowledgeSource,
-        PerceptionProfile, Permille,
+        PerceptionProfile, Permille, PunishmentKind, ViolationId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -537,6 +574,42 @@ mod tests {
             summarize_institutional_read(&store, &key),
             InstitutionalBeliefReadSummary::SupportDeclarationConflicted {
                 candidates: vec![Some(entity(10)), Some(entity(11))],
+            }
+        );
+    }
+
+    #[test]
+    fn summarize_institutional_read_reports_crime_case_claims() {
+        let accused = entity(31);
+        let key = InstitutionalBeliefKey::CrimeCase {
+            accused,
+            violation_id: ViolationId(4),
+        };
+        let record = entity(32);
+        let mut store = AgentBeliefStore::default();
+        let accusation = InstitutionalClaim::Accusation {
+            accuser: entity(30),
+            accused,
+            violation_id: ViolationId(4),
+            effective_tick: Tick(5),
+        };
+        let verdict = InstitutionalClaim::Verdict {
+            accused,
+            violation_id: ViolationId(4),
+            punishment: PunishmentKind::Fine {
+                commodity: worldwake_core::CommodityKind::Coin,
+                amount: worldwake_core::Quantity(6),
+            },
+            effective_tick: Tick(8),
+        };
+
+        record_claim(&mut store, key, accusation, record, 0);
+        record_claim(&mut store, key, verdict, record, 1);
+
+        assert_eq!(
+            summarize_institutional_read(&store, &key),
+            InstitutionalBeliefReadSummary::CrimeCaseClaims {
+                claims: vec![accusation, verdict],
             }
         );
     }
