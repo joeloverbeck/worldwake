@@ -123,6 +123,7 @@ pub struct ActionHandler {
     pub on_commit: ActionCommitFn,
     pub on_abort: ActionAbortFn,
     pub affordance_payloads: AffordancePayloadFn,
+    pub requires_explicit_payload_variants: bool,
     pub payload_override_is_valid: PayloadOverrideValidatorFn,
     pub authoritative_payload_is_valid: AuthoritativePayloadValidatorFn,
 }
@@ -141,6 +142,7 @@ impl ActionHandler {
             on_commit,
             on_abort,
             affordance_payloads: no_affordance_payloads,
+            requires_explicit_payload_variants: false,
             payload_override_is_valid: no_payload_override_validator,
             authoritative_payload_is_valid: no_authoritative_payload_validator,
         }
@@ -152,6 +154,7 @@ impl ActionHandler {
         affordance_payloads: AffordancePayloadFn,
     ) -> Self {
         self.affordance_payloads = affordance_payloads;
+        self.requires_explicit_payload_variants = true;
         self
     }
 

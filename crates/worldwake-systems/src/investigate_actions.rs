@@ -178,32 +178,38 @@ fn commit_investigate(
             violation_id.0
         )));
     }
-    if let Some(profile) = txn.get_component_violation_disposition_profile(instance.actor) {
-        let resolved = memory.resolve_id(
-            violation_id,
+    let profile = txn
+        .get_component_violation_disposition_profile(instance.actor)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "actor {} lacks ViolationDispositionProfile",
+                instance.actor
+            ))
+        })?;
+    let resolved = memory.resolve_id(
+        violation_id,
+        txn.tick(),
+        profile.violation_memory_retention_ticks,
+    );
+    if !resolved {
+        return Err(ActionError::PreconditionFailed(format!(
+            "violation {} expired before resolution",
+            violation_id.0
+        )));
+    }
+    if owner_is_investigating_actor {
+        memory.record(
+            ViolationKind::SuspectedTheft {
+                missing_entity: subject,
+                expected_place: place,
+                suspect: None,
+            },
             txn.tick(),
             profile.violation_memory_retention_ticks,
         );
-        if !resolved {
-            return Err(ActionError::PreconditionFailed(format!(
-                "violation {} expired before resolution",
-                violation_id.0
-            )));
-        }
-        if owner_is_investigating_actor {
-            memory.record(
-                ViolationKind::SuspectedTheft {
-                    missing_entity: subject,
-                    expected_place: place,
-                    suspect: None,
-                },
-                txn.tick(),
-                profile.violation_memory_retention_ticks,
-            );
-        }
-        txn.set_component_violation_memory(instance.actor, memory)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
+    txn.set_component_violation_memory(instance.actor, memory)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
     Ok(CommitOutcome::empty())
 }
@@ -228,6 +234,9 @@ fn enumerate_investigate_payloads(
     let Some(place) = targets.first().copied() else {
         return Vec::new();
     };
+    if view.violation_disposition_profile(actor).is_none() {
+        return Vec::new();
+    }
     view.active_violation_records(actor)
         .into_iter()
         .filter(|record| investigable_binding(record, place).is_some())
@@ -249,6 +258,9 @@ fn validate_investigate_payload_override(
     let Some(place) = targets.first().copied() else {
         return false;
     };
+    if view.violation_disposition_profile(actor).is_none() {
+        return false;
+    }
     let Some(payload) = payload.as_investigate() else {
         return false;
     };
@@ -270,6 +282,14 @@ fn validate_investigate_payload_authoritatively(
     let Some(place) = targets.first().copied() else {
         return Err(ActionError::InvalidTarget(actor));
     };
+    if world
+        .get_component_violation_disposition_profile(actor)
+        .is_none()
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} lacks ViolationDispositionProfile"
+        )));
+    }
     let payload = investigate_payload(payload).map_err(ActionError::PreconditionFailed)?;
     let memory = world.get_component_violation_memory(actor).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("actor {actor} lacks ViolationMemory"))
@@ -738,6 +758,7 @@ mod tests {
         let (_, other_place) = first_two_places(&world);
         let expected_place = first_two_places(&world).0;
         let actor = spawn_actor(&mut world, other_place);
+        set_violation_profile(&mut world, actor, 2, 50);
         let violation_id = record_violation(
             &mut world,
             actor,
@@ -801,6 +822,7 @@ mod tests {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
         let first_id = record_violation(
             &mut world,
             actor,
@@ -888,6 +910,7 @@ mod tests {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
         let violation_id = record_violation(
             &mut world,
             actor,
@@ -1329,6 +1352,7 @@ mod tests {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
         let violation_id = record_violation(
             &mut world,
             actor,
@@ -1383,7 +1407,7 @@ mod tests {
     }
 
     #[test]
-    fn investigate_action_falls_back_to_three_ticks_without_profile() {
+    fn investigate_action_fails_without_violation_profile() {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place);
@@ -1399,14 +1423,39 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let affordance =
-            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+        let affordances = get_affordances(
+            &PerAgentBeliefView::from_world(actor, &world),
+            actor,
+            &defs,
+            &handlers,
+        );
+        assert!(
+            affordances.into_iter().all(|affordance| {
+                defs.get(affordance.def_id)
+                    .is_none_or(|def| def.name != "investigate")
+            }),
+            "investigate affordance should not exist without ViolationDispositionProfile"
+        );
+
+        let affordance = Affordance {
+            def_id: defs
+                .iter()
+                .find(|def| def.name == "investigate")
+                .map(|def| def.id)
+                .expect("investigate definition should exist"),
+            actor,
+            bound_targets: vec![place],
+            payload_override: Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id,
+            })),
+            explanation: None,
+        };
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let mut next_instance_id = ActionInstanceId(1);
-        let instance_id = start_action(
+        let err = start_action(
             &affordance,
             &defs,
             &handlers,
@@ -1422,16 +1471,15 @@ mod tests {
                 cause: CauseRef::Bootstrap,
             },
         )
-        .unwrap();
+        .unwrap_err();
 
         assert_eq!(
-            active_actions
-                .get(&instance_id)
-                .unwrap()
-                .remaining_duration
-                .ticks(),
-            3
+            err,
+            ActionError::PreconditionFailed(format!(
+                "actor {actor} lacks ViolationDispositionProfile"
+            ))
         );
+        assert!(active_actions.is_empty());
     }
 
     #[test]

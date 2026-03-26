@@ -197,11 +197,10 @@ impl DurationExpr {
                 .get_component_theft_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.steal_duration_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks theft disposition profile")),
-            Self::ActorInvestigationDisposition => Ok(ActionDuration::new(
-                world
-                    .get_component_violation_disposition_profile(actor)
-                    .map_or(3, |profile| profile.investigation_duration_ticks.get()),
-            )),
+            Self::ActorInvestigationDisposition => world
+                .get_component_violation_disposition_profile(actor)
+                .map(|profile| ActionDuration::new(profile.investigation_duration_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks violation disposition profile")),
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
                 .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
@@ -725,6 +724,16 @@ mod tests {
                 },
             )
             .unwrap();
+            txn.set_component_violation_disposition_profile(
+                actor,
+                worldwake_core::ViolationDispositionProfile {
+                    investigation_duration_ticks: nz(3),
+                    violation_memory_retention_ticks: 20,
+                    investigation_motive_weight: pm(500),
+                    ownership_motive_bonus: pm(200),
+                },
+            )
+            .unwrap();
             txn.set_component_combat_profile(
                 actor,
                 CombatProfile::new(
@@ -820,8 +829,8 @@ mod tests {
         assert_eq!(
             DurationExpr::ActorInvestigationDisposition
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
-                .unwrap(),
-            ActionDuration::new(3)
+                .unwrap_err(),
+            format!("actor {actor} lacks violation disposition profile")
         );
         assert_eq!(
             DurationExpr::ActorDefendStance

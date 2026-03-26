@@ -175,7 +175,9 @@ fn payload_variants(
         .map(Some)
         .collect::<Vec<_>>();
     if variants.is_empty() {
-        variants.push(None);
+        if !handler.requires_explicit_payload_variants {
+            variants.push(None);
+        }
     } else {
         variants.sort();
         variants.dedup();
@@ -1360,6 +1362,34 @@ mod tests {
                 requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
             }))
+        );
+    }
+
+    #[test]
+    fn get_affordances_excludes_actions_when_required_payload_variants_are_absent() {
+        let actor = entity(1);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+
+        let mut defs = ActionDefRegistry::new();
+        let def_id = ActionDefId(0);
+        defs.register(sample_action_def(
+            def_id,
+            vec![Constraint::ActorAlive],
+            vec![],
+            vec![],
+        ));
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort)
+                .with_affordance_payloads(|_def, _actor, _targets, _view| Vec::new()),
+        );
+
+        let affordances = get_affordances(&view, actor, &defs, &handlers);
+
+        assert!(
+            affordances.is_empty(),
+            "actions that require explicit payload variants should disappear when none exist"
         );
     }
 
