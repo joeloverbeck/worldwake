@@ -201,6 +201,9 @@ fn goal_ranking_provenance(
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => Some(
             RankedGoalProvenance::Danger(context.danger_assessment.clone()),
         ),
+        GoalKind::StealItem { .. } | GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => {
+            None
+        }
         _ => None,
     }
 }
@@ -311,7 +314,10 @@ fn priority_class(
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
-        | GoalKind::InvestigateViolation { .. } => GoalPriorityClass::Low,
+        | GoalKind::InvestigateViolation { .. }
+        | GoalKind::StealItem { .. }
+        | GoalKind::Accuse { .. }
+        | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
     }
 }
 
@@ -484,7 +490,11 @@ fn motive_score(
             context.utility.social_weight,
             social_pressure_for_topic(context, topic),
         ),
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::LootCorpse { .. }
+        | GoalKind::BuryCorpse { .. }
+        | GoalKind::StealItem { .. }
+        | GoalKind::Accuse { .. }
+        | GoalKind::PunishAccused { .. } => 1,
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
@@ -520,12 +530,18 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
             .view
             .known_institutional_beliefs(context.agent)
             .into_iter()
-            .filter(|belief| worldwake_core::institutional_claim_same_memory_lane(belief.claim, claim))
+            .filter(|belief| {
+                worldwake_core::institutional_claim_same_memory_lane(belief.claim, claim)
+            })
             .max_by_key(|belief| {
                 (
                     worldwake_core::Tick(match belief.claim {
-                        worldwake_core::InstitutionalClaim::OfficeHolder { effective_tick, .. }
-                        | worldwake_core::InstitutionalClaim::ForceControl { effective_tick, .. }
+                        worldwake_core::InstitutionalClaim::OfficeHolder {
+                            effective_tick, ..
+                        }
+                        | worldwake_core::InstitutionalClaim::ForceControl {
+                            effective_tick, ..
+                        }
                         | worldwake_core::InstitutionalClaim::FactionMembership {
                             effective_tick,
                             ..
@@ -535,13 +551,11 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                             ..
                         }
                         | worldwake_core::InstitutionalClaim::Accusation {
-                            effective_tick,
-                            ..
+                            effective_tick, ..
                         }
-                        | worldwake_core::InstitutionalClaim::Verdict {
-                            effective_tick,
-                            ..
-                        } => effective_tick.0,
+                        | worldwake_core::InstitutionalClaim::Verdict { effective_tick, .. } => {
+                            effective_tick.0
+                        }
                     }),
                     std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
                         belief.source,
@@ -554,13 +568,16 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                 belief_pressure_from_source(
                     match belief.source {
                         worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent
-                        | worldwake_core::InstitutionalKnowledgeSource::RecordConsultation { .. }
+                        | worldwake_core::InstitutionalKnowledgeSource::RecordConsultation {
+                            ..
+                        }
                         | worldwake_core::InstitutionalKnowledgeSource::SelfDeclaration => {
                             worldwake_core::PerceptionSource::DirectObservation
                         }
-                        worldwake_core::InstitutionalKnowledgeSource::Report { from, chain_len } => {
-                            worldwake_core::PerceptionSource::Report { from, chain_len }
-                        }
+                        worldwake_core::InstitutionalKnowledgeSource::Report {
+                            from,
+                            chain_len,
+                        } => worldwake_core::PerceptionSource::Report { from, chain_len },
                     },
                     belief.learned_tick,
                     context.current_tick,
@@ -825,7 +842,11 @@ fn ranked_goal_ordering(
         return (ordering, Some(RankedGoalComparisonDimension::GoalKindOrder));
     }
 
-    let ordering = left.grounded.key.commodity.cmp(&right.grounded.key.commodity);
+    let ordering = left
+        .grounded
+        .key
+        .commodity
+        .cmp(&right.grounded.key.commodity);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::CommodityKey));
     }
@@ -868,7 +889,9 @@ pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ord
 fn compare_share_belief_topics(left: &GoalKind, right: &GoalKind) -> Ordering {
     match (left, right) {
         (
-            GoalKind::ShareBelief { topic: left_topic, .. },
+            GoalKind::ShareBelief {
+                topic: left_topic, ..
+            },
             GoalKind::ShareBelief {
                 topic: right_topic, ..
             },
@@ -877,9 +900,7 @@ fn compare_share_belief_topics(left: &GoalKind, right: &GoalKind) -> Ordering {
             .then_with(|| match (left_topic, right_topic) {
                 (
                     TellTopic::InstitutionalClaim { claim: left_claim },
-                    TellTopic::InstitutionalClaim {
-                        claim: right_claim,
-                    },
+                    TellTopic::InstitutionalClaim { claim: right_claim },
                 ) => institutional_claim_priority(left_claim)
                     .cmp(&institutional_claim_priority(right_claim))
                     .then_with(|| left_claim.cmp(right_claim)),
@@ -928,6 +949,9 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::ClaimOffice { .. } => 15,
         GoalKind::SupportCandidateForOffice { .. } => 16,
         GoalKind::InvestigateViolation { .. } => 17,
+        GoalKind::StealItem { .. } => 18,
+        GoalKind::Accuse { .. } => 19,
+        GoalKind::PunishAccused { .. } => 20,
     }
 }
 
@@ -945,9 +969,9 @@ mod tests {
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
         EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, PerceptionSource, Permille, Quantity, RecipeId, ResourceSource,
-        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        WorkstationTag, Wound, WoundCause, WoundId,
+        MetabolismProfile, PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId,
+        ResourceSource, TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1263,6 +1287,42 @@ mod tests {
         view.confidence_policies
             .insert(agent, BeliefConfidencePolicy::default());
         view
+    }
+
+    #[test]
+    fn deferred_crime_and_justice_goals_rank_low_with_minimal_motive() {
+        let agent = entity(1);
+        let view = base_view(agent);
+        let recipes = RecipeRegistry::new();
+
+        for grounded in [
+            goal(GoalKind::StealItem {
+                target_item: entity(2),
+            }),
+            goal(GoalKind::Accuse {
+                accused: entity(3),
+                violation_id: ViolationId(1),
+            }),
+            goal(GoalKind::PunishAccused {
+                accused: entity(4),
+                punishment: PunishmentKind::Exile {
+                    from_faction: entity(5),
+                },
+            }),
+        ] {
+            let outcome = rank(
+                &[grounded.clone()],
+                &view,
+                agent,
+                current_tick(),
+                &utility(),
+                &recipes,
+            );
+
+            assert_eq!(outcome.ranked.len(), 1);
+            assert_eq!(outcome.ranked[0].priority_class, GoalPriorityClass::Low);
+            assert_eq!(outcome.ranked[0].motive_score, 1);
+        }
     }
 
     /// Test helper: builds `DecisionContext` from the view and delegates to `rank_candidates`.

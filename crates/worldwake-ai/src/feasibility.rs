@@ -167,6 +167,9 @@ fn goal_specific_feasibility(
                 None // Uncertain — needs travel
             }
         }
+        GoalKind::StealItem { .. } | GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => {
+            None
+        }
     }
 }
 
@@ -210,8 +213,8 @@ mod tests {
         BeliefConfidencePolicy, BlockedIntent, BlockerKey, BlockingFact,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
         EntityKind, GoalKey, GoalKind, HomeostaticNeeds, IntentionDomain, IntentionFrame,
-        LoadUnits, MerchandiseProfile, RecipeId, ResourceSource, TellTopic, Tick, UniqueItemKind,
-        WorkstationTag,
+        LoadUnits, MerchandiseProfile, PunishmentKind, RecipeId, ResourceSource, TellTopic, Tick,
+        UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -873,6 +876,31 @@ mod tests {
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
         assert_eq!(hint, FeasibilityHint::Uncertain);
+    }
+
+    #[test]
+    fn deferred_crime_and_justice_goals_default_to_uncertain() {
+        let view = MockView::default();
+        let blocked = empty_blocked_memory();
+
+        for goal in [
+            ranked_goal(GoalKind::StealItem {
+                target_item: entity(12),
+            }),
+            ranked_goal(GoalKind::Accuse {
+                accused: entity(13),
+                violation_id: ViolationId(1),
+            }),
+            ranked_goal(GoalKind::PunishAccused {
+                accused: entity(14),
+                punishment: PunishmentKind::Exile {
+                    from_faction: entity(15),
+                },
+            }),
+        ] {
+            let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
+            assert_eq!(hint, FeasibilityHint::Uncertain);
+        }
     }
 
     // ── Invariant: Ord gives Likely < Uncertain < Unlikely ──

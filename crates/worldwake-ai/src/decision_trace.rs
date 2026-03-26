@@ -106,7 +106,9 @@ impl DecisionOutcome {
                     .as_ref()
                     .map_or_else(String::new, format_ranked_goal_comparison_summary);
                 let frame_suffix = format_frame_transition_summary(frame_transition.as_ref());
-                format!("ACTIVE: {action_name} — interrupt: {decision:?}{ranking_suffix}{frame_suffix}")
+                format!(
+                    "ACTIVE: {action_name} — interrupt: {decision:?}{ranking_suffix}{frame_suffix}"
+                )
             }
             DecisionOutcome::Planning(planning) => {
                 let selected = planning

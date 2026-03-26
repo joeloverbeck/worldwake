@@ -1,9 +1,9 @@
+use super::candidates::relevant_action_defs;
 use super::{
     build_successor, combined_relevant_places, compare_search_nodes, compute_heuristic,
     prune_travel_away_from_goal, root_node, search_candidate_from_planner, search_candidates,
     search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
 };
-use super::candidates::relevant_action_defs;
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
 use crate::{

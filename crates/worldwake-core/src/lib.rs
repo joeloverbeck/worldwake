@@ -78,12 +78,11 @@ pub use belief::{
     institutional_claim_subject_entity, institutional_knowledge_chain_len,
     recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
     social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
-    to_shared_belief_snapshot,
-    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition,
-    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
-    TellTopic, ToldBeliefMemory,
+    to_shared_belief_snapshot, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+    HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
+    PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
+    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,

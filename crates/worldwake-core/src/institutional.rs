@@ -213,7 +213,9 @@ mod tests {
         InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
         InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
     };
-    use crate::{traits::Component, CommodityKind, EntityId, PunishmentKind, Quantity, Tick, ViolationId};
+    use crate::{
+        traits::Component, CommodityKind, EntityId, PunishmentKind, Quantity, Tick, ViolationId,
+    };
     use serde::{de::DeserializeOwned, Serialize};
 
     fn entity(slot: u32) -> EntityId {

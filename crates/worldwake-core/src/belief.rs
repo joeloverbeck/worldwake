@@ -236,11 +236,10 @@ impl AgentBeliefStore {
                 RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
             }
             Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
-            None
-                if self.told_beliefs.keys().any(|memory_key| {
-                    memory_key.counterparty == key.counterparty
-                        && tell_topic_same_memory_lane(&memory_key.topic, &key.topic)
-                }) =>
+            None if self.told_beliefs.keys().any(|memory_key| {
+                memory_key.counterparty == key.counterparty
+                    && tell_topic_same_memory_lane(&memory_key.topic, &key.topic)
+            }) =>
             {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }
@@ -567,7 +566,13 @@ fn institutional_tell_topic_key(claim: InstitutionalClaim) -> InstitutionalTellT
 
 fn institutional_tell_rank(
     belief: &BelievedInstitutionalClaim,
-) -> (Tick, std::cmp::Reverse<u8>, Tick, Option<EntityId>, InstitutionalClaim) {
+) -> (
+    Tick,
+    std::cmp::Reverse<u8>,
+    Tick,
+    Option<EntityId>,
+    InstitutionalClaim,
+) {
     (
         institutional_claim_effective_tick(belief.claim),
         std::cmp::Reverse(institutional_knowledge_chain_len(belief.source)),
@@ -733,9 +738,8 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
         | InstitutionalClaim::ForceControl { office, .. }
         | InstitutionalClaim::SupportDeclaration { office, .. } => office,
         InstitutionalClaim::FactionMembership { faction, .. } => faction,
-        InstitutionalClaim::Accusation { accused, .. } | InstitutionalClaim::Verdict { accused, .. } => {
-            accused
-        }
+        InstitutionalClaim::Accusation { accused, .. }
+        | InstitutionalClaim::Verdict { accused, .. } => accused,
     }
 }
 
@@ -834,10 +838,9 @@ fn shared_tell_content_eq(left: &SharedTellState, right: &SharedTellState) -> bo
         (SharedTellState::SocialObservation(left), SharedTellState::SocialObservation(right)) => {
             shared_social_observation_content_eq(left, right)
         }
-        (
-            SharedTellState::InstitutionalClaim(left),
-            SharedTellState::InstitutionalClaim(right),
-        ) => institutional_claim_same_content(left.claim, right.claim),
+        (SharedTellState::InstitutionalClaim(left), SharedTellState::InstitutionalClaim(right)) => {
+            institutional_claim_same_content(left.claim, right.claim)
+        }
         _ => false,
     }
 }
@@ -1289,11 +1292,11 @@ mod tests {
         ToldBeliefMemory,
     };
     use crate::{
-        build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
-        CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
+        build_prototype_world, current_institutional_belief_topics,
+        institutional_claim_same_memory_lane, traits::Component, BelievedInstitutionalClaim,
+        BodyPart, CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
         Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
-        current_institutional_belief_topics, institutional_claim_same_memory_lane,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -2569,7 +2572,9 @@ mod tests {
         };
 
         assert!(institutional_claim_same_memory_lane(accusation, verdict));
-        assert!(!institutional_claim_same_memory_lane(accusation, other_case));
+        assert!(!institutional_claim_same_memory_lane(
+            accusation, other_case
+        ));
     }
 
     #[test]

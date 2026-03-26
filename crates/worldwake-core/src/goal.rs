@@ -1,6 +1,6 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
-use crate::{CommodityKind, EntityId, RecipeId, TellTopic, ViolationId};
+use crate::{CommodityKind, EntityId, PunishmentKind, RecipeId, TellTopic, ViolationId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -65,6 +65,17 @@ pub enum GoalKind {
         violation_id: ViolationId,
         place: EntityId,
     },
+    StealItem {
+        target_item: EntityId,
+    },
+    Accuse {
+        accused: EntityId,
+        violation_id: ViolationId,
+    },
+    PunishAccused {
+        accused: EntityId,
+        punishment: PunishmentKind,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -91,7 +102,16 @@ impl From<GoalKind> for GoalKey {
             GoalKind::EngageHostile { target }
             | GoalKind::TreatWounds { patient: target }
             | GoalKind::LootCorpse { corpse: target }
-            | GoalKind::ClaimOffice { office: target } => (None, Some(target), None),
+            | GoalKind::ClaimOffice { office: target }
+            | GoalKind::StealItem {
+                target_item: target,
+            }
+            | GoalKind::Accuse {
+                accused: target, ..
+            }
+            | GoalKind::PunishAccused {
+                accused: target, ..
+            } => (None, Some(target), None),
             GoalKind::MoveCargo {
                 commodity,
                 destination,
@@ -130,7 +150,7 @@ impl From<&GoalKind> for GoalKey {
 #[cfg(test)]
 mod tests {
     use super::{CommodityPurpose, GoalKey, GoalKind, TellTopic, ViolationId};
-    use crate::{test_utils::entity_id, CommodityKind, RecipeId};
+    use crate::{test_utils::entity_id, CommodityKind, PunishmentKind, Quantity, RecipeId};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
 
@@ -358,6 +378,94 @@ mod tests {
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_target_item_for_steal_item() {
+        let target_item = entity_id(24, 0);
+        let key = GoalKey::from(GoalKind::StealItem { target_item });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(target_item));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn steal_item_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::StealItem {
+            target_item: entity_id(25, 0),
+        };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_accused_for_accuse() {
+        let accused = entity_id(26, 0);
+        let key = GoalKey::from(GoalKind::Accuse {
+            accused,
+            violation_id: ViolationId(9),
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(accused));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn accuse_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::Accuse {
+            accused: entity_id(27, 0),
+            violation_id: ViolationId(10),
+        };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_accused_for_punish_accused() {
+        let accused = entity_id(28, 0);
+        let key = GoalKey::from(GoalKind::PunishAccused {
+            accused,
+            punishment: PunishmentKind::Exile {
+                from_faction: entity_id(29, 0),
+            },
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(accused));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn punish_accused_goal_roundtrips_through_bincode_for_fine_and_exile() {
+        let fine = GoalKind::PunishAccused {
+            accused: entity_id(30, 0),
+            punishment: PunishmentKind::Fine {
+                commodity: CommodityKind::Coin,
+                amount: Quantity(5),
+            },
+        };
+        let exile = GoalKind::PunishAccused {
+            accused: entity_id(31, 0),
+            punishment: PunishmentKind::Exile {
+                from_faction: entity_id(32, 0),
+            },
+        };
+
+        let fine_bytes = bincode::serialize(&fine).unwrap();
+        let fine_roundtrip: GoalKind = bincode::deserialize(&fine_bytes).unwrap();
+        assert_eq!(fine_roundtrip, fine);
+
+        let exile_bytes = bincode::serialize(&exile).unwrap();
+        let exile_roundtrip: GoalKind = bincode::deserialize(&exile_bytes).unwrap();
+        assert_eq!(exile_roundtrip, exile);
     }
 
     #[test]

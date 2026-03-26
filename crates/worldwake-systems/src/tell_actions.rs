@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    current_institutional_belief_topics, institutional_claim_subject_entity,
-    institutional_claim_same_memory_lane, institutional_knowledge_chain_len,
+    current_institutional_belief_topics, institutional_claim_same_memory_lane,
+    institutional_claim_subject_entity, institutional_knowledge_chain_len,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, EntityId,
     EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
@@ -306,12 +306,11 @@ fn enumerate_tell_payloads(
         .into_iter()
         .filter(|(subject, _)| {
             let subject_kind = view.entity_kind(*subject);
-            let claim_first_subject = matches!(
-                subject_kind,
-                Some(EntityKind::Office | EntityKind::Record)
-            ) && known_institutional_beliefs
-                .iter()
-                .any(|belief| institutional_claim_subject_entity(belief.claim) == *subject);
+            let claim_first_subject =
+                matches!(subject_kind, Some(EntityKind::Office | EntityKind::Record))
+                    && known_institutional_beliefs
+                        .iter()
+                        .any(|belief| institutional_claim_subject_entity(belief.claim) == *subject);
             if claim_first_subject {
                 return false;
             }
@@ -399,8 +398,8 @@ fn validate_tell_payload_authoritatively(
             belief_chain_len(observation.source)
         }
         TellTopic::InstitutionalClaim { claim } => {
-            let belief =
-                best_relayable_institutional_belief(beliefs, claim, relay_limit).ok_or_else(|| {
+            let belief = best_relayable_institutional_belief(beliefs, claim, relay_limit)
+                .ok_or_else(|| {
                     ActionError::PreconditionFailed(format!(
                         "actor {actor} lacks institutional claim topic {claim:?}"
                     ))
@@ -1058,8 +1057,7 @@ mod tests {
         kinds: std::collections::BTreeMap<EntityId, EntityKind>,
         places: std::collections::BTreeMap<EntityId, EntityId>,
         beliefs: std::collections::BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
-        institutional_claims:
-            std::collections::BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
+        institutional_claims: std::collections::BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         social_observations:
             std::collections::BTreeMap<EntityId, Vec<worldwake_core::SocialObservation>>,
         tell_profiles: std::collections::BTreeMap<EntityId, TellProfile>,
@@ -1108,10 +1106,7 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn known_institutional_beliefs(
-            &self,
-            agent: EntityId,
-        ) -> Vec<BelievedInstitutionalClaim> {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
             self.institutional_claims
                 .get(&agent)
                 .cloned()

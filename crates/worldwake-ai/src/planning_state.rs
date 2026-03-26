@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     load_per_unit, to_shared_belief_snapshot, ActionDefId, BelievedEntityState,
-    BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation,
-    DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData, Permille, PlaceTag,
     Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
     SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TickRange,
@@ -1378,9 +1378,9 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 .filter(|belief| belief.claim == *claim)
                 .max_by_key(|belief| {
                     (
-                        std::cmp::Reverse(
-                            worldwake_core::institutional_knowledge_chain_len(belief.source),
-                        ),
+                        std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
+                            belief.source,
+                        )),
                         belief.learned_tick,
                         belief.learned_at,
                     )
@@ -1402,9 +1402,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     && match (&key.topic, topic) {
                         (
                             TellTopic::InstitutionalClaim { claim: left_claim },
-                            TellTopic::InstitutionalClaim {
-                                claim: right_claim,
-                            },
+                            TellTopic::InstitutionalClaim { claim: right_claim },
                         ) => worldwake_core::institutional_claim_same_memory_lane(
                             *left_claim,
                             *right_claim,
@@ -1429,22 +1427,19 @@ impl RuntimeBeliefView for PlanningState<'_> {
             Some(memory) => {
                 worldwake_core::recipient_knowledge_status(&current_state, Some(memory))
             }
-            None
-                if self.snapshot.actor_told_beliefs.keys().any(|memory_key| {
-                    memory_key.counterparty == counterparty
-                        && match (&memory_key.topic, topic) {
-                            (
-                                TellTopic::InstitutionalClaim { claim: left_claim },
-                                TellTopic::InstitutionalClaim {
-                                    claim: right_claim,
-                                },
-                            ) => worldwake_core::institutional_claim_same_memory_lane(
-                                *left_claim,
-                                *right_claim,
-                            ),
-                            _ => memory_key.topic == *topic,
-                        }
-                }) =>
+            None if self.snapshot.actor_told_beliefs.keys().any(|memory_key| {
+                memory_key.counterparty == counterparty
+                    && match (&memory_key.topic, topic) {
+                        (
+                            TellTopic::InstitutionalClaim { claim: left_claim },
+                            TellTopic::InstitutionalClaim { claim: right_claim },
+                        ) => worldwake_core::institutional_claim_same_memory_lane(
+                            *left_claim,
+                            *right_claim,
+                        ),
+                        _ => memory_key.topic == *topic,
+                    }
+            }) =>
             {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }

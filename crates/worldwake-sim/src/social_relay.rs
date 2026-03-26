@@ -1,7 +1,7 @@
 use worldwake_core::{
-    institutional_knowledge_chain_len, social_observation_is_relayable,
-    BelievedEntityState, BelievedInstitutionalClaim, EntityId, PerceptionSource,
-    RecipientKnowledgeStatus, SocialObservation, TellTopic, Tick,
+    institutional_knowledge_chain_len, social_observation_is_relayable, BelievedEntityState,
+    BelievedInstitutionalClaim, EntityId, PerceptionSource, RecipientKnowledgeStatus,
+    SocialObservation, TellTopic, Tick,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,9 +61,7 @@ fn compare_tell_topics(left: &TellTopic, right: &TellTopic) -> std::cmp::Orderin
         .then_with(|| match (left, right) {
             (
                 TellTopic::InstitutionalClaim { claim: left_claim },
-                TellTopic::InstitutionalClaim {
-                    claim: right_claim,
-                },
+                TellTopic::InstitutionalClaim { claim: right_claim },
             ) => institutional_claim_priority(left_claim)
                 .cmp(&institutional_claim_priority(right_claim))
                 .then_with(|| left_claim.cmp(right_claim)),
@@ -218,7 +216,9 @@ pub fn listener_aware_tell_topic_selection(
     }
 
     for belief in institutional_beliefs {
-        let topic = TellTopic::InstitutionalClaim { claim: belief.claim };
+        let topic = TellTopic::InstitutionalClaim {
+            claim: belief.claim,
+        };
         let chain_len = institutional_knowledge_chain_len(belief.source);
         if chain_len > max_relay_chain_len {
             omitted.push(TellTopicOmission {
@@ -609,12 +609,12 @@ mod tests {
 
         assert_eq!(
             selection.selected,
-            vec![TellTopic::EntityBelief { subject: entity(10) }]
+            vec![TellTopic::EntityBelief {
+                subject: entity(10)
+            }]
         );
         assert!(selection.omitted.contains(&TellTopicOmission {
-            topic: TellTopic::InstitutionalClaim {
-                claim: stale_claim,
-            },
+            topic: TellTopic::InstitutionalClaim { claim: stale_claim },
             reason: TellTopicOmissionReason::TruncatedByCandidateLimit,
         }));
     }

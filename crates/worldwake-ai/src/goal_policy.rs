@@ -169,7 +169,10 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         | GoalKind::ShareBelief { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
-        | GoalKind::InvestigateViolation { .. } => GoalFamilyPolicy {
+        | GoalKind::InvestigateViolation { .. }
+        | GoalKind::StealItem { .. }
+        | GoalKind::Accuse { .. }
+        | GoalKind::PunishAccused { .. } => GoalFamilyPolicy {
             suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
             penalty_interrupt: PenaltyInterruptEligibility::Never,
             free_interrupt: FreeInterruptRole::Normal,
@@ -207,7 +210,10 @@ pub fn evaluate_suppression(kind: &GoalKind, context: &DecisionContext) -> GoalP
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_core::{CommodityKind, CommodityPurpose, EntityId, GoalKind, RecipeId};
+    use worldwake_core::{
+        CommodityKind, CommodityPurpose, EntityId, GoalKind, PunishmentKind, Quantity, RecipeId,
+        ViolationId,
+    };
 
     // Helpers
     fn dummy_entity() -> EntityId {
@@ -303,8 +309,22 @@ mod tests {
                 candidate: dummy_entity(),
             },
             GoalKind::InvestigateViolation {
-                violation_id: worldwake_core::ViolationId(1),
+                violation_id: ViolationId(1),
                 place: dummy_entity(),
+            },
+            GoalKind::StealItem {
+                target_item: dummy_entity(),
+            },
+            GoalKind::Accuse {
+                accused: dummy_entity(),
+                violation_id: ViolationId(2),
+            },
+            GoalKind::PunishAccused {
+                accused: dummy_entity(),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(1),
+                },
             },
         ];
         for kind in &goals {
@@ -396,8 +416,21 @@ mod tests {
                 candidate: dummy_entity(),
             },
             GoalKind::InvestigateViolation {
-                violation_id: worldwake_core::ViolationId(2),
+                violation_id: ViolationId(3),
                 place: dummy_entity(),
+            },
+            GoalKind::StealItem {
+                target_item: dummy_entity(),
+            },
+            GoalKind::Accuse {
+                accused: dummy_entity(),
+                violation_id: ViolationId(4),
+            },
+            GoalKind::PunishAccused {
+                accused: dummy_entity(),
+                punishment: PunishmentKind::Exile {
+                    from_faction: dummy_entity(),
+                },
             },
         ];
         for kind in &goals {
@@ -486,8 +519,21 @@ mod tests {
                 candidate: dummy_entity(),
             },
             GoalKind::InvestigateViolation {
-                violation_id: worldwake_core::ViolationId(3),
+                violation_id: ViolationId(5),
                 place: dummy_entity(),
+            },
+            GoalKind::StealItem {
+                target_item: dummy_entity(),
+            },
+            GoalKind::Accuse {
+                accused: dummy_entity(),
+                violation_id: ViolationId(6),
+            },
+            GoalKind::PunishAccused {
+                accused: dummy_entity(),
+                punishment: PunishmentKind::Exile {
+                    from_faction: dummy_entity(),
+                },
             },
         ];
         for kind in &normal {

@@ -16,8 +16,8 @@ use worldwake_core::{
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource,
     PrototypePlace, Quantity, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
-    TellProfile, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag,
+    TellProfile, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,

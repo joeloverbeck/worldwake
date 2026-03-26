@@ -42,6 +42,9 @@ pub enum GoalKindTag {
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
+    StealItem,
+    Accuse,
+    PunishAccused,
 }
 
 pub trait GoalKindPlannerExt {
@@ -165,6 +168,7 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::DeclareSupport,
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
+const DEFERRED_CRIME_JUSTICE_OPS: &[PlannerOpKind] = &[];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -363,6 +367,9 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => GoalKindTag::InvestigateViolation,
+            GoalKind::StealItem { .. } => GoalKindTag::StealItem,
+            GoalKind::Accuse { .. } => GoalKindTag::Accuse,
+            GoalKind::PunishAccused { .. } => GoalKindTag::PunishAccused,
         }
     }
 
@@ -386,6 +393,9 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
             GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
+            GoalKind::StealItem { .. }
+            | GoalKind::Accuse { .. }
+            | GoalKind::PunishAccused { .. } => DEFERRED_CRIME_JUSTICE_OPS,
         }
     }
 
@@ -418,7 +428,10 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ShareBelief { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. }
-            | GoalKind::InvestigateViolation { .. } => Some(BTreeSet::new()),
+            | GoalKind::InvestigateViolation { .. }
+            | GoalKind::StealItem { .. }
+            | GoalKind::Accuse { .. }
+            | GoalKind::PunishAccused { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -888,7 +901,10 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
-            | GoalKind::InvestigateViolation { .. } => false,
+            | GoalKind::InvestigateViolation { .. }
+            | GoalKind::StealItem { .. }
+            | GoalKind::Accuse { .. }
+            | GoalKind::PunishAccused { .. } => false,
         }
     }
 
@@ -918,7 +934,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
-            | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::Accuse { .. } => Vec::new(),
             GoalKind::ClaimOffice { office } => {
                 if office_succession_law(state, *office) == Some(SuccessionLaw::Force) {
                     state.snapshot().jurisdiction(*office).into_iter().collect()
@@ -951,6 +968,12 @@ impl GoalKindPlannerExt for GoalKind {
                 state.effective_place(*listener).into_iter().collect()
             }
             GoalKind::InvestigateViolation { place, .. } => vec![*place],
+            GoalKind::StealItem { target_item } => {
+                state.effective_place(*target_item).into_iter().collect()
+            }
+            GoalKind::PunishAccused { accused, .. } => {
+                state.effective_place(*accused).into_iter().collect()
+            }
         }
     }
 
@@ -1073,9 +1096,17 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::InvestigateViolation { place, .. } => authoritative_targets.contains(place),
 
             // Exact-bound goals: target must match.
-            GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
-                authoritative_targets.contains(target)
+            GoalKind::EngageHostile { target }
+            | GoalKind::TreatWounds { patient: target }
+            | GoalKind::StealItem {
+                target_item: target,
             }
+            | GoalKind::Accuse {
+                accused: target, ..
+            }
+            | GoalKind::PunishAccused {
+                accused: target, ..
+            } => authoritative_targets.contains(target),
             GoalKind::LootCorpse { corpse } => authoritative_targets.contains(corpse),
             GoalKind::BuryCorpse {
                 corpse,
@@ -1539,8 +1570,9 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        Permille, Quantity, RecipeId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        Permille, PunishmentKind, Quantity, RecipeId, RecordKind, ResourceSource, SuccessionLaw,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
+        VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -1658,6 +1690,53 @@ mod tests {
             .goal_kind_tag(),
             GoalKindTag::ShareBelief
         );
+        assert_eq!(
+            GoalKind::StealItem {
+                target_item: entity_id(5, 0),
+            }
+            .goal_kind_tag(),
+            GoalKindTag::StealItem
+        );
+        assert_eq!(
+            GoalKind::Accuse {
+                accused: entity_id(6, 0),
+                violation_id: ViolationId(1),
+            }
+            .goal_kind_tag(),
+            GoalKindTag::Accuse
+        );
+        assert_eq!(
+            GoalKind::PunishAccused {
+                accused: entity_id(7, 0),
+                punishment: PunishmentKind::Exile {
+                    from_faction: entity_id(8, 0),
+                },
+            }
+            .goal_kind_tag(),
+            GoalKindTag::PunishAccused
+        );
+    }
+
+    #[test]
+    fn deferred_crime_and_justice_goals_have_no_live_planner_ops_yet() {
+        for goal in [
+            GoalKind::StealItem {
+                target_item: entity_id(9, 0),
+            },
+            GoalKind::Accuse {
+                accused: entity_id(10, 0),
+                violation_id: ViolationId(2),
+            },
+            GoalKind::PunishAccused {
+                accused: entity_id(11, 0),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(3),
+                },
+            },
+        ] {
+            assert!(goal.relevant_op_kinds().is_empty(), "{goal:?}");
+        }
     }
 
     #[test]
@@ -4134,10 +4213,22 @@ mod tests {
                 office: entity(99),
                 candidate: entity(98),
             },
+            GoalKind::StealItem {
+                target_item: entity(97),
+            },
+            GoalKind::Accuse {
+                accused: entity(96),
+                violation_id: ViolationId(3),
+            },
+            GoalKind::PunishAccused {
+                accused: entity(95),
+                punishment: PunishmentKind::Exile {
+                    from_faction: entity(94),
+                },
+            },
         ];
 
-        // All 17 variants must be callable without panicking.
-        assert_eq!(goals.len(), 17);
+        assert_eq!(goals.len(), 20);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -4192,6 +4283,20 @@ mod tests {
                 office: place_b,
                 candidate: actor,
             },
+            GoalKind::StealItem {
+                target_item: place_b,
+            },
+            GoalKind::Accuse {
+                accused: place_b,
+                violation_id: ViolationId(4),
+            },
+            GoalKind::PunishAccused {
+                accused: place_b,
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(1),
+                },
+            },
         ];
 
         for goal in goals {
@@ -4233,6 +4338,62 @@ mod tests {
         fn empty_targets_bypass() {
             let goal = GoalKind::LootCorpse { corpse: id(1) };
             assert!(goal.matches_binding(&[], PlannerOpKind::Loot));
+        }
+
+        #[test]
+        fn steal_item_match() {
+            let target_item = id(3);
+            let goal = GoalKind::StealItem { target_item };
+            assert!(goal.matches_binding(&[target_item], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn steal_item_mismatch() {
+            let goal = GoalKind::StealItem { target_item: id(3) };
+            assert!(!goal.matches_binding(&[id(4)], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn accuse_match() {
+            let accused = id(5);
+            let goal = GoalKind::Accuse {
+                accused,
+                violation_id: ViolationId(5),
+            };
+            assert!(goal.matches_binding(&[accused], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn accuse_mismatch() {
+            let goal = GoalKind::Accuse {
+                accused: id(5),
+                violation_id: ViolationId(6),
+            };
+            assert!(!goal.matches_binding(&[id(6)], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn punish_accused_match() {
+            let accused = id(7);
+            let goal = GoalKind::PunishAccused {
+                accused,
+                punishment: PunishmentKind::Exile {
+                    from_faction: id(8),
+                },
+            };
+            assert!(goal.matches_binding(&[accused], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn punish_accused_mismatch() {
+            let goal = GoalKind::PunishAccused {
+                accused: id(7),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(2),
+                },
+            };
+            assert!(!goal.matches_binding(&[id(9)], PlannerOpKind::Attack));
         }
 
         // ── Flexible goals ────────────────────────────────────────────

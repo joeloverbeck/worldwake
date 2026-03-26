@@ -15,12 +15,12 @@ use crate::{
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    current_institutional_belief_topics, load_per_unit, social_observation_is_redundant_for_listener,
-    tell_subject_is_directly_observable_by_listener, BelievedEntityState, BlockedIntentMemory,
-    CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind,
-    GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecordKind, TellTopic, Tick,
-    ViolationId, ViolationKind, ViolationMemory,
+    current_institutional_belief_topics, load_per_unit,
+    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
+    BelievedEntityState, BlockedIntentMemory, CommodityKind, CommodityPurpose, DriveThresholds,
+    EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity,
+    RecordKind, TellTopic, Tick, ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -5113,7 +5113,8 @@ mod tests {
         view.entity_kinds.insert(office, EntityKind::Office);
         view.effective_places
             .extend([(speaker, place), (listener, place), (office, place)]);
-        view.entities_at.insert(place, vec![speaker, listener, office]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, office]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         view.institutional_claims.insert(
             (speaker, InstitutionalBeliefKey::OfficeHolderOf { office }),

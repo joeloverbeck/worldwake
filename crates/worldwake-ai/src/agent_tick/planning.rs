@@ -201,18 +201,17 @@ pub(super) fn build_candidate_plans(
             // Use a reduced node expansion budget for goals that previously
             // exhausted the search budget. This avoids wasting the full budget
             // on goals that are likely to exhaust again.
-            let effective_budget =
-                if let Some(&count) = exhaustion_counts.get(&ranked.grounded.key) {
-                    let mut reduced = budget.clone();
-                    // Exponential backoff: halve the budget for each prior
-                    // exhaustion, floored at 64 expansions.
-                    let shift = count.min(3); // cap at 3 halvings (512→64)
-                    reduced.max_node_expansions =
-                        (budget.max_node_expansions >> shift).max(64);
-                    reduced
-                } else {
-                    budget.clone()
-                };
+            let effective_budget = if let Some(&count) = exhaustion_counts.get(&ranked.grounded.key)
+            {
+                let mut reduced = budget.clone();
+                // Exponential backoff: halve the budget for each prior
+                // exhaustion, floored at 64 expansions.
+                let shift = count.min(3); // cap at 3 halvings (512→64)
+                reduced.max_node_expansions = (budget.max_node_expansions >> shift).max(64);
+                reduced
+            } else {
+                budget.clone()
+            };
             let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
@@ -292,10 +291,7 @@ fn try_continue_snapshot_plan(
     Some(step)
 }
 
-fn reset_exhausted_goals_if_needed(
-    runtime: &mut AgentDecisionRuntime,
-    currently_in_transit: bool,
-) {
+fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently_in_transit: bool) {
     // Clear exhausted-goal memory when the world changed in ways that could
     // make previously impossible plans feasible (position, inventory, wounds,
     // facilities). Needs-only changes rarely alter the search space.
