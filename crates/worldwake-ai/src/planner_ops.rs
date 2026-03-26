@@ -30,6 +30,7 @@ pub enum PlannerOpKind {
     Defend,
     Bribe,
     Threaten,
+    Accuse,
     DeclareSupport,
     PressForceClaim,
     YieldForceClaim,
@@ -120,6 +121,7 @@ const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
 const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
 const GOALS_BRIBE: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
 const GOALS_THREATEN: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
+const GOALS_ACCUSE: &[GoalKindTag] = &[GoalKindTag::Accuse];
 const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
     GoalKindTag::ClaimOffice,
     GoalKindTag::SupportCandidateForOffice,
@@ -170,6 +172,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Social, "consult_record") => Some(PlannerOpKind::ConsultRecord),
         (ActionDomain::Social, "bribe") => Some(PlannerOpKind::Bribe),
         (ActionDomain::Social, "threaten") => Some(PlannerOpKind::Threaten),
+        (ActionDomain::Social, "accuse") => Some(PlannerOpKind::Accuse),
         (ActionDomain::Social, "declare_support") => Some(PlannerOpKind::DeclareSupport),
         (ActionDomain::Social, "press_force_claim") => Some(PlannerOpKind::PressForceClaim),
         (ActionDomain::Social, "yield_force_claim") => Some(PlannerOpKind::YieldForceClaim),
@@ -286,6 +289,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
+        | PlannerOpKind::Accuse
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
@@ -336,6 +340,13 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             false,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_THREATEN,
+        ),
+        PlannerOpKind::Accuse => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_ACCUSE,
         ),
         PlannerOpKind::DeclareSupport => base_semantics(
             op_kind,

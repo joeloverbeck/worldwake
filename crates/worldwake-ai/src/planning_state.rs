@@ -8,7 +8,8 @@ use worldwake_core::{
     InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData, Permille, PlaceTag,
     Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
     SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -1294,6 +1295,16 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
+    }
+
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<ViolationDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.violation_disposition_profile.clone())
     }
 
     fn intention_disposition_profile(

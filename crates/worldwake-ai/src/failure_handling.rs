@@ -141,6 +141,7 @@ fn derive_blocking_fact(
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
+        | PlannerOpKind::Accuse
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
@@ -366,6 +367,7 @@ fn classify_input_failure(
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
+        | PlannerOpKind::Accuse
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
@@ -404,6 +406,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
+        | PlannerOpKind::Accuse
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
@@ -646,7 +649,8 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
-        | PlannerOpKind::Defend => step.targets.first().copied().and_then(authoritative_target),
+        | PlannerOpKind::Defend
+        | PlannerOpKind::Accuse => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Bribe => step
             .payload_override
             .as_ref()
@@ -709,6 +713,7 @@ fn related_place(
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
+        | PlannerOpKind::Accuse
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim

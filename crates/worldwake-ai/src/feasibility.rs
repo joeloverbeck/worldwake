@@ -112,7 +112,7 @@ fn goal_specific_feasibility(
             }
         }
         GoalKind::EngageHostile { target } => check_colocated_or_dead(view, agent, *target),
-        GoalKind::ReduceDanger => None,
+        GoalKind::ReduceDanger | GoalKind::StealItem { .. } => None,
         GoalKind::TreatWounds { patient } => check_colocated_or_dead(view, agent, *patient),
         GoalKind::SellCommodity { commodity } => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
@@ -167,8 +167,8 @@ fn goal_specific_feasibility(
                 None // Uncertain — needs travel
             }
         }
-        GoalKind::StealItem { .. } | GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => {
-            None
+        GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. } => {
+            check_colocated_or_dead(view, agent, *accused)
         }
     }
 }

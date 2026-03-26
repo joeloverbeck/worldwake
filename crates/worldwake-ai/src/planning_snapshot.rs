@@ -7,7 +7,8 @@ use worldwake_core::{
     InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
     OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource,
     SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -46,6 +47,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) drive_thresholds: Option<DriveThresholds>,
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
     pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
+    pub(crate) violation_disposition_profile: Option<ViolationDispositionProfile>,
     pub(crate) combat_profile: Option<CombatProfile>,
     pub(crate) courage: Option<Permille>,
     pub(crate) record_data: Option<RecordData>,
@@ -86,6 +88,7 @@ impl Default for SnapshotEntity {
             drive_thresholds: None,
             metabolism_profile: None,
             trade_disposition_profile: None,
+            violation_disposition_profile: None,
             combat_profile: None,
             courage: None,
             record_data: None,
@@ -524,6 +527,7 @@ fn build_snapshot_entity(
         drive_thresholds: view.drive_thresholds(entity),
         metabolism_profile: view.metabolism_profile(entity),
         trade_disposition_profile: view.trade_disposition_profile(entity),
+        violation_disposition_profile: view.violation_disposition_profile(entity),
         combat_profile: view.combat_profile(entity),
         courage: view.courage(entity),
         record_data: view.record_data(entity),

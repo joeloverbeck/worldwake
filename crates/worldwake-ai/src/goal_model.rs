@@ -16,10 +16,10 @@ use worldwake_core::{
     Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
 };
 use worldwake_sim::{
-    ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-    DeclareSupportActionPayload, InvestigateActionPayload, LootActionPayload,
-    PressForceClaimActionPayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-    TellActionPayload, TradeActionPayload, TransportActionPayload,
+    AccuseActionPayload, ActionDef, ActionPayload, CombatActionPayload,
+    ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
+    LootActionPayload, PressForceClaimActionPayload, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -168,6 +168,7 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::DeclareSupport,
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
+const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
 const DEFERRED_CRIME_JUSTICE_OPS: &[PlannerOpKind] = &[];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -202,6 +203,11 @@ fn payload_override_from_affordance(
         GoalKind::InvestigateViolation { violation_id, .. } => payload
             .as_investigate()
             .filter(|investigate| investigate.violation_id == *violation_id)
+            .map(|_| Some(payload.clone()))
+            .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
+        GoalKind::Accuse { violation_id, .. } => payload
+            .as_accuse()
+            .filter(|accuse| accuse.violation_id == *violation_id)
             .map(|_| Some(payload.clone()))
             .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
         _ => Ok(Some(payload.clone())),
@@ -268,6 +274,19 @@ fn build_loot_payload_override(
         return Err(GoalPayloadOverrideError::MissingTarget);
     };
     Ok(Some(ActionPayload::Loot(LootActionPayload { target })))
+}
+
+fn build_accuse_payload_override(
+    goal: &GoalKind,
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    match goal {
+        GoalKind::Accuse { violation_id, .. } => {
+            Ok(Some(ActionPayload::Accuse(AccuseActionPayload {
+                violation_id: *violation_id,
+            })))
+        }
+        _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+    }
 }
 
 fn office_requiring_vacancy_belief(goal: &GoalKind) -> Option<EntityId> {
@@ -393,7 +412,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
             GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
-            GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => DEFERRED_CRIME_JUSTICE_OPS,
+            GoalKind::Accuse { .. } => ACCUSE_OPS,
+            GoalKind::PunishAccused { .. } => DEFERRED_CRIME_JUSTICE_OPS,
         }
     }
 
@@ -524,6 +544,7 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
+            PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
             PlannerOpKind::Tell => match self {
                 GoalKind::ShareBelief { listener, topic } => {
@@ -764,7 +785,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Tell
             | PlannerOpKind::MoveCargo
             | PlannerOpKind::YieldForceClaim
-            | PlannerOpKind::Investigate => state,
+            | PlannerOpKind::Investigate
+            | PlannerOpKind::Accuse => state,
         }
     }
 
@@ -787,6 +809,10 @@ impl GoalKindPlannerExt for GoalKind {
         if matches!(self, GoalKind::InvestigateViolation { .. })
             && step.op_kind == PlannerOpKind::Investigate
         {
+            return true;
+        }
+
+        if matches!(self, GoalKind::Accuse { .. }) && step.op_kind == PlannerOpKind::Accuse {
             return true;
         }
 
@@ -934,8 +960,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
-            | GoalKind::SupportCandidateForOffice { .. }
-            | GoalKind::Accuse { .. } => Vec::new(),
+            | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
             GoalKind::ClaimOffice { office } => {
                 if office_succession_law(state, *office) == Some(SuccessionLaw::Force) {
                     state.snapshot().jurisdiction(*office).into_iter().collect()
@@ -971,7 +996,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
-            GoalKind::PunishAccused { accused, .. } => {
+            GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. } => {
                 state.effective_place(*accused).into_iter().collect()
             }
         }
@@ -1070,6 +1095,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::DeclareSupport
             | PlannerOpKind::PressForceClaim
             | PlannerOpKind::YieldForceClaim
+            | PlannerOpKind::Accuse
             | PlannerOpKind::Investigate
             | PlannerOpKind::Bury => {}
         }
@@ -1576,11 +1602,11 @@ mod tests {
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration,
-        ActionHandlerId, ActionPayload, BribeActionPayload, ConsultRecordActionPayload,
-        DurationExpr, Interruptibility, InvestigateActionPayload, QueueForFacilityUsePayload,
-        RecipeRegistry, RuntimeBeliefView, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload,
+        estimate_duration_from_beliefs, AccuseActionPayload, ActionDef, ActionDefRegistry,
+        ActionDomain, ActionDuration, ActionHandlerId, ActionPayload, BribeActionPayload,
+        ConsultRecordActionPayload, DurationExpr, Interruptibility, InvestigateActionPayload,
+        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1718,7 +1744,7 @@ mod tests {
     }
 
     #[test]
-    fn steal_goal_uses_move_cargo_ops_while_justice_goals_remain_deferred() {
+    fn steal_goal_uses_move_cargo_ops_while_only_punishment_remains_deferred() {
         let steal = GoalKind::StealItem {
             target_item: entity_id(9, 0),
         };
@@ -1727,21 +1753,21 @@ mod tests {
             .relevant_op_kinds()
             .contains(&PlannerOpKind::MoveCargo));
 
-        for goal in [
-            GoalKind::Accuse {
-                accused: entity_id(10, 0),
-                violation_id: ViolationId(2),
+        let accuse = GoalKind::Accuse {
+            accused: entity_id(10, 0),
+            violation_id: ViolationId(2),
+        };
+        assert!(accuse.relevant_op_kinds().contains(&PlannerOpKind::Travel));
+        assert!(accuse.relevant_op_kinds().contains(&PlannerOpKind::Accuse));
+
+        let punish = GoalKind::PunishAccused {
+            accused: entity_id(11, 0),
+            punishment: PunishmentKind::Fine {
+                commodity: CommodityKind::Coin,
+                amount: Quantity(3),
             },
-            GoalKind::PunishAccused {
-                accused: entity_id(11, 0),
-                punishment: PunishmentKind::Fine {
-                    commodity: CommodityKind::Coin,
-                    amount: Quantity(3),
-                },
-            },
-        ] {
-            assert!(goal.relevant_op_kinds().is_empty(), "{goal:?}");
-        }
+        };
+        assert!(punish.relevant_op_kinds().is_empty(), "{punish:?}");
     }
 
     #[test]
@@ -2880,6 +2906,69 @@ mod tests {
             payload,
             Some(ActionPayload::Investigate(InvestigateActionPayload {
                 violation_id: worldwake_core::ViolationId(7),
+            }))
+        );
+    }
+
+    #[test]
+    fn accuse_goal_builds_accuse_payload_override() {
+        let actor = entity(1);
+        let accused = entity(10);
+        let place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, accused, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(accused, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(accused, place);
+        view.entities_at.insert(place, vec![actor, accused]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([accused]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::Accuse {
+            accused,
+            violation_id: worldwake_core::ViolationId(9),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "accuse".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::SpecificEntity(accused)],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Accuse,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[accused], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Accuse(AccuseActionPayload {
+                violation_id: worldwake_core::ViolationId(9),
             }))
         );
     }
@@ -4365,7 +4454,7 @@ mod tests {
                 accused,
                 violation_id: ViolationId(5),
             };
-            assert!(goal.matches_binding(&[accused], PlannerOpKind::Attack));
+            assert!(goal.matches_binding(&[accused], PlannerOpKind::Accuse));
         }
 
         #[test]
@@ -4374,7 +4463,7 @@ mod tests {
                 accused: id(5),
                 violation_id: ViolationId(6),
             };
-            assert!(!goal.matches_binding(&[id(6)], PlannerOpKind::Attack));
+            assert!(!goal.matches_binding(&[id(6)], PlannerOpKind::Accuse));
         }
 
         #[test]

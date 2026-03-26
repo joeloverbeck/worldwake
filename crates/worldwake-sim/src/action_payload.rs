@@ -12,6 +12,7 @@ pub enum ActionPayload {
     Tell(TellActionPayload),
     Bribe(BribeActionPayload),
     Threaten(ThreatenActionPayload),
+    Accuse(AccuseActionPayload),
     DeclareSupport(DeclareSupportActionPayload),
     PressForceClaim(PressForceClaimActionPayload),
     YieldForceClaim(YieldForceClaimActionPayload),
@@ -33,6 +34,7 @@ impl ActionPayload {
             Self::None
             | Self::ConsultRecord(_)
             | Self::Tell(_)
+            | Self::Accuse(_)
             | Self::Threaten(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
@@ -56,6 +58,30 @@ impl ActionPayload {
             | Self::ConsultRecord(_)
             | Self::Tell(_)
             | Self::Bribe(_)
+            | Self::Accuse(_)
+            | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
+            | Self::Investigate(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_accuse(&self) -> Option<&AccuseActionPayload> {
+        match self {
+            Self::Accuse(payload) => Some(payload),
+            Self::None
+            | Self::ConsultRecord(_)
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -79,6 +105,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
             | Self::Transport(_)
@@ -101,6 +128,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -123,6 +151,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -145,6 +174,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -167,6 +197,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -189,6 +220,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -211,6 +243,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -233,6 +266,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -254,6 +288,7 @@ impl ActionPayload {
             | Self::ConsultRecord(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -276,6 +311,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -299,6 +335,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::YieldForceClaim(_)
             | Self::Transport(_)
@@ -321,6 +358,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::Transport(_)
@@ -343,6 +381,7 @@ impl ActionPayload {
             | Self::Tell(_)
             | Self::Bribe(_)
             | Self::Threaten(_)
+            | Self::Accuse(_)
             | Self::DeclareSupport(_)
             | Self::PressForceClaim(_)
             | Self::YieldForceClaim(_)
@@ -378,6 +417,11 @@ pub struct BribeActionPayload {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ThreatenActionPayload {
     pub target: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct AccuseActionPayload {
+    pub violation_id: ViolationId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -452,11 +496,12 @@ pub struct QueueForFacilityUsePayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-        CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload,
-        InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
-        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, YieldForceClaimActionPayload,
+        AccuseActionPayload, ActionPayload, BribeActionPayload, CombatActionPayload,
+        ConsultRecordActionPayload, CraftActionPayload, DeclareSupportActionPayload,
+        HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
+        PressForceClaimActionPayload, QueueForFacilityUsePayload, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -599,6 +644,12 @@ mod tests {
         }
     }
 
+    fn sample_accuse_payload() -> AccuseActionPayload {
+        AccuseActionPayload {
+            violation_id: ViolationId(8),
+        }
+    }
+
     fn sample_queue_payload() -> QueueForFacilityUsePayload {
         QueueForFacilityUsePayload {
             intended_action: ActionDefId(19),
@@ -612,6 +663,7 @@ mod tests {
         assert_traits::<TellActionPayload>();
         assert_traits::<BribeActionPayload>();
         assert_traits::<ThreatenActionPayload>();
+        assert_traits::<AccuseActionPayload>();
         assert_traits::<DeclareSupportActionPayload>();
         assert_traits::<PressForceClaimActionPayload>();
         assert_traits::<YieldForceClaimActionPayload>();
@@ -638,6 +690,7 @@ mod tests {
         let tell = ActionPayload::Tell(sample_tell_payload());
         let bribe = ActionPayload::Bribe(sample_bribe_payload());
         let threaten = ActionPayload::Threaten(sample_threaten_payload());
+        let accuse = ActionPayload::Accuse(sample_accuse_payload());
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
         let press_force_claim = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
         let yield_force_claim = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
@@ -691,6 +744,7 @@ mod tests {
         assert_eq!(threaten.as_tell(), None);
         assert_eq!(threaten.as_bribe(), None);
         assert_eq!(threaten.as_threaten(), Some(&sample_threaten_payload()));
+        assert_eq!(threaten.as_accuse(), None);
         assert_eq!(threaten.as_declare_support(), None);
         assert_eq!(threaten.as_press_force_claim(), None);
         assert_eq!(threaten.as_yield_force_claim(), None);
@@ -699,10 +753,24 @@ mod tests {
         assert_eq!(threaten.as_craft(), None);
         assert_eq!(threaten.as_trade(), None);
 
+        assert_eq!(accuse.as_consult_record(), None);
+        assert_eq!(accuse.as_tell(), None);
+        assert_eq!(accuse.as_bribe(), None);
+        assert_eq!(accuse.as_threaten(), None);
+        assert_eq!(accuse.as_accuse(), Some(&sample_accuse_payload()));
+        assert_eq!(accuse.as_declare_support(), None);
+        assert_eq!(accuse.as_press_force_claim(), None);
+        assert_eq!(accuse.as_yield_force_claim(), None);
+        assert_eq!(accuse.as_harvest(), None);
+        assert_eq!(accuse.as_transport(), None);
+        assert_eq!(accuse.as_craft(), None);
+        assert_eq!(accuse.as_trade(), None);
+
         assert_eq!(declare_support.as_consult_record(), None);
         assert_eq!(declare_support.as_tell(), None);
         assert_eq!(declare_support.as_bribe(), None);
         assert_eq!(declare_support.as_threaten(), None);
+        assert_eq!(declare_support.as_accuse(), None);
         assert_eq!(
             declare_support.as_declare_support(),
             Some(&sample_declare_support_payload())
@@ -718,6 +786,7 @@ mod tests {
         assert_eq!(harvest.as_tell(), None);
         assert_eq!(harvest.as_bribe(), None);
         assert_eq!(harvest.as_threaten(), None);
+        assert_eq!(harvest.as_accuse(), None);
         assert_eq!(harvest.as_declare_support(), None);
         assert_eq!(harvest.as_press_force_claim(), None);
         assert_eq!(harvest.as_yield_force_claim(), None);
@@ -726,6 +795,7 @@ mod tests {
         assert_eq!(press_force_claim.as_tell(), None);
         assert_eq!(press_force_claim.as_bribe(), None);
         assert_eq!(press_force_claim.as_threaten(), None);
+        assert_eq!(press_force_claim.as_accuse(), None);
         assert_eq!(press_force_claim.as_declare_support(), None);
         assert_eq!(
             press_force_claim.as_press_force_claim(),
@@ -738,6 +808,7 @@ mod tests {
         assert_eq!(yield_force_claim.as_tell(), None);
         assert_eq!(yield_force_claim.as_bribe(), None);
         assert_eq!(yield_force_claim.as_threaten(), None);
+        assert_eq!(yield_force_claim.as_accuse(), None);
         assert_eq!(yield_force_claim.as_declare_support(), None);
         assert_eq!(yield_force_claim.as_press_force_claim(), None);
         assert_eq!(

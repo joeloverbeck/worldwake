@@ -3977,7 +3977,7 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
 }
 
 #[test]
-fn accuse_and_punish_goals_remain_deferred_without_actions() {
+fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let actor = entity(1);
     let accused = entity(2);
     let town = entity(10);
@@ -4004,45 +4004,62 @@ fn accuse_and_punish_goals_remain_deferred_without_actions() {
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = PlanningBudget::default();
-    let goals = [
-        GroundedGoal {
-            key: GoalKey::from(GoalKind::Accuse {
-                accused,
-                violation_id: worldwake_core::ViolationId(1),
-            }),
-            evidence_entities: BTreeSet::from([accused]),
-            evidence_places: BTreeSet::from([town]),
-        },
-        GroundedGoal {
-            key: GoalKey::from(GoalKind::PunishAccused {
-                accused,
-                punishment: worldwake_core::PunishmentKind::Exile {
-                    from_faction: faction,
-                },
-            }),
-            evidence_entities: BTreeSet::from([accused]),
-            evidence_places: BTreeSet::from([town]),
-        },
-    ];
+    let accuse_goal = GroundedGoal {
+        key: GoalKey::from(GoalKind::Accuse {
+            accused,
+            violation_id: worldwake_core::ViolationId(1),
+        }),
+        evidence_entities: BTreeSet::from([accused]),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let punish_goal = GroundedGoal {
+        key: GoalKey::from(GoalKind::PunishAccused {
+            accused,
+            punishment: worldwake_core::PunishmentKind::Exile {
+                from_faction: faction,
+            },
+        }),
+        evidence_entities: BTreeSet::from([accused]),
+        evidence_places: BTreeSet::from([town]),
+    };
 
-    for goal in goals {
-        let node = root_node(&snapshot, &goal, &recipes, &budget);
-        let rel_defs = relevant_action_defs(&goal, &semantics);
-        assert!(rel_defs.is_empty());
-        assert!(search_candidates(
-            &goal,
-            &node,
-            &semantics,
-            &registry,
-            &handlers,
-            &BlockedIntentMemory::default(),
-            Tick(0),
-            None,
-            None,
-            &rel_defs,
-        )
-        .is_empty());
-    }
+    let accuse_defs = relevant_action_defs(&accuse_goal, &semantics);
+    assert!(
+        accuse_defs.iter().any(|def_id| {
+            registry
+                .get(*def_id)
+                .is_some_and(|def| def.name == "accuse")
+        }),
+        "Accuse goals should expose the accuse operator once the action exists"
+    );
+
+    let punish_defs = relevant_action_defs(&punish_goal, &semantics);
+    assert!(
+        punish_defs.is_empty(),
+        "PunishAccused should remain deferred until verdict actions exist"
+    );
+
+    let node = root_node(&snapshot, &accuse_goal, &recipes, &budget);
+    let candidates = search_candidates(
+        &accuse_goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        &accuse_defs,
+    );
+    assert!(
+        !candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "accuse")
+        }),
+        "Without accusation evidence payloads, search must not synthesize accuse candidates from thin air"
+    );
 }
 
 // ── S03PLATARIDE-004: Search integration tests for exact target binding ──
@@ -5160,7 +5177,6 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         None,
         Some(&mut expansions),
     );
-
     let plan = match result {
         PlanSearchResult::Found(plan) => plan,
         other => panic!("expected plan, got {other:?}"),

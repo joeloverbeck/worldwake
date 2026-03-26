@@ -122,6 +122,13 @@ pub(super) fn search_candidates(
             .into_iter()
             .map(search_candidate_from_planner),
     );
+    candidates.extend(goal_synthesized_candidates(
+        goal,
+        registry,
+        semantics_table,
+        relevant_defs,
+        &candidates,
+    ));
     let mut root_candidates = root_candidates;
     let mut binding_rejections = binding_rejections;
     let mut filtered = Vec::with_capacity(candidates.len());
@@ -203,6 +210,73 @@ pub(super) fn search_candidates(
         filtered.push(candidate);
     }
     filtered
+}
+
+fn goal_synthesized_candidates(
+    goal: &GroundedGoal,
+    registry: &ActionDefRegistry,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    relevant_defs: &BTreeSet<ActionDefId>,
+    existing_candidates: &[SearchCandidate],
+) -> Vec<SearchCandidate> {
+    relevant_defs
+        .iter()
+        .filter(|def_id| !existing_candidates.iter().any(|candidate| candidate.def_id == **def_id))
+        .filter_map(|def_id| {
+            let def = registry.get(*def_id)?;
+            let semantics = semantics_table.get(def_id)?;
+            synthesized_candidate_for_goal(goal, def, semantics).map(|authoritative_targets| {
+                SearchCandidate {
+                    def_id: *def_id,
+                    authoritative_targets: authoritative_targets.clone(),
+                    planning_targets: authoritative_targets
+                        .into_iter()
+                        .map(PlanningEntityRef::Authoritative)
+                        .collect(),
+                    payload_override: None,
+                    planner_only: false,
+                    trace_index: None,
+                }
+            })
+        })
+        .collect()
+}
+
+fn synthesized_candidate_for_goal(
+    goal: &GroundedGoal,
+    def: &worldwake_sim::ActionDef,
+    semantics: &PlannerOpSemantics,
+) -> Option<Vec<EntityId>> {
+    match (&goal.key.kind, semantics.op_kind) {
+        (
+            GoalKind::AcquireCommodity { .. }
+            | GoalKind::ConsumeOwnedCommodity { .. }
+            | GoalKind::RestockCommodity { .. }
+            | GoalKind::TreatWounds { .. },
+            PlannerOpKind::Trade,
+        ) => {
+            let target = goal.evidence_entities.iter().copied().next()?;
+            (goal.evidence_entities.len() == 1
+                && matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]))
+            .then_some(vec![target])
+        }
+        (GoalKind::ClaimOffice { .. }, PlannerOpKind::PressForceClaim)
+            if def.targets.is_empty() =>
+        {
+            Some(Vec::new())
+        }
+        (GoalKind::InvestigateViolation { place, .. }, PlannerOpKind::Investigate)
+            if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::ActorPlace]) =>
+        {
+            Some(vec![*place])
+        }
+        (GoalKind::ShareBelief { listener, .. }, PlannerOpKind::Tell)
+            if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]) =>
+        {
+            Some(vec![*listener])
+        }
+        _ => None,
+    }
 }
 
 fn candidate_blocked_facility_use(

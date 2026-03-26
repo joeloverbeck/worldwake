@@ -356,6 +356,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Defend
         | crate::PlannerOpKind::Bribe
         | crate::PlannerOpKind::Threaten
+        | crate::PlannerOpKind::Accuse
         | crate::PlannerOpKind::DeclareSupport
         | crate::PlannerOpKind::PressForceClaim
         | crate::PlannerOpKind::YieldForceClaim
