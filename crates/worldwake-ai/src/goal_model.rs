@@ -1028,7 +1028,13 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
-            GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. } => {
+            GoalKind::Accuse { crime_register, .. } => {
+                state
+                    .record_data(*crime_register)
+                    .map(|record| vec![record.home_place])
+                    .unwrap_or_default()
+            }
+            GoalKind::PunishAccused { accused, .. } => {
                 state.effective_place(*accused).into_iter().collect()
             }
         }
@@ -1667,7 +1673,7 @@ impl GroundedGoal {
                 GoalKind::Accuse { accused, .. }
                     if matches!(
                         def.targets.as_slice(),
-                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                        [worldwake_sim::TargetSpec::SpecificEntity(_)]
                     ) =>
                 {
                     RootCandidateSynthesis::Targets(vec![*accused])
@@ -1851,6 +1857,7 @@ mod tests {
         );
         assert_eq!(
             GoalKind::Accuse {
+                crime_register: entity_id(5, 0),
                 accused: entity_id(6, 0),
                 violation_id: ViolationId(1),
             }
@@ -1882,6 +1889,7 @@ mod tests {
             .contains(&PlannerOpKind::MoveCargo));
 
         let accuse = GoalKind::Accuse {
+            crime_register: entity_id(9, 0),
             accused: entity_id(10, 0),
             violation_id: ViolationId(2),
         };
@@ -3064,6 +3072,7 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::Accuse {
+            crime_register: entity(9),
             accused,
             violation_id: worldwake_core::ViolationId(9),
         };
@@ -3226,6 +3235,7 @@ mod tests {
         let accused = entity(10);
         let goal = GroundedGoal {
             key: GoalKey::from(GoalKind::Accuse {
+                crime_register: entity(9),
                 accused,
                 violation_id: worldwake_core::ViolationId(9),
             }),
@@ -3237,9 +3247,7 @@ mod tests {
             name: "accuse".to_string(),
             domain: ActionDomain::Social,
             actor_constraints: Vec::new(),
-            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
-                kind: EntityKind::Agent,
-            }],
+            targets: vec![worldwake_sim::TargetSpec::SpecificEntity(entity(999))],
             preconditions: Vec::new(),
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
@@ -4730,6 +4738,7 @@ mod tests {
                 target_item: entity(97),
             },
             GoalKind::Accuse {
+                crime_register: entity(95),
                 accused: entity(96),
                 violation_id: ViolationId(3),
             },
@@ -4802,6 +4811,7 @@ mod tests {
                 target_item: place_b,
             },
             GoalKind::Accuse {
+                crime_register: actor,
                 accused: place_b,
                 violation_id: ViolationId(4),
             },
@@ -4874,6 +4884,7 @@ mod tests {
         fn accuse_match() {
             let accused = id(5);
             let goal = GoalKind::Accuse {
+                crime_register: id(4),
                 accused,
                 violation_id: ViolationId(5),
             };
@@ -4883,6 +4894,7 @@ mod tests {
         #[test]
         fn accuse_mismatch() {
             let goal = GoalKind::Accuse {
+                crime_register: id(4),
                 accused: id(5),
                 violation_id: ViolationId(6),
             };

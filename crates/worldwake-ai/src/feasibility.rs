@@ -888,6 +888,7 @@ mod tests {
                 target_item: entity(12),
             }),
             ranked_goal(GoalKind::Accuse {
+                crime_register: entity(17),
                 accused: entity(13),
                 violation_id: ViolationId(1),
             }),

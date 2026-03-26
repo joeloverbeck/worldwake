@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use worldwake_core::EntityId;
 use worldwake_sim::{
     get_affordances_for_defs, requested_affordance_matches, ActionDefRegistry,
-    ActionHandlerRegistry, RuntimeBeliefView,
+    ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
 };
 
 #[must_use]
@@ -26,7 +26,7 @@ pub fn revalidate_next_step(
         return false;
     };
     let single_def = BTreeSet::from([step.def_id]);
-    get_affordances_for_defs(view, actor, registry, handlers, &single_def)
+    let affordance_match = get_affordances_for_defs(view, actor, registry, handlers, &single_def)
         .into_iter()
         .any(|affordance| {
             requested_affordance_matches(
@@ -38,7 +38,43 @@ pub fn revalidate_next_step(
                 step.payload_override.as_ref(),
                 view,
             )
-        })
+        });
+    affordance_match || revalidate_exact_target_step(view, actor, step, &targets, def, handler)
+}
+
+fn revalidate_exact_target_step(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step: &PlannedStep,
+    targets: &[EntityId],
+    def: &worldwake_sim::ActionDef,
+    handler: &worldwake_sim::ActionHandler,
+) -> bool {
+    if def.targets.len() != targets.len()
+        || !def
+            .targets
+            .iter()
+            .all(|spec| matches!(spec, TargetSpec::SpecificEntity(_)))
+    {
+        return false;
+    }
+
+    let synthetic = Affordance {
+        def_id: step.def_id,
+        actor,
+        bound_targets: targets.to_vec(),
+        payload_override: None,
+        explanation: None,
+    };
+    requested_affordance_matches(
+        &synthetic,
+        def,
+        handler,
+        actor,
+        targets,
+        step.payload_override.as_ref(),
+        view,
+    )
 }
 
 #[cfg(test)]
@@ -510,6 +546,58 @@ mod tests {
         (registry, handlers)
     }
 
+    fn accuse_payload_override_is_valid(
+        def: &ActionDef,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+        view: &dyn RuntimeBeliefView,
+    ) -> bool {
+        if def.name != "accuse:test" {
+            return false;
+        }
+        let Some(payload) = payload.as_accuse() else {
+            return false;
+        };
+        let Some(accused) = targets.first().copied() else {
+            return false;
+        };
+        actor != accused && view.is_alive(accused) && payload.violation_id == worldwake_core::ViolationId(7)
+    }
+
+    fn build_specific_entity_payload_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort)
+                .with_payload_override_validator(accuse_payload_override_is_valid),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "accuse:test".to_string(),
+            domain: worldwake_sim::ActionDomain::Social,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::SpecificEntity(entity(0))],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Agent,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+        (registry, handlers)
+    }
+
     fn sample_step(def_id: ActionDefId, target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id,
@@ -745,6 +833,38 @@ mod tests {
         }));
 
         let (registry, handlers) = build_transport_registry();
+        assert!(revalidate_next_step(
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn specific_entity_payload_override_revalidates_with_concrete_step_target() {
+        let actor = entity(1);
+        let accused = entity(2);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, accused]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(accused, EntityKind::Agent);
+
+        let step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Authoritative(accused)],
+            payload_override: Some(ActionPayload::Accuse(worldwake_sim::AccuseActionPayload {
+                violation_id: worldwake_core::ViolationId(7),
+            })),
+            op_kind: PlannerOpKind::Accuse,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
         assert!(revalidate_next_step(
             &view,
             actor,

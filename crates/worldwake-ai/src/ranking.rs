@@ -1370,6 +1370,7 @@ mod tests {
                 target_item: entity(2),
                 }),
                 goal(GoalKind::Accuse {
+                    crime_register: entity(7),
                     accused: entity(3),
                     violation_id: ViolationId(1),
                 }),
@@ -1409,6 +1410,7 @@ mod tests {
             .find(|ranked| {
                 ranked.grounded.key.kind
                     == GoalKind::Accuse {
+                        crime_register: entity(7),
                         accused: entity(3),
                         violation_id: ViolationId(1),
                     }

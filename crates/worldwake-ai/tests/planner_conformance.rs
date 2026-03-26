@@ -18,11 +18,11 @@ use worldwake_ai::{
     PlannerOpSemantics, PlanningEntityRef, PlanningState,
 };
 use worldwake_core::{
-    total_live_lot_quantity, AgentBeliefStore, AgentData, CommodityKind, ControlSource, EntityId,
-    GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim, MetabolismProfile,
-    PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed, SuccessionLaw,
-    TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile,
-    ViolationKind, ViolationMemory,
+    prototype_place_entity, total_live_lot_quantity, AgentBeliefStore, AgentData, CommodityKind,
+    ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
+    MetabolismProfile, PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed,
+    SuccessionLaw, TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile,
+    ViolationDispositionProfile, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
@@ -1265,6 +1265,7 @@ fn conformance_investigate() {
 #[test]
 fn conformance_accuse() {
     let mut ch = ConformanceHarness::new();
+    let accused_place = prototype_place_entity(worldwake_core::PrototypePlace::CommonHouse);
     let accuser = seed_agent(
         &mut ch.h.world,
         &mut ch.h.event_log,
@@ -1278,7 +1279,7 @@ fn conformance_accuse() {
         &mut ch.h.world,
         &mut ch.h.event_log,
         "Accused",
-        VILLAGE_SQUARE,
+        accused_place,
         HomeostaticNeeds::new_sated(),
         MetabolismProfile::default(),
         UtilityProfile::default(),
@@ -1292,7 +1293,15 @@ fn conformance_accuse() {
         Tick(0),
         PerceptionSource::DirectObservation,
     );
-    let violation_id = {
+    seed_belief_from_world(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        accuser,
+        suspect,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let (violation_id, crime_register) = {
         let mut memory = ViolationMemory::default();
         let violation_id = memory.record(
             ViolationKind::SuspectedTheft {
@@ -1312,7 +1321,7 @@ fn conformance_accuse() {
         );
         let mut txn = new_txn(&mut ch.h.world, 0);
         txn.set_component_violation_memory(accuser, memory).unwrap();
-        txn.create_record(RecordData {
+        let record = txn.create_record(RecordData {
             record_kind: RecordKind::CrimeRegister,
             home_place: VILLAGE_SQUARE,
             issuer: VILLAGE_SQUARE,
@@ -1323,12 +1332,21 @@ fn conformance_accuse() {
         })
         .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
-        violation_id
+        (violation_id, record)
     };
+    seed_belief_from_world(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        accuser,
+        crime_register,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
 
     let snapshot = ch.snapshot_for(accuser);
     let semantics = ch.semantics_for("accuse");
     let goal = grounded(GoalKind::Accuse {
+        crime_register,
         accused: suspect,
         violation_id,
     });
@@ -1368,6 +1386,11 @@ fn conformance_accuse() {
             )
         }),
         "handler should append the accusation record"
+    );
+    assert_eq!(
+        ch.h.world.effective_place(suspect),
+        Some(accused_place),
+        "accuse should file against the absent suspect without moving them to the register"
     );
 }
 

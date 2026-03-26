@@ -15,6 +15,12 @@ pub fn get_affordances(
     let mut affordances = Vec::new();
 
     for def in registry.iter() {
+        let handler = handlers.get(def.handler).unwrap_or_else(|| {
+            panic!(
+                "action def {} references missing handler {}",
+                def.id.0, def.handler.0
+            )
+        });
         if !def
             .actor_constraints
             .iter()
@@ -23,26 +29,12 @@ pub fn get_affordances(
             continue;
         }
 
-        let mut def_affordances = Vec::new();
-        let mut bound_targets = Vec::new();
-        enumerate_bindings(
-            &def.targets,
-            actor,
-            view,
-            &mut bound_targets,
-            &mut def_affordances,
-            def.id,
-        );
+        let mut def_affordances =
+            enumerate_affordances_for_def(def, handler, actor, view);
         def_affordances.retain(|affordance| {
             def.preconditions.iter().all(|precondition| {
                 evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
             })
-        });
-        let handler = handlers.get(def.handler).unwrap_or_else(|| {
-            panic!(
-                "action def {} references missing handler {}",
-                def.id.0, def.handler.0
-            )
         });
         for affordance in &def_affordances {
             affordances.extend(expand_payload_variants(def, handler, affordance, view));
@@ -65,6 +57,12 @@ pub fn get_affordances_for_defs(
     let mut affordances = Vec::new();
 
     for def in registry.iter() {
+        let handler = handlers.get(def.handler).unwrap_or_else(|| {
+            panic!(
+                "action def {} references missing handler {}",
+                def.id.0, def.handler.0
+            )
+        });
         if !allowed_defs.contains(&def.id) {
             continue;
         }
@@ -76,26 +74,12 @@ pub fn get_affordances_for_defs(
             continue;
         }
 
-        let mut def_affordances = Vec::new();
-        let mut bound_targets = Vec::new();
-        enumerate_bindings(
-            &def.targets,
-            actor,
-            view,
-            &mut bound_targets,
-            &mut def_affordances,
-            def.id,
-        );
+        let mut def_affordances =
+            enumerate_affordances_for_def(def, handler, actor, view);
         def_affordances.retain(|affordance| {
             def.preconditions.iter().all(|precondition| {
                 evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
             })
-        });
-        let handler = handlers.get(def.handler).unwrap_or_else(|| {
-            panic!(
-                "action def {} references missing handler {}",
-                def.id.0, def.handler.0
-            )
         });
         for affordance in &def_affordances {
             affordances.extend(expand_payload_variants(def, handler, affordance, view));
@@ -376,6 +360,38 @@ fn enumerate_bindings(
         payload_override: None,
         explanation: None,
     });
+}
+
+fn enumerate_affordances_for_def(
+    def: &ActionDef,
+    handler: &ActionHandler,
+    actor: EntityId,
+    view: &dyn RuntimeBeliefView,
+) -> Vec<Affordance> {
+    if handler.uses_dynamic_affordance_targets {
+        return (handler.affordance_targets)(def, actor, view)
+            .into_iter()
+            .map(|bound_targets| Affordance {
+                def_id: def.id,
+                actor,
+                bound_targets,
+                payload_override: None,
+                explanation: None,
+            })
+            .collect();
+    }
+
+    let mut affordances = Vec::new();
+    let mut bound_targets = Vec::new();
+    enumerate_bindings(
+        &def.targets,
+        actor,
+        view,
+        &mut bound_targets,
+        &mut affordances,
+        def.id,
+    );
+    affordances
 }
 
 #[cfg(test)]

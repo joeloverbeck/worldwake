@@ -71,6 +71,7 @@ pub enum GoalKind {
         target_item: EntityId,
     },
     Accuse {
+        crime_register: EntityId,
         accused: EntityId,
         violation_id: ViolationId,
     },
@@ -110,12 +111,14 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::StealItem {
                 target_item: target,
             }
-            | GoalKind::Accuse {
-                accused: target, ..
-            }
             | GoalKind::PunishAccused {
                 accused: target, ..
             } => (None, Some(target), None),
+            GoalKind::Accuse {
+                crime_register,
+                accused,
+                ..
+            } => (None, Some(accused), Some(crime_register)),
             GoalKind::MoveCargo {
                 commodity,
                 destination,
@@ -409,19 +412,22 @@ mod tests {
     #[test]
     fn goal_key_extracts_accused_for_accuse() {
         let accused = entity_id(26, 0);
+        let crime_register = entity_id(25, 0);
         let key = GoalKey::from(GoalKind::Accuse {
+            crime_register,
             accused,
             violation_id: ViolationId(9),
         });
 
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(accused));
-        assert_eq!(key.place, None);
+        assert_eq!(key.place, Some(crime_register));
     }
 
     #[test]
     fn accuse_goal_roundtrips_through_bincode() {
         let goal = GoalKind::Accuse {
+            crime_register: entity_id(26, 0),
             accused: entity_id(27, 0),
             violation_id: ViolationId(10),
         };

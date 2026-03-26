@@ -347,7 +347,17 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             }
         }
 
-        self.world.controlled_commodity_quantity(holder, kind)
+        self.authoritative_local_controlled_lots_for(holder, agent_place, kind)
+            .into_iter()
+            .filter_map(|entity| self.world.get_component_item_lot(entity))
+            .fold(Quantity(0), |total, lot| {
+                Quantity(
+                    total
+                        .0
+                        .checked_add(lot.quantity.0)
+                        .expect("local observed commodity quantity overflowed"),
+                )
+            })
     }
 
     fn controlled_commodity_quantity_at_place(
@@ -2179,6 +2189,53 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+    }
+
+    #[test]
+    fn locally_observed_commodity_quantity_excludes_remote_possessions() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let local_place = places[0];
+        let remote_place = places[1];
+        let (observer, holder, victim, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Holder", ControlSource::Ai).unwrap();
+            let victim = txn.create_agent("Victim", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, local_place).unwrap();
+            txn.set_ground_location(holder, local_place).unwrap();
+            txn.set_ground_location(victim, remote_place).unwrap();
+            let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            txn.set_ground_location(lot, local_place).unwrap();
+            txn.set_owner(lot, victim).unwrap();
+            txn.set_possessor(lot, holder).unwrap();
+            commit_txn(txn);
+            (observer, holder, victim, lot)
+        };
+
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(observer, remote_place).unwrap();
+            txn.set_ground_location(holder, remote_place).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(holder, entity_belief(remote_place, true, 0, 10));
+        beliefs.update_entity(lot, entity_belief(local_place, true, 2, 10));
+        beliefs.update_entity(victim, entity_belief(remote_place, true, 0, 10));
+
+        let view = PerAgentBeliefView::new(observer, &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::locally_observed_commodity_quantity(
+                &view,
+                observer,
+                holder,
+                CommodityKind::Bread,
+            ),
+            Quantity(0),
+            "co-located observation should exclude commodity the holder cannot access from the current place"
+        );
     }
 
     #[test]

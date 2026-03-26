@@ -7,8 +7,8 @@ use worldwake_core::{
     ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, EntityId,
     EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile, PerceptionSource,
-    Permille, RecipientKnowledgeStatus, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
-    VisibilitySpec, World, WorldTxn,
+    Permille, RecipientKnowledgeStatus, SocialObservationDetail, TellMemoryKey, TellProfile,
+    TellTopic, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     belief_chain_len, listener_aware_tell_topic_selection, AbortReason, ActionAbortRequestReason,
@@ -603,6 +603,30 @@ fn commit_tell(
                     transferred.source = degrade_source(speaker, observation.source);
                     if !listener_beliefs.social_observations.contains(&transferred) {
                         listener_beliefs.record_social_observation(transferred);
+                        if let SocialObservationDetail::SuspectedTheft { theft, suspect } =
+                            transferred.detail
+                        {
+                            if let Some(profile) =
+                                txn.get_component_violation_disposition_profile(listener)
+                            {
+                                let mut violation_memory = txn
+                                    .get_component_violation_memory(listener)
+                                    .cloned()
+                                    .unwrap_or_default();
+                                let violation = ViolationKind::SuspectedTheft { theft, suspect };
+                                if !violation_memory.is_recorded(&violation, txn.tick()) {
+                                    violation_memory.record(
+                                        violation,
+                                        txn.tick(),
+                                        profile.violation_memory_retention_ticks,
+                                    );
+                                    txn.set_component_violation_memory(listener, violation_memory)
+                                        .map_err(|error| {
+                                            ActionError::InternalError(error.to_string())
+                                        })?;
+                                }
+                            }
+                        }
                         listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
                         accepted_any = true;
                         belief_delta = merge_tell_delta_kind(

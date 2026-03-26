@@ -2,10 +2,11 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CommodityKind, EligibilityRule, EntityId, EntityKind, EventTag,
-    InstitutionalClaim, JusticeDispositionProfile, PunishmentKind, Quantity, RecordData,
-    RecordEntryId, RecordKind, SocialObservation, SocialObservationDetail, TheftFacts,
-    ViolationId, ViolationKind, VisibilitySpec, World, WorldTxn,
+    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, CommodityKind, EligibilityRule,
+    EntityId, EntityKind, EventTag, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, JusticeDispositionProfile, PunishmentKind, Quantity, RecordData,
+    RecordEntryId, RecordKind, SocialObservation, SocialObservationDetail, TheftFacts, ViolationId,
+    ViolationKind, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -22,6 +23,7 @@ pub fn register_accuse_action(
 ) -> ActionDefId {
     let handler = handlers.register(
         ActionHandler::new(start_accuse, tick_accuse, commit_accuse, abort_accuse)
+            .with_affordance_targets(enumerate_accuse_targets)
             .with_affordance_payloads(enumerate_accuse_payloads)
             .with_payload_override_validator(validate_accuse_payload_override)
             .with_authoritative_payload_validator(validate_accuse_payload_authoritatively),
@@ -63,13 +65,13 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
             Constraint::ActorHasControl,
             Constraint::ActorNotInTransit,
         ],
-        targets: vec![TargetSpec::EntityAtActorPlace {
-            kind: EntityKind::Agent,
-        }],
+        targets: vec![TargetSpec::SpecificEntity(EntityId {
+            slot: 0,
+            generation: 0,
+        })],
         preconditions: vec![
             Precondition::ActorAlive,
             Precondition::TargetExists(0),
-            Precondition::TargetAtActorPlace(0),
             Precondition::TargetKind {
                 target_index: 0,
                 kind: EntityKind::Agent,
@@ -82,7 +84,6 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         commit_conditions: vec![
             Precondition::ActorAlive,
             Precondition::TargetExists(0),
-            Precondition::TargetAtActorPlace(0),
             Precondition::TargetKind {
                 target_index: 0,
                 kind: EntityKind::Agent,
@@ -202,11 +203,6 @@ fn validate_accuse_context(
         .ok_or(ActionError::AbortRequested(
             ActionAbortRequestReason::ActorNotPlaced { actor },
         ))?;
-    if txn.effective_place(accused) != Some(actor_place) {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::TargetNotColocated { actor, target: accused },
-        ));
-    }
     Ok((accused, actor_place, payload.violation_id))
 }
 
@@ -371,6 +367,49 @@ fn enumerate_accuse_payloads(
         .collect()
 }
 
+fn enumerate_accuse_targets(
+    _def: &ActionDef,
+    actor: EntityId,
+    view: &dyn RuntimeBeliefView,
+) -> Vec<Vec<EntityId>> {
+    let mut targets = BTreeSet::new();
+
+    for record in view.active_violation_records(actor) {
+        let ViolationKind::SuspectedTheft { theft, suspect } = record.kind else {
+            continue;
+        };
+
+        if let Some(accused) = suspect.filter(|accused| *accused != actor && view.is_alive(*accused)) {
+            targets.insert(accused);
+        }
+
+        targets.extend(
+            view.known_social_observations(actor)
+                .into_iter()
+                .filter(|observation| {
+                    matches!(
+                        observation.detail,
+                        SocialObservationDetail::SuspectedTheft {
+                            theft: observed_theft,
+                            suspect: Some(accused),
+                        } if observed_theft == theft
+                            && accused != actor
+                            && view.is_alive(accused)
+                    )
+                })
+                .map(|observation| match observation.detail {
+                        SocialObservationDetail::SuspectedTheft {
+                            suspect: Some(accused),
+                            ..
+                        } => accused,
+                        _ => unreachable!(),
+                }),
+        );
+    }
+
+    targets.into_iter().map(|target| vec![target]).collect()
+}
+
 fn validate_accuse_payload_override(
     _def: &ActionDef,
     actor: EntityId,
@@ -463,7 +502,8 @@ fn commit_accuse(
             violation_id.0
         )));
     }
-    txn.append_record_entry(
+    let entry_id = txn
+        .append_record_entry(
         record,
         InstitutionalClaim::Accusation {
             accuser: instance.actor,
@@ -471,6 +511,29 @@ fn commit_accuse(
             violation_id,
             theft,
             effective_tick: txn.tick(),
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.replace_institutional_belief(
+        instance.actor,
+        InstitutionalBeliefKey::CrimeCase {
+            accused,
+            violation_id,
+        },
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::Accusation {
+                accuser: instance.actor,
+                accused,
+                violation_id,
+                theft,
+                effective_tick: txn.tick(),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record,
+                entry_id,
+            },
+            learned_tick: txn.tick(),
+            learned_at: Some(actor_place),
         },
     )
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -1417,6 +1480,13 @@ mod tests {
             }
         }
 
+        fn move_accused_to(&mut self, place: EntityId, tick: u64) {
+            let mut txn = new_txn(&mut self.world, tick);
+            txn.set_ground_location(self.accused, place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
         fn seed_social_observation(&mut self, suspect: EntityId, tick: u64) {
             let mut store = self
                 .world
@@ -1499,6 +1569,32 @@ mod tests {
     }
 
     #[test]
+    fn accuse_affordance_emits_payload_for_known_remote_suspect_observation() {
+        let (defs, handlers, id) = setup_registries();
+        let mut fx = JusticeFixture::new();
+        fx.seed_social_observation(fx.accused, 2);
+        fx.move_accused_to(
+            worldwake_core::prototype_place_entity(PrototypePlace::CommonHouse),
+            2,
+        );
+        let view = PerAgentBeliefView::from_world(fx.accuser, &fx.world);
+
+        let payloads = get_affordances(&view, fx.accuser, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == id && affordance.bound_targets == vec![fx.accused])
+            .filter_map(|affordance| affordance.payload_override)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            payloads,
+            vec![ActionPayload::Accuse(AccuseActionPayload {
+                violation_id: fx.violation_id,
+            })],
+            "accuse affordances should still target a known remote suspect while filing at the local crime register"
+        );
+    }
+
+    #[test]
     fn accusation_appends_claim_to_crime_register_and_emits_commit_event() {
         let (defs, handlers, id) = setup_registries();
         let mut fx = JusticeFixture::new();
@@ -1529,6 +1625,37 @@ mod tests {
         ));
         assert!(event.tags().contains(&EventTag::Crime));
         assert_eq!(event.visibility(), VisibilitySpec::SamePlace);
+    }
+
+    #[test]
+    fn accusation_can_file_against_remote_known_suspect() {
+        let (defs, handlers, id) = setup_registries();
+        let mut fx = JusticeFixture::new();
+        fx.seed_social_observation(fx.accused, 2);
+        fx.move_accused_to(
+            worldwake_core::prototype_place_entity(PrototypePlace::CommonHouse),
+            2,
+        );
+        let instance = fx.instance(id, fx.accused);
+
+        let _ = commit_action(&mut fx.world, &defs, &handlers, id, &instance, 7, 3);
+        let record = fx.world.get_component_record_data(fx.crime_register).unwrap();
+
+        assert!(record.entries.iter().any(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::Accusation {
+                    accuser,
+                    accused,
+                    violation_id,
+                    effective_tick,
+                    ..
+                } if accuser == fx.accuser
+                    && accused == fx.accused
+                    && violation_id == fx.violation_id
+                    && effective_tick == Tick(3)
+            )
+        }));
     }
 
     #[test]

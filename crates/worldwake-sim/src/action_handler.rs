@@ -105,6 +105,8 @@ pub type ActionAbortFn = for<'w> fn(
 ) -> Result<(), ActionError>;
 pub type AffordancePayloadFn =
     fn(&ActionDef, EntityId, &[EntityId], &dyn RuntimeBeliefView) -> Vec<ActionPayload>;
+pub type AffordanceTargetsFn =
+    fn(&ActionDef, EntityId, &dyn RuntimeBeliefView) -> Vec<Vec<EntityId>>;
 pub type PayloadOverrideValidatorFn =
     fn(&ActionDef, EntityId, &[EntityId], &ActionPayload, &dyn RuntimeBeliefView) -> bool;
 pub type AuthoritativePayloadValidatorFn = fn(
@@ -122,6 +124,8 @@ pub struct ActionHandler {
     pub on_tick: ActionTickFn,
     pub on_commit: ActionCommitFn,
     pub on_abort: ActionAbortFn,
+    pub affordance_targets: AffordanceTargetsFn,
+    pub uses_dynamic_affordance_targets: bool,
     pub affordance_payloads: AffordancePayloadFn,
     pub requires_explicit_payload_variants: bool,
     pub payload_override_is_valid: PayloadOverrideValidatorFn,
@@ -141,11 +145,23 @@ impl ActionHandler {
             on_tick,
             on_commit,
             on_abort,
+            affordance_targets: no_affordance_targets,
+            uses_dynamic_affordance_targets: false,
             affordance_payloads: no_affordance_payloads,
             requires_explicit_payload_variants: false,
             payload_override_is_valid: no_payload_override_validator,
             authoritative_payload_is_valid: no_authoritative_payload_validator,
         }
+    }
+
+    #[must_use]
+    pub const fn with_affordance_targets(
+        mut self,
+        affordance_targets: AffordanceTargetsFn,
+    ) -> Self {
+        self.affordance_targets = affordance_targets;
+        self.uses_dynamic_affordance_targets = true;
+        self
     }
 
     #[must_use]
@@ -183,6 +199,14 @@ fn no_affordance_payloads(
     _targets: &[EntityId],
     _view: &dyn RuntimeBeliefView,
 ) -> Vec<ActionPayload> {
+    Vec::new()
+}
+
+fn no_affordance_targets(
+    _def: &ActionDef,
+    _actor: EntityId,
+    _view: &dyn RuntimeBeliefView,
+) -> Vec<Vec<EntityId>> {
     Vec::new()
 }
 

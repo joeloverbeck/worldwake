@@ -5,7 +5,7 @@ use worldwake_core::{
     EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, MismatchKind, PendingEvent, PerceptionSource, RelationDelta,
     RelationValue, SocialObservation, SocialObservationDetail, SocialObservationKind, StateDelta,
-    VisibilitySpec, WitnessData, World, WorldTxn,
+    TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{PerceptionTraceEvent, SystemError, SystemExecutionContext};
 
@@ -412,11 +412,13 @@ fn emit_discovery_event(
 fn resolve_witnesses(world: &World, record: &impl EventView) -> Vec<EntityId> {
     let candidates = match record.visibility() {
         VisibilitySpec::ParticipantsOnly => record.witness_data().direct_witnesses.clone(),
-        VisibilitySpec::SamePlace => place_witnesses(world, record.place_id()),
+        VisibilitySpec::SamePlace | VisibilitySpec::Hidden => {
+            place_witnesses(world, record.place_id())
+        }
         VisibilitySpec::AdjacentPlaces { max_hops } => {
             adjacent_place_witnesses(world, record.place_id(), max_hops)
         }
-        VisibilitySpec::PublicRecord | VisibilitySpec::Hidden => BTreeSet::new(),
+        VisibilitySpec::PublicRecord => BTreeSet::new(),
     };
 
     candidates
@@ -486,6 +488,9 @@ fn social_observations_for_event(
     else {
         return Vec::new();
     };
+    if let Some(observation) = suspected_theft_observation_for_event(world, record, tick, actor, place) {
+        return vec![observation];
+    }
     let targets = record
         .target_ids()
         .iter()
@@ -532,6 +537,39 @@ fn social_observations_for_event(
             source: PerceptionSource::DirectObservation,
         })
         .collect()
+}
+
+fn suspected_theft_observation_for_event(
+    world: &World,
+    record: &impl EventView,
+    tick: worldwake_core::Tick,
+    actor: EntityId,
+    place: EntityId,
+) -> Option<SocialObservation> {
+    if !record.tags().contains(&EventTag::Crime) || !record.tags().contains(&EventTag::Transfer) {
+        return None;
+    }
+
+    let stolen_lot = record.target_ids().iter().copied().find(|target| {
+        world.entity_kind(*target) == Some(EntityKind::ItemLot) && world.possessor_of(*target) == Some(actor)
+    })?;
+    world.owner_of(stolen_lot).filter(|owner| *owner != actor)?;
+    let lot = world.get_component_item_lot(stolen_lot)?;
+
+    Some(SocialObservation {
+        detail: SocialObservationDetail::SuspectedTheft {
+            theft: TheftFacts {
+                missing_entity: stolen_lot,
+                expected_place: place,
+                commodity: lot.commodity,
+                quantity: lot.quantity,
+            },
+            suspect: Some(actor),
+        },
+        place,
+        observed_tick: tick,
+        source: PerceptionSource::DirectObservation,
+    })
 }
 
 fn social_kind(record: &impl EventView) -> Option<SocialObservationKind> {
@@ -731,8 +769,9 @@ mod tests {
         InstitutionalKnowledgeSource, MismatchKind, ObservedEntitySnapshot, OfficeForceState,
         PendingEvent, PerceptionProfile, PerceptionSource, Permille, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
-        ResourceSource, Seed, SocialObservationDetail, SocialObservationKind, StateDelta, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ResourceSource, Seed, SocialObservationDetail, SocialObservationKind, StateDelta,
+        TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -1093,6 +1132,87 @@ mod tests {
                     && observation.observed_tick == Tick(4)
             }),
             "social transfer witness should record obligation evidence"
+        );
+    }
+
+    #[test]
+    fn crime_transfer_item_event_records_suspected_theft() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, thief, stolen_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let thief = txn.create_agent("Thief", ControlSource::Ai).unwrap();
+            let owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+            let stolen_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            for entity in [observer, thief, owner] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_ground_location(stolen_lot, place).unwrap();
+            txn.set_owner(stolen_lot, owner).unwrap();
+            txn.set_possessor(stolen_lot, thief).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, thief, stolen_lot)
+        };
+        let mut event_log = EventLog::new();
+        let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(4),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(thief),
+            target_ids: vec![stolen_lot],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: observed_from_world(&world, &[thief, stolen_lot]),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Crime, EventTag::Transfer]),
+        }));
+        let mut rng = DeterministicRng::new(Seed([0x41; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(4),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.social_observations.iter().any(|observation| {
+                observation.kind() == SocialObservationKind::SuspectedTheft
+                    && observation.place == place
+                    && observation.detail
+                        == SocialObservationDetail::SuspectedTheft {
+                            theft: TheftFacts {
+                                missing_entity: stolen_lot,
+                                expected_place: place,
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(2),
+                            },
+                            suspect: Some(thief),
+                        }
+                    && observation.source == PerceptionSource::DirectObservation
+                    && observation.observed_tick == Tick(4)
+            }),
+            "crime transfer witness should record typed theft evidence"
         );
     }
 

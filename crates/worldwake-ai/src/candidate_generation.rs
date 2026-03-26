@@ -22,7 +22,7 @@ use worldwake_core::{
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, PerceptionSource,
     PunishmentKind, Quantity, RecordKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, ViolationId, ViolationKind,
+    TheftFacts, Tick, ViolationId, ViolationKind, RecordData,
     ViolationMemory,
 };
 use worldwake_sim::{
@@ -335,6 +335,8 @@ fn emit_accusation_candidates(
     known_social_observations: &[SocialObservation],
     current_crime_case_claims: &[BelievedInstitutionalClaim],
 ) {
+    let known_crime_registers = known_authority_crime_registers(ctx);
+
     for record in ctx.violation_memory.unresolved_records(ctx.current_tick) {
         let ViolationKind::SuspectedTheft { theft, suspect } = record.kind else {
             continue;
@@ -376,25 +378,48 @@ fn emit_accusation_candidates(
             }) {
                 continue;
             }
-
-            let evidence = Evidence {
-                entities: BTreeSet::from([accused, theft.missing_entity]),
-                places: BTreeSet::from([theft.expected_place]),
-            };
-            emit_candidate_with_trace(
-                candidates,
-                diagnostics,
-                GoalKind::Accuse {
-                    accused,
-                    violation_id: record.id,
-                },
-                evidence,
-                EvidenceTrace::default(),
-                ctx.blocked,
-                ctx.current_tick,
-            );
+            for (crime_register, record_data) in &known_crime_registers {
+                let mut evidence = Evidence {
+                    entities: BTreeSet::from([accused, theft.missing_entity, *crime_register]),
+                    places: BTreeSet::from([theft.expected_place, record_data.home_place]),
+                };
+                evidence.entities.insert(record_data.issuer);
+                emit_candidate_with_trace(
+                    candidates,
+                    diagnostics,
+                    GoalKind::Accuse {
+                        crime_register: *crime_register,
+                        accused,
+                        violation_id: record.id,
+                    },
+                    evidence,
+                    EvidenceTrace::default(),
+                    ctx.blocked,
+                    ctx.current_tick,
+                );
+            }
         }
     }
+}
+
+fn known_authority_crime_registers(
+    ctx: &GenerationContext<'_>,
+) -> Vec<(EntityId, RecordData)> {
+    ctx.view
+        .known_entity_beliefs(ctx.agent)
+        .into_iter()
+        .filter_map(|(entity, _)| {
+            (ctx.view.entity_kind(entity) == Some(EntityKind::Record))
+                .then_some((entity, ctx.view.record_data(entity)?))
+        })
+        .filter(|(_, record_data)| {
+            record_data.record_kind == RecordKind::CrimeRegister
+                && matches!(
+                    ctx.view.believed_office_holder(record_data.issuer),
+                    InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+                )
+        })
+        .collect()
 }
 
 fn emit_punishment_candidates(
@@ -441,6 +466,7 @@ fn emit_punishment_candidates(
 
         let Some(punishment) = candidate_punishment_for_case(
             ctx.view,
+            ctx.agent,
             accused,
             &office_data,
             theft,
@@ -485,6 +511,7 @@ fn emit_punishment_candidates(
 
 fn candidate_punishment_for_case(
     view: &dyn GoalBeliefView,
+    agent: EntityId,
     accused: EntityId,
     office_data: &OfficeData,
     theft: TheftFacts,
@@ -494,7 +521,9 @@ fn candidate_punishment_for_case(
         (u64::from(theft.quantity.0) * u64::from(fine_severity_permille) / 1000) as u32,
     );
     if fine_amount > Quantity(0)
-        && view.commodity_quantity(accused, theft.commodity) >= fine_amount
+        && view.effective_place(agent).is_some()
+        && view.effective_place(agent) == view.effective_place(accused)
+        && view.locally_observed_commodity_quantity(agent, accused, theft.commodity) >= fine_amount
     {
         return Some(PunishmentKind::Fine {
             commodity: theft.commodity,
@@ -2748,6 +2777,8 @@ mod tests {
         adjacent_places: BTreeMap<EntityId, Vec<EntityId>>,
         unique_item_counts: BTreeMap<(EntityId, UniqueItemKind), u32>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        locally_observed_commodity_quantities:
+            BTreeMap<(EntityId, EntityId, CommodityKind), Quantity>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
@@ -2812,6 +2843,7 @@ mod tests {
                 adjacent_places: BTreeMap::new(),
                 unique_item_counts: BTreeMap::new(),
                 commodity_quantities: BTreeMap::new(),
+                locally_observed_commodity_quantities: BTreeMap::new(),
                 carry_capacities: BTreeMap::new(),
                 entity_loads: BTreeMap::new(),
                 lot_commodities: BTreeMap::new(),
@@ -2935,6 +2967,17 @@ mod tests {
                 .get(&(holder, kind))
                 .copied()
                 .unwrap_or(Quantity(0))
+        }
+        fn locally_observed_commodity_quantity(
+            &self,
+            agent: EntityId,
+            holder: EntityId,
+            kind: CommodityKind,
+        ) -> Quantity {
+            self.locally_observed_commodity_quantities
+                .get(&(agent, holder, kind))
+                .copied()
+                .unwrap_or_else(|| self.commodity_quantity(holder, kind))
         }
         fn controlled_commodity_quantity_at_place(
             &self,
@@ -5516,6 +5559,8 @@ mod tests {
     fn justice_candidates_emit_accuse_from_matching_typed_theft_testimony() {
         let agent = entity(1);
         let accused = entity(2);
+        let office = entity(4);
+        let crime_register = entity(5);
         let place = entity(10);
         let theft = TheftFacts {
             missing_entity: entity(20),
@@ -5526,6 +5571,16 @@ mod tests {
 
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, accused]);
+        view.entity_kinds.insert(crime_register, EntityKind::Record);
+        view.record_data
+            .insert(crime_register, crime_register_record(office, place, RecordEntryId(0), InstitutionalClaim::OfficeHolder {
+                office,
+                holder: Some(agent),
+                effective_tick: Tick(3),
+            }));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.beliefs.insert(agent, vec![known_entity(crime_register, place)]);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.social_observations.insert(
@@ -5568,6 +5623,7 @@ mod tests {
         assert!(contains_goal(
             &result.candidates,
             GoalKind::Accuse {
+                crime_register,
                 accused,
                 violation_id,
             }
@@ -5578,6 +5634,8 @@ mod tests {
     fn justice_candidates_suppress_duplicate_accusation_when_case_already_known() {
         let agent = entity(1);
         let accused = entity(2);
+        let office = entity(4);
+        let crime_register = entity(5);
         let place = entity(10);
         let violation_id = worldwake_core::ViolationId(4);
         let theft = TheftFacts {
@@ -5589,6 +5647,20 @@ mod tests {
 
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, accused]);
+        view.entity_kinds.insert(crime_register, EntityKind::Record);
+        view.record_data.insert(
+            crime_register,
+            crime_register_record(office, place, RecordEntryId(0), InstitutionalClaim::Accusation {
+                accuser: entity(9),
+                accused,
+                violation_id,
+                theft,
+                effective_tick: Tick(4),
+            }),
+        );
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.beliefs.insert(agent, vec![known_entity(crime_register, place)]);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.institutional_claims.insert(
@@ -5641,6 +5713,7 @@ mod tests {
             !contains_goal(
                 &result.candidates,
                 GoalKind::Accuse {
+                    crime_register,
                     accused,
                     violation_id,
                 }
@@ -5675,6 +5748,8 @@ mod tests {
 
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(accused, place);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.office_data
@@ -5701,8 +5776,8 @@ mod tests {
                 learned_at: Some(place),
             }],
         );
-        view.commodity_quantities
-            .insert((accused, CommodityKind::Coin), Quantity(10));
+        view.locally_observed_commodity_quantities
+            .insert((agent, accused, CommodityKind::Coin), Quantity(10));
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -5755,6 +5830,8 @@ mod tests {
 
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(accused, place);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.office_data
@@ -5805,6 +5882,102 @@ mod tests {
                 punishment: worldwake_core::PunishmentKind::Exile { from_faction: faction },
             }
         ));
+    }
+
+    #[test]
+    fn justice_candidates_fall_back_to_exile_when_fine_is_not_locally_collectible() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let place = entity(10);
+        let remote_place = entity(12);
+        let faction = entity(11);
+        let accusation_entry = RecordEntryId(9);
+        let violation_id = worldwake_core::ViolationId(7);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: place,
+            commodity: CommodityKind::Coin,
+            quantity: Quantity(8),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(accused, remote_place);
+        view.justice_disposition_profiles
+            .insert(agent, default_justice_profile());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", place, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data
+            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+        view.commodity_quantities
+            .insert((accused, CommodityKind::Coin), Quantity(10));
+        view.factions_by_member.insert(accused, vec![faction]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::PunishAccused {
+                office,
+                accused,
+                accusation_entry,
+                punishment: worldwake_core::PunishmentKind::Exile { from_faction: faction },
+            }
+        ));
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::PunishAccused {
+                    office,
+                    accused,
+                    accusation_entry,
+                    punishment: worldwake_core::PunishmentKind::Fine {
+                        commodity: CommodityKind::Coin,
+                        amount: Quantity(4),
+                    },
+                }
+            ),
+            "planner should not choose Fine from remote inventory belief alone"
+        );
     }
 
     #[test]

@@ -316,6 +316,7 @@ mod tests {
                 target_item: dummy_entity(),
             },
             GoalKind::Accuse {
+                crime_register: dummy_entity(),
                 accused: dummy_entity(),
                 violation_id: ViolationId(2),
             },
@@ -425,6 +426,7 @@ mod tests {
                 target_item: dummy_entity(),
             },
             GoalKind::Accuse {
+                crime_register: dummy_entity(),
                 accused: dummy_entity(),
                 violation_id: ViolationId(4),
             },
@@ -530,6 +532,7 @@ mod tests {
                 target_item: dummy_entity(),
             },
             GoalKind::Accuse {
+                crime_register: dummy_entity(),
                 accused: dummy_entity(),
                 violation_id: ViolationId(6),
             },

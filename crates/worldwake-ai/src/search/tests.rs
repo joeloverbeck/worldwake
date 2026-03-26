@@ -4095,6 +4095,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let budget = PlanningBudget::default();
     let accuse_goal = GroundedGoal {
         key: GoalKey::from(GoalKind::Accuse {
+            crime_register: town,
             accused,
             violation_id: worldwake_core::ViolationId(1),
         }),
