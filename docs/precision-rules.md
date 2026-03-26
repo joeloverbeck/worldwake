@@ -147,3 +147,17 @@ Instead:
 
 1. prove the immediate behavior with the strongest available lower-layer test or trace surface
 2. open a follow-up traceability ticket if the missing provenance matters to the architecture or future debugging contract
+
+## 16. Information-Path Refactors
+
+For mixed-layer refactors that move, split, promote, or remove information-bearing artifacts such as tells, records, institutional claims, rumors, memories, or social observations, state the transport-path contract explicitly.
+
+Tickets and specs must name:
+
+- whether the same fact currently travels through more than one lawful path
+- which path is canonical after the change
+- whether any temporary mixed-state coexistence is removed in-scope or deferred to a named follow-up ticket
+
+Do not describe a refactor as “cleaned up” or “promoted to first-class” if the old path still survives as a functional alias. Name both paths and the intended end-state architecture explicitly.
+
+Reassess the debugging contract too. If the new canonical path would be harder to explain or verify than the old one, either strengthen the trace/test surface in-scope or open a follow-up traceability ticket intentionally. Do not leave the ticket narratively cleaner while the explanation surface gets weaker.

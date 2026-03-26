@@ -19,6 +19,7 @@ For golden-test tickets, treat `docs/generated/golden-e2e-inventory.md` as the c
    - Explicitly call out mismatches and corrected scope.
    - Cite exact files, symbols, or tests for any non-trivial architectural claim.
    - For mixed-layer or cross-system tickets, name the exact shared abstraction boundary or data contract under audit before implementation.
+   - For information-path refactors, state whether the same fact currently has multiple transport paths, which path is canonical after the change, and whether any duplicate path is removed in-scope or deferred to a named follow-up ticket.
    - If a failing golden or mixed-layer scenario is motivating the ticket, restate the intended invariant before trusting the scenario narrative.
    - Classify newly exposed adjacent contradictions as required consequences of the intended change, separate bugs uncovered during reassessment, or future cleanup that must become its own ticket.
    - Apply all domain-specific precision requirements from `docs/precision-rules.md` (ordering, political claims, stale requests, ControlSource, heuristic removal, cumulative arithmetic, scenario isolation, coverage gaps, layer precision).
@@ -52,6 +53,7 @@ For golden-test tickets, treat `docs/generated/golden-e2e-inventory.md` as the c
 9. For ranking-sensitive golden or AI tickets, verify any claimed tie, neutrality, or branch symmetry against the current live arithmetic and cite the exact compared tests, scenarios, or symbols rather than inferring symmetry from equal utility weights alone.
 10. For mixed-layer or cross-system tickets, confirm the intended invariant, the exact shared boundary under audit, and whether adjacent contradictions belong to this ticket or a follow-up before implementation begins.
 11. If traces prove the outcome but not enough provenance to explain the architecture, keep the immediate proof at the strongest available lower layer and open a follow-up traceability ticket instead of broadening weaker downstream assertions.
+12. For information-path refactors, confirm whether current code still has multiple lawful transport paths for the same fact, name the canonical end-state path, and verify that the planned proof surface remains strong enough to debug that canonical path after the change.
 
 ## Archival Reminder
 

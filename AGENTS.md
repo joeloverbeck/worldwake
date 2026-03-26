@@ -21,6 +21,7 @@ This file provides guidance to coding agents working in this repository.
 - Follow `tickets/README.md` when creating or revising tickets. Start from `tickets/_TEMPLATE.md`.
 - Reassess every ticket against current code, focused tests, golden coverage, and harness setup before implementation. If current code and ticket assumptions diverge, update the ticket first.
 - For mixed-layer or cross-system work, start by naming the exact shared abstraction boundary or data contract under audit before changing code.
+- For information-path refactors, state whether one fact currently has multiple lawful transport paths, which path is canonical after the change, and whether any duplicate path is removed in-scope or deferred to a named follow-up ticket.
 - If a failing golden or mixed-layer scenario motivates the work, restate the intended invariant and the excluded lawful competing branches before trusting the scenario narrative.
 - Do not leave a ticket marked `Engine Changes: None` or “tests only” when the requested invariant actually exposes an architectural contradiction in production code. Correct the scope first.
 - When a ticket claims a testing gap, distinguish missing focused/unit coverage from missing golden/E2E coverage.
