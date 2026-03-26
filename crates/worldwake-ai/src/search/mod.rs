@@ -86,6 +86,9 @@ pub fn search_plan(
         return PlanSearchResult::Unsupported;
     }
 
+    // Pre-compute goal-relevant action defs once — invariant across expansions.
+    let relevant_defs = candidates::relevant_action_defs(goal, semantics_table);
+
     let mut frontier = BinaryHeap::new();
     frontier.push(FrontierEntry::new(root_node(
         snapshot, goal, recipes, budget,
@@ -128,6 +131,7 @@ pub fn search_plan(
             current_tick,
             binding_rejections.as_deref_mut(),
             record_root_candidates.then_some(&mut root_candidates),
+            &relevant_defs,
         );
         let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
         let mut travel_pruning = None;

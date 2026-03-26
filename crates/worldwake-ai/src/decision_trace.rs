@@ -2355,9 +2355,8 @@ mod tests {
 
         // Capture stderr output by calling format_knowledge_path directly
         // (dump_agent writes to stderr which is harder to capture in test).
-        let planning = match &sink.traces()[0].outcome {
-            DecisionOutcome::Planning(p) => p,
-            _ => panic!("expected Planning"),
+        let DecisionOutcome::Planning(planning) = &sink.traces()[0].outcome else {
+            panic!("expected Planning")
         };
         let ev = &planning.candidates.evidence[0];
         let lines = format_knowledge_path(&ev.knowledge_path);

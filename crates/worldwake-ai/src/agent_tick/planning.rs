@@ -155,6 +155,7 @@ pub(super) fn build_candidate_plans(
     collect_rejections: bool,
     collect_expansion_summaries: bool,
     skip_exhausted: &std::collections::BTreeSet<crate::GoalKey>,
+    exhaustion_counts: &std::collections::BTreeMap<crate::GoalKey, u8>,
 ) -> Vec<(
     crate::GoalKey,
     PlanSearchResult,
@@ -167,6 +168,11 @@ pub(super) fn build_candidate_plans(
         .filter(|c| !skip_exhausted.contains(&c.grounded.key))
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
+
+    // All candidates filtered by exhausted-goal skip set — no snapshot needed.
+    if candidates_to_plan.is_empty() {
+        return Vec::new();
+    }
 
     // Build a single merged snapshot with the union of all candidates' evidence
     // sets. This avoids N separate snapshot constructions (each with BFS +
@@ -192,13 +198,28 @@ pub(super) fn build_candidate_plans(
         .map(|ranked| {
             let mut rejections = Vec::new();
             let mut expansions = Vec::new();
+            // Use a reduced node expansion budget for goals that previously
+            // exhausted the search budget. This avoids wasting the full budget
+            // on goals that are likely to exhaust again.
+            let effective_budget =
+                if let Some(&count) = exhaustion_counts.get(&ranked.grounded.key) {
+                    let mut reduced = budget.clone();
+                    // Exponential backoff: halve the budget for each prior
+                    // exhaustion, floored at 64 expansions.
+                    let shift = count.min(3); // cap at 3 halvings (512→64)
+                    reduced.max_node_expansions =
+                        (budget.max_node_expansions >> shift).max(64);
+                    reduced
+                } else {
+                    budget.clone()
+                };
             let result = search_plan(
                 &snapshot,
                 &ranked.grounded,
                 semantics_table,
                 action_defs,
                 action_handlers,
-                budget,
+                &effective_budget,
                 recipe_registry,
                 blocked_memory,
                 current_tick,
@@ -271,19 +292,43 @@ fn try_continue_snapshot_plan(
     Some(step)
 }
 
-fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime) {
+fn reset_exhausted_goals_if_needed(
+    runtime: &mut AgentDecisionRuntime,
+    currently_in_transit: bool,
+) {
     // Clear exhausted-goal memory when the world changed in ways that could
     // make previously impossible plans feasible (position, inventory, wounds,
     // facilities). Needs-only changes rarely alter the search space.
-    let significant_change_mask = DirtySet::POSITION
-        | DirtySet::COMMODITY
+    //
+    // POSITION is handled specially: during multi-leg travel, the agent's
+    // effective_place changes at each waypoint, but the search space doesn't
+    // materially change while in transit (most actions require being settled).
+    // Only clear on POSITION when the agent actually arrived (was in transit
+    // but is now settled), or was never in transit (direct placement).
+    let non_position_mask = DirtySet::COMMODITY
         | DirtySet::UNIQUE_ITEMS
         | DirtySet::WOUNDS
         | DirtySet::FACILITIES
         | DirtySet::REPLAN_SIGNAL
         | DirtySet::BLOCKER_CLEANUP;
-    if runtime.dirty.contains_any(significant_change_mask) {
+    if runtime.dirty.contains_any(non_position_mask) {
+        for goal in &runtime.search_exhausted_goals {
+            *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
+        }
         runtime.search_exhausted_goals.clear();
+        return;
+    }
+    // Position changed — only clear if agent genuinely arrived at a new place
+    // (transition from in-transit to settled, or was already settled).
+    if runtime.dirty.contains(DirtySet::POSITION) {
+        let arrived = runtime.last_in_transit && !currently_in_transit;
+        let was_settled = !runtime.last_in_transit;
+        if arrived || was_settled {
+            for goal in &runtime.search_exhausted_goals {
+                *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
+            }
+            runtime.search_exhausted_goals.clear();
+        }
     }
 }
 
@@ -388,7 +433,7 @@ pub(super) fn plan_and_validate_next_step(
             return (Some(step), Some(true));
         }
 
-        reset_exhausted_goals_if_needed(runtime);
+        reset_exhausted_goals_if_needed(runtime, view.in_transit_state(agent).is_some());
 
         let plans = build_candidate_plans(
             world,
@@ -405,10 +450,15 @@ pub(super) fn plan_and_validate_next_step(
             false,
             false,
             &runtime.search_exhausted_goals,
+            &runtime.exhaustion_counts,
         );
 
         // Record newly exhausted goals for next tick.
         record_exhausted_goals(runtime, &plans);
+        // Clear exhaustion counts on plan success to reset the penalty.
+        if plans.iter().any(|(_, r, _, _)| r.is_found()) {
+            runtime.exhaustion_counts.clear();
+        }
         let plans_options = plans_as_options(&plans);
 
         if let Some(selected_plan) = select_best_plan(
@@ -574,6 +624,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             true,
             true,
             &no_skip,
+            &std::collections::BTreeMap::new(),
         );
 
         for (goal_key, result, rejections, expansions) in &plans {

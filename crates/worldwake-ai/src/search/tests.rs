@@ -3,6 +3,7 @@ use super::{
     prune_travel_away_from_goal, root_node, search_candidate_from_planner, search_candidates,
     search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
 };
+use super::candidates::relevant_action_defs;
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
 use crate::{
@@ -1946,6 +1947,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         heuristic_ticks: 0,
     };
 
+    let rel_defs = relevant_action_defs(&goal, &semantics);
     let initial_candidates = search_candidates(
         &goal,
         &node,
@@ -1956,6 +1958,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         Tick(0),
         None,
         None,
+        &rel_defs,
     );
     let pick_up = initial_candidates
         .iter()
@@ -1992,6 +1995,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         Tick(0),
         None,
         None,
+        &rel_defs,
     );
     let travel = follow_up_candidates
         .iter()
@@ -2633,6 +2637,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
         .map(|def| def.id)
         .expect("queue action should be registered");
 
+    let rel_defs = relevant_action_defs(&goal, &fixture.semantics);
     let candidates = search_candidates(
         &goal,
         &root_node(
@@ -2648,6 +2653,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
         Tick(0),
         None,
         None,
+        &rel_defs,
     );
 
     assert!(!candidates.iter().any(|candidate| {
@@ -2696,6 +2702,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         .map(|def| def.id)
         .expect("queue action should be registered");
 
+    let rel_defs = relevant_action_defs(&goal, &fixture.semantics);
     let candidates = search_candidates(
         &goal,
         &root_node(
@@ -2711,6 +2718,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         Tick(0),
         None,
         None,
+        &rel_defs,
     );
 
     assert!(!candidates.iter().any(|candidate| {
@@ -3730,6 +3738,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         heuristic_ticks: 0,
     };
 
+    let rel_defs = relevant_action_defs(&goal, &semantics);
     let pick_up = search_candidates(
         &goal,
         &node,
@@ -3740,6 +3749,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         Tick(0),
         None,
         None,
+        &rel_defs,
     )
     .into_iter()
     .find(|candidate| {
@@ -3853,6 +3863,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
         &PlanningBudget::default(),
     );
 
+    let rel_defs = relevant_action_defs(&goal, &semantics);
     let candidates = search_candidates(
         &goal,
         &node,
@@ -3863,6 +3874,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
         Tick(0),
         None,
         None,
+        &rel_defs,
     );
 
     assert!(

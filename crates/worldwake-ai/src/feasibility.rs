@@ -221,7 +221,8 @@ mod tests {
         }
     }
 
-    /// Minimal mock implementation of GoalBeliefView for feasibility tests.
+    /// Minimal mock implementation of `GoalBeliefView` for feasibility tests.
+    #[derive(Default)]
     struct MockView {
         agent_place: Option<EntityId>,
         /// Map from entity to place for non-agent entities.
@@ -232,18 +233,6 @@ mod tests {
         dead: Vec<EntityId>,
         /// Adjacent places from agent's current place.
         adjacent: Vec<(EntityId, NonZeroU32)>,
-    }
-
-    impl Default for MockView {
-        fn default() -> Self {
-            Self {
-                agent_place: None,
-                entity_places: Vec::new(),
-                commodities: Vec::new(),
-                dead: Vec::new(),
-                adjacent: Vec::new(),
-            }
-        }
     }
 
     impl GoalBeliefView for MockView {
@@ -303,8 +292,7 @@ mod tests {
             self.commodities
                 .iter()
                 .find(|(k, _)| *k == kind)
-                .map(|(_, q)| *q)
-                .unwrap_or(Quantity(0))
+                .map_or(Quantity(0), |(_, q)| *q)
         }
 
         fn controlled_commodity_quantity_at_place(

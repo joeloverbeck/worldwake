@@ -2349,7 +2349,7 @@ mod tests {
         };
         beliefs
             .institutional_beliefs
-            .insert(key.clone(), vec![claim.clone()]);
+            .insert(key, vec![claim.clone()]);
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         let result = GoalBeliefView::institutional_belief_claims(&view, agent, key);

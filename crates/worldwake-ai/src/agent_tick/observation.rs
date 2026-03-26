@@ -415,6 +415,7 @@ pub(super) fn update_runtime_observation_snapshot(
     runtime.last_commodity_signature = commodity_signature(view, agent);
     runtime.last_unique_item_signature = unique_item_signature(view, agent);
     runtime.last_facility_access_signature = facility_access_signature(view, agent);
+    runtime.last_in_transit = view.in_transit_state(agent).is_some();
 }
 
 pub(super) fn facility_access_signature(

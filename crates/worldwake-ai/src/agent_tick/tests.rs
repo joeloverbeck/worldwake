@@ -1786,7 +1786,7 @@ fn same_goal_different_destination_replan_restarts_intention_frame() {
         PlanTerminalKind::GoalSatisfied,
     );
     let existing_jc = Some(IntentionFrame {
-        goal: goal,
+        goal,
         domain: IntentionDomain::Travel {
             destination: original_destination,
         },
@@ -1818,7 +1818,7 @@ fn same_goal_different_destination_replan_restarts_intention_frame() {
 fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let jc = Some(IntentionFrame {
-        goal: goal,
+        goal,
         domain: IntentionDomain::Travel {
             destination: entity(11),
         },
@@ -1882,7 +1882,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
     let jc = Some(IntentionFrame {
-        goal: goal,
+        goal,
         domain: IntentionDomain::Travel {
             destination: entity(11),
         },
@@ -2360,6 +2360,7 @@ fn committed_action_for_step_requires_single_matching_def() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolution() {
     let hypothetical_id = crate::HypotheticalEntityId(0);
     let created = entity(42);

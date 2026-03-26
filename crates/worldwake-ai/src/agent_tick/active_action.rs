@@ -82,6 +82,7 @@ pub(super) fn handle_active_action_phase(
             false,
             false,
             &no_skip,
+            &std::collections::BTreeMap::new(),
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));

@@ -65,11 +65,17 @@ pub struct AgentDecisionRuntime {
     pub last_commodity_signature: Vec<(CommodityKind, Quantity)>,
     pub last_unique_item_signature: Vec<(UniqueItemKind, u32)>,
     pub last_facility_access_signature: Vec<(EntityId, bool, Option<ActionDefId>)>,
+    /// Whether the agent was in transit on the last observed tick.
+    pub last_in_transit: bool,
     pub materialization_bindings: MaterializationBindings,
     /// Goals whose plan search exhausted the budget on the previous planning
     /// cycle.  These are skipped on the next cycle unless significant world
     /// changes occur (position, commodity, wounds, or facility changes).
     pub search_exhausted_goals: std::collections::BTreeSet<GoalKey>,
+    /// Goals that have repeatedly exhausted the search budget.  Maps each
+    /// goal key to a cumulative exhaust count.  The search budget is halved
+    /// for each count (exponential backoff), floored at 64 expansions.
+    pub exhaustion_counts: std::collections::BTreeMap<GoalKey, u8>,
 }
 
 impl AgentDecisionRuntime {

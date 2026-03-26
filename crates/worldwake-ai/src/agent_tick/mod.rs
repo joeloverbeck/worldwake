@@ -172,7 +172,10 @@ impl AutonomousController for AgentTickDriver {
         replan_signals: &[&ReplanNeeded],
         committed_actions: &[CommittedAction],
     ) -> Result<(), TickInputError> {
-        let semantics_table = self.semantics_table(ctx.action_defs).clone();
+        // Ensure semantics cache is populated, then split-borrow fields to
+        // avoid cloning the entire BTreeMap on every agent tick.
+        let _ = self.semantics_table(ctx.action_defs);
+        let semantics_table = &self.semantics_cache.as_ref().unwrap().1;
         let tracing = self.trace_sink.is_some();
         let trace = process_agent(
             &mut AgentTickContext {
@@ -183,7 +186,7 @@ impl AutonomousController for AgentTickDriver {
                 action_defs: ctx.action_defs,
                 action_handlers: ctx.action_handlers,
                 recipe_registry: ctx.recipe_registry,
-                semantics_table: &semantics_table,
+                semantics_table,
                 budget: &self.budget,
                 tick: ctx.tick,
             },

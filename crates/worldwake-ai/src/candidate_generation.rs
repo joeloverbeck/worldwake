@@ -6989,8 +6989,7 @@ mod tests {
         );
         assert!(
             result.is_empty(),
-            "default institutional_belief_claims() should return empty, got {:?}",
-            result,
+            "default institutional_belief_claims() should return empty, got {result:?}",
         );
     }
 
@@ -7223,7 +7222,7 @@ mod tests {
         view.institutional_claims.insert(
             (agent, InstitutionalBeliefKey::OfficeHolderOf { office }),
             vec![BelievedInstitutionalClaim {
-                claim: claim.clone(),
+                claim,
                 source: InstitutionalKnowledgeSource::WitnessedEvent,
                 learned_tick: Tick(6),
                 learned_at: Some(town),
@@ -7305,7 +7304,7 @@ mod tests {
                 },
             ),
             vec![BelievedInstitutionalClaim {
-                claim: claim.clone(),
+                claim,
                 source: InstitutionalKnowledgeSource::SelfDeclaration,
                 learned_tick: Tick(4),
                 learned_at: Some(town),
@@ -7996,8 +7995,10 @@ mod tests {
         let place = entity(10);
         let missing_entity = entity(2);
 
-        let mut view = TestBeliefView::default();
-        view.current_tick = Tick(5);
+        let mut view = TestBeliefView {
+            current_tick: Tick(5),
+            ..TestBeliefView::default()
+        };
         view.alive.insert(agent);
         view.effective_places.insert(agent, place);
         view.violation_disposition_profiles

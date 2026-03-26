@@ -534,6 +534,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn investigate_action_commits_witnessed_absence_and_extends_violation_memory() {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);
@@ -877,6 +878,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn investigate_commit_resolves_only_selected_same_place_violation() {
         let mut world = new_world();
         let (place, _) = first_two_places(&world);

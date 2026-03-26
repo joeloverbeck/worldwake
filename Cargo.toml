@@ -20,3 +20,6 @@ must_use_candidate = "allow"        # too noisy for builders/constructors
 missing_errors_doc = "allow"        # we document errors at module level
 missing_panics_doc = "allow"        # panics are bugs, not API surface
 cast_possible_truncation = "allow"  # we use fixed-width newtypes deliberately
+cloned_instead_of_copied = "allow"  # .cloned() vs .copied() is a style nit; immutable golden tests use .cloned()
+unnecessary_lazy_evaluations = "allow"  # .then(|| x) vs .then_some(x) is a style nit; immutable golden tests use closures
+too_many_lines = "allow"               # long test functions are acceptable for readability

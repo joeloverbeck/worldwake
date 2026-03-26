@@ -1325,8 +1325,8 @@ mod tests {
             ..sample_social_observation(4)
         };
 
-        store.record_social_observation(first.clone());
-        store.record_social_observation(second.clone());
+        store.record_social_observation(first);
+        store.record_social_observation(second);
 
         assert_eq!(store.social_observations, vec![first, second]);
     }

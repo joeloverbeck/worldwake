@@ -102,14 +102,14 @@ pub(super) fn search_candidates(
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    relevant_defs: &BTreeSet<ActionDefId>,
 ) -> Vec<SearchCandidate> {
-    let relevant_defs = relevant_action_defs(goal, semantics_table);
     let candidates = get_affordances_for_defs(
         &node.state,
         node.state.snapshot().actor(),
         registry,
         handlers,
-        &relevant_defs,
+        relevant_defs,
     )
     .into_iter()
     .flat_map(|affordance| {

@@ -2626,7 +2626,7 @@ mod tests {
     #[test]
     fn test_feasibility_tiebreak_within_priority_class() {
         use crate::feasibility::FeasibilityHint;
-        let mut goals = vec![
+        let mut goals = [
             make_ranked_goal(GoalPriorityClass::Critical, 900, FeasibilityHint::Unlikely),
             make_ranked_goal(GoalPriorityClass::Critical, 600, FeasibilityHint::Likely),
         ];
@@ -2641,7 +2641,7 @@ mod tests {
     #[test]
     fn test_feasibility_does_not_cross_priority_class() {
         use crate::feasibility::FeasibilityHint;
-        let mut goals = vec![
+        let mut goals = [
             make_ranked_goal(GoalPriorityClass::Low, 500, FeasibilityHint::Likely),
             make_ranked_goal(GoalPriorityClass::Critical, 500, FeasibilityHint::Unlikely),
         ];
@@ -2654,7 +2654,7 @@ mod tests {
     #[test]
     fn test_same_feasibility_falls_through_to_motive() {
         use crate::feasibility::FeasibilityHint;
-        let mut goals = vec![
+        let mut goals = [
             make_ranked_goal(GoalPriorityClass::High, 400, FeasibilityHint::Uncertain),
             make_ranked_goal(GoalPriorityClass::High, 800, FeasibilityHint::Uncertain),
         ];
