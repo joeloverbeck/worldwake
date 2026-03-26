@@ -20,11 +20,14 @@ This file provides guidance to coding agents working in this repository.
 
 - Follow `tickets/README.md` when creating or revising tickets. Start from `tickets/_TEMPLATE.md`.
 - Reassess every ticket against current code, focused tests, golden coverage, and harness setup before implementation. If current code and ticket assumptions diverge, update the ticket first.
+- For mixed-layer or cross-system work, start by naming the exact shared abstraction boundary or data contract under audit before changing code.
+- If a failing golden or mixed-layer scenario motivates the work, restate the intended invariant and the excluded lawful competing branches before trusting the scenario narrative.
 - Do not leave a ticket marked `Engine Changes: None` or “tests only” when the requested invariant actually exposes an architectural contradiction in production code. Correct the scope first.
 - When a ticket claims a testing gap, distinguish missing focused/unit coverage from missing golden/E2E coverage.
 - Name the exact layer and symbol for non-trivial claims. Do not collapse AI/planning behavior, authoritative action validation, and system resolution into one vague statement.
 - If a test relies on timing, state whether the contract is action-lifecycle ordering, event-log ordering, or authoritative world-state ordering.
 - Prefer decision-trace assertions for AI candidate absence, suppression, or planner behavior rather than relying only on missing events or missing committed actions.
+- If traces prove the immediate outcome but not enough provenance to explain it architecturally, prove the behavior at the strongest available lower layer and open a follow-up traceability ticket when that missing provenance matters to the long-term debugging contract.
 
 ## Foundational Principles
 

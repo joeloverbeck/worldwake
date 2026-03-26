@@ -63,6 +63,16 @@ impl AgentBeliefStore {
         self.enforce_institutional_capacity(profile);
     }
 
+    pub fn replace_institutional_belief(
+        &mut self,
+        key: InstitutionalBeliefKey,
+        belief: BelievedInstitutionalClaim,
+        profile: &PerceptionProfile,
+    ) {
+        self.institutional_beliefs.insert(key, vec![belief]);
+        self.enforce_institutional_capacity(profile);
+    }
+
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
         self.known_entities.retain(|_, state| {
             within_retention_window(
@@ -1494,6 +1504,60 @@ mod tests {
         );
 
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn replace_institutional_belief_overwrites_existing_key_without_conflict() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 4;
+        let office = entity(91);
+        let supporter = entity(92);
+        let key = InstitutionalBeliefKey::SupportFor { supporter, office };
+
+        store.record_institutional_belief(
+            key,
+            BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter,
+                    candidate: Some(entity(93)),
+                    effective_tick: Tick(5),
+                },
+                source: InstitutionalKnowledgeSource::SelfDeclaration,
+                learned_tick: Tick(5),
+                learned_at: Some(entity(7)),
+            },
+            &profile,
+        );
+        store.replace_institutional_belief(
+            key,
+            BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter,
+                    candidate: Some(entity(94)),
+                    effective_tick: Tick(6),
+                },
+                source: InstitutionalKnowledgeSource::SelfDeclaration,
+                learned_tick: Tick(6),
+                learned_at: Some(entity(7)),
+            },
+            &profile,
+        );
+
+        assert_eq!(
+            store.believed_support_declaration(office, supporter),
+            InstitutionalBeliefRead::Certain(Some(entity(94)))
+        );
+        assert_eq!(
+            store
+                .institutional_beliefs
+                .get(&key)
+                .expect("support belief should remain present")
+                .len(),
+            1
+        );
     }
 
     #[test]

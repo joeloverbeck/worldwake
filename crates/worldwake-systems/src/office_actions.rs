@@ -768,7 +768,7 @@ fn commit_declare_support(
     validate_declare_support_context_in_world(txn, instance.actor, payload)?;
     txn.declare_support(instance.actor, payload.office, payload.candidate)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    txn.project_institutional_belief(
+    txn.replace_institutional_belief(
         instance.actor,
         InstitutionalBeliefKey::SupportFor {
             supporter: instance.actor,

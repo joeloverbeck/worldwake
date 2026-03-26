@@ -18,6 +18,9 @@ For golden-test tickets, treat `docs/generated/golden-e2e-inventory.md` as the c
    - Validate ticket assumptions against current code/tests.
    - Explicitly call out mismatches and corrected scope.
    - Cite exact files, symbols, or tests for any non-trivial architectural claim.
+   - For mixed-layer or cross-system tickets, name the exact shared abstraction boundary or data contract under audit before implementation.
+   - If a failing golden or mixed-layer scenario is motivating the ticket, restate the intended invariant before trusting the scenario narrative.
+   - Classify newly exposed adjacent contradictions as required consequences of the intended change, separate bugs uncovered during reassessment, or future cleanup that must become its own ticket.
    - Apply all domain-specific precision requirements from `docs/precision-rules.md` (ordering, political claims, stale requests, ControlSource, heuristic removal, cumulative arithmetic, scenario isolation, coverage gaps, layer precision).
    - For planner- or golden-driven tickets, name the live `GoalKind` under test and the exact current operator, affordance, or prerequisite surface the scenario depends on. If reassessment shows the live goal family or operator surface differs from the original narrative, correct the ticket scope before implementation.
    - For ranking-sensitive tickets, validate the live ranking arithmetic before claiming branch symmetry, equal motive scores, or "priority-class only" divergence. Equal weights alone are not enough; check the full active substrate such as pressure, weights, promotions, and caps.
@@ -47,6 +50,8 @@ For golden-test tickets, treat `docs/generated/golden-e2e-inventory.md` as the c
 7. For AI-test tickets, use `cargo test -p worldwake-ai -- --list` or an equivalently narrow real command to confirm the current test names/targets before writing verification steps.
 8. For stale-request, contested-affordance, or start-failure tickets, verify whether the first live rejection occurs in the shared runtime request layer before assigning scope to domain-specific handlers.
 9. For ranking-sensitive golden or AI tickets, verify any claimed tie, neutrality, or branch symmetry against the current live arithmetic and cite the exact compared tests, scenarios, or symbols rather than inferring symmetry from equal utility weights alone.
+10. For mixed-layer or cross-system tickets, confirm the intended invariant, the exact shared boundary under audit, and whether adjacent contradictions belong to this ticket or a follow-up before implementation begins.
+11. If traces prove the outcome but not enough provenance to explain the architecture, keep the immediate proof at the strongest available lower layer and open a follow-up traceability ticket instead of broadening weaker downstream assertions.
 
 ## Archival Reminder
 
