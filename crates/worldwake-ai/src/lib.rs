@@ -23,6 +23,8 @@ pub mod knowledge_path;
 pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_ops;
+#[cfg(test)]
+mod planner_duration_contract;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;

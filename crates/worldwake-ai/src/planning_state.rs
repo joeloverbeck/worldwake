@@ -1703,6 +1703,7 @@ worldwake_sim::impl_goal_belief_view!(PlanningState<'_>);
 #[cfg(test)]
 mod tests {
     use super::{HypotheticalEntityId, PlanningEntityRef, PlanningState};
+    use crate::planner_duration_contract::PlannerDurationDependency;
     use crate::planning_snapshot::build_planning_snapshot;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1720,8 +1721,8 @@ mod tests {
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
         ActionDomain, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, Constraint,
-        DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
-        ReservationReq, RuntimeBeliefView, TargetSpec,
+        CombatActionPayload, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
+        Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
     };
     use worldwake_systems::register_office_actions;
 
@@ -1744,6 +1745,7 @@ mod tests {
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         violation_profiles: BTreeMap<EntityId, ViolationDispositionProfile>,
@@ -1789,6 +1791,7 @@ mod tests {
                 resource_sources: BTreeMap::new(),
                 needs: BTreeMap::new(),
                 thresholds: BTreeMap::new(),
+                metabolism_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 theft_profiles: BTreeMap::new(),
                 violation_profiles: BTreeMap::new(),
@@ -2009,8 +2012,8 @@ mod tests {
             worldwake_core::BeliefConfidencePolicy::default()
         }
 
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
+        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+            self.metabolism_profiles.get(&agent).copied()
         }
 
         fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -3499,23 +3502,60 @@ mod tests {
         let town = entity(10);
         let market = entity(11);
         let record = entity(40);
+        let bread = entity(41);
+        let patient = entity(42);
+        let hostile = entity(43);
         let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
         view.alive.insert(record, true);
+        view.alive.insert(bread, true);
+        view.alive.insert(patient, true);
+        view.alive.insert(hostile, true);
         view.kinds.insert(actor, EntityKind::Agent);
         view.kinds.insert(town, EntityKind::Place);
         view.kinds.insert(market, EntityKind::Place);
         view.kinds.insert(record, EntityKind::Record);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.kinds.insert(patient, EntityKind::Agent);
+        view.kinds.insert(hostile, EntityKind::Agent);
         view.effective_places.insert(actor, town);
         view.effective_places.insert(record, town);
-        view.entities_at.insert(town, vec![actor, record]);
+        view.effective_places.insert(bread, town);
+        view.effective_places.insert(patient, town);
+        view.effective_places.insert(hostile, town);
+        view.entities_at
+            .insert(town, vec![actor, record, bread, patient, hostile]);
         view.entities_at.insert(market, Vec::new());
         view.adjacent
             .insert(town, vec![(market, NonZeroU32::new(3).unwrap())]);
         view.adjacent
             .insert(market, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.item_lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Medicine), Quantity(2));
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
+        view.metabolism_profiles.insert(
+            actor,
+            MetabolismProfile::new(
+                pm(10),
+                pm(10),
+                pm(10),
+                pm(10),
+                pm(10),
+                pm(1000),
+                NonZeroU32::new(20).unwrap(),
+                NonZeroU32::new(20).unwrap(),
+                NonZeroU32::new(20).unwrap(),
+                NonZeroU32::new(20).unwrap(),
+                NonZeroU32::new(8).unwrap(),
+                NonZeroU32::new(9).unwrap(),
+            ),
+        );
         view.trade_profiles.insert(
             actor,
             TradeDispositionProfile {
@@ -3558,6 +3598,17 @@ mod tests {
                 NonZeroU32::new(11).unwrap(),
             ),
         );
+        view.wounds.insert(
+            patient,
+            vec![Wound {
+                id: WoundId(1),
+                body_part: worldwake_core::BodyPart::Torso,
+                cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                severity: pm(200),
+                inflicted_at: Tick(1),
+                bleed_rate_per_tick: pm(0),
+            }],
+        );
         view.consultation_speed_factors
             .insert(actor, Permille::new(500).unwrap());
         view.record_data.insert(
@@ -3598,103 +3649,83 @@ mod tests {
             RuntimeBeliefView::combat_profile(&state, actor),
             view.combat_profiles.get(&actor).copied()
         );
+        assert_eq!(
+            RuntimeBeliefView::metabolism_profile(&state, actor),
+            view.metabolism_profiles.get(&actor).copied()
+        );
 
-        let payload = ActionPayload::None;
-        let runtime_trade = estimate_duration_from_beliefs(
-            &view,
-            actor,
-            &DurationExpr::ActorTradeDisposition,
-            &[],
-            &payload,
-        );
-        let snapshot_trade = estimate_duration_from_beliefs(
-            &state,
-            actor,
-            &DurationExpr::ActorTradeDisposition,
-            &[],
-            &payload,
-        );
-        assert_eq!(snapshot_trade, runtime_trade);
-
-        let runtime_theft = estimate_duration_from_beliefs(
-            &view,
-            actor,
-            &DurationExpr::ActorTheftDisposition,
-            &[],
-            &payload,
-        );
-        let snapshot_theft = estimate_duration_from_beliefs(
-            &state,
-            actor,
-            &DurationExpr::ActorTheftDisposition,
-            &[],
-            &payload,
-        );
-        assert_eq!(snapshot_theft, runtime_theft);
-
-        let runtime_investigate = estimate_duration_from_beliefs(
-            &view,
-            actor,
-            &DurationExpr::ActorInvestigationDisposition,
-            &[],
-            &payload,
-        );
-        let snapshot_investigate = estimate_duration_from_beliefs(
-            &state,
-            actor,
-            &DurationExpr::ActorInvestigationDisposition,
-            &[],
-            &payload,
-        );
-        assert_eq!(snapshot_investigate, runtime_investigate);
-
-        let runtime_defend = estimate_duration_from_beliefs(
-            &view,
-            actor,
-            &DurationExpr::ActorDefendStance,
-            &[],
-            &payload,
-        );
-        let snapshot_defend = estimate_duration_from_beliefs(
-            &state,
-            actor,
-            &DurationExpr::ActorDefendStance,
-            &[],
-            &payload,
-        );
-        assert_eq!(snapshot_defend, runtime_defend);
-
-        let runtime_consult = estimate_duration_from_beliefs(
-            &view,
-            actor,
-            &DurationExpr::ConsultRecord { target_index: 0 },
-            &[record],
-            &payload,
-        );
-        let snapshot_consult = estimate_duration_from_beliefs(
-            &state,
-            actor,
-            &DurationExpr::ConsultRecord { target_index: 0 },
-            &[record],
-            &payload,
-        );
-        assert_eq!(snapshot_consult, runtime_consult);
-
-        let runtime_travel = estimate_duration_from_beliefs(
-            &view,
-            actor,
-            &DurationExpr::TravelToTarget { target_index: 0 },
-            &[market],
-            &payload,
-        );
-        let snapshot_travel = estimate_duration_from_beliefs(
-            &state,
-            actor,
-            &DurationExpr::TravelToTarget { target_index: 0 },
-            &[market],
-            &payload,
-        );
-        assert_eq!(snapshot_travel, runtime_travel);
+        for dependency in PlannerDurationDependency::all() {
+            let (duration, targets, payload) = match dependency {
+                PlannerDurationDependency::TargetConsumable => (
+                    DurationExpr::TargetConsumable { target_index: 0 },
+                    vec![bread],
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ActorMetabolism => (
+                    DurationExpr::ActorMetabolism {
+                        kind: worldwake_sim::MetabolismDurationKind::Wash,
+                    },
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ActorTradeDisposition => (
+                    DurationExpr::ActorTradeDisposition,
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ActorTheftDisposition => (
+                    DurationExpr::ActorTheftDisposition,
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ActorInvestigationDisposition => (
+                    DurationExpr::ActorInvestigationDisposition,
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ActorDefendStance => (
+                    DurationExpr::ActorDefendStance,
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::CombatWeapon => (
+                    DurationExpr::CombatWeapon,
+                    vec![hostile],
+                    ActionPayload::Combat(CombatActionPayload {
+                        target: hostile,
+                        weapon: worldwake_core::CombatWeaponRef::Unarmed,
+                    }),
+                ),
+                PlannerDurationDependency::TargetTreatment => (
+                    DurationExpr::TargetTreatment {
+                        target_index: 0,
+                        commodity: CommodityKind::Medicine,
+                    },
+                    vec![patient],
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ConsultRecord => (
+                    DurationExpr::ConsultRecord { target_index: 0 },
+                    vec![record],
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::TravelToTarget => (
+                    DurationExpr::TravelToTarget { target_index: 0 },
+                    vec![market],
+                    ActionPayload::None,
+                ),
+            };
+            let runtime_duration =
+                estimate_duration_from_beliefs(&view, actor, &duration, &targets, &payload);
+            let snapshot_duration =
+                estimate_duration_from_beliefs(&state, actor, &duration, &targets, &payload);
+            assert_eq!(
+                snapshot_duration,
+                runtime_duration,
+                "snapshot parity diverged for {}",
+                dependency.label()
+            );
+        }
     }
 
     #[test]
