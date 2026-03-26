@@ -29,6 +29,7 @@ This file provides guidance to coding agents working in this repository.
 - If a test relies on timing, state whether the contract is action-lifecycle ordering, event-log ordering, or authoritative world-state ordering.
 - Prefer decision-trace assertions for AI candidate absence, suppression, or planner behavior rather than relying only on missing events or missing committed actions.
 - If traces prove the immediate outcome but not enough provenance to explain it architecturally, prove the behavior at the strongest available lower layer and open a follow-up traceability ticket when that missing provenance matters to the long-term debugging contract.
+- For planner-root, snapshot-completeness, or planner-traceability work, consult `docs/planner-contracts.md` and cite the live contract there instead of reconstructing planner behavior from archived tickets.
 
 ## Foundational Principles
 
