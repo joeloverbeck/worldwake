@@ -3887,6 +3887,91 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
     );
 }
 
+#[test]
+fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land() {
+    let actor = entity(1);
+    let accused = entity(2);
+    let target_item = entity(3);
+    let town = entity(10);
+    let faction = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, accused, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(accused, EntityKind::Agent);
+    view.kinds.insert(target_item, EntityKind::ItemLot);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(faction, EntityKind::Faction);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(accused, town);
+    view.effective_places.insert(target_item, town);
+    view.entities_at
+        .insert(town, vec![actor, accused, target_item]);
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([accused, target_item]),
+        &BTreeSet::from([town]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = PlanningBudget::default();
+    let goals = [
+        GroundedGoal {
+            key: GoalKey::from(GoalKind::StealItem { target_item }),
+            evidence_entities: BTreeSet::from([target_item]),
+            evidence_places: BTreeSet::from([town]),
+        },
+        GroundedGoal {
+            key: GoalKey::from(GoalKind::Accuse {
+                accused,
+                violation_id: worldwake_core::ViolationId(1),
+            }),
+            evidence_entities: BTreeSet::from([accused]),
+            evidence_places: BTreeSet::from([town]),
+        },
+        GroundedGoal {
+            key: GoalKey::from(GoalKind::PunishAccused {
+                accused,
+                punishment: worldwake_core::PunishmentKind::Exile { from_faction: faction },
+            }),
+            evidence_entities: BTreeSet::from([accused]),
+            evidence_places: BTreeSet::from([town]),
+        },
+    ];
+
+    for goal in goals {
+        let node = root_node(&snapshot, &goal, &recipes, &budget);
+        let rel_defs = relevant_action_defs(&goal, &semantics);
+        assert!(
+            rel_defs.is_empty(),
+            "Deferred goal {:?} should not expose relevant action defs before crime actions exist",
+            goal.key.kind
+        );
+
+        let candidates = search_candidates(
+            &goal,
+            &node,
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            None,
+            None,
+            &rel_defs,
+        );
+        assert!(
+            candidates.is_empty(),
+            "Deferred goal {:?} should not surface search candidates before crime actions exist",
+            goal.key.kind
+        );
+    }
+}
+
 // ── S03PLATARIDE-004: Search integration tests for exact target binding ──
 
 #[test]
