@@ -138,7 +138,14 @@ impl<'w> PerAgentBeliefView<'w> {
     }
 
     fn knows_entity(&self, entity: EntityId) -> bool {
-        entity == self.agent || self.believed_entity(entity).is_some()
+        entity == self.agent
+            || self.believed_entity(entity).is_some()
+            || self
+                .belief_store
+                .institutional_beliefs
+                .values()
+                .flat_map(|beliefs| beliefs.iter())
+                .any(|belief| worldwake_core::institutional_claim_subject_entity(belief.claim) == entity)
     }
 
     fn shares_local_context(&self, agent: EntityId, other: EntityId) -> bool {
@@ -202,6 +209,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
         self.believed_entity(entity)
             .and_then(|state| state.last_known_place)
+            .or_else(|| self.knows_entity(entity).then(|| self.world.effective_place(entity)).flatten())
     }
 
     fn is_in_transit(&self, entity: EntityId) -> bool {
@@ -258,6 +266,18 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         }
 
         self.belief_store.social_observations.clone()
+    }
+
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.belief_store
+            .institutional_beliefs
+            .values()
+            .flat_map(|beliefs| beliefs.iter().cloned())
+            .collect()
     }
 
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {

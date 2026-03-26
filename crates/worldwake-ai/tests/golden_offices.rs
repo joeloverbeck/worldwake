@@ -3145,10 +3145,17 @@ fn run_force_control_locality_and_tell(seed: Seed) -> (StateHash, StateHash) {
                     listener: told_listener,
                     topic
                 }) if told_listener == listener
-                    && topic == worldwake_core::TellTopic::EntityBelief { subject: office }
+                    && topic == worldwake_core::TellTopic::InstitutionalClaim {
+                        claim: worldwake_core::InstitutionalClaim::ForceControl {
+                            office,
+                            controller: Some(claimant),
+                            contested: false,
+                            effective_tick: claim_tick,
+                        },
+                    }
             )
     });
-    let tell_event = tell_event.expect("witness should commit tell for the office subject");
+    let tell_event = tell_event.expect("witness should commit tell for the force-control claim");
 
     let listener_force_belief = h
         .world

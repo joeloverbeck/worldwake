@@ -15,7 +15,7 @@ use crate::{
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    load_per_unit, social_observation_is_redundant_for_listener,
+    current_institutional_belief_topics, load_per_unit, social_observation_is_redundant_for_listener,
     tell_subject_is_directly_observable_by_listener, BelievedEntityState, BlockedIntentMemory,
     CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind,
     GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
@@ -299,11 +299,22 @@ fn emit_social_candidates(
     };
     let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
     let known_social_observations = ctx.view.known_social_observations(ctx.agent);
+    let known_institutional_beliefs =
+        current_institutional_belief_topics(ctx.view.known_institutional_beliefs(ctx.agent));
 
     for listener in social_listeners_at(ctx.view, ctx.agent, place) {
         let relayable_entity_beliefs = known_beliefs
             .iter()
             .filter(|(subject, _)| {
+                let claim_first_subject = matches!(
+                    ctx.view.entity_kind(*subject),
+                    Some(EntityKind::Office | EntityKind::Record)
+                ) && known_institutional_beliefs.iter().any(|belief| {
+                    worldwake_core::institutional_claim_subject_entity(belief.claim) == *subject
+                });
+                if claim_first_subject {
+                    return false;
+                }
                 let directly_observable =
                     subject_is_listener_observable_entity_belief(ctx.view, listener, *subject);
                 if directly_observable {
@@ -337,6 +348,7 @@ fn emit_social_candidates(
         let selection = listener_aware_tell_topic_selection(
             relayable_entity_beliefs.clone(),
             relayable_social_observations,
+            known_institutional_beliefs.clone(),
             profile.max_relay_chain_len,
             profile.max_tell_candidates,
             |topic| {
@@ -376,6 +388,33 @@ fn emit_social_candidates(
                         });
                     }
                 }
+            } else if let TellTopic::InstitutionalClaim { claim } = topic {
+                if ctx.tracing_enabled {
+                    if let Some(belief) = known_institutional_beliefs
+                        .iter()
+                        .filter(|belief| belief.claim == claim)
+                        .max_by_key(|belief| {
+                            (
+                                std::cmp::Reverse(
+                                    worldwake_core::institutional_knowledge_chain_len(
+                                        belief.source,
+                                    ),
+                                ),
+                                belief.learned_tick,
+                                belief.learned_at,
+                            )
+                        })
+                    {
+                        trace.knowledge_path.institutional_beliefs.push(
+                            InstitutionalBeliefProvenance {
+                                claim,
+                                source: belief.source,
+                                learned_tick: belief.learned_tick,
+                                learned_at: belief.learned_at,
+                            },
+                        );
+                    }
+                }
             }
             emit_candidate_with_trace(
                 candidates,
@@ -410,11 +449,21 @@ fn emit_political_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
-    let known_entities = ctx.view.known_entity_beliefs(ctx.agent);
-    for (office, _) in known_entities {
-        if ctx.view.entity_kind(office) != Some(EntityKind::Office) {
-            continue;
-        }
+    let mut known_offices = ctx
+        .view
+        .known_entity_beliefs(ctx.agent)
+        .into_iter()
+        .map(|(entity, _)| entity)
+        .filter(|entity| ctx.view.entity_kind(*entity) == Some(EntityKind::Office))
+        .collect::<std::collections::BTreeSet<_>>();
+    known_offices.extend(
+        ctx.view
+            .known_institutional_beliefs(ctx.agent)
+            .into_iter()
+            .map(|belief| worldwake_core::institutional_claim_subject_entity(belief.claim))
+            .filter(|entity| ctx.view.entity_kind(*entity) == Some(EntityKind::Office)),
+    );
+    for office in known_offices {
         let Some(office_data) = ctx.view.office_data(office) else {
             continue;
         };
@@ -2512,6 +2561,14 @@ mod tests {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_claims
+                .iter()
+                .filter(|((claim_agent, _), _)| *claim_agent == agent)
+                .flat_map(|(_, claims)| claims.iter().cloned())
+                .collect()
+        }
+
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
             self.adjacent_places
                 .get(&place)
@@ -2729,6 +2786,27 @@ mod tests {
                 TellTopic::SocialObservation { observation } => {
                     SharedTellState::SocialObservation(*observation)
                 }
+                TellTopic::InstitutionalClaim { claim } => SharedTellState::InstitutionalClaim(
+                    self.institutional_claims
+                        .values()
+                        .flat_map(|beliefs| beliefs.iter())
+                        .filter(|belief| belief.claim == *claim)
+                        .max_by_key(|belief| {
+                            (
+                                std::cmp::Reverse(
+                                    worldwake_core::institutional_knowledge_chain_len(
+                                        belief.source,
+                                    ),
+                                ),
+                                belief.learned_tick,
+                                belief.learned_at,
+                            )
+                        })
+                        .map(|belief| worldwake_core::SharedInstitutionalBelief {
+                            claim: belief.claim,
+                            source: belief.source,
+                        })?,
+                ),
             };
             let remembered = self.told_belief_memory(actor, counterparty, topic);
             let had_raw_memory = self.told_beliefs.get(&actor).is_some_and(|memories| {
@@ -5014,6 +5092,56 @@ mod tests {
             listener,
             subject,
             TellTopicOmissionReason::DirectlyObservableByListener,
+        ));
+    }
+
+    #[test]
+    fn social_candidates_emit_institutional_claim_topics_even_when_office_entity_is_visible() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let office = entity(20);
+        let place = entity(10);
+        let claim = InstitutionalClaim::OfficeHolder {
+            office,
+            holder: None,
+            effective_tick: Tick(8),
+        };
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, office]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.effective_places
+            .extend([(speaker, place), (listener, place), (office, place)]);
+        view.entities_at.insert(place, vec![speaker, listener, office]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        view.institutional_claims.insert(
+            (speaker, InstitutionalBeliefKey::OfficeHolderOf { office }),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(8),
+                learned_at: Some(place),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::InstitutionalClaim { claim },
+            }
         ));
     }
 

@@ -2,13 +2,13 @@ use crate::planning_snapshot::PlanningSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    load_per_unit, to_shared_belief_snapshot, ActionDefId, BelievedEntityState, CombatProfile,
-    CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile,
-    OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, Wound,
+    load_per_unit, to_shared_belief_snapshot, ActionDefId, BelievedEntityState,
+    BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation,
+    DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData, Permille, PlaceTag,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
+    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -1012,6 +1012,14 @@ impl RuntimeBeliefView for PlanningState<'_> {
         self.snapshot.actor_known_social_observations.clone()
     }
 
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_known_institutional_beliefs.clone()
+    }
+
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         let mut entities = self
             .snapshot
@@ -1363,19 +1371,81 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 .actor_known_social_observations
                 .contains(observation)
                 .then_some(SharedTellState::SocialObservation(*observation))?,
-        };
-        let key = TellMemoryKey {
-            counterparty,
-            topic: *topic,
+            TellTopic::InstitutionalClaim { claim } => self
+                .snapshot
+                .actor_known_institutional_beliefs
+                .iter()
+                .filter(|belief| belief.claim == *claim)
+                .max_by_key(|belief| {
+                    (
+                        std::cmp::Reverse(
+                            worldwake_core::institutional_knowledge_chain_len(belief.source),
+                        ),
+                        belief.learned_tick,
+                        belief.learned_at,
+                    )
+                })
+                .map(|belief| {
+                    SharedTellState::InstitutionalClaim(worldwake_core::SharedInstitutionalBelief {
+                        claim: belief.claim,
+                        source: belief.source,
+                    })
+                })?,
         };
         self.tell_profile(actor)?;
-        let remembered = self.told_belief_memory(actor, counterparty, topic);
+        let remembered = self
+            .snapshot
+            .actor_told_beliefs
+            .iter()
+            .filter(|(key, _)| {
+                key.counterparty == counterparty
+                    && match (&key.topic, topic) {
+                        (
+                            TellTopic::InstitutionalClaim { claim: left_claim },
+                            TellTopic::InstitutionalClaim {
+                                claim: right_claim,
+                            },
+                        ) => worldwake_core::institutional_claim_same_memory_lane(
+                            *left_claim,
+                            *right_claim,
+                        ),
+                        _ => key.topic == *topic,
+                    }
+            })
+            .filter(|(_, memory)| {
+                self.snapshot
+                    .current_tick
+                    .0
+                    .saturating_sub(memory.told_tick.0)
+                    <= self
+                        .snapshot
+                        .actor_tell_profile
+                        .map_or(0, |profile| profile.conversation_memory_retention_ticks)
+            })
+            .map(|(_, memory)| memory)
+            .max_by_key(|memory| memory.told_tick);
 
         Some(match remembered.as_ref() {
             Some(memory) => {
                 worldwake_core::recipient_knowledge_status(&current_state, Some(memory))
             }
-            None if self.snapshot.actor_told_beliefs.contains_key(&key) => {
+            None
+                if self.snapshot.actor_told_beliefs.keys().any(|memory_key| {
+                    memory_key.counterparty == counterparty
+                        && match (&memory_key.topic, topic) {
+                            (
+                                TellTopic::InstitutionalClaim { claim: left_claim },
+                                TellTopic::InstitutionalClaim {
+                                    claim: right_claim,
+                                },
+                            ) => worldwake_core::institutional_claim_same_memory_lane(
+                                *left_claim,
+                                *right_claim,
+                            ),
+                            _ => memory_key.topic == *topic,
+                        }
+                }) =>
+            {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }
             None => RecipientKnowledgeStatus::UnknownToSpeaker,

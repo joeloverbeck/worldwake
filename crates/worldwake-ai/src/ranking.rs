@@ -277,7 +277,8 @@ fn priority_class(
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
         | GoalKind::MoveCargo { .. }
-        | GoalKind::ClaimOffice { .. } => GoalPriorityClass::Medium,
+        | GoalKind::ClaimOffice { .. }
+        | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Medium,
         GoalKind::Sleep => drive_priority(
             context,
             |needs| needs.fatigue,
@@ -310,7 +311,6 @@ fn priority_class(
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
-        | GoalKind::SupportCandidateForOffice { .. }
         | GoalKind::InvestigateViolation { .. } => GoalPriorityClass::Low,
     }
 }
@@ -516,6 +516,49 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
             context.current_tick,
             &policy,
         ),
+        TellTopic::InstitutionalClaim { claim } => context
+            .view
+            .known_institutional_beliefs(context.agent)
+            .into_iter()
+            .filter(|belief| worldwake_core::institutional_claim_same_memory_lane(belief.claim, claim))
+            .max_by_key(|belief| {
+                (
+                    worldwake_core::Tick(match belief.claim {
+                        worldwake_core::InstitutionalClaim::OfficeHolder { effective_tick, .. }
+                        | worldwake_core::InstitutionalClaim::ForceControl { effective_tick, .. }
+                        | worldwake_core::InstitutionalClaim::FactionMembership {
+                            effective_tick,
+                            ..
+                        }
+                        | worldwake_core::InstitutionalClaim::SupportDeclaration {
+                            effective_tick,
+                            ..
+                        } => effective_tick.0,
+                    }),
+                    std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
+                        belief.source,
+                    )),
+                    belief.learned_tick,
+                    belief.learned_at,
+                )
+            })
+            .map_or(Permille::new_unchecked(0), |belief| {
+                belief_pressure_from_source(
+                    match belief.source {
+                        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent
+                        | worldwake_core::InstitutionalKnowledgeSource::RecordConsultation { .. }
+                        | worldwake_core::InstitutionalKnowledgeSource::SelfDeclaration => {
+                            worldwake_core::PerceptionSource::DirectObservation
+                        }
+                        worldwake_core::InstitutionalKnowledgeSource::Report { from, chain_len } => {
+                            worldwake_core::PerceptionSource::Report { from, chain_len }
+                        }
+                    },
+                    belief.learned_tick,
+                    context.current_tick,
+                    &policy,
+                )
+            }),
     }
 }
 
@@ -728,6 +771,7 @@ pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ord
         .cmp(&left.priority_class)
         .then_with(|| left.feasibility.cmp(&right.feasibility))
         .then_with(|| right.motive_score.cmp(&left.motive_score))
+        .then_with(|| compare_share_belief_topics(&left.grounded.key.kind, &right.grounded.key.kind))
         .then_with(|| {
             goal_kind_discriminant(left.grounded.key.kind)
                 .cmp(&goal_kind_discriminant(right.grounded.key.kind))
@@ -740,6 +784,47 @@ pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ord
         })
         .then_with(|| left.grounded.key.entity.cmp(&right.grounded.key.entity))
         .then_with(|| left.grounded.key.place.cmp(&right.grounded.key.place))
+}
+
+fn compare_share_belief_topics(left: &GoalKind, right: &GoalKind) -> Ordering {
+    match (left, right) {
+        (
+            GoalKind::ShareBelief { topic: left_topic, .. },
+            GoalKind::ShareBelief {
+                topic: right_topic, ..
+            },
+        ) => share_belief_topic_priority(left_topic)
+            .cmp(&share_belief_topic_priority(right_topic))
+            .then_with(|| match (left_topic, right_topic) {
+                (
+                    TellTopic::InstitutionalClaim { claim: left_claim },
+                    TellTopic::InstitutionalClaim {
+                        claim: right_claim,
+                    },
+                ) => institutional_claim_priority(left_claim)
+                    .cmp(&institutional_claim_priority(right_claim))
+                    .then_with(|| left_claim.cmp(right_claim)),
+                _ => left_topic.cmp(right_topic),
+            }),
+        _ => Ordering::Equal,
+    }
+}
+
+fn share_belief_topic_priority(topic: &TellTopic) -> u8 {
+    match topic {
+        TellTopic::InstitutionalClaim { .. } => 0,
+        TellTopic::SocialObservation { .. } => 1,
+        TellTopic::EntityBelief { .. } => 2,
+    }
+}
+
+fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u8 {
+    match claim {
+        worldwake_core::InstitutionalClaim::ForceControl { .. } => 0,
+        worldwake_core::InstitutionalClaim::OfficeHolder { .. } => 1,
+        worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 2,
+        worldwake_core::InstitutionalClaim::FactionMembership { .. } => 3,
+    }
 }
 
 fn goal_kind_discriminant(kind: GoalKind) -> u8 {
@@ -2591,7 +2676,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(
             ranked[0].motive_score,
             u32::from(utility().social_weight.value()) * u32::from(pm(600).value())

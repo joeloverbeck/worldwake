@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory, BlockingFact,
-    CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SocialObservation,
-    SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
+    BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecordData,
+    ResourceSource, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, Tick,
+    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -205,6 +205,7 @@ pub struct PlanningSnapshot {
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
     pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
     pub(crate) actor_known_social_observations: Vec<SocialObservation>,
+    pub(crate) actor_known_institutional_beliefs: Vec<BelievedInstitutionalClaim>,
     pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub(crate) actor_office_holder_beliefs: BTreeMap<EntityId, SupportBeliefRead>,
     pub(crate) actor_force_controller_beliefs: BTreeMap<EntityId, ForceControllerBeliefRead>,
@@ -279,6 +280,7 @@ impl PlanningSnapshot {
             blocked_facility_uses: blocked_facility_uses.clone(),
             actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
             actor_known_social_observations: view.known_social_observations(actor),
+            actor_known_institutional_beliefs: view.known_institutional_beliefs(actor),
             actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
             actor_office_holder_beliefs: included_entities
                 .iter()

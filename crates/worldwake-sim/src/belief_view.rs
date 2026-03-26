@@ -50,6 +50,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        let _ = agent;
+        Vec::new()
+    }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
@@ -237,6 +241,10 @@ pub trait RuntimeBeliefView {
         Vec::new()
     }
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
         Vec::new()
     }
@@ -527,6 +535,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::SocialObservation> {
                 $crate::RuntimeBeliefView::known_social_observations(self, agent)
+            }
+
+            fn known_institutional_beliefs(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
+                $crate::RuntimeBeliefView::known_institutional_beliefs(self, agent)
             }
 
             fn adjacent_places_with_travel_ticks(

@@ -1,5 +1,6 @@
 use worldwake_core::{
-    social_observation_is_relayable, BelievedEntityState, EntityId, PerceptionSource,
+    institutional_knowledge_chain_len, social_observation_is_relayable,
+    BelievedEntityState, BelievedInstitutionalClaim, EntityId, PerceptionSource,
     RecipientKnowledgeStatus, SocialObservation, TellTopic, Tick,
 };
 
@@ -33,6 +34,39 @@ pub fn belief_chain_len(source: PerceptionSource) -> u8 {
             chain_len
         }
     }
+}
+
+fn tell_topic_priority(topic: &TellTopic) -> u8 {
+    match topic {
+        TellTopic::InstitutionalClaim { .. } => 0,
+        TellTopic::SocialObservation { .. } => 1,
+        TellTopic::EntityBelief { .. } => 2,
+    }
+}
+
+fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u8 {
+    match claim {
+        worldwake_core::InstitutionalClaim::ForceControl { .. } => 0,
+        worldwake_core::InstitutionalClaim::OfficeHolder { .. } => 1,
+        worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 2,
+        worldwake_core::InstitutionalClaim::FactionMembership { .. } => 3,
+    }
+}
+
+fn compare_tell_topics(left: &TellTopic, right: &TellTopic) -> std::cmp::Ordering {
+    tell_topic_priority(left)
+        .cmp(&tell_topic_priority(right))
+        .then_with(|| match (left, right) {
+            (
+                TellTopic::InstitutionalClaim { claim: left_claim },
+                TellTopic::InstitutionalClaim {
+                    claim: right_claim,
+                },
+            ) => institutional_claim_priority(left_claim)
+                .cmp(&institutional_claim_priority(right_claim))
+                .then_with(|| left_claim.cmp(right_claim)),
+            _ => left.cmp(right),
+        })
 }
 
 #[must_use]
@@ -92,7 +126,7 @@ pub fn relayable_tell_topics(
     topics.sort_unstable_by(|(left_tick, left_topic), (right_tick, right_topic)| {
         right_tick
             .cmp(left_tick)
-            .then_with(|| left_topic.cmp(right_topic))
+            .then_with(|| compare_tell_topics(left_topic, right_topic))
     });
     topics.truncate(usize::from(max_tell_candidates));
     topics.into_iter().map(|(_, topic)| topic).collect()
@@ -102,6 +136,7 @@ pub fn relayable_tell_topics(
 pub fn listener_aware_relayable_tell_topics(
     entity_beliefs: impl IntoIterator<Item = (EntityId, BelievedEntityState)>,
     social_observations: impl IntoIterator<Item = SocialObservation>,
+    institutional_beliefs: impl IntoIterator<Item = BelievedInstitutionalClaim>,
     max_relay_chain_len: u8,
     max_tell_candidates: u8,
     recipient_knowledge_status: impl FnMut(&TellTopic) -> RecipientKnowledgeStatus,
@@ -109,6 +144,7 @@ pub fn listener_aware_relayable_tell_topics(
     listener_aware_tell_topic_selection(
         entity_beliefs,
         social_observations,
+        institutional_beliefs,
         max_relay_chain_len,
         max_tell_candidates,
         recipient_knowledge_status,
@@ -120,6 +156,7 @@ pub fn listener_aware_relayable_tell_topics(
 pub fn listener_aware_tell_topic_selection(
     entity_beliefs: impl IntoIterator<Item = (EntityId, BelievedEntityState)>,
     social_observations: impl IntoIterator<Item = SocialObservation>,
+    institutional_beliefs: impl IntoIterator<Item = BelievedInstitutionalClaim>,
     max_relay_chain_len: u8,
     max_tell_candidates: u8,
     mut recipient_knowledge_status: impl FnMut(&TellTopic) -> RecipientKnowledgeStatus,
@@ -178,10 +215,32 @@ pub fn listener_aware_tell_topic_selection(
         eligible.push((observation.observed_tick, topic));
     }
 
+    for belief in institutional_beliefs {
+        let topic = TellTopic::InstitutionalClaim { claim: belief.claim };
+        let chain_len = institutional_knowledge_chain_len(belief.source);
+        if chain_len > max_relay_chain_len {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::ExceedsRelayDepth,
+            });
+            continue;
+        }
+        if recipient_knowledge_status(&topic)
+            == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
+            });
+            continue;
+        }
+        eligible.push((belief.learned_tick, topic));
+    }
+
     eligible.sort_unstable_by(|(left_tick, left_topic), (right_tick, right_topic)| {
         right_tick
             .cmp(left_tick)
-            .then_with(|| left_topic.cmp(right_topic))
+            .then_with(|| compare_tell_topics(left_topic, right_topic))
     });
 
     let keep_len = usize::from(max_tell_candidates);
@@ -209,7 +268,8 @@ mod tests {
     };
     use std::collections::BTreeMap;
     use worldwake_core::{
-        BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus,
+        BelievedEntityState, BelievedInstitutionalClaim, EntityId, InstitutionalClaim,
+        InstitutionalKnowledgeSource, PerceptionSource, RecipientKnowledgeStatus,
         SocialObservation, SocialObservationDetail, TellTopic, Tick,
     };
 
@@ -411,6 +471,7 @@ mod tests {
         let topics = listener_aware_relayable_tell_topics(
             Vec::<(EntityId, BelievedEntityState)>::new(),
             vec![relayable, witnessed_telling],
+            Vec::<BelievedInstitutionalClaim>::new(),
             2,
             5,
             |_| RecipientKnowledgeStatus::UnknownToSpeaker,
@@ -445,6 +506,7 @@ mod tests {
         let selection = listener_aware_tell_topic_selection(
             vec![(entity(10), fresh), (entity(11), too_deep)],
             vec![relayable, non_relayable],
+            Vec::<BelievedInstitutionalClaim>::new(),
             2,
             5,
             |topic| match topic {
@@ -501,6 +563,7 @@ mod tests {
                     target: entity(2),
                 },
             )],
+            Vec::<BelievedInstitutionalClaim>::new(),
             2,
             2,
             |_| RecipientKnowledgeStatus::UnknownToSpeaker,
@@ -510,6 +573,45 @@ mod tests {
         assert!(selection.omitted.contains(&TellTopicOmission {
             topic: TellTopic::EntityBelief {
                 subject: entity(10)
+            },
+            reason: TellTopicOmissionReason::TruncatedByCandidateLimit,
+        }));
+    }
+
+    #[test]
+    fn listener_aware_tell_topic_selection_prefers_fresher_topics_before_kind_priority() {
+        let stale_claim = InstitutionalClaim::OfficeHolder {
+            office: entity(50),
+            holder: Some(entity(51)),
+            effective_tick: Tick(4),
+        };
+        let stale_institutional = BelievedInstitutionalClaim {
+            claim: stale_claim,
+            source: InstitutionalKnowledgeSource::WitnessedEvent,
+            learned_tick: Tick(4),
+            learned_at: Some(entity(60)),
+        };
+        let fresh_entity = (
+            entity(10),
+            believed_state(9, PerceptionSource::DirectObservation),
+        );
+
+        let selection = listener_aware_tell_topic_selection(
+            vec![fresh_entity],
+            Vec::<SocialObservation>::new(),
+            vec![stale_institutional],
+            2,
+            1,
+            |_| RecipientKnowledgeStatus::UnknownToSpeaker,
+        );
+
+        assert_eq!(
+            selection.selected,
+            vec![TellTopic::EntityBelief { subject: entity(10) }]
+        );
+        assert!(selection.omitted.contains(&TellTopicOmission {
+            topic: TellTopic::InstitutionalClaim {
+                claim: stale_claim,
             },
             reason: TellTopicOmissionReason::TruncatedByCandidateLimit,
         }));

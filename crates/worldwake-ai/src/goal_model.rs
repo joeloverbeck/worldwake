@@ -190,6 +190,11 @@ fn payload_override_from_affordance(
             .filter(|combat| combat.target == *target)
             .map(|_| Some(payload.clone()))
             .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
+        GoalKind::ShareBelief { listener, topic } => payload
+            .as_tell()
+            .filter(|tell| tell.listener == *listener && tell.topic == *topic)
+            .map(|_| Some(payload.clone()))
+            .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
         GoalKind::InvestigateViolation { violation_id, .. } => payload
             .as_investigate()
             .filter(|investigate| investigate.violation_id == *violation_id)
@@ -2593,6 +2598,151 @@ mod tests {
                 topic: TellTopic::EntityBelief { subject },
             }))
         );
+    }
+
+    #[test]
+    fn share_belief_goal_reuses_matching_affordance_payload() {
+        let actor = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, listener, subject, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(listener, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Facility);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(listener, place);
+        view.effective_places.insert(subject, place);
+        view.entities_at
+            .insert(place, vec![actor, listener, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([listener, subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let topic = TellTopic::EntityBelief { subject };
+        let goal = GoalKind::ShareBelief { listener, topic };
+        let def = ActionDef {
+            id: ActionDefId(10),
+            name: "tell".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Tell,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+        let affordance_payload = ActionPayload::Tell(TellActionPayload { listener, topic });
+
+        let payload = goal
+            .build_payload_override(
+                Some(&affordance_payload),
+                &state,
+                &[listener],
+                &def,
+                &semantics,
+            )
+            .unwrap();
+
+        assert_eq!(payload, Some(affordance_payload));
+    }
+
+    #[test]
+    fn share_belief_goal_rejects_mismatched_affordance_topic() {
+        let actor = entity(1);
+        let listener = entity(2);
+        let right_subject = entity(3);
+        let wrong_subject = entity(4);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, listener, right_subject, wrong_subject, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(listener, EntityKind::Agent);
+        view.kinds.insert(right_subject, EntityKind::Facility);
+        view.kinds.insert(wrong_subject, EntityKind::Facility);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(listener, place);
+        view.effective_places.insert(right_subject, place);
+        view.effective_places.insert(wrong_subject, place);
+        view.entities_at
+            .insert(place, vec![actor, listener, right_subject, wrong_subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([listener, right_subject, wrong_subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief {
+                subject: right_subject,
+            },
+        };
+        let def = ActionDef {
+            id: ActionDefId(10),
+            name: "tell".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Tell,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+        let affordance_payload = ActionPayload::Tell(TellActionPayload {
+            listener,
+            topic: TellTopic::EntityBelief {
+                subject: wrong_subject,
+            },
+        });
+
+        let result = goal.build_payload_override(
+            Some(&affordance_payload),
+            &state,
+            &[listener],
+            &def,
+            &semantics,
+        );
+
+        assert_eq!(result, Err(GoalPayloadOverrideError::UnsupportedGoal));
     }
 
     #[test]

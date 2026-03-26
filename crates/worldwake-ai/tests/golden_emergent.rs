@@ -14,9 +14,10 @@ use worldwake_core::{
     BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
     ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    InstitutionalClaim, KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource,
+    PrototypePlace, Quantity, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
+    TellProfile, TellTopic, ThresholdBand, Tick, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -1651,14 +1652,20 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
     let mut tell_commit_tick = None;
     for _ in 0..40 {
         h.step_once();
-        if agent_belief_about(&h.world, listener, office).is_some() {
+        if matches!(
+            h.world
+                .get_component_agent_belief_store(listener)
+                .expect("listener should keep a belief store during tell propagation")
+                .believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        ) {
             tell_commit_tick = Some(h.scheduler.current_tick());
             break;
         }
     }
 
     let tell_commit_tick = tell_commit_tick
-        .expect("listener should receive the office belief through the tell action");
+        .expect("listener should receive the office-holder claim through the tell action");
     let action_sink = h
         .action_trace_sink()
         .expect("action tracing should be enabled for social-political emergence");
@@ -1667,8 +1674,20 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
             event.tick <= tell_commit_tick
                 && event.action_name == "tell"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && matches!(
+                    event.detail,
+                    Some(ActionTraceDetail::Tell {
+                        listener: told_listener,
+                        topic: TellTopic::InstitutionalClaim { claim },
+                    }) if told_listener == listener
+                        && claim == worldwake_core::InstitutionalClaim::OfficeHolder {
+                            office,
+                            holder: None,
+                            effective_tick: informant_update_tick,
+                        }
+                )
         }),
-        "office belief should arrive only after the informant has committed a tell action"
+        "office-holder knowledge should arrive only after the informant has committed an institutional tell action"
     );
     let phase_one_end = tell_commit_tick.0.saturating_sub(1);
     let generated_before_tell = h
@@ -1689,17 +1708,23 @@ fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash)
         "listener should remain at Bandit Camp before learning about the remote office"
     );
 
-    let told_belief = agent_belief_about(&h.world, listener, office)
-        .expect("listener should receive the office belief through the tell action");
+    let told_belief = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should keep a belief store after tell propagation")
+        .institutional_beliefs
+        .get(&worldwake_core::InstitutionalBeliefKey::OfficeHolderOf { office })
+        .and_then(|beliefs| beliefs.first())
+        .expect("listener should receive the office-holder belief through the tell action");
     assert!(
         matches!(
             told_belief.source,
-            PerceptionSource::Report {
+            worldwake_core::InstitutionalKnowledgeSource::Report {
                 from,
                 chain_len: 1
             } if from == informant
         ),
-        "office belief should arrive as a first-hand report from the informant"
+        "office-holder belief should arrive as a first-hand report from the informant"
     );
 
     for _ in 0..80 {
@@ -1907,14 +1932,20 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
     let mut tell_commit_tick = None;
     for _ in 0..40 {
         h.step_once();
-        if agent_belief_about(&h.world, listener, office).is_some() {
+        if matches!(
+            h.world
+                .get_component_agent_belief_store(listener)
+                .expect("listener should keep a belief store during same-place tell")
+                .believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        ) {
             tell_commit_tick = Some(h.scheduler.current_tick());
             break;
         }
     }
 
     let tell_commit_tick = tell_commit_tick
-        .expect("listener should receive the same-place office belief through Tell");
+        .expect("listener should receive the same-place office-holder claim through Tell");
     assert!(
         h.driver
             .trace_sink()
@@ -1923,7 +1954,13 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
                 speaker,
                 &GoalKind::ShareBelief {
                     listener,
-                    topic: TellTopic::EntityBelief { subject: office },
+                    topic: TellTopic::InstitutionalClaim {
+                        claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                            office,
+                            holder: None,
+                            effective_tick: speaker_update_tick,
+                        },
+                    },
                 },
             )
             .into_iter()
@@ -1940,21 +1977,39 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
                 event.tick <= tell_commit_tick
                     && event.action_name == "tell"
                     && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && matches!(
+                        event.detail,
+                        Some(ActionTraceDetail::Tell {
+                            listener: told_listener,
+                            topic: TellTopic::InstitutionalClaim { claim },
+                        }) if told_listener == listener
+                            && claim == worldwake_core::InstitutionalClaim::OfficeHolder {
+                                office,
+                                holder: None,
+                                effective_tick: speaker_update_tick,
+                            }
+                    )
             }),
-        "same-place office belief should arrive only after the speaker commits Tell"
+        "same-place office-holder knowledge should arrive only after the speaker commits Tell"
     );
 
-    let told_belief = agent_belief_about(&h.world, listener, office)
-        .expect("listener should receive the office belief through Tell");
+    let told_belief = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should keep a belief store after same-place tell")
+        .institutional_beliefs
+        .get(&worldwake_core::InstitutionalBeliefKey::OfficeHolderOf { office })
+        .and_then(|beliefs| beliefs.first())
+        .expect("listener should receive the office-holder belief through Tell");
     assert!(
         matches!(
             told_belief.source,
-            PerceptionSource::Report {
+            worldwake_core::InstitutionalKnowledgeSource::Report {
                 from,
                 chain_len: 1
             } if from == speaker
         ),
-        "listener should learn the same-place office fact as a first-hand report from the speaker"
+        "listener should learn the same-place office-holder fact as a first-hand report from the speaker"
     );
 
     for _ in 0..40 {
@@ -2541,7 +2596,13 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
     };
     let share_office = GoalKind::ShareBelief {
         listener,
-        topic: TellTopic::EntityBelief { subject: office },
+        topic: TellTopic::InstitutionalClaim {
+            claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                office,
+                holder: None,
+                effective_tick: Tick(0),
+            },
+        },
     };
 
     assert!(
@@ -2640,7 +2701,13 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
             );
         saw_office_generated |= speaker_trace.goal_status(&share_office).is_generated();
 
-        if agent_belief_about(&h.world, listener, office).is_some() {
+        if matches!(
+            h.world
+                .get_component_agent_belief_store(listener)
+                .expect("listener should keep a belief store during crowd-out tell")
+                .believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(None)
+        ) {
             office_tell_tick = Some(h.scheduler.current_tick());
             break;
         }
@@ -2686,10 +2753,16 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 && event.detail.as_ref()
                     == Some(&ActionTraceDetail::Tell {
                         listener,
-                        topic: TellTopic::EntityBelief { subject: office },
+                        topic: TellTopic::InstitutionalClaim {
+                            claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                                office,
+                                holder: None,
+                                effective_tick: Tick(0),
+                            },
+                        },
                     })
         })
-        .expect("speaker should commit a tell for the office fact");
+        .expect("speaker should commit a tell for the office-holder claim");
     let office_tell_commit_order = (office_tell_commit.tick, office_tell_commit.sequence_in_tick);
     assert_eq!(
         recent_tell_commits_before_office, 1,
@@ -2709,17 +2782,23 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         "listener must not generate ClaimOffice before learning the office through Tell"
     );
 
-    let told_office_belief = agent_belief_about(&h.world, listener, office)
-        .expect("listener should receive the office belief through Tell");
+    let told_office_belief = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should keep a belief store after office tell")
+        .institutional_beliefs
+        .get(&worldwake_core::InstitutionalBeliefKey::OfficeHolderOf { office })
+        .and_then(|beliefs| beliefs.first())
+        .expect("listener should receive the office-holder belief through Tell");
     assert!(
         matches!(
             told_office_belief.source,
-            PerceptionSource::Report {
+            worldwake_core::InstitutionalKnowledgeSource::Report {
                 from,
                 chain_len: 1
             } if from == speaker
         ),
-        "listener should receive the office fact as a first-hand report from the speaker"
+        "listener should receive the office-holder fact as a first-hand report from the speaker"
     );
 
     for _ in 0..80 {
@@ -3440,7 +3519,7 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
 
     // Tick until D acquires the force-control belief via Tell from C.
     let mut d_learned = false;
-    for _ in 0..40 {
+    for _ in 0..80 {
         h.step_once();
         if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
             if matches!(
@@ -3489,11 +3568,20 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
                         listener: told_listener,
                         topic,
                     }) if told_listener == remote_listener
-                        && topic == TellTopic::EntityBelief { subject: office }
+                        && topic == TellTopic::InstitutionalClaim {
+                            claim: InstitutionalClaim::ForceControl {
+                                office,
+                                controller: Some(challenger),
+                                contested: false,
+                                effective_tick: Tick(3),
+                            },
+                        }
                 ))
             .then_some((event.tick, event.sequence_in_tick))
         })
-        .expect("witness should commit a tell action relaying office knowledge to remote listener");
+        .expect(
+            "witness should commit a tell action relaying force-control knowledge to remote listener",
+        );
 
     assert!(
         claim_commit < witness_tell_commit,
@@ -3509,14 +3597,21 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
 
     let share_belief_goal = GoalKind::ShareBelief {
         listener: remote_listener,
-        topic: TellTopic::EntityBelief { subject: office },
+        topic: TellTopic::InstitutionalClaim {
+            claim: InstitutionalClaim::ForceControl {
+                office,
+                controller: Some(challenger),
+                contested: false,
+                effective_tick: Tick(3),
+            },
+        },
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
         share_history
             .iter()
             .any(|entry| entry.status.is_generated()),
-        "witness should generate ShareBelief goal for the office entity \
+        "witness should generate ShareBelief goal for the force-control claim \
          targeting the remote listener"
     );
 
@@ -3959,7 +4054,7 @@ fn run_contested_force_state_propagates_through_belief_system(
 
     // Tick until D acquires the force-control belief via Tell from C.
     let mut d_learned = false;
-    for _ in 0..40 {
+    for _ in 0..80 {
         h.step_once();
         if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
             if !matches!(
@@ -4019,11 +4114,20 @@ fn run_contested_force_state_propagates_through_belief_system(
                         listener: told_listener,
                         topic,
                     }) if told_listener == remote_listener
-                        && topic == TellTopic::EntityBelief { subject: office }
+                        && topic == TellTopic::InstitutionalClaim {
+                            claim: InstitutionalClaim::ForceControl {
+                                office,
+                                controller: None,
+                                contested: true,
+                                effective_tick: Tick(8),
+                            },
+                        }
                 ))
             .then_some((event.tick, event.sequence_in_tick))
         })
-        .expect("witness should commit a tell action relaying office knowledge to remote listener");
+        .expect(
+            "witness should commit a tell action relaying contested force-control knowledge to remote listener",
+        );
 
     assert!(
         alpha_claim_commit < witness_tell_commit,
@@ -4039,14 +4143,21 @@ fn run_contested_force_state_propagates_through_belief_system(
 
     let share_belief_goal = GoalKind::ShareBelief {
         listener: remote_listener,
-        topic: TellTopic::EntityBelief { subject: office },
+        topic: TellTopic::InstitutionalClaim {
+            claim: InstitutionalClaim::ForceControl {
+                office,
+                controller: None,
+                contested: true,
+                effective_tick: Tick(8),
+            },
+        },
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
         share_history
             .iter()
             .any(|entry| entry.status.is_generated()),
-        "witness should generate ShareBelief goal for the office entity \
+        "witness should generate ShareBelief goal for the contested force-control claim \
          targeting the remote listener"
     );
 

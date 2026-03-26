@@ -1482,6 +1482,7 @@ fn run_retell_after_subject_belief_change_scenario(
                     .expect("shared subject snapshot should retain resource source")
                     .available_quantity,
             SharedTellState::SocialObservation(_) => panic!("expected entity-belief tell state"),
+            SharedTellState::InstitutionalClaim(_) => panic!("expected entity-belief tell state"),
         },
         Quantity(6),
         "re-tell should store the materially changed shared content"
