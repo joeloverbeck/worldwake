@@ -7,18 +7,20 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, PerceptionSource,
-    RecipientKnowledgeStatus, SuspensionReason, Tick,
+    SuspensionReason, TellTopic, Tick,
 };
-use worldwake_sim::{ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace};
+use worldwake_sim::{
+    ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
+};
 
 use crate::feasibility::FeasibilityHint;
+use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
+use crate::goal_switching::GoalSwitchKind;
+use crate::interrupts::InterruptDecision;
 use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
     SelfKnowledgeProvenance,
 };
-use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
-use crate::goal_switching::GoalSwitchKind;
-use crate::interrupts::InterruptDecision;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 // ── Frame Transition Trace ──────────────────────────────────────
 
@@ -69,6 +71,7 @@ pub struct AgentDecisionTrace {
 
 /// What the decision pipeline produced for this agent this tick.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DecisionOutcome {
     /// Agent is dead — no decision pipeline ran.
     Dead,
@@ -245,8 +248,8 @@ pub struct PoliticalCandidateOmission {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SocialCandidateOmission {
     pub listener: EntityId,
-    pub subject: EntityId,
-    pub status: RecipientKnowledgeStatus,
+    pub topic: TellTopic,
+    pub reason: TellTopicOmissionReason,
 }
 
 /// Summary of a ranked goal for trace output.
@@ -619,7 +622,7 @@ pub enum GoalTraceStatus {
     Dead,
     ActiveAction,
     OmittedPolitical(PoliticalCandidateOmissionReason),
-    OmittedSocial(RecipientKnowledgeStatus),
+    OmittedSocial(TellTopicOmissionReason),
     NotGenerated,
     GeneratedOnly,
     Suppressed,
@@ -799,9 +802,9 @@ fn goal_status_in_planning(
     {
         return GoalTraceStatus::OmittedPolitical(reason);
     }
-    if let Some(status) = omitted_social_status_for_goal(&planning.candidates.omitted_social, goal)
+    if let Some(reason) = omitted_social_reason_for_goal(&planning.candidates.omitted_social, goal)
     {
-        return GoalTraceStatus::OmittedSocial(status);
+        return GoalTraceStatus::OmittedSocial(reason);
     }
 
     let goal_key = GoalKey::from(goal);
@@ -851,15 +854,15 @@ fn omitted_political_reason_for_goal(
     })
 }
 
-fn omitted_social_status_for_goal(
+fn omitted_social_reason_for_goal(
     omissions: &[SocialCandidateOmission],
     goal: &crate::GoalKind,
-) -> Option<RecipientKnowledgeStatus> {
+) -> Option<TellTopicOmissionReason> {
     omissions.iter().find_map(|omission| match goal {
-        crate::GoalKind::ShareBelief { listener, subject }
-            if omission.listener == *listener && omission.subject == *subject =>
+        crate::GoalKind::ShareBelief { listener, topic }
+            if omission.listener == *listener && omission.topic == *topic =>
         {
-            Some(omission.status)
+            Some(omission.reason)
         }
         _ => None,
     })
@@ -1169,7 +1172,10 @@ fn format_institutional_knowledge_source(source: &InstitutionalKnowledgeSource) 
             format!("Report(from={from:?}, chain={chain_len})")
         }
         InstitutionalKnowledgeSource::RecordConsultation { record, entry_id } => {
-            format!("RecordConsultation(record={record:?}, entry={})", entry_id.0)
+            format!(
+                "RecordConsultation(record={record:?}, entry={})",
+                entry_id.0
+            )
         }
         InstitutionalKnowledgeSource::SelfDeclaration => "SelfDeclaration".to_string(),
     }
@@ -1219,7 +1225,10 @@ fn format_institutional_belief_provenance(ibp: &InstitutionalBeliefProvenance) -
     let learned_at = ibp
         .learned_at
         .map_or_else(String::new, |place| format!(", learned_at={place:?}"));
-    format!("{claim} — {source} @ tick {}{learned_at}", ibp.learned_tick.0)
+    format!(
+        "{claim} — {source} @ tick {}{learned_at}",
+        ibp.learned_tick.0
+    )
 }
 
 fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
@@ -1229,8 +1238,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             holder,
             effective_tick,
         } => {
-            let holder_str =
-                holder.map_or_else(|| "vacant".to_string(), |h| format!("{h:?}"));
+            let holder_str = holder.map_or_else(|| "vacant".to_string(), |h| format!("{h:?}"));
             format!(
                 "OfficeHolder(office={office:?}, holder={holder_str}, tick={})",
                 effective_tick.0
@@ -1251,8 +1259,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             candidate,
             effective_tick,
         } => {
-            let cand_str =
-                candidate.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
+            let cand_str = candidate.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
             format!(
                 "SupportDeclaration(office={office:?}, supporter={supporter:?}, candidate={cand_str}, tick={})",
                 effective_tick.0
@@ -1264,8 +1271,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             contested,
             effective_tick,
         } => {
-            let ctrl_str =
-                controller.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
+            let ctrl_str = controller.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
             format!(
                 "ForceControl(office={office:?}, controller={ctrl_str}, contested={contested}, tick={})",
                 effective_tick.0
@@ -1564,7 +1570,10 @@ mod tests {
     fn goal_status_reports_social_omission_reason() {
         let listener = entity(10);
         let subject = entity(11);
-        let share_goal = GoalKind::ShareBelief { listener, subject };
+        let share_goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        };
 
         let trace = goal_trace(
             Tick(7),
@@ -1578,16 +1587,48 @@ mod tests {
             Vec::new(),
             vec![SocialCandidateOmission {
                 listener,
-                subject,
-                status: RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                topic: TellTopic::EntityBelief { subject },
+                reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             }],
         );
 
         assert_eq!(
             trace.goal_status(&share_goal),
             GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
             )
+        );
+    }
+
+    #[test]
+    fn goal_status_reports_social_direct_observability_omission_reason() {
+        let listener = entity(10);
+        let subject = entity(11);
+        let share_goal = GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+        };
+
+        let trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            Vec::new(),
+            vec![SocialCandidateOmission {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+                reason: TellTopicOmissionReason::DirectlyObservableByListener,
+            }],
+        );
+
+        assert_eq!(
+            trace.goal_status(&share_goal),
+            GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::DirectlyObservableByListener)
         );
     }
 
@@ -2179,10 +2220,7 @@ mod tests {
         );
         let from = entity(42);
         assert_eq!(
-            format_perception_source(&PerceptionSource::Report {
-                from,
-                chain_len: 2
-            }),
+            format_perception_source(&PerceptionSource::Report { from, chain_len: 2 }),
             format!("Report(from={from:?}, chain=2)")
         );
         assert_eq!(
@@ -2294,9 +2332,7 @@ mod tests {
                     omitted_political: vec![],
                     omitted_social: vec![],
                 },
-                planning: PlanSearchTrace {
-                    attempts: vec![],
-                },
+                planning: PlanSearchTrace { attempts: vec![] },
                 selection: SelectionTrace {
                     selected: None,
                     selected_plan: None,

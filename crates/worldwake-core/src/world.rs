@@ -7,11 +7,11 @@ use crate::{
     DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta, EventId,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
     FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, KnownRecipes, LoadUnits, LotOperation,
+    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
     PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick,
-    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
     WoundList,
 };
@@ -595,14 +595,14 @@ mod tests {
         CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
         DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, FactionData, FactionPurpose, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
-        OfficeForceState, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
-        ProductionJob, ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind,
-        ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw,
-        TellProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
-        WoundList,
+        InstitutionalClaim, InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile,
+        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+        OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
+        Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData,
+        RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
+        SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile, Tick,
+        TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -724,6 +724,21 @@ mod tests {
             acceptance_fidelity: Permille::new(700).unwrap(),
             conversation_memory_capacity: 11,
             conversation_memory_retention_ticks: 30,
+        }
+    }
+
+    fn sample_theft_disposition_profile() -> TheftDispositionProfile {
+        TheftDispositionProfile {
+            steal_duration_ticks: NonZeroU32::new(5).unwrap(),
+            theft_motive_weight: Permille::new(625).unwrap(),
+            witness_risk_penalty: Permille::new(175).unwrap(),
+        }
+    }
+
+    fn sample_justice_disposition_profile() -> JusticeDispositionProfile {
+        JusticeDispositionProfile {
+            accusation_motive_weight: Permille::new(700).unwrap(),
+            fine_severity: Permille::new(450).unwrap(),
         }
     }
 
@@ -4424,6 +4439,86 @@ mod tests {
             .insert_component_tell_profile(item_lot, profile)
             .unwrap_err();
         assert!(matches!(item_error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn theft_disposition_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_theft_disposition_profile();
+
+        world
+            .insert_component_theft_disposition_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_theft_disposition_profile(id),
+            Some(&profile)
+        );
+        assert!(world.has_component_theft_disposition_profile(id));
+        assert_eq!(
+            world.query_theft_disposition_profile().collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
+        assert_eq!(world.count_with_theft_disposition_profile(), 1);
+
+        let removed = world
+            .remove_component_theft_disposition_profile(id)
+            .unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_theft_disposition_profile(id), None);
+    }
+
+    #[test]
+    fn insert_theft_disposition_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_theft_disposition_profile(id, sample_theft_disposition_profile())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn justice_disposition_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_justice_disposition_profile();
+
+        world
+            .insert_component_justice_disposition_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_justice_disposition_profile(id),
+            Some(&profile)
+        );
+        assert!(world.has_component_justice_disposition_profile(id));
+        assert_eq!(
+            world
+                .query_justice_disposition_profile()
+                .collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
+        assert_eq!(world.count_with_justice_disposition_profile(), 1);
+
+        let removed = world
+            .remove_component_justice_disposition_profile(id)
+            .unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_justice_disposition_profile(id), None);
+    }
+
+    #[test]
+    fn insert_justice_disposition_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_justice_disposition_profile(id, sample_justice_disposition_profile())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
     }
 
     #[test]

@@ -3,23 +3,23 @@ mod frontier;
 mod heuristic;
 mod transition;
 
+use crate::{
+    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
+};
 use candidates::{
     root_candidate_payload_status, search_candidates, unsupported_goal, SearchCandidate,
 };
 #[cfg(test)]
 use candidates::{search_candidate_from_planner, search_candidates_from_affordance};
-use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
-};
 use frontier::{compare_search_nodes, FrontierEntry};
-use heuristic::{combined_relevant_places, prune_travel_away_from_goal, root_node};
-use transition::build_successor_detailed;
 #[cfg(test)]
 use heuristic::compute_heuristic;
+use heuristic::{combined_relevant_places, prune_travel_away_from_goal, root_node};
+use std::collections::{BTreeMap, BinaryHeap};
 #[cfg(test)]
 use transition::build_successor;
-use std::collections::{BTreeMap, BinaryHeap};
+use transition::build_successor_detailed;
 use worldwake_core::{ActionDefId, BlockedIntentMemory, Tick};
 use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry};
 
@@ -283,7 +283,6 @@ pub fn search_plan(
         expansions_used: expansions,
     }
 }
-
 
 #[cfg(test)]
 mod tests;

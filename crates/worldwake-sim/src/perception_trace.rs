@@ -232,9 +232,7 @@ mod tests {
 
         // Failed observation with a claim — should be excluded.
         let mut failed = sample_event(1, observer, false);
-        failed
-            .institutional_claims
-            .push((key, claim));
+        failed.institutional_claims.push((key, claim));
         sink.record(failed);
 
         let claims = sink.claims_at(observer, Tick(1));

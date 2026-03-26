@@ -4,6 +4,10 @@ These principles define what Worldwake is optimizing for: explainable emergence.
 
 Designers author the world's nouns, laws, institutions, and initial conditions. They do not author outcomes. Every system, feature, content addition, and optimization must be judged against these principles. They are non-negotiable unless explicitly revised by the project owner. All contributors — human and AI — must internalize them before making design decisions.
 
+Every change to the simulation — new system, revised spec, implementation plan, or bugfix — must be an architecturally comprehensive solution. Hacks, patches, shims, and workarounds that avoid the root design concern are not acceptable, even when they are faster. The result must leave the architecture clean, robust, and extensible: clean meaning no dead paths or fossilized logic; robust meaning invariants hold under edge cases and future load; extensible meaning new systems can compose with existing ones without surgery.
+
+**Test**: If the most accurate description of a proposed change is "a workaround," "a patch for now," or "a localized fix that avoids the real problem," it violates this mandate. Reframe the change as a proper architectural solution or reject the approach.
+
 ---
 
 ## I. Causal Standard

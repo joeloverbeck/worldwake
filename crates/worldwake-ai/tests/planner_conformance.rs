@@ -115,9 +115,7 @@ impl ConformanceHarness {
                 return;
             }
         }
-        panic!(
-            "action '{action_name}' for {agent:?} did not complete within {max_ticks} ticks"
-        );
+        panic!("action '{action_name}' for {agent:?} did not complete within {max_ticks} ticks");
     }
 }
 
@@ -201,10 +199,16 @@ fn assert_planner_noop(
     let agent_ref = PlanningEntityRef::Authoritative(agent);
     let before_place = initial_state.effective_place_ref(agent_ref);
     let after_place = planner_state.effective_place_ref(agent_ref);
-    assert_eq!(before_place, after_place, "{label}: planner should not change position");
+    assert_eq!(
+        before_place, after_place,
+        "{label}: planner should not change position"
+    );
     if let Some(before_needs) = initial_state.homeostatic_needs_for(agent) {
         if let Some(after_needs) = planner_state.homeostatic_needs_for(agent) {
-            assert_eq!(before_needs, after_needs, "{label}: planner should not change needs");
+            assert_eq!(
+                before_needs, after_needs,
+                "{label}: planner should not change needs"
+            );
         }
     }
 }
@@ -217,45 +221,85 @@ fn assert_planner_noop(
 fn conformance_eat_smoke_test() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Eater", VILLAGE_SQUARE,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Eater",
+        VILLAGE_SQUARE,
         HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
-        MetabolismProfile::default(), UtilityProfile::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let bread_lot = give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, agent, VILLAGE_SQUARE,
-        CommodityKind::Bread, Quantity(3),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
     // --- Planner side ---
     let snapshot = ch.snapshot_for(agent);
     let semantics = ch.semantics_for("eat");
-    let goal = grounded(GoalKind::ConsumeOwnedCommodity { commodity: CommodityKind::Bread });
+    let goal = grounded(GoalKind::ConsumeOwnedCommodity {
+        commodity: CommodityKind::Bread,
+    });
     let initial_state = PlanningState::new(&snapshot);
     let lot_ref = PlanningEntityRef::Authoritative(bread_lot);
 
-    let before_hunger = initial_state.homeostatic_needs_for(agent).map(|n| n.hunger).unwrap();
+    let before_hunger = initial_state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.hunger)
+        .unwrap();
 
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
-        .expect("eat transition should produce Some");
+    let transition =
+        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+            .expect("eat transition should produce Some");
 
-    let planner_hunger = transition.state.homeostatic_needs_for(agent).map(|n| n.hunger).unwrap();
+    let planner_hunger = transition
+        .state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.hunger)
+        .unwrap();
 
     // The planner models need reduction but NOT lot quantity consumption.
     // This is intentional — the planner uses needs changes to track goal progress.
-    assert!(planner_hunger < before_hunger, "planner should decrease hunger via consume_commodity");
+    assert!(
+        planner_hunger < before_hunger,
+        "planner should decrease hunger via consume_commodity"
+    );
 
     // --- Handler side ---
-    let handler_before_hunger = ch.h.world.get_component_homeostatic_needs(agent).unwrap().hunger;
+    let handler_before_hunger =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .hunger;
     ch.run_action_to_completion(agent, "eat", vec![bread_lot], None, 10);
-    let handler_after_hunger = ch.h.world.get_component_homeostatic_needs(agent).unwrap().hunger;
+    let handler_after_hunger =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .hunger;
 
     // --- Compare directional agreement ---
-    assert_permille_direction("hunger", before_hunger, planner_hunger, handler_after_hunger);
-    assert!(handler_after_hunger < handler_before_hunger, "handler should decrease hunger");
+    assert_permille_direction(
+        "hunger",
+        before_hunger,
+        planner_hunger,
+        handler_after_hunger,
+    );
+    assert!(
+        handler_after_hunger < handler_before_hunger,
+        "handler should decrease hunger"
+    );
 }
 
 // ===========================================================================
@@ -266,47 +310,87 @@ fn conformance_eat_smoke_test() {
 fn conformance_drink() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Drinker", VILLAGE_SQUARE,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Drinker",
+        VILLAGE_SQUARE,
         HomeostaticNeeds::new(pm(0), pm(700), pm(0), pm(0), pm(0)),
-        MetabolismProfile::default(), UtilityProfile::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let water_lot = give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, agent, VILLAGE_SQUARE,
-        CommodityKind::Water, Quantity(3),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Water,
+        Quantity(3),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
     let snapshot = ch.snapshot_for(agent);
     let semantics = ch.semantics_for("drink");
-    let goal = grounded(GoalKind::ConsumeOwnedCommodity { commodity: CommodityKind::Water });
+    let goal = grounded(GoalKind::ConsumeOwnedCommodity {
+        commodity: CommodityKind::Water,
+    });
     let initial_state = PlanningState::new(&snapshot);
     let lot_ref = PlanningEntityRef::Authoritative(water_lot);
 
-    let before_thirst = initial_state.homeostatic_needs_for(agent).map(|n| n.thirst).unwrap();
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
-        .expect("drink transition should produce Some");
-    let planner_thirst = transition.state.homeostatic_needs_for(agent).map(|n| n.thirst).unwrap();
+    let before_thirst = initial_state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.thirst)
+        .unwrap();
+    let transition =
+        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+            .expect("drink transition should produce Some");
+    let planner_thirst = transition
+        .state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.thirst)
+        .unwrap();
 
     ch.run_action_to_completion(agent, "drink", vec![water_lot], None, 10);
-    let handler_after_thirst = ch.h.world.get_component_homeostatic_needs(agent).unwrap().thirst;
+    let handler_after_thirst =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .thirst;
 
-    assert_permille_direction("thirst", before_thirst, planner_thirst, handler_after_thirst);
-    assert!(planner_thirst < before_thirst, "planner should decrease thirst");
+    assert_permille_direction(
+        "thirst",
+        before_thirst,
+        planner_thirst,
+        handler_after_thirst,
+    );
+    assert!(
+        planner_thirst < before_thirst,
+        "planner should decrease thirst"
+    );
 }
 
 #[test]
 fn conformance_sleep() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Sleeper", VILLAGE_SQUARE,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Sleeper",
+        VILLAGE_SQUARE,
         HomeostaticNeeds::new(pm(0), pm(0), pm(700), pm(0), pm(0)),
-        MetabolismProfile::default(), UtilityProfile::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -315,18 +399,39 @@ fn conformance_sleep() {
     let goal = grounded(GoalKind::Sleep);
     let initial_state = PlanningState::new(&snapshot);
 
-    let before_fatigue = initial_state.homeostatic_needs_for(agent).map(|n| n.fatigue).unwrap();
+    let before_fatigue = initial_state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.fatigue)
+        .unwrap();
     let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
         .expect("sleep transition should produce Some");
-    let planner_fatigue = transition.state.homeostatic_needs_for(agent).map(|n| n.fatigue).unwrap();
+    let planner_fatigue = transition
+        .state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.fatigue)
+        .unwrap();
 
-    let handler_before = ch.h.world.get_component_homeostatic_needs(agent).unwrap().fatigue;
+    let handler_before =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .fatigue;
     ch.run_action_to_completion(agent, "sleep", vec![], None, 30);
-    let handler_after = ch.h.world.get_component_homeostatic_needs(agent).unwrap().fatigue;
+    let handler_after =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .fatigue;
 
     assert_permille_direction("fatigue", before_fatigue, planner_fatigue, handler_after);
-    assert!(planner_fatigue < before_fatigue, "planner should decrease fatigue");
-    assert!(handler_after < handler_before, "handler should decrease fatigue");
+    assert!(
+        planner_fatigue < before_fatigue,
+        "planner should decrease fatigue"
+    );
+    assert!(
+        handler_after < handler_before,
+        "handler should decrease fatigue"
+    );
 }
 
 #[test]
@@ -334,12 +439,19 @@ fn conformance_relieve() {
     let mut ch = ConformanceHarness::new();
     // Toilet requires PlaceTag::Latrine — use PUBLIC_LATRINE.
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Reliever", PUBLIC_LATRINE,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Reliever",
+        PUBLIC_LATRINE,
         HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(700), pm(0)),
-        MetabolismProfile::default(), UtilityProfile::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -348,34 +460,66 @@ fn conformance_relieve() {
     let goal = grounded(GoalKind::Relieve);
     let initial_state = PlanningState::new(&snapshot);
 
-    let before_bladder = initial_state.homeostatic_needs_for(agent).map(|n| n.bladder).unwrap();
+    let before_bladder = initial_state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.bladder)
+        .unwrap();
     let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
         .expect("toilet transition should produce Some");
-    let planner_bladder = transition.state.homeostatic_needs_for(agent).map(|n| n.bladder).unwrap();
+    let planner_bladder = transition
+        .state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.bladder)
+        .unwrap();
 
-    let handler_before = ch.h.world.get_component_homeostatic_needs(agent).unwrap().bladder;
+    let handler_before =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .bladder;
     ch.run_action_to_completion(agent, "toilet", vec![], None, 10);
-    let handler_after = ch.h.world.get_component_homeostatic_needs(agent).unwrap().bladder;
+    let handler_after =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .bladder;
 
     assert_permille_direction("bladder", before_bladder, planner_bladder, handler_after);
-    assert!(planner_bladder < before_bladder, "planner should decrease bladder");
-    assert!(handler_after < handler_before, "handler should decrease bladder");
+    assert!(
+        planner_bladder < before_bladder,
+        "planner should decrease bladder"
+    );
+    assert!(
+        handler_after < handler_before,
+        "handler should decrease bladder"
+    );
 }
 
 #[test]
 fn conformance_wash() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Washer", VILLAGE_SQUARE,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Washer",
+        VILLAGE_SQUARE,
         HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(700)),
-        MetabolismProfile::default(), UtilityProfile::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let water_lot = give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, agent, VILLAGE_SQUARE,
-        CommodityKind::Water, Quantity(3),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Water,
+        Quantity(3),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -384,21 +528,51 @@ fn conformance_wash() {
     let goal = grounded(GoalKind::Wash);
     let initial_state = PlanningState::new(&snapshot);
 
-    let before_dirtiness = initial_state.homeostatic_needs_for(agent).map(|n| n.dirtiness).unwrap();
+    let before_dirtiness = initial_state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.dirtiness)
+        .unwrap();
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state,
-        &[PlanningEntityRef::Authoritative(water_lot)], None,
-    ).expect("wash transition should produce Some");
-    let planner_dirtiness = transition.state.homeostatic_needs_for(agent).map(|n| n.dirtiness).unwrap();
+        &goal,
+        &semantics,
+        initial_state,
+        &[PlanningEntityRef::Authoritative(water_lot)],
+        None,
+    )
+    .expect("wash transition should produce Some");
+    let planner_dirtiness = transition
+        .state
+        .homeostatic_needs_for(agent)
+        .map(|n| n.dirtiness)
+        .unwrap();
 
-    let handler_before = ch.h.world.get_component_homeostatic_needs(agent).unwrap().dirtiness;
+    let handler_before =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .dirtiness;
     // Wash may take several ticks depending on metabolism profile.
     ch.run_action_to_completion(agent, "wash", vec![water_lot], None, 30);
-    let handler_after = ch.h.world.get_component_homeostatic_needs(agent).unwrap().dirtiness;
+    let handler_after =
+        ch.h.world
+            .get_component_homeostatic_needs(agent)
+            .unwrap()
+            .dirtiness;
 
-    assert_permille_direction("dirtiness", before_dirtiness, planner_dirtiness, handler_after);
-    assert!(planner_dirtiness < before_dirtiness, "planner should decrease dirtiness");
-    assert!(handler_after < handler_before, "handler should decrease dirtiness");
+    assert_permille_direction(
+        "dirtiness",
+        before_dirtiness,
+        planner_dirtiness,
+        handler_after,
+    );
+    assert!(
+        planner_dirtiness < before_dirtiness,
+        "planner should decrease dirtiness"
+    );
+    assert!(
+        handler_after < handler_before,
+        "handler should decrease dirtiness"
+    );
 }
 
 // ===========================================================================
@@ -409,18 +583,28 @@ fn conformance_wash() {
 fn conformance_pick_up() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "PickUpper", VILLAGE_SQUARE,
-        HomeostaticNeeds::default(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "PickUpper",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let lot = {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(2))
+            .unwrap();
         txn.set_ground_location(lot, VILLAGE_SQUARE).unwrap();
         commit_txn(txn, &mut ch.h.event_log);
         lot
     };
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -434,32 +618,56 @@ fn conformance_pick_up() {
     let agent_ref = PlanningEntityRef::Authoritative(agent);
     let lot_ref = PlanningEntityRef::Authoritative(lot);
 
-    assert!(initial_state.direct_possessor_ref(lot_ref).is_none(), "lot should start on ground");
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
-        .expect("pick_up transition should produce Some");
+    assert!(
+        initial_state.direct_possessor_ref(lot_ref).is_none(),
+        "lot should start on ground"
+    );
+    let transition =
+        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+            .expect("pick_up transition should produce Some");
     assert_eq!(
-        transition.state.direct_possessor_ref(lot_ref), Some(agent_ref),
+        transition.state.direct_possessor_ref(lot_ref),
+        Some(agent_ref),
         "planner should transfer lot to agent"
     );
 
-    assert!(ch.h.world.possessor_of(lot).is_none(), "handler: lot should start on ground");
+    assert!(
+        ch.h.world.possessor_of(lot).is_none(),
+        "handler: lot should start on ground"
+    );
     ch.run_action_to_completion(agent, "pick_up", vec![lot], None, 10);
-    assert_eq!(ch.h.world.possessor_of(lot), Some(agent), "handler should transfer lot to agent");
+    assert_eq!(
+        ch.h.world.possessor_of(lot),
+        Some(agent),
+        "handler should transfer lot to agent"
+    );
 }
 
 #[test]
 fn conformance_put_down() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "PutDowner", VILLAGE_SQUARE,
-        HomeostaticNeeds::default(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "PutDowner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let lot = give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, agent, VILLAGE_SQUARE,
-        CommodityKind::Bread, Quantity(2),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -474,19 +682,28 @@ fn conformance_put_down() {
     let lot_ref = PlanningEntityRef::Authoritative(lot);
 
     assert_eq!(
-        initial_state.direct_possessor_ref(lot_ref), Some(agent_ref),
+        initial_state.direct_possessor_ref(lot_ref),
+        Some(agent_ref),
         "lot should start with agent"
     );
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
-        .expect("put_down transition should produce Some");
+    let transition =
+        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+            .expect("put_down transition should produce Some");
     assert!(
         transition.state.direct_possessor_ref(lot_ref).is_none(),
         "planner should remove lot from agent possession"
     );
 
-    assert_eq!(ch.h.world.possessor_of(lot), Some(agent), "handler: lot should start with agent");
+    assert_eq!(
+        ch.h.world.possessor_of(lot),
+        Some(agent),
+        "handler: lot should start with agent"
+    );
     ch.run_action_to_completion(agent, "put_down", vec![lot], None, 10);
-    assert!(ch.h.world.possessor_of(lot).is_none(), "handler should remove lot from agent");
+    assert!(
+        ch.h.world.possessor_of(lot).is_none(),
+        "handler should remove lot from agent"
+    );
 }
 
 #[test]
@@ -494,11 +711,18 @@ fn conformance_harvest_noop_coverage_gap() {
     // Harvest uses GoalModelFallback with no state change — known coverage gap.
     let mut ch = ConformanceHarness::with_recipes(build_recipes());
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Harvester", ORCHARD_FARM,
-        HomeostaticNeeds::default(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Harvester",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let source = place_workstation_with_source(
-        &mut ch.h.world, &mut ch.h.event_log, ORCHARD_FARM,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        ORCHARD_FARM,
         worldwake_core::WorkstationTag::OrchardRow,
         worldwake_core::ResourceSource {
             commodity: CommodityKind::Apple,
@@ -510,18 +734,25 @@ fn conformance_harvest_noop_coverage_gap() {
         ProductionOutputOwner::Actor,
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
-    let harvest_def = ch.h.defs.iter()
-        .find(|def| def.name.starts_with("harvest:"))
-        .expect("should have at least one harvest action def");
+    let harvest_def =
+        ch.h.defs
+            .iter()
+            .find(|def| def.name.starts_with("harvest:"))
+            .expect("should have at least one harvest action def");
     let harvest_name = harvest_def.name.clone();
     let harvest_payload = harvest_def.payload.clone();
     let harvest_semantics = {
         let table = build_semantics_table(&ch.h.defs);
-        *table.get(&harvest_def.id).expect("harvest should have planner semantics")
+        *table
+            .get(&harvest_def.id)
+            .expect("harvest should have planner semantics")
     };
 
     let snapshot = ch.snapshot_for(agent);
@@ -533,8 +764,13 @@ fn conformance_harvest_noop_coverage_gap() {
     let source_ref = PlanningEntityRef::Authoritative(source);
 
     let transition = apply_hypothetical_transition(
-        &goal, &harvest_semantics, initial_state.clone(), &[source_ref], Some(&harvest_payload),
-    ).expect("harvest transition should produce Some");
+        &goal,
+        &harvest_semantics,
+        initial_state.clone(),
+        &[source_ref],
+        Some(&harvest_payload),
+    )
+    .expect("harvest transition should produce Some");
     assert_planner_noop("harvest", &initial_state, &transition.state, agent);
 
     // Disable AI so autonomous controller doesn't interfere.
@@ -543,7 +779,13 @@ fn conformance_harvest_noop_coverage_gap() {
     // Handler DOES produce apples via materialization.
     // Output goes to ground (owned but not possessed), so check total live lots.
     let handler_before = total_live_lot_quantity(&ch.h.world, CommodityKind::Apple);
-    ch.run_action_to_completion(agent, &harvest_name, vec![source], Some(harvest_payload), 30);
+    ch.run_action_to_completion(
+        agent,
+        &harvest_name,
+        vec![source],
+        Some(harvest_payload),
+        30,
+    );
     let handler_after = total_live_lot_quantity(&ch.h.world, CommodityKind::Apple);
     assert!(
         handler_after > handler_before,
@@ -558,8 +800,13 @@ fn conformance_craft_noop_coverage_gap() {
     let mut ch = ConformanceHarness::with_recipes(recipes);
     // Agent must know the craft recipe (RecipeId(2) = bake_bread).
     let agent = seed_agent_with_recipes(
-        &mut ch.h.world, &mut ch.h.event_log, "Crafter", VILLAGE_SQUARE,
-        HomeostaticNeeds::default(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Crafter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
         worldwake_core::KnownRecipes::with([
             worldwake_core::RecipeId(0),
             worldwake_core::RecipeId(1),
@@ -567,27 +814,41 @@ fn conformance_craft_noop_coverage_gap() {
         ]),
     );
     let mill = place_workstation(
-        &mut ch.h.world, &mut ch.h.event_log, VILLAGE_SQUARE,
-        worldwake_core::WorkstationTag::Mill, ProductionOutputOwner::Actor,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        VILLAGE_SQUARE,
+        worldwake_core::WorkstationTag::Mill,
+        ProductionOutputOwner::Actor,
     );
     // Bake bread recipe requires Firewood.
     give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, agent, VILLAGE_SQUARE,
-        CommodityKind::Firewood, Quantity(5),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Firewood,
+        Quantity(5),
     );
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
-    let craft_def = ch.h.defs.iter()
-        .find(|def| def.name.starts_with("craft:"))
-        .expect("should have at least one craft action def");
+    let craft_def =
+        ch.h.defs
+            .iter()
+            .find(|def| def.name.starts_with("craft:"))
+            .expect("should have at least one craft action def");
     let craft_name = craft_def.name.clone();
     let craft_payload = craft_def.payload.clone();
     let craft_semantics = {
         let table = build_semantics_table(&ch.h.defs);
-        *table.get(&craft_def.id).expect("craft should have planner semantics")
+        *table
+            .get(&craft_def.id)
+            .expect("craft should have planner semantics")
     };
 
     let snapshot = ch.snapshot_for(agent);
@@ -598,8 +859,13 @@ fn conformance_craft_noop_coverage_gap() {
     let mill_ref = PlanningEntityRef::Authoritative(mill);
 
     let transition = apply_hypothetical_transition(
-        &goal, &craft_semantics, initial_state.clone(), &[mill_ref], Some(&craft_payload),
-    ).expect("craft transition should produce Some");
+        &goal,
+        &craft_semantics,
+        initial_state.clone(),
+        &[mill_ref],
+        Some(&craft_payload),
+    )
+    .expect("craft transition should produce Some");
     assert_planner_noop("craft", &initial_state, &transition.state, agent);
 
     // Disable AI so autonomous controller doesn't interfere.
@@ -624,12 +890,20 @@ fn conformance_craft_noop_coverage_gap() {
 fn conformance_travel() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Traveler", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Traveler",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, agent);
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -647,17 +921,29 @@ fn conformance_travel() {
 
     // VillageSquare→RulersHall is a direct edge (edge 4, 1 tick).
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state,
-        &[PlanningEntityRef::Authoritative(RULERS_HALL)], None,
-    ).expect("travel transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state,
+        &[PlanningEntityRef::Authoritative(RULERS_HALL)],
+        None,
+    )
+    .expect("travel transition should produce Some");
 
     let planner_place = transition.state.effective_place_ref(agent_ref);
-    assert_eq!(planner_place, Some(RULERS_HALL), "planner should move actor to destination");
+    assert_eq!(
+        planner_place,
+        Some(RULERS_HALL),
+        "planner should move actor to destination"
+    );
 
     // --- Handler side ---
     assert_eq!(ch.h.world.effective_place(agent), Some(VILLAGE_SQUARE));
     ch.run_action_to_completion(agent, "travel", vec![RULERS_HALL], None, 10);
-    assert_eq!(ch.h.world.effective_place(agent), Some(RULERS_HALL), "handler should move actor");
+    assert_eq!(
+        ch.h.world.effective_place(agent),
+        Some(RULERS_HALL),
+        "handler should move actor"
+    );
 }
 
 #[test]
@@ -667,19 +953,43 @@ fn conformance_trade_noop_coverage_gap() {
     let mut ch = ConformanceHarness::new();
 
     let buyer = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Buyer", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Buyer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     let seller = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Seller", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Seller",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, buyer);
     disable_ai_control(&mut ch.h, seller);
 
     // Buyer has coins, seller has bread.
-    give_commodity(&mut ch.h.world, &mut ch.h.event_log, buyer, VILLAGE_SQUARE, CommodityKind::Coin, Quantity(5));
-    give_commodity(&mut ch.h.world, &mut ch.h.event_log, seller, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(3));
+    give_commodity(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        buyer,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+    give_commodity(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        seller,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
 
     // Set trade disposition profiles so duration can be resolved.
     {
@@ -692,7 +1002,8 @@ fn conformance_trade_noop_coverage_gap() {
                 concession_rate: pm(100),
                 demand_memory_retention_ticks: 48,
             },
-        ).unwrap();
+        )
+        .unwrap();
         txn.set_component_trade_disposition_profile(
             seller,
             worldwake_core::TradeDispositionProfile {
@@ -701,19 +1012,24 @@ fn conformance_trade_noop_coverage_gap() {
                 concession_rate: pm(100),
                 demand_memory_retention_ticks: 48,
             },
-        ).unwrap();
+        )
+        .unwrap();
         txn.set_component_merchandise_profile(
             seller,
             worldwake_core::MerchandiseProfile {
                 sale_kinds: std::collections::BTreeSet::from([CommodityKind::Bread]),
                 home_market: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
     }
 
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, buyer, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        buyer,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -726,9 +1042,13 @@ fn conformance_trade_noop_coverage_gap() {
     let initial_state = PlanningState::new(&snapshot);
 
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state.clone(),
-        &[PlanningEntityRef::Authoritative(seller)], None,
-    ).expect("trade transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state.clone(),
+        &[PlanningEntityRef::Authoritative(seller)],
+        None,
+    )
+    .expect("trade transition should produce Some");
     assert_planner_noop("trade", &initial_state, &transition.state, buyer);
 
     // Handler side: trade actually transfers commodities.
@@ -740,9 +1060,13 @@ fn conformance_trade_noop_coverage_gap() {
         requested_commodity: CommodityKind::Bread,
         requested_quantity: Quantity(1),
     });
-    let buyer_bread_before = ch.h.world.controlled_commodity_quantity(buyer, CommodityKind::Bread);
+    let buyer_bread_before =
+        ch.h.world
+            .controlled_commodity_quantity(buyer, CommodityKind::Bread);
     ch.run_action_to_completion(buyer, "trade", vec![seller], Some(trade_payload), 20);
-    let buyer_bread_after = ch.h.world.controlled_commodity_quantity(buyer, CommodityKind::Bread);
+    let buyer_bread_after =
+        ch.h.world
+            .controlled_commodity_quantity(buyer, CommodityKind::Bread);
 
     // Trade may or may not succeed (depends on valuation), but handler at least attempted.
     // The key conformance check is that the planner claims no state change.
@@ -755,30 +1079,54 @@ fn conformance_trade_noop_coverage_gap() {
 fn conformance_loot() {
     let mut ch = ConformanceHarness::new();
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Looter", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Looter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, agent);
 
     // Create a corpse with commodities.
     let corpse = seed_agent_with_recipes(
-        &mut ch.h.world, &mut ch.h.event_log, "Corpse", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Corpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
         worldwake_core::KnownRecipes::new(),
     );
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0))).unwrap();
-        txn.set_component_agent_data(corpse, AgentData { control_source: ControlSource::None }).unwrap();
+        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0)))
+            .unwrap();
+        txn.set_component_agent_data(
+            corpse,
+            AgentData {
+                control_source: ControlSource::None,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
     }
     give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, corpse, VILLAGE_SQUARE,
-        CommodityKind::Bread, Quantity(2),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        corpse,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
     );
 
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -792,11 +1140,17 @@ fn conformance_loot() {
     let before_agent_bread = initial_state.commodity_quantity_ref(agent_ref, CommodityKind::Bread);
 
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state,
-        &[PlanningEntityRef::Authoritative(corpse)], None,
-    ).expect("loot transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state,
+        &[PlanningEntityRef::Authoritative(corpse)],
+        None,
+    )
+    .expect("loot transition should produce Some");
 
-    let planner_agent_bread = transition.state.commodity_quantity_ref(agent_ref, CommodityKind::Bread);
+    let planner_agent_bread = transition
+        .state
+        .commodity_quantity_ref(agent_ref, CommodityKind::Bread);
 
     // Planner should transfer commodities from corpse to actor.
     assert!(
@@ -805,12 +1159,24 @@ fn conformance_loot() {
     );
 
     // --- Handler side ---
-    let handler_before = ch.h.world.controlled_commodity_quantity(agent, CommodityKind::Bread);
+    let handler_before =
+        ch.h.world
+            .controlled_commodity_quantity(agent, CommodityKind::Bread);
     ch.run_action_to_completion(agent, "loot", vec![corpse], None, 10);
-    let handler_after = ch.h.world.controlled_commodity_quantity(agent, CommodityKind::Bread);
+    let handler_after =
+        ch.h.world
+            .controlled_commodity_quantity(agent, CommodityKind::Bread);
 
-    assert_quantity_direction("loot bread", before_agent_bread, planner_agent_bread, handler_after);
-    assert!(handler_after > handler_before, "handler should transfer bread to agent");
+    assert_quantity_direction(
+        "loot bread",
+        before_agent_bread,
+        planner_agent_bread,
+        handler_after,
+    );
+    assert!(
+        handler_after > handler_before,
+        "handler should transfer bread to agent"
+    );
 }
 
 #[test]
@@ -818,31 +1184,49 @@ fn conformance_heal() {
     let mut ch = ConformanceHarness::new();
     // Healer with medicine.
     let healer = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Healer", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Healer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, healer);
 
     // Wounded patient at same location.
     let patient = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Patient", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Patient",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, patient);
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_wound_list(patient, stable_wound_list(400)).unwrap();
+        txn.set_component_wound_list(patient, stable_wound_list(400))
+            .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
     }
 
     // Healer needs medicine.
     give_commodity(
-        &mut ch.h.world, &mut ch.h.event_log, healer, VILLAGE_SQUARE,
-        CommodityKind::Medicine, Quantity(2),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        healer,
+        VILLAGE_SQUARE,
+        CommodityKind::Medicine,
+        Quantity(2),
     );
 
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, healer, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        healer,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -855,19 +1239,26 @@ fn conformance_heal() {
     let before_pain = initial_state.pain_summary(patient).unwrap_or(pm(0));
 
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state,
-        &[PlanningEntityRef::Authoritative(patient)], None,
-    ).expect("heal transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state,
+        &[PlanningEntityRef::Authoritative(patient)],
+        None,
+    )
+    .expect("heal transition should produce Some");
 
     let planner_pain = transition.state.pain_summary(patient).unwrap_or(pm(0));
-    assert!(planner_pain < before_pain, "planner should reduce pain (was {before_pain:?}, got {planner_pain:?})");
+    assert!(
+        planner_pain < before_pain,
+        "planner should reduce pain (was {before_pain:?}, got {planner_pain:?})"
+    );
 
     // --- Handler side ---
     ch.run_action_to_completion(healer, "heal", vec![patient], None, 30);
     // Check wound list reduced (pain should decrease).
     let handler_wounds = ch.h.world.get_component_wound_list(patient);
-    let handler_pain: u16 = handler_wounds
-        .map_or(0, |wl| wl.wounds.iter().map(|w| w.severity.value()).sum());
+    let handler_pain: u16 =
+        handler_wounds.map_or(0, |wl| wl.wounds.iter().map(|w| w.severity.value()).sum());
     assert!(
         Permille::new(handler_pain).unwrap() < before_pain,
         "handler should reduce pain"
@@ -879,20 +1270,33 @@ fn conformance_attack_noop_coverage_gap() {
     // Attack uses GoalModelFallback with no state change — stochastic combat outcome.
     let mut ch = ConformanceHarness::new();
     let attacker = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Attacker", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Attacker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, attacker);
     let target = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Target", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Target",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, target);
 
     add_hostility(&mut ch.h.world, &mut ch.h.event_log, attacker, target);
 
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, attacker, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        attacker,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -902,9 +1306,13 @@ fn conformance_attack_noop_coverage_gap() {
     let initial_state = PlanningState::new(&snapshot);
 
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state.clone(),
-        &[PlanningEntityRef::Authoritative(target)], None,
-    ).expect("attack transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state.clone(),
+        &[PlanningEntityRef::Authoritative(target)],
+        None,
+    )
+    .expect("attack transition should produce Some");
     assert_planner_noop("attack", &initial_state, &transition.state, attacker);
 
     // Handler DOES create wounds. Combat outcome is stochastic but attack should at least start.
@@ -912,11 +1320,15 @@ fn conformance_attack_noop_coverage_gap() {
         target,
         weapon: worldwake_core::CombatWeaponRef::Unarmed,
     });
-    let target_wounds_before = ch.h.world.get_component_wound_list(target)
-        .map_or(0, |wl| wl.wounds.len());
+    let target_wounds_before =
+        ch.h.world
+            .get_component_wound_list(target)
+            .map_or(0, |wl| wl.wounds.len());
     ch.run_action_to_completion(attacker, "attack", vec![target], Some(attack_payload), 20);
-    let target_wounds_after = ch.h.world.get_component_wound_list(target)
-        .map_or(0, |wl| wl.wounds.len());
+    let target_wounds_after =
+        ch.h.world
+            .get_component_wound_list(target)
+            .map_or(0, |wl| wl.wounds.len());
     // Attack should create at least one wound on target.
     assert!(
         target_wounds_after > target_wounds_before,
@@ -928,29 +1340,52 @@ fn conformance_attack_noop_coverage_gap() {
 fn conformance_bury() {
     let mut ch = ConformanceHarness::new();
     let burier = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Burier", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Burier",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, burier);
 
     // Corpse at same location.
     let corpse = seed_agent_with_recipes(
-        &mut ch.h.world, &mut ch.h.event_log, "Corpse", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Corpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
         worldwake_core::KnownRecipes::new(),
     );
     let grave = place_workstation(
-        &mut ch.h.world, &mut ch.h.event_log, VILLAGE_SQUARE,
-        worldwake_core::WorkstationTag::GravePlot, ProductionOutputOwner::Actor,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        VILLAGE_SQUARE,
+        worldwake_core::WorkstationTag::GravePlot,
+        ProductionOutputOwner::Actor,
     );
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0))).unwrap();
-        txn.set_component_agent_data(corpse, AgentData { control_source: ControlSource::None }).unwrap();
+        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0)))
+            .unwrap();
+        txn.set_component_agent_data(
+            corpse,
+            AgentData {
+                control_source: ControlSource::None,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
     }
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, burier, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        burier,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
@@ -966,12 +1401,19 @@ fn conformance_bury() {
     let grave_ref = PlanningEntityRef::Authoritative(grave);
 
     // Before: corpse not in a container.
-    assert!(initial_state.direct_container_ref(corpse_ref).is_none(), "corpse should not be in container");
+    assert!(
+        initial_state.direct_container_ref(corpse_ref).is_none(),
+        "corpse should not be in container"
+    );
 
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state,
-        &[corpse_ref, grave_ref], None,
-    ).expect("bury transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state,
+        &[corpse_ref, grave_ref],
+        None,
+    )
+    .expect("bury transition should produce Some");
 
     // Planner should place corpse into burial container.
     assert_eq!(
@@ -984,7 +1426,10 @@ fn conformance_bury() {
     ch.run_action_to_completion(burier, "bury", vec![corpse, grave], None, 10);
     // After bury, the corpse should be in a container.
     let handler_container = ch.h.world.direct_container(corpse);
-    assert!(handler_container.is_some(), "handler should place corpse into container");
+    assert!(
+        handler_container.is_some(),
+        "handler should place corpse into container"
+    );
 }
 
 // ===========================================================================
@@ -997,23 +1442,41 @@ fn conformance_declare_support() {
 
     // Create a Support-succession office at RULERS_HALL.
     let office = seed_office(
-        &mut ch.h.world, &mut ch.h.event_log,
-        "Council Seat", RULERS_HALL, SuccessionLaw::Support, 10, Vec::new(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Council Seat",
+        RULERS_HALL,
+        SuccessionLaw::Support,
+        10,
+        Vec::new(),
     );
 
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Supporter", RULERS_HALL,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Supporter",
+        RULERS_HALL,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, agent);
 
     // Seed beliefs about the office.
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
     seed_known_office_at_place(
-        &mut ch.h.world, &mut ch.h.event_log, agent, office, RULERS_HALL, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        office,
+        RULERS_HALL,
+        Tick(0),
     );
 
     // --- Planner side ---
@@ -1022,9 +1485,8 @@ fn conformance_declare_support() {
     let goal = grounded(GoalKind::ClaimOffice { office });
     let initial_state = PlanningState::new(&snapshot);
 
-    let _transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state, &[], None,
-    ).expect("declare_support transition should produce Some");
+    let _transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
+        .expect("declare_support transition should produce Some");
 
     // Planner adds support declaration override (actor supports self for office).
     // Support declarations are private in PlanningState, so we verify that
@@ -1032,18 +1494,22 @@ fn conformance_declare_support() {
     // the planner model is consistent with the handler outcome.
 
     // --- Handler side ---
-    let support_payload = ActionPayload::DeclareSupport(worldwake_sim::DeclareSupportActionPayload {
-        office,
-        candidate: agent,
-    });
+    let support_payload =
+        ActionPayload::DeclareSupport(worldwake_sim::DeclareSupportActionPayload {
+            office,
+            candidate: agent,
+        });
     ch.run_action_to_completion(agent, "declare_support", vec![], Some(support_payload), 10);
 
     // After declare_support, the agent should have a support declaration.
     let support = ch.h.world.support_declarations_for_office(office);
-    let has_self_support = support.iter().any(|&(supporter, candidate)| {
-        supporter == agent && candidate == agent
-    });
-    assert!(has_self_support, "handler should register support declaration for agent → agent");
+    let has_self_support = support
+        .iter()
+        .any(|&(supporter, candidate)| supporter == agent && candidate == agent);
+    assert!(
+        has_self_support,
+        "handler should register support declaration for agent → agent"
+    );
 }
 
 #[test]
@@ -1052,22 +1518,40 @@ fn conformance_press_force_claim() {
 
     // Create a Force-succession office at RULERS_HALL.
     let office = seed_office(
-        &mut ch.h.world, &mut ch.h.event_log,
-        "Warlord Seat", RULERS_HALL, SuccessionLaw::Force, 10, Vec::new(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Warlord Seat",
+        RULERS_HALL,
+        SuccessionLaw::Force,
+        10,
+        Vec::new(),
     );
 
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Claimant", RULERS_HALL,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Claimant",
+        RULERS_HALL,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, agent);
 
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
     seed_known_office_at_place(
-        &mut ch.h.world, &mut ch.h.event_log, agent, office, RULERS_HALL, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        office,
+        RULERS_HALL,
+        Tick(0),
     );
 
     // --- Planner side ---
@@ -1076,18 +1560,16 @@ fn conformance_press_force_claim() {
     let goal = grounded(GoalKind::ClaimOffice { office });
     let initial_state = PlanningState::new(&snapshot);
 
-    let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state, &[], None,
-    ).expect("press_force_claim transition should produce Some");
+    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
+        .expect("press_force_claim transition should produce Some");
 
     // Planner overrides force_controller_belief to Certain((Some(actor), false)).
     // The transition succeeding is the key conformance check.
     let _ = transition;
 
     // --- Handler side ---
-    let press_payload = ActionPayload::PressForceClaim(worldwake_sim::PressForceClaimActionPayload {
-        office,
-    });
+    let press_payload =
+        ActionPayload::PressForceClaim(worldwake_sim::PressForceClaimActionPayload { office });
     ch.run_action_to_completion(agent, "press_force_claim", vec![], Some(press_payload), 10);
 
     // After press_force_claim, the office should have a ContestsOffice relation.
@@ -1104,7 +1586,9 @@ fn conformance_queue_for_facility() {
 
     // Create an exclusive facility with queue.
     let facility = place_exclusive_workstation_with_source(
-        &mut ch.h.world, &mut ch.h.event_log, VILLAGE_SQUARE,
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        VILLAGE_SQUARE,
         worldwake_core::WorkstationTag::OrchardRow,
         worldwake_core::ResourceSource {
             commodity: CommodityKind::Apple,
@@ -1118,8 +1602,13 @@ fn conformance_queue_for_facility() {
     );
 
     let agent = seed_agent(
-        &mut ch.h.world, &mut ch.h.event_log, "Queuer", VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(), MetabolismProfile::default(), UtilityProfile::default(),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Queuer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, agent);
 
@@ -1131,20 +1620,26 @@ fn conformance_queue_for_facility() {
             worldwake_core::FacilityQueueDispositionProfile {
                 queue_patience_ticks: Some(nz(50)),
             },
-        ).unwrap();
+        )
+        .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
     }
 
     seed_actor_local_beliefs(
-        &mut ch.h.world, &mut ch.h.event_log, agent, Tick(0),
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        agent,
+        Tick(0),
         PerceptionSource::DirectObservation,
     );
 
     // --- Planner side ---
     // Find the harvest def to get the intended_action id.
-    let harvest_def = ch.h.defs.iter()
-        .find(|def| def.name.starts_with("harvest:"))
-        .expect("should have harvest action def");
+    let harvest_def =
+        ch.h.defs
+            .iter()
+            .find(|def| def.name.starts_with("harvest:"))
+            .expect("should have harvest action def");
     let harvest_id = harvest_def.id;
 
     let snapshot = ch.snapshot_for(agent);
@@ -1156,23 +1651,30 @@ fn conformance_queue_for_facility() {
     let initial_state = PlanningState::new(&snapshot);
     let facility_ref = PlanningEntityRef::Authoritative(facility);
 
-    let queue_payload = ActionPayload::QueueForFacilityUse(
-        worldwake_sim::QueueForFacilityUsePayload {
+    let queue_payload =
+        ActionPayload::QueueForFacilityUse(worldwake_sim::QueueForFacilityUsePayload {
             intended_action: harvest_id,
-        },
-    );
+        });
 
     let transition = apply_hypothetical_transition(
-        &goal, &semantics, initial_state,
-        &[facility_ref], Some(&queue_payload),
-    ).expect("queue_for_facility transition should produce Some");
+        &goal,
+        &semantics,
+        initial_state,
+        &[facility_ref],
+        Some(&queue_payload),
+    )
+    .expect("queue_for_facility transition should produce Some");
 
     // Planner should simulate queue join.
     let _ = transition;
 
     // --- Handler side ---
     ch.run_action_to_completion(
-        agent, "queue_for_facility_use", vec![facility], Some(queue_payload), 10,
+        agent,
+        "queue_for_facility_use",
+        vec![facility],
+        Some(queue_payload),
+        10,
     );
 
     // After queue_for_facility_use completes, the agent should be in the queue
@@ -1182,5 +1684,8 @@ fn conformance_queue_for_facility() {
         q.granted.as_ref().is_some_and(|g| g.actor == agent)
             || q.waiting.values().any(|w| w.actor == agent)
     });
-    assert!(agent_in_queue, "handler should place agent in facility queue or grant access");
+    assert!(
+        agent_in_queue,
+        "handler should place agent in facility queue or grant access"
+    );
 }

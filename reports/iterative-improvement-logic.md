@@ -257,6 +257,16 @@ FUNCTION backtrack(checkpoint_store, experiment_log, musings):
     best_metric = target.metric
 ```
 
+### 3.8 A/B Testing the Agent (Future)
+
+**What it is:** A meta-level evaluation framework where two different agent configurations (different prompting strategies, different LLMs, or different exploration parameters) are run from the same baseline, and their search quality is compared side-by-side.
+
+**Source:** Cerebras codex-autoresearch-harness. `launch_ab.sh` runs Agent A for N hours, then Agent B for N hours from the same baseline. `compare_results.sh` generates side-by-side analysis.
+
+**Cross-domain value:** Answers the question "are we improving because of our loop design, or despite it?" This is how you evaluate the optimization process itself, not just the system being optimized.
+
+**Status:** Future — not currently implemented in the skill. Documented here for reference.
+
 ---
 
 ## 4. Safety and Constraint Mechanisms
@@ -387,6 +397,8 @@ FUNCTION measure_with_confidence(mutable_system, harness, runs):
 
 For single-run campaigns (`HARNESS_RUNS == 1`), MAD cannot be computed. The agent uses `NOISE_TOLERANCE` (default 1%) as the assumed noise floor.
 
+**Future enhancement — formal significance tests:** The MindStudio GitHub Actions autoresearch guide recommends requiring minimum sample sizes (100-200 observations) and formal statistical significance tests (chi-square or Z-score via scipy.stats) before accepting changes. This adds rigor beyond the MAD-based approach used here, particularly for metrics with high variance.
+
 ### 4.7 Goodhart's Law Defenses
 
 Autonomous loops are vulnerable to Goodhart's Law: the agent may find ways to improve the metric that don't represent genuine improvement of the underlying system. Three guards defend against this.
@@ -451,6 +463,118 @@ FUNCTION regression_check(total_accepts, mutable_system, harness, best_metric):
 ```
 
 **Rationale:** Over many experiments, non-determinism in the harness (system load, thermal throttling, garbage collection) can cause the baseline to drift. Periodic regression checks detect this drift and recalibrate `best_metric` to prevent accepting changes that merely exploit favorable measurement conditions.
+
+### 4.8 Condition Drift Anchoring
+
+**What it is:** An explicit re-anchoring step at the start of each loop iteration that re-reads the original objective from disk and validates the agent hasn't drifted away from it.
+
+**Source:** AutoResearchClaw v0.2.0 bug fixes, Cerebras blog ("How to stop your autoresearch loop from cheating").
+
+**Why it's necessary:** The Cerebras team documented that overnight loops abandon the original objective: "By morning, the agent had abandoned our experiment and started its own." AutoResearchClaw had a similar bug ("experiment condition drift in iterative refinement") fixed by anchoring to `exp_plan.yaml`.
+
+```
+FUNCTION anchor_check(program_md, experiment_log):
+    objective = read_from_disk(program_md).objective  // always re-read, never rely on cached context
+    recent_descriptions = experiment_log.last(5).descriptions
+
+    IF recent_descriptions are tangential to objective:
+        log_drift_warning(musings, recent_descriptions, objective)
+        RETURN REFOCUS  // force next hypothesis to directly target the objective
+    RETURN CONTINUE
+```
+
+### 4.9 Correctness Guard (Backpressure Checks)
+
+**What it is:** After every metric-improving change (ACCEPT decision), an optional correctness check (`checks.sh`) runs the project's test suite, type checker, and linter. If any check fails, the ACCEPT is downgraded to REJECT — metric improvement that breaks correctness is not real improvement.
+
+**Source:** pi-autoresearch (davebcn87 / Shopify). This mechanism was used to maintain 974 passing unit tests across 93 automated commits on Liquid.
+
+```
+CONSTANT CHECKS_TIMEOUT = 120  // seconds
+
+FUNCTION correctness_check(mutable_system, checks_script):
+    IF NOT exists(checks_script):
+        RETURN PASS  // no checks configured, proceed with ACCEPT
+
+    result = run_with_timeout(checks_script, CHECKS_TIMEOUT)
+    IF result.exit_code != 0 OR result.timed_out:
+        log("correctness check failed after metric improvement")
+        RETURN FAIL  // downgrade ACCEPT to REJECT, rollback
+    RETURN PASS
+```
+
+**Relationship to Goodhart defenses:** This complements the existing Goodhart defenses (multi-seed, suspicion gate, regression check) with a structural guarantee. Those defenses check whether the metric improvement is real; this defense checks whether the improvement broke anything else.
+
+### 4.10 Metric Direction Validation
+
+**What it is:** A startup-time sanity check that validates the metric direction declared in the instruction spec (`lower-is-better` vs `higher-is-better`) is consistent with how the accept/reject logic compares metrics.
+
+**Source:** AutoResearchClaw v0.2.0 bug fixes — this was a real bug that caused the loop to optimize in the wrong direction, wasting runs.
+
+```
+CONSTANT METRIC_DIRECTION = "lower-is-better"  // or "higher-is-better"
+
+FUNCTION validate_metric_direction(instruction_spec):
+    direction = instruction_spec.metric_direction  // default: "lower-is-better"
+    accept_logic = instruction_spec.accept_conditions
+
+    // Verify consistency
+    IF direction == "lower-is-better" AND accept_logic compares new < old:
+        RETURN OK
+    IF direction == "higher-is-better" AND accept_logic compares new > old:
+        RETURN OK
+
+    HARD_ERROR("Metric direction mismatch: declared " + direction +
+               " but accept logic expects the opposite. Fix program.md before proceeding.")
+```
+
+### 4.11 Cost Control
+
+**What it is:** An optional hard cap on total experiments (`MAX_ITERATIONS`). When reached, the loop stops gracefully and runs the campaign completion steps instead of looping forever.
+
+**Source:** pi-autoresearch, uditgoenka/autoresearch.
+
+```
+CONSTANT MAX_ITERATIONS = "unlimited"  // default: no cap
+
+FUNCTION check_iteration_cap(experiment_count, max_iterations):
+    IF max_iterations == "unlimited":
+        RETURN CONTINUE
+    IF experiment_count >= max_iterations:
+        log("Iteration cap reached (" + max_iterations + "). Exiting gracefully.")
+        RETURN EXIT_TO_COMPLETION  // run "After Campaign Completes" steps
+    RETURN CONTINUE
+```
+
+**Rationale:** Prevents runaway token costs in autonomous loops. Essential for bounded exploration where the human wants to limit total expenditure.
+
+### 4.12 Scope Enforcement
+
+**What it is:** A post-implementation check that verifies the agent only modified declared mutable files. If any immutable file was changed, the experiment is immediately rejected.
+
+**Source:** Cerebras blog — "The infrastructure and task framing determined whether the agent explored productively or spiraled."
+
+```
+FUNCTION scope_check(mutable_files, changed_files):
+    violations = changed_files - mutable_files  // set difference
+    IF violations is not empty:
+        log("Scope violation: touched immutable files: " + violations)
+        rollback()
+        RETURN REJECT
+    RETURN CONTINUE
+```
+
+**Relationship to drift anchoring:** Drift anchoring (Section 4.8) prevents the agent from drifting away from the objective in its reasoning. Scope enforcement prevents the agent from drifting in its actions — modifying files it shouldn't touch. Together they provide both cognitive and structural drift prevention.
+
+### 4.13 Sentinel Watchdog (Future)
+
+**What it is:** An independent background quality monitor that runs continuously, separate from the accept/reject gate. Checks for: NaN/Inf in metrics, evidence-result consistency, metric anomaly detection, and anti-fabrication guards.
+
+**Source:** AutoResearchClaw.
+
+**Cross-domain value:** Any long-running autonomous loop benefits from an independent watchdog that can raise alarms or halt execution when something goes wrong between checkpoints. Unlike the inline Goodhart defenses that run at accept time, a sentinel runs continuously.
+
+**Status:** Future — not currently implemented in the skill. Documented here for reference.
 
 ---
 
@@ -692,6 +816,59 @@ FOR each lesson IN lessons:
 
 **Consumption:** New campaigns read `campaigns/lessons-global.jsonl` at startup. The agent uses relevant global lessons to inform its initial hypothesis queue and category priorities.
 
+#### 5.7.1 Lesson Curation Gate
+
+Not every experimental observation deserves to become a persisted lesson. Without curation, the lesson store accumulates noise, bad generalizations, and context-specific observations that don't transfer to future experiments.
+
+**Source:** autocontext (greyhaven-ai, 648 stars). Their 5-role multi-agent loop includes a `curator` that explicitly gates what knowledge persists. This was identified as the key difference between a lesson store that improves over time and one that becomes cruft.
+
+Before persisting any lesson, three gating questions must be answered YES:
+
+```
+FUNCTION curate_lesson(lesson_candidate):
+    // 1. Generalizable?
+    IF lesson is specific to this one change and unlikely to apply elsewhere:
+        RETURN SUPPRESS  // "Lesson suppressed: not generalizable"
+
+    // 2. Non-obvious?
+    IF lesson merely restates the accept/reject status (e.g., "this change improved the metric"):
+        RETURN SUPPRESS  // "Lesson suppressed: obvious from status"
+
+    // 3. Actionable?
+    IF a fresh agent could not use this lesson to make a better hypothesis:
+        RETURN SUPPRESS  // "Lesson suppressed: not actionable"
+
+    RETURN PERSIST
+```
+
+#### 5.7.2 Structured Lesson Categories
+
+**Source:** AutoResearchClaw — structured knowledge base across 6 categories.
+
+Replace the flat `polarity` field with a `type` field that categorizes lessons by their purpose:
+
+```
+LESSON (updated schema):
+    lesson           // what pattern worked (or failed) and why
+    type             // "finding" | "decision" | "experiment" | "question" | "negative"
+    confidence       // 0.0-1.0
+    source_exp       // experiment that generated this lesson
+    category         // experiment category
+    timestamp        // when the lesson was extracted
+    decay_weight     // 1.0 → decreases over time, pruned below 0.3
+```
+
+**Type definitions:**
+- `finding`: a reusable pattern or insight (replaces `polarity: positive`)
+- `decision`: a choice between alternatives with rationale (e.g., "chose algorithm X over Y because of constraint Z")
+- `experiment`: a tried approach and its outcome pattern (e.g., "inlining works for functions <10 lines but hurts readability beyond that")
+- `question`: an open problem identified during experimentation (e.g., "why do tests 6-10 regress when tests 1-5 improve?")
+- `negative`: a pattern that consistently fails (replaces `polarity: negative`)
+
+Different types serve different retrieval purposes: "what decisions have we made?" differs from "what experiments have we tried?" or "what questions remain open?"
+
+**Backward compatibility:** When resuming a campaign whose lessons.jsonl uses the old `polarity` field, treat `polarity: positive` as `type: finding` and `polarity: negative` as `type: negative`.
+
 ### 5.8 PROCEED/REFINE/PIVOT Decision Framework
 
 Beyond the per-experiment accept/reject gate, the agent periodically evaluates its overall trajectory to decide whether to continue, adjust, or fundamentally change its approach.
@@ -719,6 +896,40 @@ FUNCTION trajectory_check(experiment_log):
 ```
 
 **Relationship to plateau detection:** Plateau detection (Section 5.3) triggers after consecutive rejects and cycles through strategies linearly. PROCEED/REFINE/PIVOT operates on a rolling window and can trigger a strategic shift even if rejects are interspersed with occasional near-misses.
+
+### 5.9 Tree Search Exploration (Future)
+
+**What it is:** Instead of a linear chain where each experiment builds only on the previous best (greedy hill-climbing), solutions are organized as a tree. Each node is a candidate solution. A search policy (best-first tree search / UCT with depth preference) selects which node to expand next. Children are created by refining or forking a parent.
+
+**Source:** AIDE ML (WecoAI, 1,200+ stars), AI Scientist v2 (Sakana AI), SELA.
+
+**Key parameters:** `num_drafts` (initial independent roots), `steps` (max nodes to explore), `max_debug_depth` (retries before abandoning a branch), `debug_prob` (probability of trying to fix a failing node vs. starting fresh).
+
+**How it differs from the current system:** The current system uses lightweight backtracking and a linear strategy progression (normal → combine → ablation → radical → backtrack). Tree search maintains N parallel branches simultaneously, selects which branch to deepen using a UCB-like score, and can jump to any promising ancestor at any time. It also generates `num_drafts` independent root nodes at the start, providing diverse initial directions.
+
+**Cross-domain value:** Any iterative loop that gets stuck in local optima benefits. The tree structure provides a principled way to balance exploration vs. exploitation without needing ad-hoc strategy progression stages.
+
+**Status:** Future — the current linear strategy progression is retained. Tree search represents a fundamental architectural redesign that subsumes the current approach.
+
+### 5.10 Parallel Experiment Waves (Future)
+
+**What it is:** Instead of testing one change at a time, runs N experiments in parallel as a "wave." The agent can design factorial grids (e.g., 3 values of parameter A × 4 values of parameter B = 12 experiments per wave) to catch interaction effects between changes.
+
+**Source:** SkyPilot parallel autoresearch, n-autoresearch (iii-hq).
+
+**Emergent phase discovery:** With enough parallel bandwidth, the SkyPilot team observed that the agent spontaneously develops search phases without being programmed to: (1) broad hyperparameter sweeps, (2) focused architecture exploration, (3) interaction effect testing, (4) fine-tuning winners. The agent also discovered heterogeneous resource strategies (screen ideas on cheap resources, validate on expensive ones).
+
+**Status:** Future — requires multi-executor infrastructure not currently available.
+
+### 5.11 Multi-Agent Hypothesis Debate (Future)
+
+**What it is:** Three agents with distinct roles — Innovator, Pragmatist, Contrarian — debate hypotheses before experiments are run. An adversarial analysis panel reviews results after experiments complete. This generates higher-quality hypotheses and pre-filters bad ones through adversarial review.
+
+**Source:** AutoResearchClaw.
+
+**Cross-domain value:** Even simulated debate (same LLM, different prompts/roles) produces more diverse ideas and catches flawed reasoning before expensive experiments.
+
+**Status:** Future — the current system generates experiments from a single perspective.
 
 ## 6. The Autonomy Model
 
@@ -757,7 +968,7 @@ DIRECTIVE never_stop:
 
 ```
 // ============================================================
-// ITERATIVE IMPROVEMENT SYSTEM — COMPLETE PSEUDOCODE (v3)
+// ITERATIVE IMPROVEMENT SYSTEM — COMPLETE PSEUDOCODE (v4)
 // ============================================================
 
 // --- CONSTANTS (set once, never changed) ---
@@ -777,6 +988,9 @@ REGRESSION_CHECK_INTERVAL = 5   // regression check every N accepts
 META_REVIEW_INTERVAL   = 20     // experiments between meta-reviews
 META_TRIAL_WINDOW      = 10     // trial period for meta-changes
 PIVOT_CHECK_INTERVAL   = 10     // trajectory check interval
+METRIC_DIRECTION       = "lower-is-better"  // or "higher-is-better"
+MAX_ITERATIONS         = "unlimited"  // hard cap on total experiments
+CHECKS_TIMEOUT         = 120          // seconds for correctness checks
 
 // --- IMMUTABLE COMPONENTS ---
 evaluation_harness = load_evaluation_harness()  // fixed, read-only
@@ -818,8 +1032,20 @@ append(checkpoint_store, {exp_id: "baseline", metric: best_metric,
 LOOP FOREVER:
     experiment_count += 1
 
+    // --- STEP 0: ANCHOR (Condition Drift Prevention) ---
+    objective = read_from_disk(instruction_spec).objective
+    recent_descriptions = past_experiments.last(5).descriptions
+    IF recent_descriptions are tangential to objective:
+        append(musings, "DRIFT WARNING: refocusing on declared objective")
+        // force next hypothesis to target the declared objective
+
+    // --- STEP 0b: ITERATION CAP CHECK ---
+    IF MAX_ITERATIONS != "unlimited" AND experiment_count >= MAX_ITERATIONS:
+        GOTO CAMPAIGN_COMPLETION
+
     // --- STEP 1: OBSERVE ---
-    current_state = inspect(mutable_system)
+    current_state = read_from_disk(mutable_system)  // always re-read, never use stale context
+    verify_immutable_files_unchanged()  // hard error if any immutable file modified
     past_experiments = read(experiment_log)
 
     // --- STEP 1b: CHECK STRATEGY ---
@@ -891,6 +1117,14 @@ LOOP FOREVER:
     // --- STEP 3: IMPLEMENT ---
     apply(change, mutable_system)
     checkpoint(mutable_system)
+
+    // --- STEP 3b: SCOPE CHECK ---
+    changed_files = git_diff_name_only()
+    violations = changed_files - mutable_file_list
+    IF violations is not empty:
+        rollback(mutable_system)
+        log(experiment_log, status=REJECT, description="scope violation: " + violations)
+        CONTINUE
 
     // --- STEP 4: EXECUTE (with MAD + early abort + intermediates) ---
     attempt = 0
@@ -982,6 +1216,15 @@ LOOP FOREVER:
 
     FINALIZE:
     IF decision IN (ACCEPT, SUSPICIOUS_ACCEPT):
+        // Correctness check (backpressure)
+        IF exists(checks_script):
+            check_result = run_with_timeout(checks_script, CHECKS_TIMEOUT)
+            IF check_result.failed OR check_result.timed_out:
+                decision = REJECT
+                rollback(mutable_system)
+                log(experiment_log, status=REJECT, description="correctness check failed")
+                GOTO NEXT_ITERATION
+
         best_metric = new_metric
         advance(mutable_system)
         total_accepts += 1
@@ -1014,8 +1257,13 @@ LOOP FOREVER:
     append(musings, "**Partial signals**: " + format_partial_signals(intermediates_log.last()))
     append(musings, "**Learning**: " + reflect_on_result(change, decision, measurement))
 
-    // --- STEP 7.6: EXTRACT LESSON ---
-    extract_lessons(decision, change, experiment_log, lesson_store)
+    // --- STEP 7.6: EXTRACT LESSON (with curation gate) ---
+    lesson_candidate = generate_lesson(decision, change, experiment_log)
+    IF curate_lesson(lesson_candidate) == PERSIST:
+        lesson_candidate.type = classify_type(lesson_candidate)  // finding|decision|experiment|question|negative
+        append(lesson_store, lesson_candidate)
+    ELSE:
+        append(musings, "Lesson suppressed: failed curation gate")
 
     // --- LESSON MAINTENANCE ---
     IF experiment_count % 50 == 0:
@@ -1100,3 +1348,16 @@ Features in this document were extracted from Karpathy's autoresearch and its fo
 | Cross-run lesson store | AutoResearchClaw (6,000 stars) | 5.7 |
 | PROCEED/REFINE/PIVOT framework | AutoResearchClaw self-healing executor | 5.8 |
 | Intermediate metrics / partial signals | Multiple forks extending early-abort | 3.1, 5.4 |
+| Condition drift anchoring | AutoResearchClaw v0.2.0, Cerebras blog | 4.8 |
+| Correctness guard (backpressure checks) | pi-autoresearch (Shopify) | 4.9 |
+| Metric direction validation | AutoResearchClaw v0.2.0 | 4.10 |
+| Cost control (MAX_ITERATIONS) | pi-autoresearch, uditgoenka/autoresearch | 4.11 |
+| Scope enforcement | Cerebras blog | 4.12 |
+| Lesson curation gating | autocontext (greyhaven-ai, 648 stars) | 5.7.1 |
+| Structured lesson categories | AutoResearchClaw | 5.7.2 |
+| Tree search exploration | AIDE ML (WecoAI), AI Scientist v2, SELA | 5.9 |
+| Parallel experiment waves | SkyPilot, n-autoresearch (iii-hq) | 5.10 |
+| Multi-agent hypothesis debate | AutoResearchClaw | 5.11 |
+| Sentinel watchdog | AutoResearchClaw | 4.13 |
+| A/B testing the agent | Cerebras codex-autoresearch-harness | 3.8 |
+| Formal significance tests | MindStudio GitHub Actions guide | 4.6 (note) |

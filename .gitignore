@@ -20,3 +20,13 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 .claude/worktrees
+
+# Improve-loop campaign runtime files (per-campaign, not committed)
+campaigns/*/checkpoints.jsonl
+campaigns/*/lessons.jsonl
+campaigns/*/intermediates.jsonl
+campaigns/*/musings.md
+campaigns/*/results.tsv
+campaigns/*/program.md.backup
+campaigns/*/run.log
+# NOTE: campaigns/lessons-global.jsonl is NOT gitignored — it must be committed

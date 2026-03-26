@@ -69,14 +69,12 @@ impl DirtySet {
     // -----------------------------------------------------------------------
 
     /// All structural bits (0–5).
-    pub const STRUCTURAL_MASK: DirtySet = DirtySet(
-        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
-    );
+    pub const STRUCTURAL_MASK: DirtySet =
+        DirtySet((1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5));
 
     /// All snapshot bits (6–11).
-    pub const SNAPSHOT_MASK: DirtySet = DirtySet(
-        (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11),
-    );
+    pub const SNAPSHOT_MASK: DirtySet =
+        DirtySet((1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11));
 
     /// All frame lifecycle bits (12–14).
     pub const FRAME_MASK: DirtySet = DirtySet((1 << 12) | (1 << 13) | (1 << 14));
@@ -101,6 +99,12 @@ impl DirtySet {
     #[inline]
     pub fn contains(self, other: DirtySet) -> bool {
         (self.0 & other.0) == other.0
+    }
+
+    /// Returns `true` if this set shares any bit with `other`.
+    #[inline]
+    pub fn contains_any(self, other: DirtySet) -> bool {
+        (self.0 & other.0) != 0
     }
 
     /// Returns `true` if the set is non-empty and contains only snapshot

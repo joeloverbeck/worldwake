@@ -1,7 +1,7 @@
 # Worldwake Epic Breakdown Design Document
 
 **Date**: 2026-03-09
-**Status**: Approved
+**Status**: ✅ COMPLETED
 **Scope**: Break the brainstorming spec into implementable epics
 
 ## Decisions
@@ -102,3 +102,10 @@ The spec explicitly states (section 12): "Do not start Phase 3 or 4 until Phase 
 2. **Belief system overhead**: Maintaining per-agent beliefs adds memory. Mitigation: small world (25-40 agents) keeps this manageable.
 3. **Determinism**: Any floating-point comparison or HashMap iteration order could break determinism. Mitigation: use `BTreeMap` where order matters, avoid float equality.
 4. **Soak test stability**: T30 (100 seeds, 7 days) may reveal rare edge cases. Mitigation: extensive property testing in earlier epics.
+
+## Outcome
+
+- Completed: 2026-03-25
+- What changed: This design's workspace split, epic sequencing, and phased implementation plan were used to structure the current repository and active/archived spec set.
+- Deviations from original plan: The authoritative implementation uses deterministic `BTreeMap`-backed storage rather than the draft's `HashMap` wording, and the live planning material evolved beyond this initial breakdown.
+- Verification results: Confirmed the current workspace has the five planned crates, and repository guidance still refers to this document as a historical design reference rather than an active planning source.

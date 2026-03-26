@@ -5,13 +5,14 @@
 
 pub mod agent_tick;
 pub mod budget;
-pub mod feasibility;
 pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
 pub mod dirty_set;
 mod enterprise;
 pub mod failure_handling;
+pub mod feasibility;
+mod frame_switch_policy;
 pub mod goal_explanation;
 pub mod goal_model;
 pub mod goal_policy;
@@ -19,7 +20,6 @@ mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
-mod frame_switch_policy;
 pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_ops;
@@ -33,9 +33,9 @@ pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSourc
 pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    classify_frame_plan_relation, has_active_frame_travel, has_frame,
-    frame_travel_destination, frame_runtime_snapshot, AgentDecisionRuntime,
-    FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings,
+    classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
+    has_active_frame_travel, has_frame, AgentDecisionRuntime, FramePlanRelation,
+    FrameRuntimeSnapshot, MaterializationBindings,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,
@@ -53,8 +53,8 @@ pub use decision_trace::{
     TravelSuccessorTrace,
 };
 pub use dirty_set::DirtySet;
-pub use feasibility::{feasibility_hint, FeasibilityHint};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
+pub use feasibility::{feasibility_hint, FeasibilityHint};
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
     RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,

@@ -1,20 +1,20 @@
 use crate::decision_trace::{
-    BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome,
-    PlanSearchTrace, PlannedStepSummary, RankedGoalSummary, SelectedPlanReplacementKind,
+    BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
+    PlannedStepSummary, RankedGoalSummary, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace,
 };
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, PlannedPlan,
-    PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
+    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, Tick,
 };
-use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, Scheduler};
+use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, RuntimeBeliefView, Scheduler};
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 
@@ -154,6 +154,7 @@ pub(super) fn build_candidate_plans(
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
     collect_expansion_summaries: bool,
+    skip_exhausted: &std::collections::BTreeSet<crate::GoalKey>,
 ) -> Vec<(
     crate::GoalKey,
     PlanSearchResult,
@@ -163,6 +164,7 @@ pub(super) fn build_candidate_plans(
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
+        .filter(|c| !skip_exhausted.contains(&c.grounded.key))
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
 
@@ -232,6 +234,125 @@ pub(super) fn plans_as_options(
         .collect()
 }
 
+fn try_continue_snapshot_plan(
+    view: &impl RuntimeBeliefView,
+    runtime: &mut AgentDecisionRuntime,
+    ranked_candidates: &[RankedGoal],
+    active_goal_key: Option<worldwake_core::GoalKey>,
+    agent: worldwake_core::EntityId,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+) -> Option<PlannedStep> {
+    if !runtime.dirty.is_snapshot_only() || runtime.current_plan.is_none() {
+        return None;
+    }
+
+    let current_goal_still_top = ranked_candidates
+        .first()
+        .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
+    if !current_goal_still_top {
+        return None;
+    }
+
+    let step = current_step(runtime).cloned()?;
+    let valid = revalidate_next_step(
+        view,
+        agent,
+        &step,
+        &runtime.materialization_bindings,
+        action_defs,
+        action_handlers,
+    );
+    if !valid {
+        return None;
+    }
+
+    runtime.dirty = DirtySet::default();
+    Some(step)
+}
+
+fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime) {
+    // Clear exhausted-goal memory when the world changed in ways that could
+    // make previously impossible plans feasible (position, inventory, wounds,
+    // facilities). Needs-only changes rarely alter the search space.
+    let significant_change_mask = DirtySet::POSITION
+        | DirtySet::COMMODITY
+        | DirtySet::UNIQUE_ITEMS
+        | DirtySet::WOUNDS
+        | DirtySet::FACILITIES
+        | DirtySet::REPLAN_SIGNAL
+        | DirtySet::BLOCKER_CLEANUP;
+    if runtime.dirty.contains_any(significant_change_mask) {
+        runtime.search_exhausted_goals.clear();
+    }
+}
+
+fn record_exhausted_goals(
+    runtime: &mut AgentDecisionRuntime,
+    plans: &[(
+        crate::GoalKey,
+        PlanSearchResult,
+        Vec<BindingRejection>,
+        Vec<crate::decision_trace::SearchExpansionSummary>,
+    )],
+) {
+    runtime.search_exhausted_goals.clear();
+    for (key, result, _, _) in plans {
+        if matches!(
+            result,
+            crate::PlanSearchResult::BudgetExhausted { .. }
+                | crate::PlanSearchResult::FrontierExhausted { .. }
+        ) {
+            runtime.search_exhausted_goals.insert(*key);
+        }
+    }
+}
+
+fn adopt_selected_plan(
+    runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<ActiveGoal>,
+    jc: &mut Option<IntentionFrame>,
+    ranked_candidates: &[RankedGoal],
+    selected_plan: PlannedPlan,
+    tick: Tick,
+) {
+    runtime.materialization_bindings.clear();
+    *active_goal = Some(ActiveGoal {
+        goal_key: selected_plan.goal,
+        adopted_at: tick,
+    });
+    *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+    runtime.current_plan = Some(selected_plan);
+    runtime.current_step_index = 0;
+    runtime.step_in_flight = false;
+    runtime.last_priority_class = ranked_candidates
+        .iter()
+        .find(|candidate| {
+            Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key)
+        })
+        .map(|candidate| candidate.priority_class);
+}
+
+fn clear_current_plan(
+    runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<ActiveGoal>,
+    jc: &mut Option<IntentionFrame>,
+    ranked_candidates: &[RankedGoal],
+) {
+    if jc.is_some() {
+        runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
+    }
+    *jc = None;
+    runtime.materialization_bindings.clear();
+    *active_goal = None;
+    runtime.current_plan = None;
+    runtime.current_step_index = 0;
+    runtime.step_in_flight = false;
+    runtime.last_priority_class = ranked_candidates
+        .first()
+        .map(|candidate| candidate.priority_class);
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_and_validate_next_step(
     world: &worldwake_core::World,
@@ -255,27 +376,19 @@ pub(super) fn plan_and_validate_next_step(
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     if !runtime.dirty.is_empty() {
-        if runtime.dirty.is_snapshot_only() && runtime.current_plan.is_some() {
-            let current_goal_still_top = ranked_candidates
-                .first()
-                .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
-            if current_goal_still_top {
-                if let Some(step) = current_step(runtime).cloned() {
-                    let valid = revalidate_next_step(
-                        &view,
-                        agent,
-                        &step,
-                        &runtime.materialization_bindings,
-                        action_defs,
-                        action_handlers,
-                    );
-                    if valid {
-                        runtime.dirty = DirtySet::default();
-                        return (Some(step), Some(true));
-                    }
-                }
-            }
+        if let Some(step) = try_continue_snapshot_plan(
+            &view,
+            runtime,
+            ranked_candidates,
+            active_goal_key,
+            agent,
+            action_defs,
+            action_handlers,
+        ) {
+            return (Some(step), Some(true));
         }
+
+        reset_exhausted_goals_if_needed(runtime);
 
         let plans = build_candidate_plans(
             world,
@@ -291,7 +404,11 @@ pub(super) fn plan_and_validate_next_step(
             recipe_registry,
             false,
             false,
+            &runtime.search_exhausted_goals,
         );
+
+        // Record newly exhausted goals for next tick.
+        record_exhausted_goals(runtime, &plans);
         let plans_options = plans_as_options(&plans);
 
         if let Some(selected_plan) = select_best_plan(
@@ -303,32 +420,16 @@ pub(super) fn plan_and_validate_next_step(
             default_switch_margin,
             frame_switch_margin,
         ) {
-            runtime.materialization_bindings.clear();
-            *active_goal = Some(ActiveGoal {
-                goal_key: selected_plan.goal,
-                adopted_at: tick,
-            });
-            *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-            runtime.current_plan = Some(selected_plan);
-            runtime.current_step_index = 0;
-            runtime.step_in_flight = false;
-            runtime.last_priority_class = ranked_candidates
-                .iter()
-                .find(|candidate| Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key))
-                .map(|candidate| candidate.priority_class);
+            adopt_selected_plan(
+                runtime,
+                active_goal,
+                jc,
+                ranked_candidates,
+                selected_plan,
+                tick,
+            );
         } else {
-            if jc.is_some() {
-                runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
-            }
-            *jc = None;
-            runtime.materialization_bindings.clear();
-            *active_goal = None;
-            runtime.current_plan = None;
-            runtime.current_step_index = 0;
-            runtime.step_in_flight = false;
-            runtime.last_priority_class = ranked_candidates
-                .first()
-                .map(|candidate| candidate.priority_class);
+            clear_current_plan(runtime, active_goal, jc, ranked_candidates);
         }
         runtime.dirty = DirtySet::default();
     }
@@ -456,6 +557,8 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
         }
 
+        // Traced path does not skip exhausted goals — tracing needs full visibility.
+        let no_skip = std::collections::BTreeSet::new();
         let plans = build_candidate_plans(
             world,
             scheduler,
@@ -470,6 +573,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             recipe_registry,
             true,
             true,
+            &no_skip,
         );
 
         for (goal_key, result, rejections, expansions) in &plans {
@@ -512,8 +616,13 @@ pub(super) fn plan_and_validate_next_step_traced(
                 search_provenance,
             ));
             selection_trace.selected_plan_source = Some(selected_plan_source);
-            selection_trace.plan_replacement =
-                summarize_plan_replacement(runtime, current_goal_before_selection, selected_goal, &selected_plan, action_defs);
+            selection_trace.plan_replacement = summarize_plan_replacement(
+                runtime,
+                current_goal_before_selection,
+                selected_goal,
+                &selected_plan,
+                action_defs,
+            );
 
             if let Some(prev) = previous_goal {
                 if prev != selected_goal {
@@ -546,7 +655,9 @@ pub(super) fn plan_and_validate_next_step_traced(
             runtime.step_in_flight = false;
             runtime.last_priority_class = ranked_candidates
                 .iter()
-                .find(|candidate| Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key))
+                .find(|candidate| {
+                    Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key)
+                })
                 .map(|candidate| candidate.priority_class);
         } else {
             if jc.is_some() {

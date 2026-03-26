@@ -1,7 +1,7 @@
 use crate::{
-    classify_frame_plan_relation, goal_switching::GoalSwitchKind,
-    frame_switch_policy::compare_relation_aware_goal_switch, AgentDecisionRuntime, GoalKey,
-    GoalPriorityClass, FramePlanRelation, PlannedPlan, RankedGoal,
+    classify_frame_plan_relation, frame_switch_policy::compare_relation_aware_goal_switch,
+    goal_switching::GoalSwitchKind, AgentDecisionRuntime, FramePlanRelation, GoalKey,
+    GoalPriorityClass, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -107,7 +107,9 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::ActionDefId;
-    use worldwake_core::{CommodityKind, EntityId, IntentionFrame, IntentionDomain, FrameState, Permille, Tick};
+    use worldwake_core::{
+        CommodityKind, EntityId, FrameState, IntentionDomain, IntentionFrame, Permille, Tick,
+    };
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -515,7 +517,9 @@ mod tests {
         ];
         let jc = Some(IntentionFrame {
             goal: current_goal,
-            domain: IntentionDomain::Travel { destination: entity(1) },
+            domain: IntentionDomain::Travel {
+                destination: entity(1),
+            },
             assumptions: Vec::new(),
             state: FrameState::Active,
             established_at: Tick(1),

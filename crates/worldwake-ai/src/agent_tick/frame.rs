@@ -1,6 +1,6 @@
 use crate::{
     authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
-    AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PlannerOpKind, PlannedStep,
+    AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PlannedStep, PlannerOpKind,
     PlanningBudget,
 };
 use crate::{GoalPriorityClass, RankedGoal};
@@ -160,9 +160,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
 
     let patience_exhausted = view
         .intention_disposition_profile(agent)
-        .is_some_and(|profile| {
-            new_stalled >= profile.patience_for(f.domain.domain_tag())
-        });
+        .is_some_and(|profile| new_stalled >= profile.patience_for(f.domain.domain_tag()));
 
     let updated_frame = if patience_exhausted {
         let goal_key = active_goal.unwrap_or_else(|| {
@@ -289,7 +287,9 @@ pub(super) fn evaluate_assumptions(
             }
             FrameAssumption::RouteExists { from, to } => {
                 if !view.route_exists(from, to) {
-                    return AssumptionEvalResult::RecoverableFailure(SuspensionReason::RouteBlocked);
+                    return AssumptionEvalResult::RecoverableFailure(
+                        SuspensionReason::RouteBlocked,
+                    );
                 }
             }
             FrameAssumption::NoCriticalThreat => {
@@ -582,10 +582,7 @@ mod tests {
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
         }
-        fn trade_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<TradeDispositionProfile> {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
         fn intention_disposition_profile(
@@ -609,11 +606,7 @@ mod tests {
         fn current_attackers_of(&self, _entity: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-        fn agents_selling_at(
-            &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
             Vec::new()
         }
         fn known_recipes(&self, _actor: EntityId) -> Vec<RecipeId> {
@@ -730,8 +723,7 @@ mod tests {
         view.places.insert(agent, place_a);
         view.places.insert(patient, place_b);
 
-        let assumptions =
-            populate_assumptions(&IntentionDomain::Care { patient }, agent, &view);
+        let assumptions = populate_assumptions(&IntentionDomain::Care { patient }, agent, &view);
         assert_eq!(
             assumptions,
             vec![
@@ -876,11 +868,7 @@ mod tests {
     fn no_critical_threat_without_candidates_returns_deferred() {
         let view = MockBeliefView::new();
 
-        let result = evaluate_assumptions(
-            &[FrameAssumption::NoCriticalThreat],
-            &view,
-            None,
-        );
+        let result = evaluate_assumptions(&[FrameAssumption::NoCriticalThreat], &view, None);
         assert_eq!(result, AssumptionEvalResult::Deferred);
     }
 
@@ -911,8 +899,12 @@ mod tests {
         );
         let mut runtime = AgentDecisionRuntime::default();
 
-        let result =
-            apply_assumption_result(&frame, &AssumptionEvalResult::CriticalFailure, Tick(5), &mut runtime);
+        let result = apply_assumption_result(
+            &frame,
+            &AssumptionEvalResult::CriticalFailure,
+            Tick(5),
+            &mut runtime,
+        );
         let updated = result;
         assert_eq!(updated.state, FrameState::Exhausted);
         assert_eq!(
@@ -960,8 +952,12 @@ mod tests {
         );
         let mut runtime = AgentDecisionRuntime::default();
 
-        let result =
-            apply_assumption_result(&frame, &AssumptionEvalResult::AllPass, Tick(7), &mut runtime);
+        let result = apply_assumption_result(
+            &frame,
+            &AssumptionEvalResult::AllPass,
+            Tick(7),
+            &mut runtime,
+        );
         let updated = result;
         assert_eq!(updated.state, FrameState::Active);
     }
@@ -980,11 +976,18 @@ mod tests {
         frame.stalled_ticks = 5;
         let mut runtime = AgentDecisionRuntime::default();
 
-        let result =
-            apply_assumption_result(&frame, &AssumptionEvalResult::AllPass, Tick(7), &mut runtime);
+        let result = apply_assumption_result(
+            &frame,
+            &AssumptionEvalResult::AllPass,
+            Tick(7),
+            &mut runtime,
+        );
         let updated = result;
         assert_eq!(updated.state, FrameState::Active);
-        assert_eq!(updated.stalled_ticks, 5, "stalled_ticks must not be reset on resume");
+        assert_eq!(
+            updated.stalled_ticks, 5,
+            "stalled_ticks must not be reset on resume"
+        );
     }
 
     #[test]
@@ -1001,8 +1004,12 @@ mod tests {
         let mut runtime = AgentDecisionRuntime::default();
 
         // AllPass on Exhausted should leave it as Exhausted (no resume).
-        let result =
-            apply_assumption_result(&frame, &AssumptionEvalResult::AllPass, Tick(7), &mut runtime);
+        let result = apply_assumption_result(
+            &frame,
+            &AssumptionEvalResult::AllPass,
+            Tick(7),
+            &mut runtime,
+        );
         let updated = result;
         assert_eq!(
             updated.state,

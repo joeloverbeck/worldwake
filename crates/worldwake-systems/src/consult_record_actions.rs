@@ -524,7 +524,7 @@ mod tests {
                     action_trace: Some(&mut action_trace),
                     request_resolution_trace: None,
                     politics_trace: None,
-                perception_trace: None,
+                    perception_trace: None,
                     institutional_knowledge_trace: Some(&mut knowledge_trace),
                 },
             )

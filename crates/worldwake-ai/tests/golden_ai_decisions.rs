@@ -8,8 +8,8 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
-    HomeostaticNeeds, FrameState, MetabolismProfile, PerceptionProfile,
-    PrototypePlace, Quantity, ResourceSource, Seed, IntentionDispositionProfile, UtilityProfile,
+    FrameState, HomeostaticNeeds, IntentionDispositionProfile, MetabolismProfile,
+    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, UtilityProfile,
     WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
@@ -998,7 +998,10 @@ fn golden_goal_switching_during_multi_leg_travel() {
                     saw_reactivated_commitment_to_orchard = true;
                 }
             }
-            if matches!(frame_snapshot.runtime.frame_state, Some(FrameState::Suspended { .. })) {
+            if matches!(
+                frame_snapshot.runtime.frame_state,
+                Some(FrameState::Suspended { .. })
+            ) {
                 saw_suspended_commitment_to_orchard = true;
             }
         }

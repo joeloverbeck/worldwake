@@ -14,10 +14,9 @@ use worldwake_core::{
     BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
     ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    KnownRecipes,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    RecipientKnowledgeStatus, RelationValue, Seed, StateHash, SuccessionLaw, TellProfile,
-    ThresholdBand, Tick, UtilityProfile,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -63,6 +62,13 @@ fn accepting_tell_profile() -> TellProfile {
     }
 }
 
+fn broad_accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 6,
+        ..accepting_tell_profile()
+    }
+}
+
 fn focused_accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 1,
@@ -78,6 +84,18 @@ fn set_control_source(
 ) {
     let mut txn = new_txn(&mut h.world, tick);
     txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_violation_profile(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    profile: ViolationDispositionProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_violation_disposition_profile(agent, profile)
         .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
@@ -1172,9 +1190,10 @@ fn golden_loot_corpse_self_care_chain_replays_deterministically() {
 // ===========================================================================
 // Suite 5: combat_death_triggers_force_succession
 //
-// Proves: combat, death, and political succession interact only through
-// authoritative world state and event history. No combat-specific political
-// hook or political action alias is involved.
+// Proves: challenger AI can open combat against an incumbent, and the resulting
+// death drives force-law succession entirely through authoritative world state
+// and event history. No combat-specific political hook or political action
+// alias is involved.
 // Foundation: Principle 1, Principle 9, Principle 24.
 // Cross-systems: Combat + Politics + AI combat goal generation.
 // ===========================================================================
@@ -1206,6 +1225,21 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         UtilityProfile::default(),
         KnownRecipes::new(),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_data(
+            incumbent,
+            AgentData {
+                control_source: ControlSource::None,
+            },
+        )
+        .unwrap();
+        txn.set_component_combat_profile(challenger, lethal_combat_attacker_profile())
+            .unwrap();
+        txn.set_component_combat_profile(incumbent, fragile_office_holder_profile())
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -1218,14 +1252,6 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         incumbent,
         default_perception_profile(),
     );
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_combat_profile(challenger, lethal_combat_attacker_profile())
-            .unwrap();
-        txn.set_component_combat_profile(incumbent, fragile_office_holder_profile())
-            .unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
 
     give_commodity(
         &mut h.world,
@@ -1897,7 +1923,7 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
                 speaker,
                 &GoalKind::ShareBelief {
                     listener,
-                    subject: office,
+                    topic: TellTopic::EntityBelief { subject: office },
                 },
             )
             .into_iter()
@@ -2509,11 +2535,13 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
 
     let share_recent = GoalKind::ShareBelief {
         listener,
-        subject: recent_subject,
+        topic: TellTopic::EntityBelief {
+            subject: recent_subject,
+        },
     };
     let share_office = GoalKind::ShareBelief {
         listener,
-        subject: office,
+        topic: TellTopic::EntityBelief { subject: office },
     };
 
     assert!(
@@ -2608,7 +2636,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
             .expect("speaker should have decision traces in crowd-out emergence");
         saw_recent_omission |= speaker_trace.goal_status(&share_recent)
             == worldwake_ai::GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                worldwake_sim::TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             );
         saw_office_generated |= speaker_trace.goal_status(&share_office).is_generated();
 
@@ -2643,7 +2671,9 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 && event.detail.as_ref()
                     == Some(&ActionTraceDetail::Tell {
                         listener,
-                        subject: recent_subject,
+                        topic: TellTopic::EntityBelief {
+                            subject: recent_subject,
+                        },
                     })
         })
         .count();
@@ -2656,7 +2686,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 && event.detail.as_ref()
                     == Some(&ActionTraceDetail::Tell {
                         listener,
-                        subject: office,
+                        topic: TellTopic::EntityBelief { subject: office },
                     })
         })
         .expect("speaker should commit a tell for the office fact");
@@ -3011,9 +3041,9 @@ fn run_force_controller_departure_enables_rival_claim(seed: Seed) -> (StateHash,
     // AI runs, so ClaimOffice generation at the departure tick is correct.
     // The assertion: no ClaimOffice STRICTLY before the departure tick.
     let travel_commit_tick = controller_travel_commit.0;
-    let pre_departure_generated = history.iter().any(|entry| {
-        entry.tick < travel_commit_tick && entry.status.is_generated()
-    });
+    let pre_departure_generated = history
+        .iter()
+        .any(|entry| entry.tick < travel_commit_tick && entry.status.is_generated());
     assert!(
         !pre_departure_generated,
         "rival should NOT generate ClaimOffice before controller's travel \
@@ -3155,7 +3185,7 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
         &mut h.world,
         &mut h.event_log,
         witness,
-        focused_accepting_tell_profile(),
+        broad_accepting_tell_profile(),
     );
 
     // -- Agent D ("Remote Listener"): at BanditCamp, passive reception --
@@ -3457,8 +3487,9 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
                     event.detail,
                     Some(ActionTraceDetail::Tell {
                         listener: told_listener,
-                        subject,
-                    }) if told_listener == remote_listener && subject == office
+                        topic,
+                    }) if told_listener == remote_listener
+                        && topic == TellTopic::EntityBelief { subject: office }
                 ))
             .then_some((event.tick, event.sequence_in_tick))
         })
@@ -3478,11 +3509,13 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
 
     let share_belief_goal = GoalKind::ShareBelief {
         listener: remote_listener,
-        subject: office,
+        topic: TellTopic::EntityBelief { subject: office },
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
-        share_history.iter().any(|entry| entry.status.is_generated()),
+        share_history
+            .iter()
+            .any(|entry| entry.status.is_generated()),
         "witness should generate ShareBelief goal for the office entity \
          targeting the remote listener"
     );
@@ -3624,7 +3657,7 @@ fn run_contested_force_state_propagates_through_belief_system(
         &mut h.world,
         &mut h.event_log,
         witness,
-        focused_accepting_tell_profile(),
+        broad_accepting_tell_profile(),
     );
 
     // -- Agent D ("Remote Listener"): at OrchardFarm, passive reception --
@@ -3854,8 +3887,8 @@ fn run_contested_force_state_propagates_through_belief_system(
         &mut h.event_log,
         witness,
         office,
-        None,    // no sole controller during contested state
-        true,    // contested == true
+        None, // no sole controller during contested state
+        true, // contested == true
         belief_tick,
         Some(VILLAGE_SQUARE),
     );
@@ -3984,8 +4017,9 @@ fn run_contested_force_state_propagates_through_belief_system(
                     event.detail,
                     Some(ActionTraceDetail::Tell {
                         listener: told_listener,
-                        subject,
-                    }) if told_listener == remote_listener && subject == office
+                        topic,
+                    }) if told_listener == remote_listener
+                        && topic == TellTopic::EntityBelief { subject: office }
                 ))
             .then_some((event.tick, event.sequence_in_tick))
         })
@@ -4005,11 +4039,13 @@ fn run_contested_force_state_propagates_through_belief_system(
 
     let share_belief_goal = GoalKind::ShareBelief {
         listener: remote_listener,
-        subject: office,
+        topic: TellTopic::EntityBelief { subject: office },
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
-        share_history.iter().any(|entry| entry.status.is_generated()),
+        share_history
+            .iter()
+            .any(|entry| entry.status.is_generated()),
         "witness should generate ShareBelief goal for the office entity \
          targeting the remote listener"
     );
@@ -4040,5 +4076,905 @@ fn golden_contested_force_state_propagates_through_belief_system_replays_determi
     assert_eq!(
         first, second,
         "contested force state belief propagation should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 35: Same-Place Concurrent Violations Stay Distinct
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, AI, Generic Actions
+// GoalKinds: InvestigateViolation
+// ActionDomains: Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 9, 15
+//
+// Proves two same-place violated expectations remain distinct incidents through
+// planning, start binding, first commit aftermath, and sibling follow-up.
+
+#[allow(clippy::too_many_lines)]
+fn run_same_place_concurrent_violation_lifecycle(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let investigator = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Investigator",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let first_missing = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "FirstMissing",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let second_missing = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SecondMissing",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, first_missing, ControlSource::None, 0);
+    set_control_source(&mut h, second_missing, ControlSource::None, 0);
+
+    let mut keen = default_perception_profile();
+    keen.observation_fidelity = pm(1000);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, investigator, keen);
+    set_violation_profile(
+        &mut h,
+        investigator,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        investigator,
+        first_missing,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        investigator,
+        second_missing,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_ground_location(first_missing, ORCHARD_FARM)
+            .unwrap();
+        txn.set_ground_location(second_missing, ORCHARD_FARM)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let first_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(investigator, Tick(0))
+        .expect("tick 0 decision trace should exist");
+    let first_planning = match &first_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    let generated_violation_ids = first_planning
+        .candidates
+        .generated
+        .iter()
+        .filter_map(|goal| match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some(violation_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        generated_violation_ids.len(),
+        2,
+        "tick 0 should generate two same-place investigate candidates"
+    );
+    assert_ne!(
+        generated_violation_ids[0], generated_violation_ids[1],
+        "same-place incidents must keep distinct violation ids"
+    );
+
+    let initial_selected_violation_id = match first_planning
+        .selection
+        .selected
+        .expect("one investigate goal should be selected")
+        .kind
+    {
+        GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        } => {
+            assert_eq!(place, VILLAGE_SQUARE);
+            violation_id
+        }
+        other => panic!("expected InvestigateViolation selection, got {other:?}"),
+    };
+    assert_eq!(
+        first_planning
+            .selection
+            .selected_plan
+            .as_ref()
+            .and_then(|plan| plan.next_step.as_ref())
+            .map(|step| step.action_name.as_str()),
+        Some("investigate"),
+        "the winning plan should bind an investigate step for the selected violation",
+    );
+    assert!(
+        generated_violation_ids.contains(&initial_selected_violation_id),
+        "the initial selected investigate goal must come from the generated same-place incident set",
+    );
+
+    let mut first_committed_violation_id = None;
+    for _ in 0..8 {
+        h.step_once();
+        let events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(investigator);
+        first_committed_violation_id = events.iter().find_map(|event| {
+            (event.action_name == "investigate"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then(|| match event.detail {
+                Some(ActionTraceDetail::Investigate { violation_id }) => Some(violation_id),
+                _ => None,
+            })
+            .flatten()
+        });
+        if first_committed_violation_id.is_some() {
+            break;
+        }
+    }
+    assert!(
+        first_committed_violation_id.is_some(),
+        "the first same-place violation should commit investigation",
+    );
+    let first_committed_violation_id =
+        first_committed_violation_id.expect("first investigate commit id should be recorded");
+    assert!(
+        generated_violation_ids.contains(&first_committed_violation_id),
+        "the first committed investigate must bind one of the generated same-place violation ids",
+    );
+    let sibling_violation_id = generated_violation_ids
+        .iter()
+        .copied()
+        .find(|id| *id != first_committed_violation_id)
+        .expect("one sibling violation id should remain after the first commit");
+
+    let memory_after_first_commit = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    let selected_record = memory_after_first_commit
+        .violations
+        .iter()
+        .find(|record| record.id == first_committed_violation_id)
+        .expect("first committed violation should remain recorded");
+    let sibling_record = memory_after_first_commit
+        .violations
+        .iter()
+        .find(|record| record.id == sibling_violation_id)
+        .expect("sibling violation should remain recorded");
+    assert!(
+        selected_record.resolved_tick.is_some(),
+        "selected violation should be resolved after the first commit",
+    );
+    assert_eq!(
+        sibling_record.resolved_tick, None,
+        "sibling violation should remain unresolved after the first commit",
+    );
+
+    let selected_subject = match &selected_record.kind {
+        worldwake_core::ViolationKind::EntityMissing { entity, .. } => *entity,
+        other => panic!("expected entity-missing violation, got {other:?}"),
+    };
+    let sibling_subject = match &sibling_record.kind {
+        worldwake_core::ViolationKind::EntityMissing { entity, .. } => *entity,
+        other => panic!("expected entity-missing violation, got {other:?}"),
+    };
+
+    let store_after_first_commit = h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should keep a belief store");
+    let first_absences = store_after_first_commit
+        .social_observations
+        .iter()
+        .filter(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        first_absences.len(),
+        1,
+        "only the selected violation should leave aftermath after the first commit",
+    );
+    assert_eq!(
+        first_absences[0].detail,
+        worldwake_core::SocialObservationDetail::WitnessedAbsence {
+            missing_entity: selected_subject,
+            expected_place: VILLAGE_SQUARE,
+        },
+        "the first aftermath artifact must belong to the selected violation",
+    );
+
+    let mut sibling_selected = false;
+    let mut sibling_committed = false;
+    for _ in 0..8 {
+        h.step_once();
+        let just_ran_tick = Tick(h.scheduler.current_tick().0.saturating_sub(1));
+
+        let trace = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .trace_at(investigator, just_ran_tick)
+            .expect("decision trace should exist for each stepped tick");
+        if let DecisionOutcome::Planning(planning) = &trace.outcome {
+            if planning.selection.selected
+                == Some(
+                    GoalKind::InvestigateViolation {
+                        violation_id: sibling_violation_id,
+                        place: VILLAGE_SQUARE,
+                    }
+                    .into(),
+                )
+            {
+                sibling_selected = true;
+            }
+        }
+
+        let committed_ids = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(investigator)
+            .into_iter()
+            .filter_map(|event| {
+                if event.action_name != "investigate"
+                    || !matches!(event.kind, ActionTraceKind::Committed { .. })
+                {
+                    return None;
+                }
+                match event.detail {
+                    Some(ActionTraceDetail::Investigate { violation_id }) => Some(violation_id),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        sibling_committed = committed_ids.contains(&sibling_violation_id);
+        if committed_ids.len() >= 2 && sibling_committed {
+            break;
+        }
+    }
+
+    assert!(
+        sibling_selected,
+        "the sibling same-place violation should later be selected by its own id",
+    );
+    assert!(
+        sibling_committed,
+        "the sibling same-place violation should later commit its own investigation",
+    );
+
+    let final_store = h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should keep a belief store");
+    let final_absence_subjects = final_store
+        .social_observations
+        .iter()
+        .filter(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+        })
+        .map(|observation| observation.detail)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        final_absence_subjects.len(),
+        2,
+        "both same-place incidents should leave distinct aftermath artifacts",
+    );
+    assert!(
+        final_absence_subjects.contains(
+            &worldwake_core::SocialObservationDetail::WitnessedAbsence {
+                missing_entity: selected_subject,
+                expected_place: VILLAGE_SQUARE,
+            }
+        ),
+        "selected violation aftermath should persist",
+    );
+    assert!(
+        final_absence_subjects.contains(
+            &worldwake_core::SocialObservationDetail::WitnessedAbsence {
+                missing_entity: sibling_subject,
+                expected_place: VILLAGE_SQUARE,
+            }
+        ),
+        "sibling violation aftermath should be recorded after its own commit",
+    );
+
+    let final_memory = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    assert!(
+        final_memory
+            .violations
+            .iter()
+            .filter(|record| record.resolved_tick.is_some())
+            .count()
+            >= 2,
+        "both recorded violations should be resolved by the end of the scenario",
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_same_place_concurrent_violations_stay_distinct() {
+    let _ = run_same_place_concurrent_violation_lifecycle(Seed([55; 32]));
+}
+
+#[test]
+fn golden_same_place_concurrent_violations_stay_distinct_replays_deterministically() {
+    let first = run_same_place_concurrent_violation_lifecycle(Seed([56; 32]));
+    let second = run_same_place_concurrent_violation_lifecycle(Seed([56; 32]));
+    assert_eq!(
+        first, second,
+        "same-place concurrent violation scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 36: Entity Missing Triggers Investigation
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, AI, Generic Actions
+// GoalKinds: InvestigateViolation
+// ActionDomains: Generic
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 9, 15
+//
+// Proves the baseline single-incident violation pipeline: stale local belief,
+// mismatch detection, investigate planning, committed investigate aftermath,
+// and exact violation-id resolution.
+
+#[allow(clippy::too_many_lines)]
+fn run_entity_missing_triggers_investigation(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let investigator = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Investigator",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let missing_subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "MissingSubject",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, missing_subject, ControlSource::None, 0);
+
+    let mut keen = default_perception_profile();
+    keen.observation_fidelity = pm(1000);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, investigator, keen);
+    set_violation_profile(
+        &mut h,
+        investigator,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        investigator,
+        missing_subject,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_ground_location(missing_subject, ORCHARD_FARM)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let first_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(investigator, Tick(0))
+        .expect("tick 0 decision trace should exist");
+    let first_planning = match &first_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    let generated_goal = first_planning
+        .candidates
+        .generated
+        .iter()
+        .find_map(|goal| match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some((violation_id, place)),
+            _ => None,
+        })
+        .expect("tick 0 should generate an investigate goal for the missing entity");
+    let generated_violation_id = generated_goal.0;
+
+    assert_eq!(
+        first_planning.selection.selected,
+        Some(
+            GoalKind::InvestigateViolation {
+                violation_id: generated_violation_id,
+                place: VILLAGE_SQUARE,
+            }
+            .into(),
+        ),
+        "the missing-entity violation should be selected for investigation",
+    );
+    assert_eq!(
+        first_planning
+            .selection
+            .selected_plan
+            .as_ref()
+            .and_then(|plan| plan.next_step.as_ref())
+            .map(|step| step.action_name.as_str()),
+        Some("investigate"),
+        "the selected violation should bind an investigate step",
+    );
+
+    let memory_after_detection = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    let detected_record = memory_after_detection
+        .violations
+        .iter()
+        .find(|record| record.id == generated_violation_id)
+        .expect("generated violation should be recorded in memory");
+    match &detected_record.kind {
+        worldwake_core::ViolationKind::EntityMissing {
+            entity,
+            expected_place,
+        } => {
+            assert_eq!(*entity, missing_subject);
+            assert_eq!(*expected_place, VILLAGE_SQUARE);
+        }
+        other => panic!("expected entity-missing violation, got {other:?}"),
+    }
+    assert_eq!(
+        detected_record.resolved_tick, None,
+        "the violation should remain unresolved until investigate commits",
+    );
+
+    let mut committed_violation_id = None;
+    for _ in 0..8 {
+        h.step_once();
+        let events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(investigator);
+        committed_violation_id = events.iter().find_map(|event| {
+            (event.action_name == "investigate"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then(|| match event.detail {
+                Some(ActionTraceDetail::Investigate { violation_id }) => Some(violation_id),
+                _ => None,
+            })
+            .flatten()
+        });
+        if committed_violation_id.is_some() {
+            break;
+        }
+    }
+
+    assert_eq!(
+        committed_violation_id,
+        Some(generated_violation_id),
+        "the committed investigate action should resolve the same violation id that planning selected",
+    );
+
+    let final_store = h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should keep a belief store");
+    let witnessed_absences = final_store
+        .social_observations
+        .iter()
+        .filter(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::WitnessedAbsence
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        witnessed_absences.len(),
+        1,
+        "the single committed investigate should leave one witnessed-absence artifact",
+    );
+    assert_eq!(
+        witnessed_absences[0].detail,
+        worldwake_core::SocialObservationDetail::WitnessedAbsence {
+            missing_entity: missing_subject,
+            expected_place: VILLAGE_SQUARE,
+        },
+        "the aftermath artifact should identify the missing subject and expected place",
+    );
+
+    let final_memory = h
+        .world
+        .get_component_violation_memory(investigator)
+        .expect("investigator should have violation memory");
+    let resolved_record = final_memory
+        .violations
+        .iter()
+        .find(|record| record.id == generated_violation_id)
+        .expect("the investigated violation should remain in memory after resolution");
+    assert!(
+        resolved_record.resolved_tick.is_some(),
+        "investigate commit should resolve the selected violation record",
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_entity_missing_triggers_investigation() {
+    let _ = run_entity_missing_triggers_investigation(Seed([57; 32]));
+}
+
+#[test]
+fn golden_entity_missing_triggers_investigation_replays_deterministically() {
+    let first = run_entity_missing_triggers_investigation(Seed([58; 32]));
+    let second = run_entity_missing_triggers_investigation(Seed([58; 32]));
+    assert_eq!(
+        first, second,
+        "entity-missing investigation scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 37: Supply Depletion Enables ShareBelief
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, AI, Generic Actions, Social Tell
+// GoalKinds: ShareBelief, InvestigateViolation
+// ActionDomains: Generic, Social
+// Places: VillageSquare
+// Principles: 1, 7, 12, 15
+//
+// Proves the live architecture for local supply-depletion reporting: the
+// speaker's refreshed belief about the depleted source drives ShareBelief via
+// the generic social pipeline, while the same mismatch also emits
+// InvestigateViolation as a separate local follow-up branch.
+
+#[allow(clippy::too_many_lines)]
+fn run_supply_depletion_enables_share_belief(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(1000),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(3),
+            max_quantity: Quantity(3),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        default_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        blind_perception_profile(),
+    );
+    set_violation_profile(
+        &mut h,
+        speaker,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(300),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    let seeded_source_belief = seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        source,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    assert_eq!(
+        seeded_source_belief
+            .resource_source
+            .as_ref()
+            .map(|source| source.available_quantity),
+        Some(Quantity(3)),
+        "speaker should begin with a non-depleted belief about the source"
+    );
+    let listener_presence_belief = seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_told_belief_memory(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        listener,
+        &listener_presence_belief,
+        Tick(0),
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, source).is_none(),
+        "listener should start without any belief about the source"
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_resource_source(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(3),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let speaker_belief_after_refresh = agent_belief_about(&h.world, speaker, source)
+        .expect("speaker should still retain a belief about the depleted source");
+    assert!(
+        speaker_belief_after_refresh
+            .resource_source
+            .as_ref()
+            .is_some_and(|source| source.available_quantity == Quantity(0)),
+        "perception refresh should project depletion onto the speaker's resource-source belief snapshot"
+    );
+    assert_eq!(
+        speaker_belief_after_refresh.source,
+        PerceptionSource::DirectObservation,
+        "speaker should learn the depletion through direct local observation"
+    );
+    assert!(
+        agent_belief_about(&h.world, listener, source).is_none(),
+        "blind listener must still not know about the depleted source before Tell"
+    );
+
+    let first_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(speaker, Tick(0))
+        .expect("tick 0 decision trace should exist");
+    let first_planning = match &first_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    let share_goal = GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::EntityBelief { subject: source },
+    };
+    assert!(
+        first_planning
+            .candidates
+            .generated
+            .iter()
+            .any(|goal| goal.kind == share_goal),
+        "first post-refresh planning tick should expose ShareBelief for the depleted source"
+    );
+
+    let generated_violation =
+        first_planning
+            .candidates
+            .generated
+            .iter()
+            .find_map(|goal| match goal.kind {
+                GoalKind::InvestigateViolation {
+                    violation_id,
+                    place,
+                } if place == VILLAGE_SQUARE => Some(violation_id),
+                _ => None,
+            });
+    assert!(
+        generated_violation.is_some(),
+        "the same local mismatch should also expose InvestigateViolation"
+    );
+
+    let mut tell_commit_tick = None;
+    for _ in 0..20 {
+        h.step_once();
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for supply-depletion social emergence");
+        if action_sink.events_for(speaker).iter().any(|event| {
+            event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.detail
+                    == Some(ActionTraceDetail::Tell {
+                        listener,
+                        topic: TellTopic::EntityBelief { subject: source },
+                    })
+        }) {
+            tell_commit_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+
+    let tell_commit_tick =
+        tell_commit_tick.expect("speaker should commit Tell for the depleted source");
+    let listener_belief = agent_belief_about(&h.world, listener, source)
+        .expect("listener should learn the depleted source through Tell");
+    assert!(
+        matches!(
+            listener_belief.source,
+            PerceptionSource::Report {
+                from,
+                chain_len: 1
+            } if from == speaker
+        ),
+        "listener should learn the depletion as a first-hand report from the speaker"
+    );
+    assert!(
+        listener_belief
+            .resource_source
+            .as_ref()
+            .is_some_and(|source| source.available_quantity == Quantity(0)),
+        "listener should learn the depleted resource-source state, not the stale stocked state"
+    );
+
+    assert!(
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should remain enabled")
+            .goal_history_for(speaker, &share_goal)
+            .into_iter()
+            .any(|entry| entry.tick <= tell_commit_tick && entry.status.is_generated()),
+        "ShareBelief should be generated before the tell commit that propagates the depletion"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_supply_depletion_enables_share_belief() {
+    let _ = run_supply_depletion_enables_share_belief(Seed([59; 32]));
+}
+
+#[test]
+fn golden_supply_depletion_enables_share_belief_replays_deterministically() {
+    let first = run_supply_depletion_enables_share_belief(Seed([60; 32]));
+    let second = run_supply_depletion_enables_share_belief(Seed([60; 32]));
+    assert_eq!(
+        first, second,
+        "supply-depletion social emergence scenario should replay deterministically"
     );
 }

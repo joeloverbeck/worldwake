@@ -57,10 +57,7 @@ mod tests {
     #[test]
     fn patience_for_returns_domain_specific_value() {
         let mut domain_patience = BTreeMap::new();
-        domain_patience.insert(
-            IntentionDomainTag::Travel,
-            NonZeroU32::new(50).unwrap(),
-        );
+        domain_patience.insert(IntentionDomainTag::Travel, NonZeroU32::new(50).unwrap());
         let profile = IntentionDispositionProfile {
             domain_patience,
             default_patience_ticks: NonZeroU32::new(30).unwrap(),
@@ -83,14 +80,8 @@ mod tests {
     #[test]
     fn patience_for_mixed_domains() {
         let mut domain_patience = BTreeMap::new();
-        domain_patience.insert(
-            IntentionDomainTag::Travel,
-            NonZeroU32::new(100).unwrap(),
-        );
-        domain_patience.insert(
-            IntentionDomainTag::Escort,
-            NonZeroU32::new(75).unwrap(),
-        );
+        domain_patience.insert(IntentionDomainTag::Travel, NonZeroU32::new(100).unwrap());
+        domain_patience.insert(IntentionDomainTag::Escort, NonZeroU32::new(75).unwrap());
         let profile = IntentionDispositionProfile {
             domain_patience,
             default_patience_ticks: NonZeroU32::new(20).unwrap(),

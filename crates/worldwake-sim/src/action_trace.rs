@@ -4,9 +4,12 @@
 //! during `step_tick()`. Follows the same pattern as `DecisionTraceSink` in
 //! `worldwake-ai`.
 
-use crate::{ActionInstanceId, ActionPayload, CommitOutcome, ResolvedRequestTrace};
+use crate::{
+    ActionInstanceId, ActionPayload, CommitOutcome, CommitTraceData, ResolvedRequestTrace,
+    TellBeliefDeltaKind, TellCommitResult,
+};
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityId, Tick};
+use worldwake_core::{ActionDefId, EntityId, TellTopic, Tick, ViolationId};
 
 /// A single action lifecycle event recorded during `step_tick()`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,7 +28,10 @@ pub struct ActionTraceEvent {
 pub enum ActionTraceDetail {
     Tell {
         listener: EntityId,
-        subject: EntityId,
+        topic: TellTopic,
+    },
+    Investigate {
+        violation_id: ViolationId,
     },
 }
 
@@ -101,15 +107,20 @@ impl ActionTraceEvent {
                 outcome,
             } => {
                 let mat_count = outcome.materializations.len();
+                let commit_trace_suffix =
+                    outcome.trace.as_ref().map_or_else(String::new, |trace| {
+                        format!(" <{}>", format_commit_trace(trace))
+                    });
                 format!(
-                    "tick {} seq {}: {} committed '{}' (instance {}, {} materializations){}",
+                    "tick {} seq {}: {} committed '{}' (instance {}, {} materializations){}{}",
                     self.tick.0,
                     self.sequence_in_tick,
                     self.actor,
                     self.action_name,
                     instance_id,
                     mat_count,
-                    detail_suffix
+                    detail_suffix,
+                    commit_trace_suffix,
                 )
             }
             ActionTraceKind::Aborted {
@@ -145,13 +156,41 @@ impl ActionTraceEvent {
     }
 }
 
+fn format_commit_trace(trace: &CommitTraceData) -> String {
+    match trace {
+        CommitTraceData::Tell(tell) => {
+            let delta = match tell.belief_delta {
+                TellBeliefDeltaKind::None => "no_change".to_string(),
+                other => format!("{other:?}"),
+            };
+            let disposition = tell
+                .heard_disposition
+                .map_or_else(|| "none".to_string(), |d| format!("{d:?}"));
+            let result = match tell.result {
+                TellCommitResult::Accepted => "Accepted",
+                TellCommitResult::AlreadyHeldEqualOrNewer => "AlreadyHeldEqualOrNewer",
+                TellCommitResult::NotInternalized => "NotInternalized",
+                TellCommitResult::SpeakerNoLongerKnowsTopic => "SpeakerNoLongerKnowsTopic",
+                TellCommitResult::RelayLimitExceeded => "RelayLimitExceeded",
+            };
+            format!(
+                "tell result={result} disposition={disposition} changed={} delta={delta}",
+                tell.artifact_changed()
+            )
+        }
+    }
+}
+
 impl ActionTraceDetail {
     #[must_use]
     pub const fn from_payload(payload: &ActionPayload) -> Option<Self> {
         match payload {
             ActionPayload::Tell(payload) => Some(Self::Tell {
                 listener: payload.listener,
-                subject: payload.subject_entity,
+                topic: payload.topic,
+            }),
+            ActionPayload::Investigate(payload) => Some(Self::Investigate {
+                violation_id: payload.violation_id,
             }),
             ActionPayload::None
             | ActionPayload::ConsultRecord(_)
@@ -173,8 +212,11 @@ impl ActionTraceDetail {
     #[must_use]
     pub fn summary(&self) -> String {
         match self {
-            Self::Tell { listener, subject } => {
-                format!("tell listener {listener} subject {subject}")
+            Self::Tell { listener, topic } => {
+                format!("tell listener {listener} topic {topic:?}")
+            }
+            Self::Investigate { violation_id } => {
+                format!("investigate violation {}", violation_id.0)
             }
         }
     }
@@ -432,19 +474,35 @@ mod tests {
             slot: 7,
             generation: 0,
         };
-        let subject = EntityId {
-            slot: 8,
-            generation: 0,
+        let topic = TellTopic::EntityBelief {
+            subject: EntityId {
+                slot: 8,
+                generation: 0,
+            },
         };
 
         assert_eq!(
             ActionTraceDetail::from_payload(&ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic,
             })),
-            Some(ActionTraceDetail::Tell { listener, subject })
+            Some(ActionTraceDetail::Tell { listener, topic })
         );
         assert_eq!(ActionTraceDetail::from_payload(&ActionPayload::None), None);
+    }
+
+    #[test]
+    fn detail_from_payload_extracts_investigate_identity() {
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::Investigate(
+                crate::InvestigateActionPayload {
+                    violation_id: ViolationId(9),
+                }
+            )),
+            Some(ActionTraceDetail::Investigate {
+                violation_id: ViolationId(9),
+            })
+        );
     }
 
     #[test]
@@ -453,9 +511,11 @@ mod tests {
             slot: 7,
             generation: 0,
         };
-        let subject = EntityId {
-            slot: 8,
-            generation: 0,
+        let topic = TellTopic::EntityBelief {
+            subject: EntityId {
+                slot: 8,
+                generation: 0,
+            },
         };
         let committed = sample_event(
             2,
@@ -464,13 +524,67 @@ mod tests {
                 outcome: CommitOutcome::empty(),
             },
         )
-        .with_detail(Some(ActionTraceDetail::Tell { listener, subject }));
+        .with_detail(Some(ActionTraceDetail::Tell { listener, topic }));
 
         let summary = committed.summary();
         assert!(summary.contains("committed"));
         assert!(summary.contains("tell listener"));
         assert!(summary.contains(&listener.to_string()));
-        assert!(summary.contains(&subject.to_string()));
+        assert!(summary.contains("EntityBelief"));
+    }
+
+    #[test]
+    fn summary_includes_tell_commit_trace_when_present() {
+        let listener = EntityId {
+            slot: 7,
+            generation: 0,
+        };
+        let topic = TellTopic::EntityBelief {
+            subject: EntityId {
+                slot: 8,
+                generation: 0,
+            },
+        };
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty().with_trace(CommitTraceData::Tell(
+                    crate::TellCommitTrace {
+                        listener,
+                        topic,
+                        result: crate::TellCommitResult::AlreadyHeldEqualOrNewer,
+                        heard_disposition: Some(
+                            worldwake_core::HeardBeliefDisposition::AlreadyHeldEqualOrNewer,
+                        ),
+                        belief_delta: crate::TellBeliefDeltaKind::None,
+                    },
+                )),
+            },
+        );
+
+        let summary = committed.summary();
+        assert!(summary.contains("AlreadyHeldEqualOrNewer"));
+        assert!(summary.contains("changed=false"));
+        assert!(summary.contains("delta=no_change"));
+    }
+
+    #[test]
+    fn summary_includes_investigate_detail_when_present() {
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::Investigate {
+            violation_id: ViolationId(11),
+        }));
+
+        let summary = committed.summary();
+        assert!(summary.contains("committed"));
+        assert!(summary.contains("investigate violation 11"));
     }
 
     #[test]

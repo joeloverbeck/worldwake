@@ -35,6 +35,7 @@ pub mod component_tables;
 pub mod components;
 pub mod conservation;
 pub mod control;
+pub mod crime;
 pub mod delta;
 pub mod drives;
 pub mod entity;
@@ -73,11 +74,13 @@ pub mod wounds;
 pub use allocator::EntityAllocator;
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-    recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
-    BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
-    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SocialObservation,
-    SocialObservationKind, TellMemoryKey, TellProfile, ToldBeliefMemory,
+    recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
+    social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
+    to_shared_belief_snapshot, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+    HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
+    PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
+    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
@@ -95,6 +98,7 @@ pub use conservation::{
     verify_authoritative_conservation, verify_live_lot_conservation,
 };
 pub use control::ControlSource;
+pub use crime::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile};
 pub use delta::{
     ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta,
@@ -157,7 +161,7 @@ pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;
 pub use verification::{verify_completeness, VerificationError};
 pub use violation::{
-    RecordedViolation, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    RecordedViolation, ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
 };
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;

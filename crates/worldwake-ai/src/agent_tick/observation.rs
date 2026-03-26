@@ -22,7 +22,6 @@ use super::{
     AgentTickContext,
 };
 
-
 #[derive(Clone, Copy)]
 pub(crate) struct ReadPhaseContext<'a> {
     pub(super) recipe_registry: &'a RecipeRegistry,
@@ -67,6 +66,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     active_goal: Option<worldwake_core::GoalKey>,
     facility_intents: &mut FacilityQueueIntents,
     blocked_memory: &mut BlockedIntentMemory,
+    violation_memory: &mut worldwake_core::ViolationMemory,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
@@ -115,11 +115,20 @@ pub(super) fn refresh_runtime_for_read_phase(
         &view,
         agent,
         blocked_memory,
+        violation_memory,
         phase.recipe_registry,
         phase.tick,
         phase.travel_horizon,
         tracing,
     );
+
+    // Apply deferred violation records from candidate generation.
+    for pending in &candidates.pending_violations {
+        let recorded_id =
+            violation_memory.record(pending.kind.clone(), pending.observed_tick, pending.ttl);
+        debug_assert_eq!(recorded_id, pending.id);
+    }
+
     let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
     let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);
@@ -254,13 +263,31 @@ pub(super) fn reconcile_in_flight_state(
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
-        handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            active_goal.as_ref().map(|ag| ag.goal_key),
+            jc,
+            blocked_memory,
+            agent,
+            &step,
+            None,
+        )?;
         return Ok(());
     };
     let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            active_goal.as_ref().map(|ag| ag.goal_key),
+            jc,
+            blocked_memory,
+            agent,
+            &step,
+            None,
+        )?;
         return Ok(());
     }
 
@@ -290,8 +317,8 @@ fn reconcile_committed_facility_queue_intents(
 
     match step.op_kind {
         crate::PlannerOpKind::QueueForFacilityUse => {
-            let Some(goal_key) = active_goal
-                .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+            let Some(goal_key) =
+                active_goal.or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
             else {
                 return;
             };
@@ -363,13 +390,9 @@ pub(super) fn observation_snapshot_changed(
     if runtime.last_wounds != view.wounds(agent) {
         result.insert(crate::DirtySet::WOUNDS);
     }
-    if filtered_commodity_signature(
-        &runtime.last_commodity_signature,
-        commodity_filter.as_ref(),
-    ) != filtered_commodity_signature(
-        &current_commodity_signature,
-        commodity_filter.as_ref(),
-    ) {
+    if filtered_commodity_signature(&runtime.last_commodity_signature, commodity_filter.as_ref())
+        != filtered_commodity_signature(&current_commodity_signature, commodity_filter.as_ref())
+    {
         result.insert(crate::DirtySet::COMMODITY);
     }
     if runtime.last_unique_item_signature != unique_item_signature(view, agent) {

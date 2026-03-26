@@ -317,6 +317,7 @@ fn enumerate_targets(
             .then_some(*entity)
             .into_iter()
             .collect::<Vec<_>>(),
+        TargetSpec::ActorPlace => view.effective_place(actor).into_iter().collect::<Vec<_>>(),
         TargetSpec::EntityAtActorPlace { kind } => {
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
@@ -877,6 +878,22 @@ mod tests {
         let targets = enumerate_targets(&TargetSpec::AdjacentPlace, actor, &view);
 
         assert_eq!(targets, vec![dest_a, dest_b]);
+    }
+
+    #[test]
+    fn enumerate_targets_returns_actor_place() {
+        let actor = entity(1);
+        let place = entity(10);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.places.insert(actor, place);
+
+        let targets = enumerate_targets(&TargetSpec::ActorPlace, actor, &view);
+
+        assert_eq!(targets, vec![place]);
     }
 
     #[test]

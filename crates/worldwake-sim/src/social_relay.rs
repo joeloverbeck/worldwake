@@ -1,4 +1,29 @@
-use worldwake_core::{BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus};
+use worldwake_core::{
+    social_observation_is_relayable, BelievedEntityState, EntityId, PerceptionSource,
+    RecipientKnowledgeStatus, SocialObservation, TellTopic, Tick,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TellTopicOmissionReason {
+    DirectlyObservableByListener,
+    ListenerParticipatedInObservation,
+    NonRelayableSocialObservation,
+    ExceedsRelayDepth,
+    SpeakerHasAlreadyToldCurrentBelief,
+    TruncatedByCandidateLimit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TellTopicOmission {
+    pub topic: TellTopic,
+    pub reason: TellTopicOmissionReason,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TellTopicSelection {
+    pub selected: Vec<TellTopic>,
+    pub omitted: Vec<TellTopicOmission>,
+}
 
 #[must_use]
 pub fn belief_chain_len(source: PerceptionSource) -> u8 {
@@ -52,12 +77,140 @@ pub fn listener_aware_relayable_subjects(
     )
 }
 
+#[must_use]
+pub fn relayable_tell_topics(
+    topics: impl IntoIterator<Item = (TellTopic, Tick, u8)>,
+    max_relay_chain_len: u8,
+    max_tell_candidates: u8,
+) -> Vec<TellTopic> {
+    let mut topics = topics
+        .into_iter()
+        .filter_map(|(topic, observed_tick, chain_len)| {
+            (chain_len <= max_relay_chain_len).then_some((observed_tick, topic))
+        })
+        .collect::<Vec<_>>();
+    topics.sort_unstable_by(|(left_tick, left_topic), (right_tick, right_topic)| {
+        right_tick
+            .cmp(left_tick)
+            .then_with(|| left_topic.cmp(right_topic))
+    });
+    topics.truncate(usize::from(max_tell_candidates));
+    topics.into_iter().map(|(_, topic)| topic).collect()
+}
+
+#[must_use]
+pub fn listener_aware_relayable_tell_topics(
+    entity_beliefs: impl IntoIterator<Item = (EntityId, BelievedEntityState)>,
+    social_observations: impl IntoIterator<Item = SocialObservation>,
+    max_relay_chain_len: u8,
+    max_tell_candidates: u8,
+    recipient_knowledge_status: impl FnMut(&TellTopic) -> RecipientKnowledgeStatus,
+) -> Vec<TellTopic> {
+    listener_aware_tell_topic_selection(
+        entity_beliefs,
+        social_observations,
+        max_relay_chain_len,
+        max_tell_candidates,
+        recipient_knowledge_status,
+    )
+    .selected
+}
+
+#[must_use]
+pub fn listener_aware_tell_topic_selection(
+    entity_beliefs: impl IntoIterator<Item = (EntityId, BelievedEntityState)>,
+    social_observations: impl IntoIterator<Item = SocialObservation>,
+    max_relay_chain_len: u8,
+    max_tell_candidates: u8,
+    mut recipient_knowledge_status: impl FnMut(&TellTopic) -> RecipientKnowledgeStatus,
+) -> TellTopicSelection {
+    let mut eligible = Vec::new();
+    let mut omitted = Vec::new();
+
+    for (subject, belief) in entity_beliefs {
+        let topic = TellTopic::EntityBelief { subject };
+        let chain_len = belief_chain_len(belief.source);
+        if chain_len > max_relay_chain_len {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::ExceedsRelayDepth,
+            });
+            continue;
+        }
+        if recipient_knowledge_status(&topic)
+            == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
+            });
+            continue;
+        }
+        eligible.push((belief.observed_tick, topic));
+    }
+
+    for observation in social_observations {
+        let topic = TellTopic::SocialObservation { observation };
+        if !social_observation_is_relayable(&observation) {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::NonRelayableSocialObservation,
+            });
+            continue;
+        }
+        let chain_len = belief_chain_len(observation.source);
+        if chain_len > max_relay_chain_len {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::ExceedsRelayDepth,
+            });
+            continue;
+        }
+        if recipient_knowledge_status(&topic)
+            == RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
+            });
+            continue;
+        }
+        eligible.push((observation.observed_tick, topic));
+    }
+
+    eligible.sort_unstable_by(|(left_tick, left_topic), (right_tick, right_topic)| {
+        right_tick
+            .cmp(left_tick)
+            .then_with(|| left_topic.cmp(right_topic))
+    });
+
+    let keep_len = usize::from(max_tell_candidates);
+    let mut selected = Vec::with_capacity(eligible.len().min(keep_len));
+    for (idx, (_, topic)) in eligible.into_iter().enumerate() {
+        if idx < keep_len {
+            selected.push(topic);
+        } else {
+            omitted.push(TellTopicOmission {
+                topic,
+                reason: TellTopicOmissionReason::TruncatedByCandidateLimit,
+            });
+        }
+    }
+
+    TellTopicSelection { selected, omitted }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects};
+    use super::{
+        belief_chain_len, listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
+        listener_aware_tell_topic_selection, relayable_social_subjects, TellTopicOmission,
+        TellTopicOmissionReason,
+    };
     use std::collections::BTreeMap;
     use worldwake_core::{
-        BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus, Tick,
+        BelievedEntityState, EntityId, PerceptionSource, RecipientKnowledgeStatus,
+        SocialObservation, SocialObservationDetail, TellTopic, Tick,
     };
 
     fn entity(id: u64) -> EntityId {
@@ -78,6 +231,18 @@ mod tests {
             last_known_courage: None,
             observed_tick: Tick(observed_tick),
             source,
+        }
+    }
+
+    fn social_observation(
+        observed_tick: u64,
+        detail: SocialObservationDetail,
+    ) -> SocialObservation {
+        SocialObservation {
+            detail,
+            place: entity(40),
+            observed_tick: Tick(observed_tick),
+            source: PerceptionSource::DirectObservation,
         }
     }
 
@@ -224,5 +389,129 @@ mod tests {
         );
 
         assert_eq!(subjects, vec![entity(10), entity(11)]);
+    }
+
+    #[test]
+    fn listener_aware_relayable_tell_topics_exclude_witnessed_telling_observations() {
+        let relayable = social_observation(
+            9,
+            SocialObservationDetail::WitnessedConflict {
+                actor: entity(1),
+                target: entity(2),
+            },
+        );
+        let witnessed_telling = social_observation(
+            10,
+            SocialObservationDetail::WitnessedTelling {
+                speaker: entity(3),
+                listener: entity(4),
+            },
+        );
+
+        let topics = listener_aware_relayable_tell_topics(
+            Vec::<(EntityId, BelievedEntityState)>::new(),
+            vec![relayable, witnessed_telling],
+            2,
+            5,
+            |_| RecipientKnowledgeStatus::UnknownToSpeaker,
+        );
+
+        assert_eq!(
+            topics,
+            vec![TellTopic::SocialObservation {
+                observation: relayable,
+            }]
+        );
+    }
+
+    #[test]
+    fn listener_aware_tell_topic_selection_reports_relay_filtering_reasons() {
+        let fresh = believed_state(9, PerceptionSource::DirectObservation);
+        let too_deep = believed_state(8, PerceptionSource::Rumor { chain_len: 4 });
+        let relayable = social_observation(
+            7,
+            SocialObservationDetail::WitnessedConflict {
+                actor: entity(1),
+                target: entity(2),
+            },
+        );
+        let non_relayable = social_observation(
+            6,
+            SocialObservationDetail::WitnessedTelling {
+                speaker: entity(3),
+                listener: entity(4),
+            },
+        );
+        let selection = listener_aware_tell_topic_selection(
+            vec![(entity(10), fresh), (entity(11), too_deep)],
+            vec![relayable, non_relayable],
+            2,
+            5,
+            |topic| match topic {
+                TellTopic::EntityBelief { subject } if *subject == entity(10) => {
+                    RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+                }
+                _ => RecipientKnowledgeStatus::UnknownToSpeaker,
+            },
+        );
+
+        assert_eq!(
+            selection.selected,
+            vec![TellTopic::SocialObservation {
+                observation: relayable,
+            }]
+        );
+        assert!(selection.omitted.contains(&TellTopicOmission {
+            topic: TellTopic::EntityBelief {
+                subject: entity(10)
+            },
+            reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
+        }));
+        assert!(selection.omitted.contains(&TellTopicOmission {
+            topic: TellTopic::EntityBelief {
+                subject: entity(11)
+            },
+            reason: TellTopicOmissionReason::ExceedsRelayDepth,
+        }));
+        assert!(selection.omitted.contains(&TellTopicOmission {
+            topic: TellTopic::SocialObservation {
+                observation: non_relayable,
+            },
+            reason: TellTopicOmissionReason::NonRelayableSocialObservation,
+        }));
+    }
+
+    #[test]
+    fn listener_aware_tell_topic_selection_reports_truncation_after_sorting() {
+        let selection = listener_aware_tell_topic_selection(
+            vec![
+                (
+                    entity(10),
+                    believed_state(3, PerceptionSource::DirectObservation),
+                ),
+                (
+                    entity(11),
+                    believed_state(9, PerceptionSource::DirectObservation),
+                ),
+            ],
+            vec![social_observation(
+                8,
+                SocialObservationDetail::WitnessedConflict {
+                    actor: entity(1),
+                    target: entity(2),
+                },
+            )],
+            2,
+            2,
+            |_| RecipientKnowledgeStatus::UnknownToSpeaker,
+        );
+
+        assert_eq!(selection.selected.len(), 2);
+        assert!(selection.omitted.contains(&TellTopicOmission {
+            topic: TellTopic::EntityBelief {
+                subject: entity(10)
+            },
+            reason: TellTopicOmissionReason::TruncatedByCandidateLimit,
+        }));
     }
 }

@@ -5,8 +5,7 @@
 
 use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
-    CommodityPurpose,
-    DemandMemory, DemandObservation, DemandObservationReason, EntityId,
+    CommodityPurpose, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
     Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, UtilityProfile,
 };

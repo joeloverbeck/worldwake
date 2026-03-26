@@ -1,18 +1,20 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
+    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, EntityId,
     EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, TellMemoryKey, TellProfile, ToldBeliefMemory, VisibilitySpec, World,
-    WorldTxn,
+    Permille, RecipientKnowledgeStatus, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+    VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
-    belief_chain_len, listener_aware_relayable_subjects, AbortReason, ActionAbortRequestReason,
+    belief_chain_len, listener_aware_tell_topic_selection, AbortReason, ActionAbortRequestReason,
     ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility, PayloadEntityRole,
-    Precondition, TargetSpec, TellActionPayload,
+    CommitOutcome, CommitTraceData, Constraint, DeterministicRng, DurationExpr, Interruptibility,
+    PayloadEntityRole, Precondition, TargetSpec, TellActionPayload, TellBeliefDeltaKind,
+    TellCommitResult, TellCommitTrace,
 };
 
 pub fn register_tell_action(
@@ -137,11 +139,7 @@ fn listener_already_has_institutional_claim(
     store
         .institutional_beliefs
         .get(&institutional_belief_key(belief.claim))
-        .is_some_and(|claims| {
-            claims
-                .iter()
-                .any(|existing| existing.claim == belief.claim && existing.source == belief.source)
-        })
+        .is_some_and(|claims| claims.iter().any(|existing| existing.claim == belief.claim))
 }
 
 fn passes_acceptance_check(fidelity: u16, rng: &mut DeterministicRng) -> bool {
@@ -268,24 +266,33 @@ fn enumerate_tell_payloads(
     let Some(profile) = view.tell_profile(actor) else {
         return Vec::new();
     };
-    let subjects = listener_aware_relayable_subjects(
-        view.known_entity_beliefs(actor),
+    let relayable_entity_beliefs = view
+        .known_entity_beliefs(actor)
+        .into_iter()
+        .filter(|(subject, _)| {
+            !subject_is_listener_observable_entity_belief(view, listener, *subject)
+        })
+        .collect::<Vec<_>>();
+    let relayable_social_observations = view
+        .known_social_observations(actor)
+        .into_iter()
+        .filter(|observation| !social_observation_is_redundant_for_listener(observation, listener))
+        .collect::<Vec<_>>();
+    let selection = listener_aware_tell_topic_selection(
+        relayable_entity_beliefs,
+        relayable_social_observations,
         profile.max_relay_chain_len,
         profile.max_tell_candidates,
-        |subject, _| {
-            view.recipient_knowledge_status(actor, listener, subject)
+        |topic| {
+            view.recipient_knowledge_status(actor, listener, topic)
                 .unwrap_or(RecipientKnowledgeStatus::UnknownToSpeaker)
         },
     );
 
-    subjects
+    selection
+        .selected
         .into_iter()
-        .map(|subject| {
-            ActionPayload::Tell(TellActionPayload {
-                listener,
-                subject_entity: subject,
-            })
-        })
+        .map(|topic| ActionPayload::Tell(TellActionPayload { listener, topic }))
         .collect()
 }
 
@@ -317,23 +324,76 @@ fn validate_tell_payload_authoritatively(
         .ok_or_else(|| {
             ActionError::PreconditionFailed(format!("actor {actor} lacks AgentBeliefStore"))
         })?;
-    let belief = beliefs.get_entity(&payload.subject_entity).ok_or_else(|| {
-        ActionError::PreconditionFailed(format!(
-            "actor {actor} lacks belief about subject {}",
-            payload.subject_entity
-        ))
-    })?;
-
     let relay_limit = required_tell_profile_in_world(world, actor)?.max_relay_chain_len;
-    let chain_len = belief_chain_len(belief.source);
+    let chain_len = match payload.topic {
+        TellTopic::EntityBelief { subject } => {
+            if subject_is_listener_observable_entity_belief_in_world(world, listener, subject) {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "listener {listener} can already directly observe subject {subject}"
+                )));
+            }
+            let belief = beliefs.get_entity(&subject).ok_or_else(|| {
+                ActionError::PreconditionFailed(format!(
+                    "actor {actor} lacks belief about subject {subject}"
+                ))
+            })?;
+            belief_chain_len(belief.source)
+        }
+        TellTopic::SocialObservation { observation } => {
+            if social_observation_is_redundant_for_listener(&observation, listener) {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "listener {listener} already directly knows social observation topic"
+                )));
+            }
+            if !beliefs.social_observations.contains(&observation) {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "actor {actor} lacks social observation topic"
+                )));
+            }
+            belief_chain_len(observation.source)
+        }
+    };
     if chain_len > relay_limit {
         return Err(ActionError::PreconditionFailed(format!(
-            "subject {} chain length {} exceeds actor {actor} relay limit {}",
-            payload.subject_entity, chain_len, relay_limit
+            "tell topic chain length {chain_len} exceeds actor {actor} relay limit {relay_limit}"
         )));
     }
 
     Ok(())
+}
+
+fn subject_is_listener_observable_entity_belief(
+    view: &dyn worldwake_sim::RuntimeBeliefView,
+    listener: EntityId,
+    subject: EntityId,
+) -> bool {
+    tell_subject_is_directly_observable_by_listener(
+        subject,
+        view.entity_kind(subject),
+        view.effective_place(subject),
+        listener,
+        view.effective_place(listener),
+        view.observation_fidelity(listener),
+    )
+}
+
+fn subject_is_listener_observable_entity_belief_in_world(
+    world: &World,
+    listener: EntityId,
+    subject: EntityId,
+) -> bool {
+    tell_subject_is_directly_observable_by_listener(
+        subject,
+        world.entity_kind(subject),
+        world.effective_place(subject),
+        listener,
+        world.effective_place(listener),
+        world
+            .get_component_perception_profile(listener)
+            .map_or(Permille::new_unchecked(1000), |profile| {
+                profile.observation_fidelity
+            }),
+    )
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -357,7 +417,34 @@ fn tick_tell(
     Ok(ActionProgress::Continue)
 }
 
-#[allow(clippy::unnecessary_wraps)]
+fn merge_tell_delta_kind(
+    current: TellBeliefDeltaKind,
+    next: TellBeliefDeltaKind,
+) -> TellBeliefDeltaKind {
+    match (current, next) {
+        (TellBeliefDeltaKind::None, delta) | (delta, TellBeliefDeltaKind::None) => delta,
+        (left, right) if left == right => left,
+        _ => TellBeliefDeltaKind::Mixed,
+    }
+}
+
+fn tell_trace(
+    listener: EntityId,
+    topic: TellTopic,
+    result: TellCommitResult,
+    heard_disposition: Option<HeardBeliefDisposition>,
+    belief_delta: TellBeliefDeltaKind,
+) -> CommitOutcome {
+    CommitOutcome::empty().with_trace(CommitTraceData::Tell(TellCommitTrace {
+        listener,
+        topic,
+        result,
+        heard_disposition,
+        belief_delta,
+    }))
+}
+
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 fn commit_tell(
     def: &ActionDef,
     instance: &ActionInstance,
@@ -369,23 +456,38 @@ fn commit_tell(
     let speaker = instance.actor;
 
     let mut speaker_beliefs = required_belief_store(txn, speaker)?;
-    let Some(speaker_belief) = speaker_beliefs.get_entity(&payload.subject_entity).cloned() else {
-        return Ok(CommitOutcome::empty());
+    let speaker_profile = required_tell_profile(txn, speaker)?;
+    let Some(shared_state) = speaker_beliefs
+        .shared_tell_state_for_topic(&payload.topic, speaker_profile.max_relay_chain_len)
+    else {
+        return Ok(tell_trace(
+            listener,
+            payload.topic,
+            TellCommitResult::SpeakerNoLongerKnowsTopic,
+            None,
+            TellBeliefDeltaKind::None,
+        ));
     };
 
-    let speaker_profile = required_tell_profile(txn, speaker)?;
-    if belief_chain_len(speaker_belief.source) > speaker_profile.max_relay_chain_len {
-        return Ok(CommitOutcome::empty());
+    let topic_chain_len = match payload.topic {
+        TellTopic::EntityBelief { subject } => speaker_beliefs
+            .get_entity(&subject)
+            .map_or(u8::MAX, |belief| belief_chain_len(belief.source)),
+        TellTopic::SocialObservation { observation } => belief_chain_len(observation.source),
+    };
+    if topic_chain_len > speaker_profile.max_relay_chain_len {
+        return Ok(tell_trace(
+            listener,
+            payload.topic,
+            TellCommitResult::RelayLimitExceeded,
+            None,
+            TellBeliefDeltaKind::None,
+        ));
     }
 
-    let shared_state = speaker_beliefs.shared_belief_snapshot_for_subject(
-        payload.subject_entity,
-        &speaker_belief,
-        speaker_profile.max_relay_chain_len,
-    );
     let told_key = TellMemoryKey {
         counterparty: listener,
-        subject: payload.subject_entity,
+        topic: payload.topic,
     };
     speaker_beliefs.record_told_belief(
         told_key,
@@ -400,55 +502,100 @@ fn commit_tell(
     let listener_profile = required_tell_profile(txn, listener)?;
     let heard_key = TellMemoryKey {
         counterparty: speaker,
-        subject: payload.subject_entity,
+        topic: payload.topic,
     };
-    let speaker_institutional_beliefs = speaker_beliefs
-        .relayable_institutional_beliefs_for_subject(
-            payload.subject_entity,
-            speaker_profile.max_relay_chain_len,
-        );
-    let disposition = if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng)
-    {
-        let mut accepted_any = false;
-        let mut transferred = speaker_belief.clone();
-        transferred.source = degrade_source(speaker, speaker_belief.source);
-        let should_update_entity = listener_beliefs
-            .get_entity(&payload.subject_entity)
-            .is_none_or(|existing| existing.observed_tick < speaker_belief.observed_tick);
-        if should_update_entity {
-            listener_beliefs.update_entity(payload.subject_entity, transferred);
-            listener_beliefs
-                .enforce_capacity(&required_perception_profile(txn, listener)?, txn.tick());
-            accepted_any = true;
-        }
+    let (result, disposition, belief_delta) =
+        if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng) {
+            let mut accepted_any = false;
+            let mut belief_delta = TellBeliefDeltaKind::None;
+            let listener_perception = required_perception_profile(txn, listener)?;
+            match payload.topic {
+                TellTopic::EntityBelief { subject } => {
+                    let Some(speaker_belief) = speaker_beliefs.get_entity(&subject).cloned() else {
+                        return Ok(tell_trace(
+                            listener,
+                            payload.topic,
+                            TellCommitResult::SpeakerNoLongerKnowsTopic,
+                            None,
+                            TellBeliefDeltaKind::None,
+                        ));
+                    };
+                    let mut transferred = speaker_belief.clone();
+                    transferred.source = degrade_source(speaker, speaker_belief.source);
+                    let should_update_entity =
+                        listener_beliefs
+                            .get_entity(&subject)
+                            .is_none_or(|existing| {
+                                existing.observed_tick < speaker_belief.observed_tick
+                            });
+                    if should_update_entity {
+                        listener_beliefs.update_entity(subject, transferred);
+                        listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
+                        accepted_any = true;
+                        belief_delta =
+                            merge_tell_delta_kind(belief_delta, TellBeliefDeltaKind::EntityBelief);
+                    }
 
-        let listener_perception = required_perception_profile(txn, listener)?;
-        for belief in speaker_institutional_beliefs {
-            let relayed = BelievedInstitutionalClaim {
-                claim: belief.claim,
-                source: degrade_institutional_source(speaker, belief.source),
-                learned_tick: txn.tick(),
-                learned_at: txn.effective_place(listener),
-            };
-            if listener_already_has_institutional_claim(&listener_beliefs, &relayed) {
-                continue;
+                    for belief in speaker_beliefs.relayable_institutional_beliefs_for_subject(
+                        subject,
+                        speaker_profile.max_relay_chain_len,
+                    ) {
+                        let relayed = BelievedInstitutionalClaim {
+                            claim: belief.claim,
+                            source: degrade_institutional_source(speaker, belief.source),
+                            learned_tick: txn.tick(),
+                            learned_at: txn.effective_place(listener),
+                        };
+                        if listener_already_has_institutional_claim(&listener_beliefs, &relayed) {
+                            continue;
+                        }
+                        listener_beliefs.record_institutional_belief(
+                            institutional_belief_key(relayed.claim),
+                            relayed,
+                            &listener_perception,
+                        );
+                        accepted_any = true;
+                        belief_delta = merge_tell_delta_kind(
+                            belief_delta,
+                            TellBeliefDeltaKind::InstitutionalBelief,
+                        );
+                    }
+                }
+                TellTopic::SocialObservation { observation } => {
+                    let mut transferred = observation;
+                    transferred.source = degrade_source(speaker, observation.source);
+                    if !listener_beliefs.social_observations.contains(&transferred) {
+                        listener_beliefs.record_social_observation(transferred);
+                        listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
+                        accepted_any = true;
+                        belief_delta = merge_tell_delta_kind(
+                            belief_delta,
+                            TellBeliefDeltaKind::SocialObservation,
+                        );
+                    }
+                }
             }
-            listener_beliefs.record_institutional_belief(
-                institutional_belief_key(relayed.claim),
-                relayed,
-                &listener_perception,
-            );
-            accepted_any = true;
-        }
 
-        if accepted_any {
-            HeardBeliefDisposition::Accepted
+            if accepted_any {
+                (
+                    TellCommitResult::Accepted,
+                    HeardBeliefDisposition::Accepted,
+                    belief_delta,
+                )
+            } else {
+                (
+                    TellCommitResult::AlreadyHeldEqualOrNewer,
+                    HeardBeliefDisposition::AlreadyHeldEqualOrNewer,
+                    TellBeliefDeltaKind::None,
+                )
+            }
         } else {
-            HeardBeliefDisposition::AlreadyHeldEqualOrNewer
-        }
-    } else {
-        HeardBeliefDisposition::NotInternalized
-    };
+            (
+                TellCommitResult::NotInternalized,
+                HeardBeliefDisposition::NotInternalized,
+                TellBeliefDeltaKind::None,
+            )
+        };
 
     listener_beliefs.record_heard_belief(
         heard_key,
@@ -463,7 +610,13 @@ fn commit_tell(
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_component_agent_belief_store(listener, listener_beliefs)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    Ok(CommitOutcome::empty())
+    Ok(tell_trace(
+        listener,
+        payload.topic,
+        result,
+        Some(disposition),
+        belief_delta,
+    ))
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -488,17 +641,18 @@ mod tests {
         BodyCostPerTick, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
         ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog,
         EventTag, EventView, HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource,
-        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed,
-        SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, TradeDispositionProfile,
-        IntentionDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, Wound,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        PerceptionProfile, PerceptionSource, Permille, Quantity, RecipeId,
+        RecipientKnowledgeStatus, ResourceSource, Seed, SharedTellState, SuccessionLaw,
+        TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
     use worldwake_sim::{
         get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
-        ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr, Interruptibility,
-        Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
+        ActionPayload, ActionState, ActionStatus, CommitTraceData, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
+        TellBeliefDeltaKind, TellCommitResult,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -751,7 +905,7 @@ mod tests {
             def_id: tell_id,
             payload: ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }),
             actor: speaker,
             targets: vec![listener],
@@ -808,15 +962,36 @@ mod tests {
         (handler.on_commit)(def, instance, &mut rng, &mut txn)
     }
 
+    fn assert_tell_trace(
+        outcome: &worldwake_sim::CommitOutcome,
+        expected_result: TellCommitResult,
+        expected_disposition: Option<HeardBeliefDisposition>,
+        expected_delta: TellBeliefDeltaKind,
+    ) {
+        let trace = match outcome.trace.as_ref() {
+            Some(CommitTraceData::Tell(trace)) => trace,
+            other => panic!("expected tell trace, got {other:?}"),
+        };
+        assert_eq!(trace.result, expected_result);
+        assert_eq!(trace.heard_disposition, expected_disposition);
+        assert_eq!(trace.belief_delta, expected_delta);
+        assert_eq!(
+            trace.artifact_changed(),
+            expected_delta != TellBeliefDeltaKind::None
+        );
+    }
+
     #[derive(Default)]
     struct StubTellBeliefView {
         alive: std::collections::BTreeMap<EntityId, bool>,
         kinds: std::collections::BTreeMap<EntityId, EntityKind>,
         places: std::collections::BTreeMap<EntityId, EntityId>,
         beliefs: std::collections::BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        social_observations:
+            std::collections::BTreeMap<EntityId, Vec<worldwake_core::SocialObservation>>,
         tell_profiles: std::collections::BTreeMap<EntityId, TellProfile>,
         recipient_statuses:
-            std::collections::BTreeMap<(EntityId, EntityId, EntityId), RecipientKnowledgeStatus>,
+            std::collections::BTreeMap<(EntityId, EntityId, TellTopic), RecipientKnowledgeStatus>,
     }
 
     impl RuntimeBeliefView for StubTellBeliefView {
@@ -848,6 +1023,16 @@ mod tests {
 
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn known_social_observations(
+            &self,
+            agent: EntityId,
+        ) -> Vec<worldwake_core::SocialObservation> {
+            self.social_observations
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
@@ -982,7 +1167,10 @@ mod tests {
             None
         }
 
-        fn intention_disposition_profile(&self, _agent: EntityId) -> Option<IntentionDispositionProfile> {
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<IntentionDispositionProfile> {
             None
         }
 
@@ -998,10 +1186,10 @@ mod tests {
             &self,
             actor: EntityId,
             counterparty: EntityId,
-            subject: EntityId,
+            topic: &TellTopic,
         ) -> Option<RecipientKnowledgeStatus> {
             self.recipient_statuses
-                .get(&(actor, counterparty, subject))
+                .get(&(actor, counterparty, *topic))
                 .copied()
         }
 
@@ -1084,14 +1272,14 @@ mod tests {
         speaker: EntityId,
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
-    ) -> Vec<(EntityId, EntityId)> {
+    ) -> Vec<(EntityId, TellTopic)> {
         get_affordances(view, speaker, defs, handlers)
             .into_iter()
             .filter_map(|affordance| {
                 affordance
                     .payload_override
                     .and_then(|payload| payload.as_tell().cloned())
-                    .map(|payload| (payload.listener, payload.subject_entity))
+                    .map(|payload| (payload.listener, payload.topic))
             })
             .collect()
     }
@@ -1117,7 +1305,7 @@ mod tests {
     fn tell_memory_key(counterparty: EntityId, subject: EntityId) -> TellMemoryKey {
         TellMemoryKey {
             counterparty,
-            subject,
+            topic: TellTopic::EntityBelief { subject },
         }
     }
 
@@ -1194,7 +1382,7 @@ mod tests {
             &[listener],
             &ActionPayload::Tell(TellActionPayload {
                 listener: other_listener,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }),
             &world,
         )
@@ -1219,7 +1407,7 @@ mod tests {
             &[speaker],
             &ActionPayload::Tell(TellActionPayload {
                 listener: speaker,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }),
             &world,
         )
@@ -1244,7 +1432,9 @@ mod tests {
             &[listener],
             &ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: entity(404),
+                topic: TellTopic::EntityBelief {
+                    subject: entity(404),
+                },
             }),
             &world,
         )
@@ -1285,7 +1475,7 @@ mod tests {
             &[listener],
             &ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }),
             &world,
         )
@@ -1300,11 +1490,44 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let tell_id = register_tell_action(&mut defs, &mut handlers);
         let tell = defs.get(tell_id).unwrap();
-        let (world, _place, speaker, listener, subject) =
+        let (mut world, place, speaker, listener, subject) =
             world_with_speaker_listener_and_subject(PerceptionSource::Report {
                 from: entity(77),
                 chain_len: 2,
             });
+        let remote_place = world
+            .topology()
+            .place_ids()
+            .find(|candidate| *candidate != place)
+            .unwrap();
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_ground_location(subject, remote_place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        {
+            let belief = build_believed_entity_state(
+                &world,
+                subject,
+                Tick(4),
+                PerceptionSource::Report {
+                    from: entity(77),
+                    chain_len: 2,
+                },
+            )
+            .unwrap();
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap_or_else(AgentBeliefStore::new);
+            store.update_entity(subject, belief);
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
 
         assert_eq!(
             validate_tell_payload_authoritatively(
@@ -1314,7 +1537,7 @@ mod tests {
                 &[listener],
                 &ActionPayload::Tell(TellActionPayload {
                     listener,
-                    subject_entity: subject,
+                    topic: TellTopic::EntityBelief { subject },
                 }),
                 &world,
             ),
@@ -1344,7 +1567,7 @@ mod tests {
             &[listener],
             &ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }),
             &world,
         )
@@ -1368,7 +1591,7 @@ mod tests {
             def_id: tell_id,
             payload: ActionPayload::Tell(TellActionPayload {
                 listener,
-                subject_entity: subject,
+                topic: TellTopic::EntityBelief { subject },
             }),
             actor: speaker,
             targets: vec![listener],
@@ -1424,7 +1647,7 @@ mod tests {
             .told_beliefs
             .get(&tell_memory_key(listener, subject))
             .unwrap();
-        assert_eq!(memory.shared_state, expected);
+        assert_eq!(memory.shared_state, SharedTellState::EntityBelief(expected));
         assert_eq!(memory.told_tick, Tick(8));
     }
 
@@ -1445,9 +1668,26 @@ mod tests {
             .heard_beliefs
             .get(&tell_memory_key(speaker, subject))
             .unwrap();
-        assert_eq!(memory.heard_state, expected);
+        assert_eq!(memory.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(memory.heard_tick, Tick(8));
         assert_eq!(memory.disposition, HeardBeliefDisposition::Accepted);
+    }
+
+    #[test]
+    fn tell_commit_trace_reports_accepted_entity_update() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::Accepted,
+            Some(HeardBeliefDisposition::Accepted),
+            TellBeliefDeltaKind::EntityBelief,
+        );
     }
 
     #[test]
@@ -1632,7 +1872,7 @@ mod tests {
             .heard_beliefs
             .get(&tell_memory_key(speaker, subject))
             .unwrap();
-        assert_eq!(heard.heard_state, expected);
+        assert_eq!(heard.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(heard.disposition, HeardBeliefDisposition::NotInternalized);
         let speaker_store = world.get_component_agent_belief_store(speaker).unwrap();
         assert!(speaker_store
@@ -1684,7 +1924,7 @@ mod tests {
             .heard_beliefs
             .get(&tell_memory_key(speaker, subject))
             .unwrap();
-        assert_eq!(heard.heard_state, expected);
+        assert_eq!(heard.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(
             heard.disposition,
             HeardBeliefDisposition::AlreadyHeldEqualOrNewer
@@ -1734,10 +1974,47 @@ mod tests {
             .heard_beliefs
             .get(&tell_memory_key(speaker, subject))
             .unwrap();
-        assert_eq!(heard.heard_state, expected);
+        assert_eq!(heard.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(
             heard.disposition,
             HeardBeliefDisposition::AlreadyHeldEqualOrNewer
+        );
+    }
+
+    #[test]
+    fn tell_commit_trace_reports_redundant_noop() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let existing = build_believed_entity_state(
+            &world,
+            subject,
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        )
+        .unwrap();
+        {
+            let mut store = world
+                .get_component_agent_belief_store(listener)
+                .cloned()
+                .unwrap_or_default();
+            store.update_entity(subject, existing);
+
+            let mut txn = new_txn(&mut world, 7);
+            txn.set_component_agent_belief_store(listener, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::AlreadyHeldEqualOrNewer,
+            Some(HeardBeliefDisposition::AlreadyHeldEqualOrNewer),
+            TellBeliefDeltaKind::None,
         );
     }
 
@@ -1772,8 +2049,38 @@ mod tests {
             .heard_beliefs
             .get(&tell_memory_key(speaker, subject))
             .unwrap();
-        assert_eq!(heard.heard_state, expected);
+        assert_eq!(heard.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(heard.disposition, HeardBeliefDisposition::NotInternalized);
+    }
+
+    #[test]
+    fn tell_commit_trace_reports_not_internalized() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.set_component_tell_profile(
+                listener,
+                TellProfile {
+                    acceptance_fidelity: Permille::new(0).unwrap(),
+                    ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::NotInternalized,
+            Some(HeardBeliefDisposition::NotInternalized),
+            TellBeliefDeltaKind::None,
+        );
     }
 
     #[test]
@@ -1883,15 +2190,12 @@ mod tests {
             .get(&tell_memory_key(speaker, office))
             .unwrap();
         assert_eq!(heard.disposition, HeardBeliefDisposition::Accepted);
-        assert_eq!(heard.heard_state.institutional_claims.len(), 1);
-        assert_eq!(
-            heard.heard_state.institutional_claims[0].claim,
-            vacancy.claim
-        );
-        assert_eq!(
-            heard.heard_state.institutional_claims[0].source,
-            vacancy.source
-        );
+        let SharedTellState::EntityBelief(heard_state) = &heard.heard_state else {
+            panic!("expected entity-belief tell state");
+        };
+        assert_eq!(heard_state.institutional_claims.len(), 1);
+        assert_eq!(heard_state.institutional_claims[0].claim, vacancy.claim);
+        assert_eq!(heard_state.institutional_claims[0].source, vacancy.source);
     }
 
     #[test]
@@ -2067,6 +2371,42 @@ mod tests {
     }
 
     #[test]
+    fn tell_commit_trace_reports_relay_limit_rejection() {
+        let report_source = PerceptionSource::Report {
+            from: entity(77),
+            chain_len: 2,
+        };
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
+            tell_test_setup(report_source);
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.set_component_tell_profile(
+                speaker,
+                TellProfile {
+                    max_tell_candidates: 3,
+                    max_relay_chain_len: 1,
+                    acceptance_fidelity: Permille::new(800).unwrap(),
+                    ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        let outcome =
+            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
+
+        assert_tell_trace(
+            &outcome,
+            TellCommitResult::RelayLimitExceeded,
+            None,
+            TellBeliefDeltaKind::None,
+        );
+    }
+
+    #[test]
     fn tell_commit_relies_on_scheduler_event_transaction_shape() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
@@ -2185,12 +2525,12 @@ mod tests {
         assert_eq!(
             affordances,
             vec![
-                (listener_a, subject_a),
-                (listener_a, subject_b),
-                (listener_a, subject_c),
-                (listener_b, subject_a),
-                (listener_b, subject_b),
-                (listener_b, subject_c),
+                (listener_a, TellTopic::EntityBelief { subject: subject_a }),
+                (listener_a, TellTopic::EntityBelief { subject: subject_b }),
+                (listener_a, TellTopic::EntityBelief { subject: subject_c }),
+                (listener_b, TellTopic::EntityBelief { subject: subject_a }),
+                (listener_b, TellTopic::EntityBelief { subject: subject_b }),
+                (listener_b, TellTopic::EntityBelief { subject: subject_c }),
             ]
         );
     }
@@ -2227,13 +2567,27 @@ mod tests {
             ],
         );
         view.recipient_statuses.insert(
-            (speaker, listener, current_subject),
+            (
+                speaker,
+                listener,
+                TellTopic::EntityBelief {
+                    subject: current_subject,
+                },
+            ),
             RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
         );
 
         let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
 
-        assert_eq!(affordances, vec![(listener, untold_subject)]);
+        assert_eq!(
+            affordances,
+            vec![(
+                listener,
+                TellTopic::EntityBelief {
+                    subject: untold_subject,
+                },
+            )]
+        );
     }
 
     #[test]
@@ -2268,11 +2622,23 @@ mod tests {
             ],
         );
         view.recipient_statuses.insert(
-            (speaker, listener, stale_subject),
+            (
+                speaker,
+                listener,
+                TellTopic::EntityBelief {
+                    subject: stale_subject,
+                },
+            ),
             RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
         );
         view.recipient_statuses.insert(
-            (speaker, listener, expired_subject),
+            (
+                speaker,
+                listener,
+                TellTopic::EntityBelief {
+                    subject: expired_subject,
+                },
+            ),
             RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired,
         );
 
@@ -2280,7 +2646,20 @@ mod tests {
 
         assert_eq!(
             affordances,
-            vec![(listener, stale_subject), (listener, expired_subject)]
+            vec![
+                (
+                    listener,
+                    TellTopic::EntityBelief {
+                        subject: stale_subject,
+                    },
+                ),
+                (
+                    listener,
+                    TellTopic::EntityBelief {
+                        subject: expired_subject,
+                    },
+                ),
+            ]
         );
     }
 
@@ -2322,13 +2701,27 @@ mod tests {
             ],
         );
         view.recipient_statuses.insert(
-            (speaker, listener, crowded_subject),
+            (
+                speaker,
+                listener,
+                TellTopic::EntityBelief {
+                    subject: crowded_subject,
+                },
+            ),
             RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
         );
 
         let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
 
-        assert_eq!(affordances, vec![(listener, untold_subject)]);
+        assert_eq!(
+            affordances,
+            vec![(
+                listener,
+                TellTopic::EntityBelief {
+                    subject: untold_subject,
+                },
+            )]
+        );
     }
 
     #[test]
@@ -2445,9 +2838,9 @@ mod tests {
         assert_eq!(
             affordances,
             vec![
-                (listener, subject_b),
-                (listener, subject_c),
-                (listener, subject_e)
+                (listener, TellTopic::EntityBelief { subject: subject_b }),
+                (listener, TellTopic::EntityBelief { subject: subject_c }),
+                (listener, TellTopic::EntityBelief { subject: subject_e })
             ]
         );
     }
@@ -2489,5 +2882,249 @@ mod tests {
         let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
 
         assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn tell_affordances_include_relayable_social_observation_topics() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_tell_action(&mut defs, &mut handlers);
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(10);
+        let place = entity(20);
+        let observation = worldwake_core::SocialObservation {
+            detail: worldwake_core::SocialObservationDetail::SuspectedTheft {
+                missing_entity: subject,
+                expected_place: place,
+                suspect: Some(entity(99)),
+            },
+            place,
+            observed_tick: Tick(9),
+            source: PerceptionSource::DirectObservation,
+        };
+        let mut view = StubTellBeliefView::default();
+
+        for entity in [speaker, listener] {
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+            view.alive.insert(entity, true);
+        }
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        view.social_observations.insert(speaker, vec![observation]);
+
+        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
+
+        assert_eq!(
+            affordances,
+            vec![(listener, TellTopic::SocialObservation { observation })]
+        );
+    }
+
+    #[test]
+    fn tell_affordances_exclude_local_office_topics_listener_can_observe_directly() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_tell_action(&mut defs, &mut handlers);
+        let speaker = entity(1);
+        let listener = entity(2);
+        let office = entity(10);
+        let place = entity(20);
+        let mut view = StubTellBeliefView::default();
+
+        for entity in [speaker, listener] {
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+            view.alive.insert(entity, true);
+        }
+        view.kinds.insert(office, EntityKind::Office);
+        view.places.insert(office, place);
+        view.alive.insert(office, true);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        view.beliefs.insert(
+            speaker,
+            vec![(
+                office,
+                BelievedEntityState {
+                    last_known_place: Some(place),
+                    last_known_inventory: std::collections::BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    observed_tick: Tick(9),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
+
+        assert!(
+            affordances.is_empty(),
+            "same-place office entity topics should be suppressed until institutional claims have their own tell topic"
+        );
+    }
+
+    #[test]
+    fn tell_affordances_exclude_social_observations_listener_participated_in() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_tell_action(&mut defs, &mut handlers);
+        let speaker = entity(1);
+        let listener = entity(2);
+        let place = entity(20);
+        let observation = worldwake_core::SocialObservation {
+            detail: worldwake_core::SocialObservationDetail::WitnessedObligation {
+                actor: speaker,
+                target: listener,
+            },
+            place,
+            observed_tick: Tick(9),
+            source: PerceptionSource::DirectObservation,
+        };
+        let mut view = StubTellBeliefView::default();
+
+        for entity in [speaker, listener] {
+            view.kinds.insert(entity, EntityKind::Agent);
+            view.places.insert(entity, place);
+            view.alive.insert(entity, true);
+        }
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        view.social_observations.insert(speaker, vec![observation]);
+
+        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
+
+        assert!(
+            affordances.is_empty(),
+            "listeners should not receive tells about social observations they were part of"
+        );
+    }
+
+    #[test]
+    fn tell_payload_validator_accepts_known_social_observation_topic() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let tell_id = register_tell_action(&mut defs, &mut handlers);
+        let def = defs.get(tell_id).unwrap();
+        let (mut world, place, speaker, listener, subject) =
+            world_with_speaker_listener_and_subject(PerceptionSource::DirectObservation);
+        let observation = worldwake_core::SocialObservation {
+            detail: worldwake_core::SocialObservationDetail::SuspectedTheft {
+                missing_entity: subject,
+                expected_place: place,
+                suspect: Some(listener),
+            },
+            place,
+            observed_tick: Tick(7),
+            source: PerceptionSource::DirectObservation,
+        };
+        {
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap();
+            store.record_social_observation(observation);
+            let mut txn = new_txn(&mut world, 8);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert!(validate_tell_payload_authoritatively(
+            def,
+            &defs,
+            speaker,
+            &[listener],
+            &ActionPayload::Tell(TellActionPayload {
+                listener,
+                topic: TellTopic::SocialObservation { observation },
+            }),
+            &world,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn tell_commit_transfers_social_observation_with_degraded_provenance() {
+        let (defs, handlers, tell_id, mut world, place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let observation = worldwake_core::SocialObservation {
+            detail: worldwake_core::SocialObservationDetail::SuspectedTheft {
+                missing_entity: subject,
+                expected_place: place,
+                suspect: Some(entity(77)),
+            },
+            place,
+            observed_tick: Tick(7),
+            source: PerceptionSource::DirectObservation,
+        };
+        {
+            let mut store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap();
+            store.record_social_observation(observation);
+            let mut txn = new_txn(&mut world, 8);
+            txn.set_component_agent_belief_store(speaker, store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let instance = ActionInstance {
+            instance_id: worldwake_sim::ActionInstanceId(0),
+            def_id: tell_id,
+            payload: ActionPayload::Tell(TellActionPayload {
+                listener,
+                topic: TellTopic::SocialObservation { observation },
+            }),
+            actor: speaker,
+            targets: vec![listener],
+            start_tick: Tick(8),
+            remaining_duration: worldwake_sim::ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+        };
+
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
+
+        let speaker_store = world.get_component_agent_belief_store(speaker).unwrap();
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        let told = speaker_store
+            .told_beliefs
+            .get(&TellMemoryKey {
+                counterparty: listener,
+                topic: TellTopic::SocialObservation { observation },
+            })
+            .unwrap();
+        let heard = listener_store
+            .heard_beliefs
+            .get(&TellMemoryKey {
+                counterparty: speaker,
+                topic: TellTopic::SocialObservation { observation },
+            })
+            .unwrap();
+        assert_eq!(
+            told.shared_state,
+            SharedTellState::SocialObservation(observation)
+        );
+        assert_eq!(
+            heard.heard_state,
+            SharedTellState::SocialObservation(observation)
+        );
+        assert_eq!(heard.disposition, HeardBeliefDisposition::Accepted);
+        assert!(listener_store
+            .social_observations
+            .contains(&worldwake_core::SocialObservation {
+                source: PerceptionSource::Report {
+                    from: speaker,
+                    chain_len: 1,
+                },
+                ..observation
+            }));
     }
 }

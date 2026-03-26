@@ -260,7 +260,13 @@ mod tests {
         ));
 
         // SourceDepleted does not block goal generation (blocks_goal_generation returns false)
-        assert!(!memory.is_blocked(&key, Some(entity_id(2, 0)), Some(entity_id(4, 0)), None, Tick(9)));
+        assert!(!memory.is_blocked(
+            &key,
+            Some(entity_id(2, 0)),
+            Some(entity_id(4, 0)),
+            None,
+            Tick(9)
+        ));
     }
 
     #[test]
@@ -346,7 +352,11 @@ mod tests {
         };
         let mut memory = BlockedIntentMemory::default();
         memory.record(sample_blocked_intent());
-        memory.record(make_intent(other_bk, BlockingFact::CombatTooRisky, Tick(30)));
+        memory.record(make_intent(
+            other_bk,
+            BlockingFact::CombatTooRisky,
+            Tick(30),
+        ));
 
         memory.clear_for(&bk);
 
@@ -363,17 +373,32 @@ mod tests {
         let mut memory = BlockedIntentMemory::default();
 
         memory.record(make_intent(
-            BlockerKey { goal_key: key, place: Some(place_a), target: None, action_def: None },
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_a),
+                target: None,
+                action_def: None,
+            },
             BlockingFact::SourceDepleted,
             Tick(20),
         ));
         memory.record(make_intent(
-            BlockerKey { goal_key: key, place: Some(place_b), target: None, action_def: None },
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_b),
+                target: None,
+                action_def: None,
+            },
             BlockingFact::SourceDepleted,
             Tick(25),
         ));
         memory.record(make_intent(
-            BlockerKey { goal_key: other_goal, place: None, target: None, action_def: None },
+            BlockerKey {
+                goal_key: other_goal,
+                place: None,
+                target: None,
+                action_def: None,
+            },
             BlockingFact::CombatTooRisky,
             Tick(30),
         ));
@@ -381,7 +406,10 @@ mod tests {
         memory.clear_all_for_goal(&key);
 
         assert_eq!(memory.intents.len(), 1);
-        assert_eq!(memory.intents.values().next().unwrap().blocker_key.goal_key, other_goal);
+        assert_eq!(
+            memory.intents.values().next().unwrap().blocker_key.goal_key,
+            other_goal
+        );
     }
 
     #[test]
@@ -410,7 +438,13 @@ mod tests {
             Tick(30),
         ));
 
-        assert!(!memory.is_blocked(&key, Some(entity_id(2, 0)), Some(entity_id(4, 0)), Some(ActionDefId(9)), Tick(11)));
+        assert!(!memory.is_blocked(
+            &key,
+            Some(entity_id(2, 0)),
+            Some(entity_id(4, 0)),
+            Some(ActionDefId(9)),
+            Tick(11)
+        ));
     }
 
     #[test]

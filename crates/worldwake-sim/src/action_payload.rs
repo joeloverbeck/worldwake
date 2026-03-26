@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
-    WorkstationTag,
+    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, TellTopic,
+    UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -21,6 +21,7 @@ pub enum ActionPayload {
     Trade(TradeActionPayload),
     Combat(CombatActionPayload),
     Loot(LootActionPayload),
+    Investigate(InvestigateActionPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
 }
 
@@ -42,6 +43,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -63,6 +65,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -84,6 +87,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -105,6 +109,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -126,6 +131,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -147,6 +153,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -168,6 +175,7 @@ impl ActionPayload {
             | Self::Craft(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -189,6 +197,7 @@ impl ActionPayload {
             | Self::Craft(_)
             | Self::Trade(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -210,6 +219,7 @@ impl ActionPayload {
             | Self::Craft(_)
             | Self::Trade(_)
             | Self::Combat(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -231,7 +241,8 @@ impl ActionPayload {
             | Self::Craft(_)
             | Self::Trade(_)
             | Self::Combat(_)
-            | Self::Loot(_) => None,
+            | Self::Loot(_)
+            | Self::Investigate(_) => None,
         }
     }
 
@@ -252,6 +263,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -273,6 +285,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -294,6 +307,7 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -315,6 +329,29 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
+            | Self::Investigate(_)
+            | Self::QueueForFacilityUse(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_investigate(&self) -> Option<&InvestigateActionPayload> {
+        match self {
+            Self::Investigate(payload) => Some(payload),
+            Self::None
+            | Self::ConsultRecord(_)
+            | Self::Tell(_)
+            | Self::Bribe(_)
+            | Self::Threaten(_)
+            | Self::DeclareSupport(_)
+            | Self::PressForceClaim(_)
+            | Self::YieldForceClaim(_)
+            | Self::Transport(_)
+            | Self::Harvest(_)
+            | Self::Craft(_)
+            | Self::Trade(_)
+            | Self::Combat(_)
+            | Self::Loot(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -328,7 +365,7 @@ pub struct ConsultRecordActionPayload {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct TellActionPayload {
     pub listener: EntityId,
-    pub subject_entity: EntityId,
+    pub topic: TellTopic,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -403,6 +440,11 @@ pub struct LootActionPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct InvestigateActionPayload {
+    pub violation_id: ViolationId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct QueueForFacilityUsePayload {
     pub intended_action: ActionDefId,
 }
@@ -411,15 +453,15 @@ pub struct QueueForFacilityUsePayload {
 mod tests {
     use super::{
         ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-        CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
-        PressForceClaimActionPayload, QueueForFacilityUsePayload, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-        YieldForceClaimActionPayload,
+        CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload,
+        InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
+        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
-        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
-        WorkstationTag,
+        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, TellTopic,
+        UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -440,9 +482,11 @@ mod tests {
                 slot: 5,
                 generation: 0,
             },
-            subject_entity: EntityId {
-                slot: 8,
-                generation: 2,
+            topic: TellTopic::EntityBelief {
+                subject: EntityId {
+                    slot: 8,
+                    generation: 2,
+                },
             },
         }
     }
@@ -549,6 +593,12 @@ mod tests {
         }
     }
 
+    fn sample_investigate_payload() -> InvestigateActionPayload {
+        InvestigateActionPayload {
+            violation_id: ViolationId(5),
+        }
+    }
+
     fn sample_queue_payload() -> QueueForFacilityUsePayload {
         QueueForFacilityUsePayload {
             intended_action: ActionDefId(19),
@@ -571,6 +621,7 @@ mod tests {
         assert_traits::<TradeActionPayload>();
         assert_traits::<CombatActionPayload>();
         assert_traits::<LootActionPayload>();
+        assert_traits::<InvestigateActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
     }
 
@@ -759,6 +810,7 @@ mod tests {
     fn typed_accessors_cover_combat_and_queue_payload_variants() {
         let combat = ActionPayload::Combat(sample_combat_payload());
         let loot = ActionPayload::Loot(sample_loot_payload());
+        let investigate = ActionPayload::Investigate(sample_investigate_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
 
         assert_eq!(combat.as_consult_record(), None);
@@ -787,6 +839,25 @@ mod tests {
         assert_eq!(loot.as_trade(), None);
         assert_eq!(loot.as_combat(), None);
         assert_eq!(loot.as_loot(), Some(&sample_loot_payload()));
+        assert_eq!(loot.as_investigate(), None);
+
+        assert_eq!(investigate.as_consult_record(), None);
+        assert_eq!(investigate.as_tell(), None);
+        assert_eq!(investigate.as_harvest(), None);
+        assert_eq!(investigate.as_bribe(), None);
+        assert_eq!(investigate.as_threaten(), None);
+        assert_eq!(investigate.as_declare_support(), None);
+        assert_eq!(investigate.as_press_force_claim(), None);
+        assert_eq!(investigate.as_yield_force_claim(), None);
+        assert_eq!(investigate.as_transport(), None);
+        assert_eq!(investigate.as_craft(), None);
+        assert_eq!(investigate.as_trade(), None);
+        assert_eq!(investigate.as_combat(), None);
+        assert_eq!(investigate.as_loot(), None);
+        assert_eq!(
+            investigate.as_investigate(),
+            Some(&sample_investigate_payload())
+        );
 
         assert_eq!(queue.as_consult_record(), None);
         assert_eq!(queue.as_tell(), None);
@@ -801,6 +872,7 @@ mod tests {
         assert_eq!(queue.as_trade(), None);
         assert_eq!(queue.as_combat(), None);
         assert_eq!(queue.as_loot(), None);
+        assert_eq!(queue.as_investigate(), None);
         assert_eq!(
             queue.as_queue_for_facility_use(),
             Some(&sample_queue_payload())
@@ -824,6 +896,7 @@ mod tests {
         assert_eq!(none.as_trade(), None);
         assert_eq!(none.as_combat(), None);
         assert_eq!(none.as_loot(), None);
+        assert_eq!(none.as_investigate(), None);
         assert_eq!(none.as_queue_for_facility_use(), None);
     }
 
@@ -940,6 +1013,16 @@ mod tests {
     #[test]
     fn loot_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::Loot(sample_loot_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn investigate_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::Investigate(sample_investigate_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

@@ -502,7 +502,9 @@ mod tests {
                 force_candidates: Vec::new(),
             },
         };
-        assert!(vacancy_pending.summary().contains("vacancy claim grace pending"));
+        assert!(vacancy_pending
+            .summary()
+            .contains("vacancy claim grace pending"));
 
         let challenger_pending = PoliticalTraceEvent {
             tick: Tick(5),
@@ -525,8 +527,6 @@ mod tests {
                 force_candidates: Vec::new(),
             },
         };
-        assert!(challenger_pending
-            .summary()
-            .contains("within grace"));
+        assert!(challenger_pending.summary().contains("within grace"));
     }
 }

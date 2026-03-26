@@ -303,6 +303,30 @@ impl<'w> WorldTxn<'w> {
         self.set_component_agent_belief_store(agent, store)
     }
 
+    pub fn replace_institutional_belief(
+        &mut self,
+        agent: EntityId,
+        key: InstitutionalBeliefKey,
+        belief: BelievedInstitutionalClaim,
+    ) -> Result<(), WorldError> {
+        let profile = self
+            .get_component_perception_profile(agent)
+            .copied()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "PerceptionProfile",
+            })?;
+        let mut store = self
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .ok_or(WorldError::ComponentNotFound {
+                entity: agent,
+                component_type: "AgentBeliefStore",
+            })?;
+        store.replace_institutional_belief(key, belief, &profile);
+        self.set_component_agent_belief_store(agent, store)
+    }
+
     pub fn create_item_lot(
         &mut self,
         commodity: CommodityKind,
@@ -2451,6 +2475,79 @@ mod tests {
                 .institutional_beliefs
                 .get(&key),
             Some(&vec![belief])
+        );
+    }
+
+    #[test]
+    fn replace_institutional_belief_overwrites_existing_key_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let key = InstitutionalBeliefKey::SupportFor {
+            supporter: agent,
+            office: entity(30),
+        };
+        let first = BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office: entity(30),
+                supporter: agent,
+                candidate: Some(entity(31)),
+                effective_tick: Tick(7),
+            },
+            source: InstitutionalKnowledgeSource::SelfDeclaration,
+            learned_tick: Tick(7),
+            learned_at: Some(entity(5)),
+        };
+        let second = BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::SupportDeclaration {
+                office: entity(30),
+                supporter: agent,
+                candidate: Some(entity(32)),
+                effective_tick: Tick(8),
+            },
+            source: InstitutionalKnowledgeSource::SelfDeclaration,
+            learned_tick: Tick(8),
+            learned_at: Some(entity(5)),
+        };
+
+        {
+            let mut txn = new_txn(&mut world);
+            txn.project_institutional_belief(agent, key, first).unwrap();
+            let mut log = EventLog::new();
+            txn.commit(&mut log);
+        }
+
+        let mut txn = new_txn(&mut world);
+        txn.replace_institutional_belief(agent, key, second.clone())
+            .unwrap();
+
+        let after = txn.get_component_agent_belief_store(agent).unwrap();
+        assert_eq!(
+            after.institutional_beliefs.get(&key),
+            Some(&vec![second.clone()])
+        );
+        assert!(txn.deltas().iter().any(|delta| {
+            matches!(
+                delta,
+                StateDelta::Component(ComponentDelta::Set {
+                    entity,
+                    component_kind: ComponentKind::AgentBeliefStore,
+                    ..
+                }) if *entity == agent
+            )
+        }));
+
+        let mut log = EventLog::new();
+        txn.commit(&mut log);
+
+        assert_eq!(
+            world
+                .get_component_agent_belief_store(agent)
+                .unwrap()
+                .institutional_beliefs
+                .get(&key),
+            Some(&vec![second])
         );
     }
 

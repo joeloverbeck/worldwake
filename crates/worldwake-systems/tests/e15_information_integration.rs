@@ -5,8 +5,8 @@ use worldwake_core::{
     build_believed_entity_state, ActionDefId, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, CauseRef, ControlSource, EntityId, EventLog, EventPayload, EventTag,
     PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Seed,
-    SocialObservationKind, StateHash, TellProfile, Tick, Topology, TravelEdge, TravelEdgeId,
-    VisibilitySpec, WitnessData, World, WorldTxn,
+    SocialObservationKind, StateHash, TellProfile, TellTopic, Tick, Topology, TravelEdge,
+    TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{
     get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionPayload,
@@ -239,7 +239,9 @@ impl TellHarness {
                 targets: vec![self.listener],
                 payload_override: Some(ActionPayload::Tell(TellActionPayload {
                     listener: self.listener,
-                    subject_entity: self.subject,
+                    topic: TellTopic::EntityBelief {
+                        subject: self.subject,
+                    },
                 })),
                 mode: ActionRequestMode::Strict,
                 provenance: worldwake_sim::RequestProvenance::External,
@@ -289,8 +291,30 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
     let systems = dispatch_table();
     let origin = entity(1);
     let destination = entity(2);
+    let stale_destination = entity(3);
 
-    let mut world = World::new(integration_topology(10)).unwrap();
+    let mut topology = integration_topology(10);
+    topology
+        .add_place(
+            stale_destination,
+            Place {
+                name: "Stale Destination".to_string(),
+                capacity: None,
+                tags: BTreeSet::new(),
+            },
+        )
+        .unwrap();
+    topology
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(12), destination, stale_destination, 10, None).unwrap(),
+        )
+        .unwrap();
+    topology
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(13), stale_destination, destination, 10, None).unwrap(),
+        )
+        .unwrap();
+    let mut world = World::new(topology).unwrap();
     let mut event_log = EventLog::new();
 
     let (speaker, listener, subject) = {
@@ -327,7 +351,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
         PerceptionSource::DirectObservation,
     )
     .unwrap();
-    stale_belief.last_known_place = Some(destination);
+    stale_belief.last_known_place = Some(stale_destination);
     let listener_known = build_believed_entity_state(
         &world,
         listener,
@@ -421,7 +445,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
-                perception_trace: None,
+                    perception_trace: None,
                     institutional_knowledge_trace: None,
                 },
             )
@@ -452,7 +476,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                 && affordance.payload_override
                     == Some(ActionPayload::Tell(TellActionPayload {
                         listener,
-                        subject_entity: subject,
+                        topic: TellTopic::EntityBelief { subject },
                     }))
         }),
         "tell affordance missing before replay input; speaker_place={:?}, listener_place={:?}, known_subjects={:?}",
@@ -473,7 +497,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                 targets: vec![listener],
                 payload_override: Some(ActionPayload::Tell(TellActionPayload {
                     listener,
-                    subject_entity: subject,
+                    topic: TellTopic::EntityBelief { subject },
                 })),
                 mode: ActionRequestMode::Strict,
                 provenance: worldwake_sim::RequestProvenance::External,
@@ -502,7 +526,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
-                perception_trace: None,
+                    perception_trace: None,
                     institutional_knowledge_trace: None,
                 },
             )
@@ -522,6 +546,66 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
             continue;
         }
         break;
+    }
+
+    let current_tick = state.scheduler().current_tick();
+    let listener_travel_input = {
+        state.scheduler_mut().input_queue_mut().enqueue(
+            current_tick,
+            InputKind::RequestAction {
+                actor: listener,
+                def_id: travel_def,
+                targets: vec![stale_destination],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
+            },
+        )
+    }
+    .clone();
+    state
+        .replay_state_mut()
+        .record_input(listener_travel_input)
+        .unwrap();
+
+    for _ in 0..16 {
+        let result = {
+            let (world, event_log, scheduler, controller, rng, recipe_registry) =
+                state.tick_parts_mut();
+            step_tick(
+                world,
+                event_log,
+                scheduler,
+                controller,
+                rng,
+                TickStepServices {
+                    action_defs: &registries.defs,
+                    action_handlers: &registries.handlers,
+                    recipe_registry,
+                    systems: &systems,
+                    input_producer: None,
+                    action_trace: None,
+                    request_resolution_trace: None,
+                    politics_trace: None,
+                    perception_trace: None,
+                    institutional_knowledge_trace: None,
+                },
+            )
+        }
+        .unwrap();
+        let _ = record_tick_checkpoint(&mut state, result.tick).unwrap();
+        let terminal_tick = state.scheduler().current_tick();
+        state
+            .replay_state_mut()
+            .set_terminal_tick(terminal_tick)
+            .unwrap();
+        if !state
+            .event_log()
+            .events_by_tag(EventTag::Discovery)
+            .is_empty()
+        {
+            break;
+        }
     }
 
     assert!(!state.event_log().events_by_tag(EventTag::Social).is_empty());
@@ -650,7 +734,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
-                perception_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         },
     )
@@ -690,8 +774,12 @@ fn bystander_observes_witnessed_telling_without_receiving_subject_belief() {
         .social_observations
         .iter()
         .any(|observation| {
-            observation.kind == SocialObservationKind::WitnessedTelling
-                && observation.subjects == (harness.speaker, harness.listener)
+            observation.kind() == SocialObservationKind::WitnessedTelling
+                && observation.detail
+                    == worldwake_core::SocialObservationDetail::WitnessedTelling {
+                        speaker: harness.speaker,
+                        listener: harness.listener,
+                    }
                 && observation.place == harness.destination
         }));
 }
@@ -714,7 +802,7 @@ fn replay_verification_accepts_recorded_tell_and_discovery_scenario() {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
-                perception_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         },
     )

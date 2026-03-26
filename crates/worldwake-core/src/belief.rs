@@ -63,6 +63,16 @@ impl AgentBeliefStore {
         self.enforce_institutional_capacity(profile);
     }
 
+    pub fn replace_institutional_belief(
+        &mut self,
+        key: InstitutionalBeliefKey,
+        belief: BelievedInstitutionalClaim,
+        profile: &PerceptionProfile,
+    ) {
+        self.institutional_beliefs.insert(key, vec![belief]);
+        self.enforce_institutional_capacity(profile);
+    }
+
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
         self.known_entities.retain(|_, state| {
             within_retention_window(
@@ -168,19 +178,12 @@ impl AgentBeliefStore {
     pub fn recipient_knowledge_status(
         &self,
         key: &TellMemoryKey,
-        current_belief: &BelievedEntityState,
+        current_topic_state: &SharedTellState,
         current_tick: Tick,
         profile: &TellProfile,
     ) -> RecipientKnowledgeStatus {
         match self.told_belief_memory(key, current_tick, profile) {
-            Some(memory)
-                if memory.shared_state
-                    == self.shared_belief_snapshot_for_subject(
-                        key.subject,
-                        current_belief,
-                        profile.max_relay_chain_len,
-                    ) =>
-            {
+            Some(memory) if memory.shared_state == *current_topic_state => {
                 RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
             }
             Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
@@ -197,7 +200,7 @@ impl AgentBeliefStore {
         subject: EntityId,
         state: &BelievedEntityState,
         max_relay_chain_len: u8,
-    ) -> SharedBeliefSnapshot {
+    ) -> SharedTellState {
         let mut institutional_claims = self
             .relayable_institutional_beliefs_for_subject(subject, max_relay_chain_len)
             .into_iter()
@@ -207,8 +210,9 @@ impl AgentBeliefStore {
             })
             .collect::<Vec<_>>();
         institutional_claims.sort_unstable();
+        institutional_claims.dedup_by(|left, right| left.claim == right.claim);
 
-        SharedBeliefSnapshot {
+        SharedTellState::EntityBelief(SharedBeliefSnapshot {
             last_known_place: state.last_known_place,
             last_known_inventory: state.last_known_inventory.clone(),
             workstation_tag: state.workstation_tag,
@@ -218,7 +222,37 @@ impl AgentBeliefStore {
             last_known_courage: state.last_known_courage,
             source: state.source,
             institutional_claims,
+        })
+    }
+
+    #[must_use]
+    pub fn shared_tell_state_for_topic(
+        &self,
+        topic: &TellTopic,
+        max_relay_chain_len: u8,
+    ) -> Option<SharedTellState> {
+        match topic {
+            TellTopic::EntityBelief { subject } => self.get_entity(subject).map(|state| {
+                self.shared_belief_snapshot_for_subject(*subject, state, max_relay_chain_len)
+            }),
+            TellTopic::SocialObservation { observation } => {
+                (self.social_observations.contains(observation)
+                    && social_observation_is_relayable(observation))
+                .then_some(SharedTellState::SocialObservation(*observation))
+            }
         }
+    }
+
+    #[must_use]
+    pub fn relayable_social_observations(&self, max_relay_chain_len: u8) -> Vec<SocialObservation> {
+        self.social_observations
+            .iter()
+            .copied()
+            .filter(|observation| {
+                social_observation_is_relayable(observation)
+                    && perception_chain_len(observation.source) <= max_relay_chain_len
+            })
+            .collect()
     }
 
     #[must_use]
@@ -469,22 +503,34 @@ pub struct BelievedEntityState {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum TellTopic {
+    EntityBelief { subject: EntityId },
+    SocialObservation { observation: SocialObservation },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct TellMemoryKey {
     pub counterparty: EntityId,
-    pub subject: EntityId,
+    pub topic: TellTopic,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToldBeliefMemory {
-    pub shared_state: SharedBeliefSnapshot,
+    pub shared_state: SharedTellState,
     pub told_tick: Tick,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HeardBeliefMemory {
-    pub heard_state: SharedBeliefSnapshot,
+    pub heard_state: SharedTellState,
     pub heard_tick: Tick,
     pub disposition: HeardBeliefDisposition,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SharedTellState {
+    EntityBelief(SharedBeliefSnapshot),
+    SocialObservation(SocialObservation),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -542,7 +588,10 @@ pub fn share_equivalent(
     current_belief: &BelievedEntityState,
     prior_shared_state: &SharedBeliefSnapshot,
 ) -> bool {
-    to_shared_belief_snapshot(current_belief) == *prior_shared_state
+    shared_belief_content_eq(
+        &to_shared_belief_snapshot(current_belief),
+        prior_shared_state,
+    )
 }
 
 fn institutional_claim_subject(claim: InstitutionalClaim) -> EntityId {
@@ -563,18 +612,128 @@ fn institutional_chain_len(source: InstitutionalKnowledgeSource) -> u8 {
     }
 }
 
+fn perception_chain_len(source: PerceptionSource) -> u8 {
+    match source {
+        PerceptionSource::DirectObservation | PerceptionSource::Inference => 0,
+        PerceptionSource::Report { chain_len, .. } | PerceptionSource::Rumor { chain_len } => {
+            chain_len
+        }
+    }
+}
+
+#[must_use]
+pub fn social_observation_is_relayable(observation: &SocialObservation) -> bool {
+    !matches!(
+        observation.detail,
+        SocialObservationDetail::WitnessedTelling { .. }
+    )
+}
+
+#[must_use]
+pub fn social_observation_is_redundant_for_listener(
+    observation: &SocialObservation,
+    listener: EntityId,
+) -> bool {
+    match observation.detail {
+        SocialObservationDetail::WitnessedCooperation { actor, counterpart } => {
+            actor == listener || counterpart == listener
+        }
+        SocialObservationDetail::WitnessedConflict { actor, target }
+        | SocialObservationDetail::WitnessedObligation { actor, target } => {
+            actor == listener || target == listener
+        }
+        SocialObservationDetail::WitnessedTelling {
+            speaker,
+            listener: heard_by,
+        } => speaker == listener || heard_by == listener,
+        SocialObservationDetail::CoPresence { other } => other == listener,
+        SocialObservationDetail::WitnessedAbsence { .. }
+        | SocialObservationDetail::SuspectedTheft { .. } => false,
+    }
+}
+
+#[must_use]
+pub fn tell_subject_is_directly_observable_by_listener(
+    subject: EntityId,
+    subject_kind: Option<crate::EntityKind>,
+    subject_place: Option<EntityId>,
+    listener: EntityId,
+    listener_place: Option<EntityId>,
+    listener_observation_fidelity: crate::Permille,
+) -> bool {
+    subject == listener
+        || (subject_place == listener_place
+            && listener_observation_fidelity.value() > 0
+            && matches!(
+                subject_kind,
+                Some(
+                    crate::EntityKind::Agent
+                        | crate::EntityKind::ItemLot
+                        | crate::EntityKind::UniqueItem
+                        | crate::EntityKind::Container
+                        | crate::EntityKind::Office
+                        | crate::EntityKind::Record
+                )
+            ))
+}
+
 #[must_use]
 pub fn recipient_knowledge_status(
-    current_belief: &BelievedEntityState,
+    current_state: &SharedTellState,
     prior_tell: Option<&ToldBeliefMemory>,
 ) -> RecipientKnowledgeStatus {
     match prior_tell {
         None => RecipientKnowledgeStatus::UnknownToSpeaker,
-        Some(memory) if share_equivalent(current_belief, &memory.shared_state) => {
+        Some(memory) if shared_tell_content_eq(&memory.shared_state, current_state) => {
             RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
         }
         Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
     }
+}
+
+fn shared_tell_content_eq(left: &SharedTellState, right: &SharedTellState) -> bool {
+    match (left, right) {
+        (SharedTellState::EntityBelief(left), SharedTellState::EntityBelief(right)) => {
+            shared_belief_content_eq(left, right)
+        }
+        (SharedTellState::SocialObservation(left), SharedTellState::SocialObservation(right)) => {
+            shared_social_observation_content_eq(left, right)
+        }
+        _ => false,
+    }
+}
+
+fn shared_belief_content_eq(left: &SharedBeliefSnapshot, right: &SharedBeliefSnapshot) -> bool {
+    left.last_known_place == right.last_known_place
+        && left.last_known_inventory == right.last_known_inventory
+        && left.workstation_tag == right.workstation_tag
+        && left.resource_source == right.resource_source
+        && left.alive == right.alive
+        && left.wounds == right.wounds
+        && left.last_known_courage == right.last_known_courage
+        && shared_institutional_claims_eq(&left.institutional_claims, &right.institutional_claims)
+}
+
+fn shared_institutional_claims_eq(
+    left: &[SharedInstitutionalBelief],
+    right: &[SharedInstitutionalBelief],
+) -> bool {
+    left.iter()
+        .map(|belief| belief.claim)
+        .collect::<std::collections::BTreeSet<_>>()
+        == right
+            .iter()
+            .map(|belief| belief.claim)
+            .collect::<std::collections::BTreeSet<_>>()
+}
+
+fn shared_social_observation_content_eq(
+    left: &SocialObservation,
+    right: &SocialObservation,
+) -> bool {
+    left.detail == right.detail
+        && left.place == right.place
+        && left.observed_tick == right.observed_tick
 }
 
 #[must_use]
@@ -622,7 +781,7 @@ pub fn build_believed_entity_state(
 }
 
 /// How the agent acquired a belief snapshot.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum PerceptionSource {
     DirectObservation,
     Report { from: EntityId, chain_len: u8 },
@@ -688,13 +847,66 @@ pub fn belief_confidence(
 }
 
 /// A witnessed social fact retained in belief memory.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct SocialObservation {
-    pub kind: SocialObservationKind,
-    pub subjects: (EntityId, EntityId),
+    pub detail: SocialObservationDetail,
     pub place: EntityId,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
+}
+
+impl SocialObservation {
+    #[must_use]
+    pub const fn kind(&self) -> SocialObservationKind {
+        self.detail.kind()
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SocialObservationDetail {
+    WitnessedCooperation {
+        actor: EntityId,
+        counterpart: EntityId,
+    },
+    WitnessedConflict {
+        actor: EntityId,
+        target: EntityId,
+    },
+    WitnessedObligation {
+        actor: EntityId,
+        target: EntityId,
+    },
+    WitnessedTelling {
+        speaker: EntityId,
+        listener: EntityId,
+    },
+    CoPresence {
+        other: EntityId,
+    },
+    WitnessedAbsence {
+        missing_entity: EntityId,
+        expected_place: EntityId,
+    },
+    SuspectedTheft {
+        missing_entity: EntityId,
+        expected_place: EntityId,
+        suspect: Option<EntityId>,
+    },
+}
+
+impl SocialObservationDetail {
+    #[must_use]
+    pub const fn kind(&self) -> SocialObservationKind {
+        match self {
+            Self::WitnessedCooperation { .. } => SocialObservationKind::WitnessedCooperation,
+            Self::WitnessedConflict { .. } => SocialObservationKind::WitnessedConflict,
+            Self::WitnessedObligation { .. } => SocialObservationKind::WitnessedObligation,
+            Self::WitnessedTelling { .. } => SocialObservationKind::WitnessedTelling,
+            Self::CoPresence { .. } => SocialObservationKind::CoPresence,
+            Self::WitnessedAbsence { .. } => SocialObservationKind::WitnessedAbsence,
+            Self::SuspectedTheft { .. } => SocialObservationKind::SuspectedTheft,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -706,6 +918,8 @@ pub enum SocialObservationKind {
     CoPresence,
     /// Agent confirmed the absence of an expected entity at a location through investigation.
     WitnessedAbsence,
+    /// Agent confirmed an owned entity is missing under theft suspicion.
+    SuspectedTheft,
 }
 
 /// Concrete differences between a prior belief and a new observation.
@@ -820,8 +1034,8 @@ mod tests {
         recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
         MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-        RecipientKnowledgeStatus, SocialObservation, SocialObservationKind, TellMemoryKey,
-        TellProfile, ToldBeliefMemory,
+        RecipientKnowledgeStatus, SharedTellState, SocialObservation, SocialObservationDetail,
+        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, traits::Component, BelievedInstitutionalClaim, BodyPart,
@@ -903,8 +1117,10 @@ mod tests {
 
     fn sample_social_observation(observed_tick: u64) -> SocialObservation {
         SocialObservation {
-            kind: SocialObservationKind::WitnessedConflict,
-            subjects: (entity(1), entity(2)),
+            detail: SocialObservationDetail::WitnessedConflict {
+                actor: entity(1),
+                target: entity(2),
+            },
             place: entity(10),
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
@@ -924,7 +1140,9 @@ mod tests {
     fn tell_memory_key(counterparty: u32, subject: u32) -> TellMemoryKey {
         TellMemoryKey {
             counterparty: entity(counterparty),
-            subject: entity(subject),
+            topic: TellTopic::EntityBelief {
+                subject: entity(subject),
+            },
         }
     }
 
@@ -937,7 +1155,7 @@ mod tests {
         (
             tell_memory_key(counterparty, subject),
             ToldBeliefMemory {
-                shared_state: to_shared_belief_snapshot(state),
+                shared_state: SharedTellState::EntityBelief(to_shared_belief_snapshot(state)),
                 told_tick: Tick(told_tick),
             },
         )
@@ -953,7 +1171,7 @@ mod tests {
         (
             tell_memory_key(counterparty, subject),
             HeardBeliefMemory {
-                heard_state: to_shared_belief_snapshot(state),
+                heard_state: SharedTellState::EntityBelief(to_shared_belief_snapshot(state)),
                 heard_tick: Tick(heard_tick),
                 disposition,
             },
@@ -1103,7 +1321,7 @@ mod tests {
         let mut store = AgentBeliefStore::new();
         let first = sample_social_observation(3);
         let second = SocialObservation {
-            kind: SocialObservationKind::CoPresence,
+            detail: SocialObservationDetail::CoPresence { other: entity(7) },
             ..sample_social_observation(4)
         };
 
@@ -1111,6 +1329,51 @@ mod tests {
         store.record_social_observation(second.clone());
 
         assert_eq!(store.social_observations, vec![first, second]);
+    }
+
+    #[test]
+    fn relayable_social_observations_exclude_witnessed_telling_feedback() {
+        let mut store = AgentBeliefStore::new();
+        let relayable = sample_social_observation(3);
+        let witnessed_telling = SocialObservation {
+            detail: SocialObservationDetail::WitnessedTelling {
+                speaker: entity(7),
+                listener: entity(8),
+            },
+            place: entity(10),
+            observed_tick: Tick(4),
+            source: PerceptionSource::DirectObservation,
+        };
+
+        store.record_social_observation(relayable);
+        store.record_social_observation(witnessed_telling);
+
+        assert_eq!(store.relayable_social_observations(2), vec![relayable]);
+    }
+
+    #[test]
+    fn shared_tell_state_for_topic_rejects_witnessed_telling_topics() {
+        let mut store = AgentBeliefStore::new();
+        let witnessed_telling = SocialObservation {
+            detail: SocialObservationDetail::WitnessedTelling {
+                speaker: entity(7),
+                listener: entity(8),
+            },
+            place: entity(10),
+            observed_tick: Tick(4),
+            source: PerceptionSource::DirectObservation,
+        };
+        store.record_social_observation(witnessed_telling);
+
+        assert_eq!(
+            store.shared_tell_state_for_topic(
+                &TellTopic::SocialObservation {
+                    observation: witnessed_telling,
+                },
+                2,
+            ),
+            None
+        );
     }
 
     #[test]
@@ -1239,6 +1502,60 @@ mod tests {
         );
 
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn replace_institutional_belief_overwrites_existing_key_without_conflict() {
+        let mut store = AgentBeliefStore::new();
+        let mut profile = profile(12, 100);
+        profile.institutional_memory_capacity = 4;
+        let office = entity(91);
+        let supporter = entity(92);
+        let key = InstitutionalBeliefKey::SupportFor { supporter, office };
+
+        store.record_institutional_belief(
+            key,
+            BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter,
+                    candidate: Some(entity(93)),
+                    effective_tick: Tick(5),
+                },
+                source: InstitutionalKnowledgeSource::SelfDeclaration,
+                learned_tick: Tick(5),
+                learned_at: Some(entity(7)),
+            },
+            &profile,
+        );
+        store.replace_institutional_belief(
+            key,
+            BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::SupportDeclaration {
+                    office,
+                    supporter,
+                    candidate: Some(entity(94)),
+                    effective_tick: Tick(6),
+                },
+                source: InstitutionalKnowledgeSource::SelfDeclaration,
+                learned_tick: Tick(6),
+                learned_at: Some(entity(7)),
+            },
+            &profile,
+        );
+
+        assert_eq!(
+            store.believed_support_declaration(office, supporter),
+            InstitutionalBeliefRead::Certain(Some(entity(94)))
+        );
+        assert_eq!(
+            store
+                .institutional_beliefs
+                .get(&key)
+                .expect("support belief should remain present")
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1531,6 +1848,34 @@ mod tests {
     }
 
     #[test]
+    fn suspected_theft_roundtrips_and_differs_from_witnessed_absence() {
+        let kind = SocialObservationKind::SuspectedTheft;
+
+        let bytes = bincode::serialize(&kind).unwrap();
+        let roundtrip: SocialObservationKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, kind);
+        assert_ne!(kind, SocialObservationKind::WitnessedAbsence);
+        assert_ne!(kind, SocialObservationKind::WitnessedTelling);
+    }
+
+    #[test]
+    fn social_observation_detail_roundtrips_and_derives_kind() {
+        let detail = SocialObservationDetail::SuspectedTheft {
+            missing_entity: entity(21),
+            expected_place: entity(22),
+            suspect: Some(entity(23)),
+        };
+
+        let bytes = bincode::serialize(&detail).unwrap();
+        let roundtrip: SocialObservationDetail = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, detail);
+        assert_eq!(detail.kind(), SocialObservationKind::SuspectedTheft);
+        assert_ne!(detail.kind(), SocialObservationKind::WitnessedAbsence);
+    }
+
+    #[test]
     fn mismatch_kind_variants_construct_and_sort_stably() {
         let mut variants = [
             MismatchKind::PlaceChanged {
@@ -1710,7 +2055,12 @@ mod tests {
         assert!(store.told_beliefs.contains_key(&stale_key));
         assert!(store.heard_beliefs.contains_key(&stale_key));
         assert_eq!(
-            store.recipient_knowledge_status(&stale_key, &fresh_state, Tick(9), &profile),
+            store.recipient_knowledge_status(
+                &stale_key,
+                &SharedTellState::EntityBelief(to_shared_belief_snapshot(&fresh_state)),
+                Tick(9),
+                &profile
+            ),
             RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
         );
 
@@ -1784,16 +2134,66 @@ mod tests {
         let (_, remembered) = told_memory(7, 44, 6, &current);
 
         assert_eq!(
-            recipient_knowledge_status(&current, Some(&remembered)),
+            recipient_knowledge_status(
+                &SharedTellState::EntityBelief(to_shared_belief_snapshot(&current)),
+                Some(&remembered)
+            ),
             RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
         );
         assert_eq!(
-            recipient_knowledge_status(&stale, Some(&remembered)),
+            recipient_knowledge_status(
+                &SharedTellState::EntityBelief(to_shared_belief_snapshot(&stale)),
+                Some(&remembered)
+            ),
             RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
         );
         assert_eq!(
-            recipient_knowledge_status(&current, None),
+            recipient_knowledge_status(
+                &SharedTellState::EntityBelief(to_shared_belief_snapshot(&current)),
+                None
+            ),
             RecipientKnowledgeStatus::UnknownToSpeaker
+        );
+    }
+
+    #[test]
+    fn recipient_knowledge_status_ignores_entity_provenance_only_changes() {
+        let current = sample_state(8, 4);
+        let mut echoed = current.clone();
+        echoed.source = PerceptionSource::Report {
+            from: entity(77),
+            chain_len: 1,
+        };
+        let (_, remembered) = told_memory(7, 44, 6, &current);
+
+        assert_eq!(
+            recipient_knowledge_status(
+                &SharedTellState::EntityBelief(to_shared_belief_snapshot(&echoed)),
+                Some(&remembered)
+            ),
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
+        );
+    }
+
+    #[test]
+    fn recipient_knowledge_status_ignores_social_observation_provenance_only_changes() {
+        let current = sample_social_observation(4);
+        let mut echoed = current;
+        echoed.source = PerceptionSource::Report {
+            from: entity(77),
+            chain_len: 1,
+        };
+        let remembered = ToldBeliefMemory {
+            shared_state: SharedTellState::SocialObservation(current),
+            told_tick: Tick(6),
+        };
+
+        assert_eq!(
+            recipient_knowledge_status(
+                &SharedTellState::SocialObservation(echoed),
+                Some(&remembered)
+            ),
+            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
         );
     }
 
@@ -1805,7 +2205,7 @@ mod tests {
         let current = sample_state(8, 4);
         let mut store = AgentBeliefStore::new();
         let memory = ToldBeliefMemory {
-            shared_state: to_shared_belief_snapshot(&current),
+            shared_state: SharedTellState::EntityBelief(to_shared_belief_snapshot(&current)),
             told_tick: Tick(6),
         };
         store.record_told_belief(key, memory);
@@ -1822,7 +2222,14 @@ mod tests {
         );
 
         assert_eq!(
-            store.recipient_knowledge_status(&key, &current, Tick(8), &tell_profile),
+            store.recipient_knowledge_status(
+                &key,
+                &store
+                    .shared_tell_state_for_topic(&key.topic, tell_profile.max_relay_chain_len)
+                    .unwrap(),
+                Tick(8),
+                &tell_profile
+            ),
             RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief
         );
     }
@@ -1962,6 +2369,7 @@ mod tests {
         assert_serde_bounds::<BelievedEntityState>();
         assert_serde_bounds::<MismatchKind>();
         assert_serde_bounds::<SocialObservation>();
+        assert_serde_bounds::<SocialObservationDetail>();
         assert_serde_bounds::<TellProfile>();
     }
 

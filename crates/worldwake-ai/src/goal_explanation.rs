@@ -67,9 +67,9 @@ mod tests {
     use worldwake_core::{
         BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, GrantedFacilityUse,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, PlaceTag, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind, UtilityProfile,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
+        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -289,7 +289,10 @@ mod tests {
             None
         }
 
-        fn intention_disposition_profile(&self, _agent: EntityId) -> Option<IntentionDispositionProfile> {
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<IntentionDispositionProfile> {
             None
         }
         fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {

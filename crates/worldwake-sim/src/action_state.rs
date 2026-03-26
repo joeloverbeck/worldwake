@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{EntityId, Tick, TravelEdgeId};
+use worldwake_core::{CommodityKind, EntityId, Tick, TravelEdgeId, ViolationId};
 
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,
@@ -9,6 +9,12 @@ pub enum ActionState {
     Empty,
     Heal {
         medicine_spent: bool,
+    },
+    Investigate {
+        violation_id: ViolationId,
+        subject: EntityId,
+        place: EntityId,
+        commodity: Option<CommodityKind>,
     },
     Travel {
         edge_id: TravelEdgeId,
@@ -23,7 +29,7 @@ pub enum ActionState {
 mod tests {
     use super::ActionState;
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{EntityId, Tick, TravelEdgeId};
+    use worldwake_core::{EntityId, Tick, TravelEdgeId, ViolationId};
 
     fn assert_traits<
         T: Copy
@@ -54,6 +60,18 @@ mod tests {
             ActionState::Empty,
             ActionState::Heal {
                 medicine_spent: true,
+            },
+            ActionState::Investigate {
+                violation_id: ViolationId(6),
+                subject: EntityId {
+                    slot: 3,
+                    generation: 0,
+                },
+                place: EntityId {
+                    slot: 4,
+                    generation: 0,
+                },
+                commodity: Some(worldwake_core::CommodityKind::Apple),
             },
             ActionState::Travel {
                 edge_id: TravelEdgeId(5),

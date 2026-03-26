@@ -4,28 +4,26 @@ mod execution;
 mod frame;
 mod observation;
 mod planning;
-pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
-use frame::{
-    apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
-    handle_recoverable_travel_step_blockage, populate_assumptions,
-    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan,
-    AssumptionEvalResult,
-};
 use active_action::{
     active_action_for_agent, advance_completed_step, effective_goal_switch_margin,
     goal_switch_margin_details, handle_active_action_phase, handle_current_step_failure,
 };
-use observation::{
-    reconcile_in_flight_state, refresh_runtime_for_read_phase,
-    update_runtime_observation_snapshot, InFlightReconciliation, ReadPhaseContext,
-};
+use candidates::abandon_expired_facility_queues;
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame,
-    plan_finished,
+    persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame, plan_finished,
 };
-use candidates::abandon_expired_facility_queues;
+use frame::{
+    apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
+    handle_recoverable_travel_step_blockage, populate_assumptions,
+    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan, AssumptionEvalResult,
+};
+pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
+use observation::{
+    reconcile_in_flight_state, refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
+    InFlightReconciliation, ReadPhaseContext,
+};
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, plans_as_options,
     summarize_ranked_goal, summarize_step,
@@ -38,11 +36,11 @@ use crate::decision_trace::{
     UnknownBlockerTrace,
 };
 use crate::{
-    build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime,
-    PlannerOpSemantics, PlanningBudget,
+    build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
+    PlanningBudget,
 };
-use worldwake_core::FrameClearReason;
 use std::collections::BTreeMap;
+use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, IntentionFrame, Tick,
 };
@@ -224,6 +222,12 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let original_blocked = blocked_memory.clone();
+    let mut violation_memory = ctx
+        .world
+        .get_component_violation_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_violation_memory = violation_memory.clone();
     let utility = ctx
         .world
         .get_component_utility_profile(agent)
@@ -324,10 +328,7 @@ fn process_agent(
             .and_then(|f| f.last_progress_tick)
             .is_some_and(|lpt| {
                 lpt == tick
-                    && original_frame
-                        .as_ref()
-                        .and_then(|f| f.last_progress_tick)
-                        != Some(tick)
+                    && original_frame.as_ref().and_then(|f| f.last_progress_tick) != Some(tick)
             });
         if new_progress {
             ft.push(FrameTransitionKind::Progressed { tick });
@@ -356,12 +357,7 @@ fn process_agent(
                     tick,
                     runtime,
                 ));
-                emit_assumption_transitions(
-                    &pre_state,
-                    &eval,
-                    tick,
-                    &mut frame_transitions,
-                );
+                emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
                 if matches!(eval, AssumptionEvalResult::CriticalFailure) {
                     // Create blocked intent so the agent doesn't immediately
                     // re-adopt the same goal after assumption failure.
@@ -391,6 +387,7 @@ fn process_agent(
         active_goal_key,
         &mut current_facility_intents,
         &mut blocked_memory,
+        &mut violation_memory,
         agent,
         replan_signals,
         ReadPhaseContext {
@@ -421,12 +418,15 @@ fn process_agent(
                 );
                 if matches!(
                     deferred_eval,
-                    AssumptionEvalResult::RecoverableFailure(_)
-                        | AssumptionEvalResult::AllPass
+                    AssumptionEvalResult::RecoverableFailure(_) | AssumptionEvalResult::AllPass
                 ) {
                     let pre_state = frame.state;
-                    current_frame =
-                        Some(apply_assumption_result(frame, &deferred_eval, tick, runtime));
+                    current_frame = Some(apply_assumption_result(
+                        frame,
+                        &deferred_eval,
+                        tick,
+                        runtime,
+                    ));
                     emit_assumption_transitions(
                         &pre_state,
                         &deferred_eval,
@@ -565,6 +565,8 @@ fn process_agent(
                 agent,
                 tick,
                 &original_blocked,
+                &original_violation_memory,
+                &violation_memory,
                 &step,
                 valid,
             );
@@ -617,9 +619,7 @@ fn process_agent(
                 unknown_blockers: blocked_memory
                     .intents
                     .values()
-                    .filter(|i| {
-                        i.blocking_fact == BlockingFact::Unknown && i.expires_tick > tick
-                    })
+                    .filter(|i| i.blocking_fact == BlockingFact::Unknown && i.expires_tick > tick)
                     .filter_map(|i| {
                         let action_def = i.diagnostic_context?.action_def;
                         let op_kind = semantics_table.get(&action_def)?.op_kind;
@@ -688,13 +688,11 @@ fn process_agent(
     if let Some(ref mut ft) = frame_transitions {
         let was_none = original_frame.is_none();
         let is_some = current_frame.is_some();
-        let established_changed = current_frame
-            .as_ref()
-            .is_some_and(|f| {
-                original_frame
-                    .as_ref()
-                    .is_none_or(|orig| orig.established_at != f.established_at)
-            });
+        let established_changed = current_frame.as_ref().is_some_and(|f| {
+            original_frame
+                .as_ref()
+                .is_none_or(|orig| orig.established_at != f.established_at)
+        });
         if is_some && (was_none || established_changed) {
             let frame = current_frame.as_ref().unwrap();
             ft.push(FrameTransitionKind::Created {
@@ -707,7 +705,9 @@ fn process_agent(
         // Detect frame clearing (had a frame, now gone, not already emitted).
         if original_frame.is_some()
             && current_frame.is_none()
-            && !ft.iter().any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
+            && !ft
+                .iter()
+                .any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
         {
             if let Some(reason) = runtime.last_frame_clear_reason {
                 ft.push(FrameTransitionKind::Cleared { reason });
@@ -749,6 +749,8 @@ fn process_agent(
         tick,
         &original_blocked,
         &blocked_memory,
+        &original_violation_memory,
+        &violation_memory,
         runtime,
     )?;
 

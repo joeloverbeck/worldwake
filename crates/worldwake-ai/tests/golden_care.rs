@@ -11,9 +11,8 @@ use worldwake_ai::{
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
     BlockerKey, BlockingFact, BodyPart, CommodityKind, DeprivationKind, EntityId, GoalKey,
-    HomeostaticNeeds,
-    MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, Tick, UtilityProfile, Wound,
-    WoundCause, WoundId, WoundList,
+    HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, TellTopic,
+    Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     get_affordances, step_tick, ActionStartFailureReason, ActionTraceKind,
@@ -304,7 +303,7 @@ fn setup_remote_ground_medicine_care_scenario(
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener: patient,
-                    subject: patient,
+                    topic: TellTopic::EntityBelief { subject: patient },
                 }),
                 place: Some(VILLAGE_SQUARE),
                 target: Some(patient),
@@ -319,7 +318,7 @@ fn setup_remote_ground_medicine_care_scenario(
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener: patient,
-                    subject: medicine,
+                    topic: TellTopic::EntityBelief { subject: medicine },
                 }),
                 place: Some(VILLAGE_SQUARE),
                 target: Some(patient),
@@ -1254,8 +1253,21 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
         .get_component_blocked_intent_memory(healer)
         .expect("healer should carry blocked intent memory after start failure");
     assert_eq!(blocked.intents.len(), 1);
-    assert_eq!(blocked.intents.values().next().unwrap().blocker_key.goal_key.kind, care_goal);
-    assert_eq!(blocked.intents.values().next().unwrap().blocker_key.target, Some(patient));
+    assert_eq!(
+        blocked
+            .intents
+            .values()
+            .next()
+            .unwrap()
+            .blocker_key
+            .goal_key
+            .kind,
+        care_goal
+    );
+    assert_eq!(
+        blocked.intents.values().next().unwrap().blocker_key.target,
+        Some(patient)
+    );
     assert!(
         h.scheduler.action_start_failures().is_empty(),
         "tick 1 reconciliation should drain the structured start failure"

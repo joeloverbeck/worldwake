@@ -104,6 +104,9 @@ Added cheap feasibility pre-check (`FeasibilityHint`: Likely/Uncertain/Unlikely)
 ### S28: Knowledge-Path Traces — COMPLETED
 Extended decision traces with belief provenance: `HomeostaticNeedId` in core, `institutional_belief_claims()` on `GoalBeliefView`, knowledge path types (`BeliefProvenance`, `BeliefAspect`, `InstitutionalBeliefProvenance`, `SelfKnowledgeProvenance`, `KnowledgePath`) in worldwake-ai, all 6 candidate families instrumented (needs, production, enterprise, combat, social, political), social/political emitters upgraded to `emit_candidate_with_trace()`, `dump_agent()` extended with per-candidate evidence/knowledge-path rendering. Zero-cost when tracing disabled.
 
+### S27: Expectation-Violation Goals — COMPLETED
+Established belief-vs-observation violation detection, per-agent violation memory/disposition components, exact-id `GoalKind::InvestigateViolation { violation_id, place }`, authoritative investigate execution with `WitnessedAbsence` aftermath, explicit unresolved/resolved incident lifecycle, and golden coverage for single-incident investigation, local depletion-to-`ShareBelief`, and same-place concurrent-violation identity.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -137,6 +140,8 @@ E16 ──→ E19 (guards need public order)
 E16b ✅ ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
 S01 ✅, S03 ✅, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
+S27 ✅ ──→ E17 (crime discovery builds on expectation-violation goals for theft detection)
+E17 ──→ E19 (guard crime response needs theft actions, CrimeRegister, JusticeDispositionProfile)
 S02 ✅, E16 ──→ E18, E20
 S02 ✅, E16, E16b ✅, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
@@ -155,7 +160,7 @@ S21 ✅ ──→ S22 ✅ (generalized intention frames — completed)
 S21 ✅ ──→ S24 ✅ (typed invalidation domains — completed)
 S21 ✅ ──→ S28 ✅ (knowledge-path traces — completed)
 S20 ✅, S23 ✅ ──→ S25 ✅ (feasibility sketching — completed)
-S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
+S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
 ```
 
 ---
@@ -209,7 +214,7 @@ S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
 - **E16b**: Force Legitimacy & Jurisdiction Control — ✅ COMPLETED
   - replaced thin force-succession shortcut with explicit jurisdiction-control state (claims, contests, hold durations, installation)
 - **E17**: Crime, Theft & Justice
-  - needs E15, S01, S03, E16c
+  - needs E15, S01, S03, E16c, S27
 - **S13**: Political Emergence Golden E2E Suites
   - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
@@ -263,10 +268,11 @@ S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
   - extended decision traces with belief provenance across all 6 candidate families
   - `dump_agent()` renders per-candidate evidence, feasibility, and knowledge paths
 
-**Step 13.5 Wave 3** (after S22 + S23 — all deps met):
-- **S27**: Expectation-Violation Goals
-  - new goal source family triggered by belief-vs-observation mismatch (FOUNDATIONS P15)
-  - needs ~~S22~~, ~~S23~~ (all deps met)
+**Step 13.5 Wave 3** — ✅ COMPLETED:
+- **S27**: Expectation-Violation Goals — ✅ COMPLETED
+  - belief-vs-observation mismatch now produces concrete recorded violation incidents
+  - shipped exact-id `InvestigateViolation` goals plus unresolved/resolved incident lifecycle
+  - golden coverage proves single-incident investigation, local depletion reporting, and same-place sibling isolation
 
 ---
 
@@ -276,7 +282,7 @@ S22 ✅, S23 ✅ ──→ S27 (expectation-violation goals — all deps met)
 - **E18**: Bandit Camp Dynamics
   - needs ~~S02~~, E16
 - **E19**: Guard & Patrol Adaptation
-  - needs ~~S02~~, E16, E16b, E16c
+  - needs ~~S02~~, E16, E16b, E16c, E17
 - **E20**: Companion Behaviors
   - needs ~~S02~~ (all deps met)
 
@@ -314,7 +320,7 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
-| `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c |
+| `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c, ~~S27~~ |
 | ~~`S20-structural-cleanup.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | ~~`S26-planner-conformance-tests.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | ~~`S21-promote-causal-runtime-state.md`~~ | 3+ | 13.5 W1 | ✅ COMPLETED |
@@ -323,9 +329,8 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | ~~`S24-typed-invalidation-domains.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
-| `S27-expectation-violation-goals.md` | 3+ | 13.5 W3 | ~~S22~~, ~~S23~~ (all deps met) |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
-| `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, S02 |
+| `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
 | `E22-integration-soak-tests.md` | 4 | 15 | E18, E19, E20 |
 | `S04-merchant-selling-market-presence.md` | 4+ | 16 | E14 |
@@ -353,6 +358,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
-| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S24, S25, S26, S28 complete) |
+| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S24, S25, S26, S27, S28 complete) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

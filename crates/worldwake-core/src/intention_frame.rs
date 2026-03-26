@@ -5,8 +5,8 @@
 //! It replaces the travel-specific `JourneyCommitment` with a domain-agnostic
 //! structure that tracks assumptions, patience, and suspension/resume lifecycle.
 
-use crate::{CommodityKind, EntityId, GoalKey, Tick};
 use crate::traits::Component;
+use crate::{CommodityKind, EntityId, GoalKey, Tick};
 use serde::{Deserialize, Serialize};
 
 /// Domain-specific context carried by an intention frame.

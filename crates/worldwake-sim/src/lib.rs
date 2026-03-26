@@ -59,18 +59,19 @@ pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
     ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, AuthoritativePayloadValidatorFn,
-    CommitOutcome, ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
-    PayloadEntityRole, PayloadOverrideValidatorFn, SelfTargetActionKind,
+    CommitOutcome, CommitTraceData, ExternalAbortReason, InterruptReason, Materialization,
+    MaterializationTag, PayloadEntityRole, PayloadOverrideValidatorFn, SelfTargetActionKind,
+    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
     ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
-    CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload, LootActionPayload,
-    PressForceClaimActionPayload, QueueForFacilityUsePayload, TellActionPayload,
-    ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-    YieldForceClaimActionPayload,
+    CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload,
+    InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
+    QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+    TransportActionPayload, YieldForceClaimActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
@@ -103,9 +104,8 @@ pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
 pub use perception_trace::{PerceptionTraceEvent, PerceptionTraceSink};
 pub use politics_trace::{
     ForceCandidateTrace, ForceInstallationDeferralReason, OfficeAvailabilityPhase,
-    OfficeSuccessionOutcome, OfficeSuccessionTrace,
-    PoliticalTraceEvent, PoliticalTraceSink, SupportCountTrace, SupportDeclarationTrace,
-    SupportResolutionTrace, VacancyTimerTrace,
+    OfficeSuccessionOutcome, OfficeSuccessionTrace, PoliticalTraceEvent, PoliticalTraceSink,
+    SupportCountTrace, SupportDeclarationTrace, SupportResolutionTrace, VacancyTimerTrace,
 };
 pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;
@@ -129,7 +129,9 @@ pub use scheduler::{
 };
 pub use simulation_state::SimulationState;
 pub use social_relay::{
-    belief_chain_len, listener_aware_relayable_subjects, relayable_social_subjects,
+    belief_chain_len, listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
+    listener_aware_tell_topic_selection, relayable_social_subjects, relayable_tell_topics,
+    TellTopicOmission, TellTopicOmissionReason, TellTopicSelection,
 };
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};

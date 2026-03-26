@@ -6,11 +6,11 @@ use worldwake_core::{
     BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, ResourceSource, TellMemoryKey, TellProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, IntentionDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -31,10 +31,22 @@ pub trait GoalBeliefView {
     }
     fn is_alive(&self, entity: EntityId) -> bool;
     fn is_dead(&self, entity: EntityId) -> bool;
+    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+        let _ = agent;
+        self.is_dead(entity)
+    }
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+        let _ = agent;
+        self.entities_at(place)
+    }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
         Vec::new()
     }
@@ -44,6 +56,15 @@ pub trait GoalBeliefView {
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        let _ = agent;
+        self.commodity_quantity(holder, kind)
+    }
     fn controlled_commodity_quantity_at_place(
         &self,
         agent: EntityId,
@@ -74,6 +95,10 @@ pub trait GoalBeliefView {
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
+    fn observation_fidelity(&self, agent: EntityId) -> Permille {
+        let _ = agent;
+        Permille::new_unchecked(1000)
+    }
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
         None
@@ -86,18 +111,18 @@ pub trait GoalBeliefView {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<ToldBeliefMemory> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn recipient_knowledge_status(
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn courage(&self, agent: EntityId) -> Option<Permille> {
@@ -195,11 +220,23 @@ pub trait RuntimeBeliefView {
         Tick(0)
     }
     fn is_alive(&self, entity: EntityId) -> bool;
+    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+        let _ = agent;
+        self.is_dead(entity)
+    }
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
+        let _ = agent;
+        self.entities_at(place)
+    }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
         Vec::new()
     }
@@ -208,6 +245,15 @@ pub trait RuntimeBeliefView {
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        let _ = agent;
+        self.commodity_quantity(holder, kind)
+    }
     fn controlled_commodity_quantity_at_place(
         &self,
         agent: EntityId,
@@ -258,15 +304,22 @@ pub trait RuntimeBeliefView {
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
     fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange>;
-    fn is_dead(&self, entity: EntityId) -> bool;
+    fn is_dead(&self, entity: EntityId) -> bool {
+        !self.is_alive(entity)
+    }
     fn is_incapacitated(&self, entity: EntityId) -> bool;
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
+    fn observation_fidelity(&self, agent: EntityId) -> Permille {
+        let _ = agent;
+        Permille::new_unchecked(1000)
+    }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
-    fn intention_disposition_profile(&self, agent: EntityId) -> Option<IntentionDispositionProfile>;
+    fn intention_disposition_profile(&self, agent: EntityId)
+        -> Option<IntentionDispositionProfile>;
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
@@ -280,18 +333,18 @@ pub trait RuntimeBeliefView {
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<ToldBeliefMemory> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn recipient_knowledge_status(
         &self,
         actor: EntityId,
         counterparty: EntityId,
-        subject: EntityId,
+        topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
-        let _ = (actor, counterparty, subject);
+        let _ = (actor, counterparty, topic);
         None
     }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
@@ -309,6 +362,10 @@ pub trait RuntimeBeliefView {
     ) -> Option<ViolationDispositionProfile> {
         let _ = agent;
         None
+    }
+    fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
+        let _ = agent;
+        Vec::new()
     }
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
@@ -411,6 +468,14 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::is_dead(self, entity)
             }
 
+            fn locally_observed_is_dead(
+                &self,
+                agent: worldwake_core::EntityId,
+                entity: worldwake_core::EntityId,
+            ) -> bool {
+                $crate::RuntimeBeliefView::locally_observed_is_dead(self, agent, entity)
+            }
+
             fn entity_kind(
                 &self,
                 entity: worldwake_core::EntityId,
@@ -432,6 +497,14 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::entities_at(self, place)
             }
 
+            fn locally_observed_entities_at(
+                &self,
+                agent: worldwake_core::EntityId,
+                place: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::locally_observed_entities_at(self, agent, place)
+            }
+
             fn direct_possessions(
                 &self,
                 holder: worldwake_core::EntityId,
@@ -447,6 +520,13 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::BelievedEntityState,
             )> {
                 $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
+            }
+
+            fn known_social_observations(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::SocialObservation> {
+                $crate::RuntimeBeliefView::known_social_observations(self, agent)
             }
 
             fn adjacent_places_with_travel_ticks(
@@ -485,6 +565,17 @@ macro_rules! impl_goal_belief_view {
                 kind: worldwake_core::CommodityKind,
             ) -> worldwake_core::Quantity {
                 $crate::RuntimeBeliefView::commodity_quantity(self, holder, kind)
+            }
+
+            fn locally_observed_commodity_quantity(
+                &self,
+                agent: worldwake_core::EntityId,
+                holder: worldwake_core::EntityId,
+                kind: worldwake_core::CommodityKind,
+            ) -> worldwake_core::Quantity {
+                $crate::RuntimeBeliefView::locally_observed_commodity_quantity(
+                    self, agent, holder, kind,
+                )
             }
 
             fn controlled_commodity_quantity_at_place(
@@ -627,6 +718,13 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::belief_confidence_policy(self, agent)
             }
 
+            fn observation_fidelity(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> worldwake_core::Permille {
+                $crate::RuntimeBeliefView::observation_fidelity(self, agent)
+            }
+
             fn tell_profile(
                 &self,
                 agent: worldwake_core::EntityId,
@@ -648,22 +746,22 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 actor: worldwake_core::EntityId,
                 counterparty: worldwake_core::EntityId,
-                subject: worldwake_core::EntityId,
+                topic: &worldwake_core::TellTopic,
             ) -> Option<worldwake_core::ToldBeliefMemory> {
-                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, subject)
+                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, topic)
             }
 
             fn recipient_knowledge_status(
                 &self,
                 actor: worldwake_core::EntityId,
                 counterparty: worldwake_core::EntityId,
-                subject: worldwake_core::EntityId,
+                topic: &worldwake_core::TellTopic,
             ) -> Option<worldwake_core::RecipientKnowledgeStatus> {
                 $crate::RuntimeBeliefView::recipient_knowledge_status(
                     self,
                     actor,
                     counterparty,
-                    subject,
+                    topic,
                 )
             }
 
@@ -852,6 +950,10 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
+        DurationExpr::ActorInvestigationDisposition => Some(ActionDuration::new(
+            view.violation_disposition_profile(actor)
+                .map_or(3, |profile| profile.investigation_duration_ticks.get()),
+        )),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
             .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),

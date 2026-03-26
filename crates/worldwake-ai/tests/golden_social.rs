@@ -8,10 +8,10 @@ use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
     GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
-    RecipientKnowledgeStatus, ResourceSource, Seed, SocialObservationKind, TellMemoryKey,
-    TellProfile, Tick, UtilityProfile, WorkstationTag,
+    ResourceSource, Seed, SharedTellState, SocialObservationDetail, SocialObservationKind,
+    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
     UtilityProfile {
@@ -258,7 +258,10 @@ fn build_social_retell_fixture(
 }
 
 fn share_goal(listener: EntityId, subject: EntityId) -> GoalKind {
-    GoalKind::ShareBelief { listener, subject }
+    GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::EntityBelief { subject },
+    }
 }
 
 fn told_memory(
@@ -272,7 +275,7 @@ fn told_memory(
         .and_then(|store| {
             store.told_beliefs.get(&TellMemoryKey {
                 counterparty: listener,
-                subject,
+                topic: TellTopic::EntityBelief { subject },
             })
         })
         .cloned()
@@ -770,6 +773,7 @@ fn run_skeptical_listener_scenario(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
 
     let speaker = seed_agent(
         &mut h.world,
@@ -869,6 +873,24 @@ fn run_skeptical_listener_scenario(
         !listener_left_village,
         "listener should not travel toward Orchard Farm after rejecting the told belief"
     );
+    let tell_commit = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for skeptical-listener scenario")
+        .events_for(speaker)
+        .into_iter()
+        .find(|event| {
+            event.action_name == "tell" && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .expect("speaker should commit a tell in the skeptical-listener scenario");
+    let CommitTraceData::Tell(tell_trace) = match &tell_commit.kind {
+        ActionTraceKind::Committed { outcome, .. } => outcome
+            .trace
+            .as_ref()
+            .expect("tell commit should include structured tell diagnostics"),
+        other => panic!("expected committed tell event, got {other:?}"),
+    };
+    assert_eq!(tell_trace.result, TellCommitResult::NotInternalized);
+    assert!(!tell_trace.artifact_changed());
 
     (
         hash_world(&h.world).unwrap(),
@@ -979,8 +1001,9 @@ fn run_bystander_witness_scenario(
             .social_observations
             .iter()
             .any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedTelling
-                    && observation.subjects == (speaker, listener)
+                observation.kind() == SocialObservationKind::WitnessedTelling
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedTelling { speaker, listener }
                     && observation.place == VILLAGE_SQUARE
             });
         let listener_learned_orchard = agent_belief_about(&h.world, listener, orchard).is_some();
@@ -1000,8 +1023,9 @@ fn run_bystander_witness_scenario(
             .social_observations
             .iter()
             .any(|observation| {
-                observation.kind == SocialObservationKind::WitnessedTelling
-                    && observation.subjects == (speaker, listener)
+                observation.kind() == SocialObservationKind::WitnessedTelling
+                    && observation.detail
+                        == SocialObservationDetail::WitnessedTelling { speaker, listener }
                     && observation.place == VILLAGE_SQUARE
             }),
         "bystander should record the witnessed telling event"
@@ -1362,7 +1386,7 @@ fn run_unchanged_tell_suppression_scenario(
         fixture.h.step_once();
         saw_resend_omission |= latest_goal_status(&fixture.h, fixture.speaker, &share_goal)
             == GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             );
     }
 
@@ -1450,12 +1474,15 @@ fn run_retell_after_subject_belief_change_scenario(
         "re-tell after belief change should refresh the told-memory tick"
     );
     assert_eq!(
-        final_memory
-            .shared_state
-            .resource_source
-            .as_ref()
-            .expect("shared subject snapshot should retain resource source")
-            .available_quantity,
+        match &final_memory.shared_state {
+            SharedTellState::EntityBelief(state) =>
+                state
+                    .resource_source
+                    .as_ref()
+                    .expect("shared subject snapshot should retain resource source")
+                    .available_quantity,
+            SharedTellState::SocialObservation(_) => panic!("expected entity-belief tell state"),
+        },
         Quantity(6),
         "re-tell should store the materially changed shared content"
     );
@@ -1499,7 +1526,7 @@ fn run_retell_after_conversation_memory_expiry_scenario(
         let status = latest_goal_status(&fixture.h, fixture.speaker, &share_goal);
         match status {
             GoalTraceStatus::OmittedSocial(
-                RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
+                TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
             ) => saw_resend_omission_before_expiry = true,
             GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. } => {
                 saw_reenabled_after_expiry = true;
@@ -1583,9 +1610,7 @@ fn run_trace_reenabled_social_candidate_scenario(
     let pre_expiry_status = latest_goal_status(&expired.h, expired.speaker, &expired_goal);
     assert_eq!(
         pre_expiry_status,
-        GoalTraceStatus::OmittedSocial(
-            RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief,
-        ),
+        GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief),
         "before expiry, unchanged resend suppression should still appear in the decision trace"
     );
 
@@ -1807,9 +1832,10 @@ fn run_chain_length_filtering_scenario(
     assert!(
         matches!(
             bob_belief.source,
-            PerceptionSource::Report { chain_len: 1, .. }
+            PerceptionSource::Report { chain_len: 1, .. } | PerceptionSource::Rumor { chain_len: 2 }
         ),
-        "Bob should hold first-order hearsay about the subject"
+        "Bob should retain relayed hearsay about the subject after Alice's first-hop tell and any later echo, got {:?}",
+        bob_belief.source
     );
 
     let carol_belief = agent_belief_about(&h.world, carol, subject).unwrap();

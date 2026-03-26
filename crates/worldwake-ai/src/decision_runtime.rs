@@ -1,4 +1,4 @@
-use crate::{DirtySet, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
+use crate::{DirtySet, GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
@@ -66,6 +66,10 @@ pub struct AgentDecisionRuntime {
     pub last_unique_item_signature: Vec<(UniqueItemKind, u32)>,
     pub last_facility_access_signature: Vec<(EntityId, bool, Option<ActionDefId>)>,
     pub materialization_bindings: MaterializationBindings,
+    /// Goals whose plan search exhausted the budget on the previous planning
+    /// cycle.  These are skipped on the next cycle unless significant world
+    /// changes occur (position, commodity, wounds, or facility changes).
+    pub search_exhausted_goals: std::collections::BTreeSet<GoalKey>,
 }
 
 impl AgentDecisionRuntime {
@@ -175,12 +179,9 @@ pub fn classify_frame_plan_relation(
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_frame_plan_relation, has_active_frame_travel, has_frame,
-        frame_travel_destination, frame_runtime_snapshot, AgentDecisionRuntime,
-        FramePlanRelation, MaterializationBindings,
-    };
-    use worldwake_core::{
-        FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
+        classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
+        has_active_frame_travel, has_frame, AgentDecisionRuntime, FramePlanRelation,
+        MaterializationBindings,
     };
     use crate::{
         CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
@@ -188,6 +189,7 @@ mod tests {
     };
     use worldwake_core::ActionDefId;
     use worldwake_core::{CommodityKind, EntityId, Tick};
+    use worldwake_core::{FrameClearReason, FrameState, IntentionDomain, IntentionFrame};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -304,10 +306,18 @@ mod tests {
 
         // No remaining travel
         let plan_no_travel = sample_plan(vec![sample_step(1, PlannerOpKind::Consume)]);
-        assert!(!has_active_frame_travel(Some(&frame_active), Some(&plan_no_travel), 0));
+        assert!(!has_active_frame_travel(
+            Some(&frame_active),
+            Some(&plan_no_travel),
+            0
+        ));
 
         // Mismatched destination
-        assert!(!has_active_frame_travel(Some(&frame_active), Some(&plan_with_travel), 0));
+        assert!(!has_active_frame_travel(
+            Some(&frame_active),
+            Some(&plan_with_travel),
+            0
+        ));
 
         // Matching: travel step with correct destination
         let plan_matching = sample_plan(vec![
@@ -317,7 +327,11 @@ mod tests {
             },
             sample_step(2, PlannerOpKind::Consume),
         ]);
-        assert!(has_active_frame_travel(Some(&frame_active), Some(&plan_matching), 0));
+        assert!(has_active_frame_travel(
+            Some(&frame_active),
+            Some(&plan_matching),
+            0
+        ));
 
         // Suspended frame
         let frame_suspended = IntentionFrame {
@@ -327,7 +341,11 @@ mod tests {
             },
             ..frame_active.clone()
         };
-        assert!(!has_active_frame_travel(Some(&frame_suspended), Some(&plan_matching), 0));
+        assert!(!has_active_frame_travel(
+            Some(&frame_suspended),
+            Some(&plan_matching),
+            0
+        ));
     }
 
     #[test]
@@ -432,19 +450,19 @@ mod tests {
             snapshot.active_plan_destination,
             Some(active_plan_destination)
         );
-        assert_eq!(snapshot.frame_state, Some(FrameState::Suspended {
-            reason: worldwake_core::SuspensionReason::PriorityInterrupt,
-            suspended_at: Tick(4),
-        }));
+        assert_eq!(
+            snapshot.frame_state,
+            Some(FrameState::Suspended {
+                reason: worldwake_core::SuspensionReason::PriorityInterrupt,
+                suspended_at: Tick(4),
+            })
+        );
         assert_eq!(snapshot.established_at, Some(Tick(3)));
         assert_eq!(snapshot.last_progress_tick, Some(Tick(8)));
         assert_eq!(snapshot.remaining_travel_steps, 1);
         assert_eq!(snapshot.stalled_ticks, 5);
         assert!(!snapshot.has_active_frame_travel);
-        assert_eq!(
-            snapshot.last_clear_reason,
-            Some(FrameClearReason::LostPlan)
-        );
+        assert_eq!(snapshot.last_clear_reason, Some(FrameClearReason::LostPlan));
     }
 
     #[test]
