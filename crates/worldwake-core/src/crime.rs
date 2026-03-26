@@ -4,6 +4,15 @@ use crate::{CommodityKind, Component, EntityId, Permille, Quantity};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
+/// Concrete theft facts that can be copied into subjective and institutional records.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct TheftFacts {
+    pub missing_entity: EntityId,
+    pub expected_place: EntityId,
+    pub commodity: CommodityKind,
+    pub quantity: Quantity,
+}
+
 /// Per-agent parameters governing theft behavior.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TheftDispositionProfile {
@@ -37,7 +46,7 @@ pub enum PunishmentKind {
 
 #[cfg(test)]
 mod tests {
-    use super::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile};
+    use super::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile, TheftFacts};
     use crate::{traits::Component, CommodityKind, EntityId, Permille, Quantity};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
@@ -73,6 +82,15 @@ mod tests {
         }
     }
 
+    fn sample_theft_facts() -> TheftFacts {
+        TheftFacts {
+            missing_entity: entity(4),
+            expected_place: entity(10),
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(3),
+        }
+    }
+
     fn assert_component_bounds<T: Component>() {}
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -88,6 +106,7 @@ mod tests {
         assert_component_bounds::<JusticeDispositionProfile>();
         assert_value_bounds::<TheftDispositionProfile>();
         assert_value_bounds::<JusticeDispositionProfile>();
+        assert_ordinal_value_bounds::<TheftFacts>();
         assert_ordinal_value_bounds::<PunishmentKind>();
     }
 
@@ -145,6 +164,16 @@ mod tests {
         let exile_bytes = bincode::serialize(&exile).unwrap();
         let exile_roundtrip: PunishmentKind = bincode::deserialize(&exile_bytes).unwrap();
         assert_eq!(exile_roundtrip, exile);
+    }
+
+    #[test]
+    fn theft_facts_roundtrip_through_bincode() {
+        let facts = sample_theft_facts();
+
+        let bytes = bincode::serialize(&facts).unwrap();
+        let roundtrip: TheftFacts = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, facts);
     }
 
     #[test]

@@ -591,6 +591,12 @@ mod tests {
             accuser: entity(30),
             accused,
             violation_id: ViolationId(4),
+            theft: worldwake_core::TheftFacts {
+                missing_entity: entity(33),
+                expected_place: entity(34),
+                commodity: worldwake_core::CommodityKind::Coin,
+                quantity: worldwake_core::Quantity(6),
+            },
             effective_tick: Tick(5),
         };
         let verdict = InstitutionalClaim::Verdict {

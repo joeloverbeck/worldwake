@@ -7869,8 +7869,12 @@ mod tests {
         let mut vm = ViolationMemory::default();
         let id = vm.record(
             worldwake_core::ViolationKind::SuspectedTheft {
-                missing_entity,
-                expected_place: place,
+                theft: worldwake_core::TheftFacts {
+                    missing_entity,
+                    expected_place: place,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                },
                 suspect: None,
             },
             Tick(3),

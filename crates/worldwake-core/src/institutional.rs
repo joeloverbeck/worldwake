@@ -1,4 +1,4 @@
-use crate::{Component, EntityId, PunishmentKind, Tick, ViolationId};
+use crate::{Component, EntityId, PunishmentKind, TheftFacts, Tick, ViolationId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -43,6 +43,7 @@ pub enum InstitutionalClaim {
         accuser: EntityId,
         accused: EntityId,
         violation_id: ViolationId,
+        theft: TheftFacts,
         effective_tick: Tick,
     },
     Verdict {
@@ -214,7 +215,8 @@ mod tests {
         InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
     };
     use crate::{
-        traits::Component, CommodityKind, EntityId, PunishmentKind, Quantity, Tick, ViolationId,
+        traits::Component, CommodityKind, EntityId, PunishmentKind, Quantity, TheftFacts, Tick,
+        ViolationId,
     };
     use serde::{de::DeserializeOwned, Serialize};
 
@@ -260,6 +262,12 @@ mod tests {
             accuser: entity(40),
             accused: entity(41),
             violation_id: ViolationId(7),
+            theft: TheftFacts {
+                missing_entity: entity(42),
+                expected_place: entity(43),
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(6),
+            },
             effective_tick: Tick(effective_tick),
         }
     }

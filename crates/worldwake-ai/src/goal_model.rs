@@ -13,12 +13,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, InstitutionalBeliefRead,
-    Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
+    Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, CombatActionPayload,
     ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
-    LootActionPayload, PressForceClaimActionPayload, RecipeDefinition, RecipeRegistry,
+    LootActionPayload, PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition,
+    RecipeRegistry,
     RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
@@ -169,7 +170,8 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
 const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
-const DEFERRED_CRIME_JUSTICE_OPS: &[PlannerOpKind] = &[];
+const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
+const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -285,6 +287,24 @@ fn build_accuse_payload_override(
                 violation_id: *violation_id,
             })))
         }
+        _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+    }
+}
+
+fn build_punish_payload_override(
+    goal: &GoalKind,
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    match goal {
+        GoalKind::PunishAccused {
+            office,
+            accusation_entry,
+            punishment,
+            ..
+        } => Ok(Some(ActionPayload::Punish(PunishActionPayload {
+            office: *office,
+            accusation_entry: *accusation_entry,
+            punishment: *punishment,
+        }))),
         _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
     }
 }
@@ -413,7 +433,10 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
             GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
             GoalKind::Accuse { .. } => ACCUSE_OPS,
-            GoalKind::PunishAccused { .. } => DEFERRED_CRIME_JUSTICE_OPS,
+            GoalKind::PunishAccused { punishment, .. } => match punishment {
+                PunishmentKind::Fine { .. } => FINE_OPS,
+                PunishmentKind::Exile { .. } => EXILE_OPS,
+            },
         }
     }
 
@@ -545,6 +568,7 @@ impl GoalKindPlannerExt for GoalKind {
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
+            PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
             PlannerOpKind::Tell => match self {
                 GoalKind::ShareBelief { listener, topic } => {
@@ -786,7 +810,9 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::MoveCargo
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Investigate
-            | PlannerOpKind::Accuse => state,
+            | PlannerOpKind::Accuse
+            | PlannerOpKind::Fine
+            | PlannerOpKind::Exile => state,
         }
     }
 
@@ -813,6 +839,12 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::Accuse { .. }) && step.op_kind == PlannerOpKind::Accuse {
+            return true;
+        }
+
+        if matches!(self, GoalKind::PunishAccused { .. })
+            && matches!(step.op_kind, PlannerOpKind::Fine | PlannerOpKind::Exile)
+        {
             return true;
         }
 
@@ -1096,6 +1128,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::PressForceClaim
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Accuse
+            | PlannerOpKind::Fine
+            | PlannerOpKind::Exile
             | PlannerOpKind::Investigate
             | PlannerOpKind::Bury => {}
         }
@@ -1641,6 +1675,18 @@ impl GroundedGoal {
                 GoalKind::Accuse { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::Fine | PlannerOpKind::Exile => match &self.key.kind {
+                GoalKind::PunishAccused { accused, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*accused])
+                }
+                GoalKind::PunishAccused { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             _ => RootCandidateSynthesis::UnsupportedGoalOp,
         }
     }
@@ -1676,17 +1722,17 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        Permille, PunishmentKind, Quantity, RecipeId, RecordKind, ResourceSource, SuccessionLaw,
-        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
-        VisibilitySpec, WorkstationTag, Wound,
+        Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
+        ResourceSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
         estimate_duration_from_beliefs, AccuseActionPayload, ActionDef, ActionDefRegistry,
         ActionDomain, ActionDuration, ActionHandlerId, ActionPayload, BribeActionPayload,
         ConsultRecordActionPayload, DurationExpr, Interruptibility, InvestigateActionPayload,
-        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1813,7 +1859,9 @@ mod tests {
         );
         assert_eq!(
             GoalKind::PunishAccused {
+                office: entity_id(6, 0),
                 accused: entity_id(7, 0),
+                accusation_entry: RecordEntryId(1),
                 punishment: PunishmentKind::Exile {
                     from_faction: entity_id(8, 0),
                 },
@@ -1824,7 +1872,7 @@ mod tests {
     }
 
     #[test]
-    fn steal_goal_uses_move_cargo_ops_while_only_punishment_remains_deferred() {
+    fn steal_goal_uses_move_cargo_ops_while_punishment_uses_live_verdict_actions() {
         let steal = GoalKind::StealItem {
             target_item: entity_id(9, 0),
         };
@@ -1841,13 +1889,16 @@ mod tests {
         assert!(accuse.relevant_op_kinds().contains(&PlannerOpKind::Accuse));
 
         let punish = GoalKind::PunishAccused {
+            office: entity_id(10, 0),
             accused: entity_id(11, 0),
+            accusation_entry: RecordEntryId(2),
             punishment: PunishmentKind::Fine {
                 commodity: CommodityKind::Coin,
                 amount: Quantity(3),
             },
         };
-        assert!(punish.relevant_op_kinds().is_empty(), "{punish:?}");
+        assert!(punish.relevant_op_kinds().contains(&PlannerOpKind::Travel));
+        assert!(punish.relevant_op_kinds().contains(&PlannerOpKind::Fine));
     }
 
     #[test]
@@ -3049,6 +3100,77 @@ mod tests {
             payload,
             Some(ActionPayload::Accuse(AccuseActionPayload {
                 violation_id: worldwake_core::ViolationId(9),
+            }))
+        );
+    }
+
+    #[test]
+    fn punish_goal_builds_case_bound_payload_override() {
+        let actor = entity(1);
+        let accused = entity(10);
+        let office = entity(11);
+        let faction = entity(12);
+        let place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, accused, office, faction, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(accused, EntityKind::Agent);
+        view.kinds.insert(office, EntityKind::Office);
+        view.kinds.insert(faction, EntityKind::Faction);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(accused, place);
+        view.entities_at.insert(place, vec![actor, accused]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([accused, office, faction]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::PunishAccused {
+            office,
+            accused,
+            accusation_entry: RecordEntryId(11),
+            punishment: PunishmentKind::Exile { from_faction: faction },
+        };
+        let def = ActionDef {
+            id: ActionDefId(13),
+            name: "exile".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::SpecificEntity(accused)],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Exile,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[accused], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Punish(PunishActionPayload {
+                office,
+                accusation_entry: RecordEntryId(11),
+                punishment: PunishmentKind::Exile { from_faction: faction },
             }))
         );
     }
@@ -4612,7 +4734,9 @@ mod tests {
                 violation_id: ViolationId(3),
             },
             GoalKind::PunishAccused {
+                office: entity(93),
                 accused: entity(95),
+                accusation_entry: RecordEntryId(7),
                 punishment: PunishmentKind::Exile {
                     from_faction: entity(94),
                 },
@@ -4682,7 +4806,9 @@ mod tests {
                 violation_id: ViolationId(4),
             },
             GoalKind::PunishAccused {
+                office: actor,
                 accused: place_b,
+                accusation_entry: RecordEntryId(8),
                 punishment: PunishmentKind::Fine {
                     commodity: CommodityKind::Coin,
                     amount: Quantity(1),
@@ -4767,24 +4893,28 @@ mod tests {
         fn punish_accused_match() {
             let accused = id(7);
             let goal = GoalKind::PunishAccused {
+                office: id(6),
                 accused,
+                accusation_entry: RecordEntryId(9),
                 punishment: PunishmentKind::Exile {
                     from_faction: id(8),
                 },
             };
-            assert!(goal.matches_binding(&[accused], PlannerOpKind::Attack));
+            assert!(goal.matches_binding(&[accused], PlannerOpKind::Exile));
         }
 
         #[test]
         fn punish_accused_mismatch() {
             let goal = GoalKind::PunishAccused {
+                office: id(6),
                 accused: id(7),
+                accusation_entry: RecordEntryId(10),
                 punishment: PunishmentKind::Fine {
                     commodity: CommodityKind::Coin,
                     amount: Quantity(2),
                 },
             };
-            assert!(!goal.matches_binding(&[id(9)], PlannerOpKind::Attack));
+            assert!(!goal.matches_binding(&[id(9)], PlannerOpKind::Fine));
         }
 
         // ── Flexible goals ────────────────────────────────────────────

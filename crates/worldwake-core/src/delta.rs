@@ -171,6 +171,7 @@ pub enum EntityDelta {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComponentDelta {
     Set {
         entity: EntityId,

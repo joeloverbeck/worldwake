@@ -3192,8 +3192,12 @@ mod tests {
         let place = entity(20);
         let observation = worldwake_core::SocialObservation {
             detail: worldwake_core::SocialObservationDetail::SuspectedTheft {
-                missing_entity: subject,
-                expected_place: place,
+                theft: worldwake_core::TheftFacts {
+                    missing_entity: subject,
+                    expected_place: place,
+                    commodity: worldwake_core::CommodityKind::Bread,
+                    quantity: worldwake_core::Quantity(1),
+                },
                 suspect: Some(entity(99)),
             },
             place,
@@ -3353,8 +3357,12 @@ mod tests {
             world_with_speaker_listener_and_subject(PerceptionSource::DirectObservation);
         let observation = worldwake_core::SocialObservation {
             detail: worldwake_core::SocialObservationDetail::SuspectedTheft {
-                missing_entity: subject,
-                expected_place: place,
+                theft: worldwake_core::TheftFacts {
+                    missing_entity: subject,
+                    expected_place: place,
+                    commodity: worldwake_core::CommodityKind::Bread,
+                    quantity: worldwake_core::Quantity(1),
+                },
                 suspect: Some(listener),
             },
             place,
@@ -3394,8 +3402,12 @@ mod tests {
             tell_test_setup(PerceptionSource::DirectObservation);
         let observation = worldwake_core::SocialObservation {
             detail: worldwake_core::SocialObservationDetail::SuspectedTheft {
-                missing_entity: subject,
-                expected_place: place,
+                theft: worldwake_core::TheftFacts {
+                    missing_entity: subject,
+                    expected_place: place,
+                    commodity: worldwake_core::CommodityKind::Bread,
+                    quantity: worldwake_core::Quantity(1),
+                },
                 suspect: Some(entity(77)),
             },
             place,

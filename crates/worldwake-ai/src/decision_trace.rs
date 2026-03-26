@@ -1358,6 +1358,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             accused,
             violation_id,
             effective_tick,
+            ..
         } => format!(
             "Accusation(accuser={accuser:?}, accused={accused:?}, violation_id={violation_id:?}, tick={})",
             effective_tick.0

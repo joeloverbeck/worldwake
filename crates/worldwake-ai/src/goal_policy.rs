@@ -320,7 +320,9 @@ mod tests {
                 violation_id: ViolationId(2),
             },
             GoalKind::PunishAccused {
+                office: dummy_entity(),
                 accused: dummy_entity(),
+                accusation_entry: worldwake_core::RecordEntryId(1),
                 punishment: PunishmentKind::Fine {
                     commodity: CommodityKind::Coin,
                     amount: Quantity(1),
@@ -427,7 +429,9 @@ mod tests {
                 violation_id: ViolationId(4),
             },
             GoalKind::PunishAccused {
+                office: dummy_entity(),
                 accused: dummy_entity(),
+                accusation_entry: worldwake_core::RecordEntryId(2),
                 punishment: PunishmentKind::Exile {
                     from_faction: dummy_entity(),
                 },
@@ -530,7 +534,9 @@ mod tests {
                 violation_id: ViolationId(6),
             },
             GoalKind::PunishAccused {
+                office: dummy_entity(),
                 accused: dummy_entity(),
+                accusation_entry: worldwake_core::RecordEntryId(3),
                 punishment: PunishmentKind::Exile {
                     from_faction: dummy_entity(),
                 },

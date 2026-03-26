@@ -10,6 +10,7 @@ use crate::ids::{EntityId, Tick};
 use crate::items::CommodityKind;
 use crate::numerics::Permille;
 use crate::traits::Component;
+use crate::TheftFacts;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -36,8 +37,7 @@ pub enum ViolationKind {
     EntityDead { entity: EntityId },
     /// Investigation confirmed a suspected theft of an owned entity.
     SuspectedTheft {
-        missing_entity: EntityId,
-        expected_place: EntityId,
+        theft: TheftFacts,
         suspect: Option<EntityId>,
     },
 }
@@ -181,7 +181,7 @@ impl Component for ViolationDispositionProfile {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EntityId;
+    use crate::{EntityId, Quantity};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -211,8 +211,12 @@ mod tests {
 
     fn sample_suspected_theft(suspect: Option<EntityId>) -> ViolationKind {
         ViolationKind::SuspectedTheft {
-            missing_entity: entity(4),
-            expected_place: entity(10),
+            theft: TheftFacts {
+                missing_entity: entity(4),
+                expected_place: entity(10),
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(2),
+            },
             suspect,
         }
     }

@@ -222,6 +222,7 @@ impl ActionTraceDetail {
             | ActionPayload::Bribe(_)
             | ActionPayload::Threaten(_)
             | ActionPayload::Accuse(_)
+            | ActionPayload::Punish(_)
             | ActionPayload::DeclareSupport(_)
             | ActionPayload::PressForceClaim(_)
             | ActionPayload::YieldForceClaim(_)

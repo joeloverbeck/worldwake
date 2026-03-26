@@ -21,8 +21,8 @@ use worldwake_core::{
     total_live_lot_quantity, AgentBeliefStore, AgentData, CommodityKind, ControlSource, EntityId,
     GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim, MetabolismProfile,
     PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed, SuccessionLaw,
-    TellProfile, TellTopic, Tick, UtilityProfile, ViolationDispositionProfile, ViolationKind,
-    ViolationMemory,
+    TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile,
+    ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
@@ -1296,11 +1296,15 @@ fn conformance_accuse() {
         let mut memory = ViolationMemory::default();
         let violation_id = memory.record(
             ViolationKind::SuspectedTheft {
-                missing_entity: EntityId {
-                    slot: 900,
-                    generation: 1,
+                theft: TheftFacts {
+                    missing_entity: EntityId {
+                        slot: 900,
+                        generation: 1,
+                    },
+                    expected_place: VILLAGE_SQUARE,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
                 },
-                expected_place: VILLAGE_SQUARE,
                 suspect: Some(suspect),
             },
             Tick(0),

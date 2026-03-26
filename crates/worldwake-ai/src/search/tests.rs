@@ -4103,7 +4103,9 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     };
     let punish_goal = GroundedGoal {
         key: GoalKey::from(GoalKind::PunishAccused {
+            office: faction,
             accused,
+            accusation_entry: worldwake_core::RecordEntryId(1),
             punishment: worldwake_core::PunishmentKind::Exile {
                 from_faction: faction,
             },
@@ -4124,8 +4126,12 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
 
     let punish_defs = relevant_action_defs(&punish_goal, &semantics);
     assert!(
-        punish_defs.is_empty(),
-        "PunishAccused should remain deferred until verdict actions exist"
+        punish_defs.iter().any(|def_id| {
+            registry
+                .get(*def_id)
+                .is_some_and(|def| def.name == "exile")
+        }),
+        "PunishAccused goals should expose the exile operator once the action exists"
     );
 
     let node = root_node(&snapshot, &accuse_goal, &recipes, &budget);
@@ -4150,6 +4156,30 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
                 && candidate.authoritative_targets == vec![accused]
         }),
         "Accuse goals should surface the exact bound accuse candidate from goal identity once the action exists"
+    );
+
+    let punish_node = root_node(&snapshot, &punish_goal, &recipes, &budget);
+    let punish_candidates = search_candidates(
+        &punish_goal,
+        &punish_node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &punish_defs,
+    );
+    assert!(
+        punish_candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "exile")
+                && candidate.authoritative_targets == vec![accused]
+        }),
+        "PunishAccused goals should surface the exact bound punishment candidate from goal identity once the action exists"
     );
 }
 

@@ -1304,7 +1304,9 @@ mod tests {
                 violation_id: ViolationId(1),
             }),
             goal(GoalKind::PunishAccused {
+                office: entity(6),
                 accused: entity(4),
+                accusation_entry: worldwake_core::RecordEntryId(1),
                 punishment: PunishmentKind::Exile {
                     from_faction: entity(5),
                 },

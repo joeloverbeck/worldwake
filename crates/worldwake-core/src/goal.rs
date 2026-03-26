@@ -1,6 +1,8 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
-use crate::{CommodityKind, EntityId, PunishmentKind, RecipeId, TellTopic, ViolationId};
+use crate::{
+    CommodityKind, EntityId, PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -73,7 +75,9 @@ pub enum GoalKind {
         violation_id: ViolationId,
     },
     PunishAccused {
+        office: EntityId,
         accused: EntityId,
+        accusation_entry: RecordEntryId,
         punishment: PunishmentKind,
     },
 }
@@ -432,7 +436,9 @@ mod tests {
     fn goal_key_extracts_accused_for_punish_accused() {
         let accused = entity_id(28, 0);
         let key = GoalKey::from(GoalKind::PunishAccused {
+            office: entity_id(27, 0),
             accused,
+            accusation_entry: crate::RecordEntryId(3),
             punishment: PunishmentKind::Exile {
                 from_faction: entity_id(29, 0),
             },
@@ -446,14 +452,18 @@ mod tests {
     #[test]
     fn punish_accused_goal_roundtrips_through_bincode_for_fine_and_exile() {
         let fine = GoalKind::PunishAccused {
+            office: entity_id(29, 0),
             accused: entity_id(30, 0),
+            accusation_entry: crate::RecordEntryId(4),
             punishment: PunishmentKind::Fine {
                 commodity: CommodityKind::Coin,
                 amount: Quantity(5),
             },
         };
         let exile = GoalKind::PunishAccused {
+            office: entity_id(30, 0),
             accused: entity_id(31, 0),
+            accusation_entry: crate::RecordEntryId(5),
             punishment: PunishmentKind::Exile {
                 from_faction: entity_id(32, 0),
             },

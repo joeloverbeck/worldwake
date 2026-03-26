@@ -3,7 +3,7 @@
 use crate::{
     BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
-    ResourceSource, Tick, WorkstationTag, World, Wound,
+    ResourceSource, TheftFacts, Tick, WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1141,8 +1141,7 @@ pub enum SocialObservationDetail {
         expected_place: EntityId,
     },
     SuspectedTheft {
-        missing_entity: EntityId,
-        expected_place: EntityId,
+        theft: TheftFacts,
         suspect: Option<EntityId>,
     },
 }
@@ -1296,7 +1295,7 @@ mod tests {
         institutional_claim_same_memory_lane, traits::Component, BelievedInstitutionalClaim,
         BodyPart, CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
-        Quantity, Tick, World, Wound, WoundCause, WoundId, WoundList,
+        Quantity, TheftFacts, Tick, World, Wound, WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -1461,6 +1460,12 @@ mod tests {
                 accuser: entity(70),
                 accused: entity(accused),
                 violation_id: crate::ViolationId(violation_id),
+                theft: TheftFacts {
+                    missing_entity: entity(74),
+                    expected_place: entity(75),
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(2),
+                },
                 effective_tick: Tick(learned_tick),
             },
             source: InstitutionalKnowledgeSource::RecordConsultation {
@@ -2161,8 +2166,12 @@ mod tests {
     #[test]
     fn social_observation_detail_roundtrips_and_derives_kind() {
         let detail = SocialObservationDetail::SuspectedTheft {
-            missing_entity: entity(21),
-            expected_place: entity(22),
+            theft: TheftFacts {
+                missing_entity: entity(21),
+                expected_place: entity(22),
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(2),
+            },
             suspect: Some(entity(23)),
         };
 
@@ -2553,6 +2562,12 @@ mod tests {
             accuser: entity(70),
             accused: entity(80),
             violation_id: crate::ViolationId(9),
+            theft: TheftFacts {
+                missing_entity: entity(81),
+                expected_place: entity(82),
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(4),
+            },
             effective_tick: Tick(5),
         };
         let verdict = InstitutionalClaim::Verdict {
@@ -2568,6 +2583,12 @@ mod tests {
             accuser: entity(70),
             accused: entity(80),
             violation_id: crate::ViolationId(10),
+            theft: TheftFacts {
+                missing_entity: entity(83),
+                expected_place: entity(84),
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(1),
+            },
             effective_tick: Tick(8),
         };
 

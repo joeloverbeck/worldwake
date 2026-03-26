@@ -4,7 +4,8 @@ use crate::{
     register_heal_action, register_investigate_action, register_loot_action,
     register_needs_actions, register_office_actions, register_queue_for_facility_use_action,
     register_tell_action, register_trade_action, register_transport_actions,
-    register_travel_actions, register_accuse_action,
+    register_travel_actions, register_accuse_action, register_exile_action,
+    register_fine_action,
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
@@ -39,6 +40,8 @@ pub fn register_all_actions(
     let _ = register_heal_action(defs, handlers);
     let _ = register_investigate_action(defs, handlers);
     let _ = register_accuse_action(defs, handlers);
+    let _ = register_fine_action(defs, handlers);
+    let _ = register_exile_action(defs, handlers);
 }
 
 pub fn build_full_action_registries(
@@ -96,6 +99,8 @@ mod tests {
             "heal",
             "investigate",
             "accuse",
+            "fine",
+            "exile",
         ] {
             assert!(
                 action_names.contains(&required),

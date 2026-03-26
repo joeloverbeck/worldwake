@@ -100,7 +100,7 @@ pub use conservation::{
     verify_authoritative_conservation, verify_live_lot_conservation,
 };
 pub use control::ControlSource;
-pub use crime::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile};
+pub use crime::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile, TheftFacts};
 pub use delta::{
     ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta,

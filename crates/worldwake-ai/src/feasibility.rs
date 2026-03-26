@@ -892,7 +892,9 @@ mod tests {
                 violation_id: ViolationId(1),
             }),
             ranked_goal(GoalKind::PunishAccused {
+                office: entity(16),
                 accused: entity(14),
+                accusation_entry: worldwake_core::RecordEntryId(1),
                 punishment: PunishmentKind::Exile {
                     from_faction: entity(15),
                 },

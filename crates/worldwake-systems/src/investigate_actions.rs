@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, PerceptionSource,
-    RecordedViolation, SocialObservation, SocialObservationDetail, ViolationId, ViolationKind,
-    VisibilitySpec, World, WorldTxn,
+    RecordedViolation, SocialObservation, SocialObservationDetail, TheftFacts, ViolationId,
+    ViolationKind, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -117,6 +117,11 @@ fn commit_investigate(
     let (violation_id, subject, place, commodity) = investigate_state(instance)?;
     let belief = PerAgentBeliefView::from_world(instance.actor, txn);
     let owner_is_investigating_actor = belief.believed_owner_of(subject) == Some(instance.actor);
+    let theft = if owner_is_investigating_actor {
+        Some(theft_facts_for_subject(txn, subject, place)?)
+    } else {
+        None
+    };
 
     let mut store = txn
         .get_component_agent_belief_store(instance.actor)
@@ -139,8 +144,7 @@ fn commit_investigate(
     if owner_is_investigating_actor {
         store.record_social_observation(SocialObservation {
             detail: SocialObservationDetail::SuspectedTheft {
-                missing_entity: subject,
-                expected_place: place,
+                theft: theft.expect("owner investigation should derive theft facts"),
                 suspect: None,
             },
             place,
@@ -200,8 +204,7 @@ fn commit_investigate(
     if owner_is_investigating_actor {
         memory.record(
             ViolationKind::SuspectedTheft {
-                missing_entity: subject,
-                expected_place: place,
+                theft: theft.expect("owner investigation should derive theft facts"),
                 suspect: None,
             },
             txn.tick(),
@@ -212,6 +215,24 @@ fn commit_investigate(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
     Ok(CommitOutcome::empty())
+}
+
+fn theft_facts_for_subject(
+    txn: &WorldTxn<'_>,
+    subject: EntityId,
+    place: EntityId,
+) -> Result<TheftFacts, ActionError> {
+    let lot = txn.get_component_item_lot(subject).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "missing theft subject {subject} is not a live item lot at investigation commit"
+        ))
+    })?;
+    Ok(TheftFacts {
+        missing_entity: subject,
+        expected_place: place,
+        commodity: lot.commodity,
+        quantity: lot.quantity,
+    })
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -874,8 +895,12 @@ mod tests {
             &mut world,
             actor,
             ViolationKind::SuspectedTheft {
-                missing_entity: entity(30),
-                expected_place: place,
+                theft: TheftFacts {
+                    missing_entity: entity(30),
+                    expected_place: place,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                },
                 suspect: None,
             },
             1,
@@ -915,8 +940,12 @@ mod tests {
             &mut world,
             actor,
             ViolationKind::SuspectedTheft {
-                missing_entity: entity(30),
-                expected_place: place,
+                theft: TheftFacts {
+                    missing_entity: entity(30),
+                    expected_place: place,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                },
                 suspect: Some(entity(40)),
             },
             1,
@@ -1199,8 +1228,12 @@ mod tests {
         assert!(store.social_observations.iter().any(|observation| {
             observation.detail
                 == SocialObservationDetail::SuspectedTheft {
-                    missing_entity: missing,
-                    expected_place: place,
+                    theft: TheftFacts {
+                        missing_entity: missing,
+                        expected_place: place,
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(1),
+                    },
                     suspect: None,
                 }
                 && observation.place == place
@@ -1222,8 +1255,12 @@ mod tests {
             record.id != violation_id
                 && record.kind
                     == ViolationKind::SuspectedTheft {
-                        missing_entity: missing,
-                        expected_place: place,
+                        theft: TheftFacts {
+                            missing_entity: missing,
+                            expected_place: place,
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(1),
+                        },
                         suspect: None,
                     }
                 && record.observed_tick == Tick(4)
