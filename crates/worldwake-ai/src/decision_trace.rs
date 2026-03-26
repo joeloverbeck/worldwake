@@ -22,6 +22,7 @@ use crate::knowledge_path::{
     SelfKnowledgeProvenance,
 };
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
+use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::ranking::RankedGoalComparison;
 // ── Frame Transition Trace ──────────────────────────────────────
 
@@ -386,7 +387,9 @@ pub enum RootCandidateSkipReason {
     MissingSemantics,
     IrrelevantGoalOp,
     PayloadOverride(PayloadOverrideFailureReason),
-    DurationEstimateFailed,
+    DurationEstimateFailed {
+        dependency: PlannerDurationDependency,
+    },
     HypotheticalTransitionFailed,
     NonTerminalLeafOnly,
     TotalDurationOverflow,
@@ -410,6 +413,22 @@ pub struct RootCandidateTrace {
     pub planner_only: bool,
     pub payload_status: RootCandidatePayloadStatus,
     pub outcome: RootCandidateOutcome,
+}
+
+/// Why a relevant root operator never produced a concrete root candidate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootOperatorOmissionReason {
+    NoMatchingActionDef,
+    NoAffordanceOrSynthesisPath,
+    SynthesisUnsupportedGoalOp,
+    SynthesisTargetDerivationFailed,
+}
+
+/// Structured omission provenance for one relevant operator at the root boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RootOperatorOmissionTrace {
+    pub op_kind: PlannerOpKind,
+    pub reason: RootOperatorOmissionReason,
 }
 
 /// Per-expansion summary recorded during plan search.
@@ -446,6 +465,9 @@ pub struct SearchExpansionSummary {
     /// Root candidate inventory and outcomes for this expansion. Populated only
     /// for the root expansion (`depth == 0`).
     pub root_candidates: Vec<RootCandidateTrace>,
+    /// Relevant operators that never produced a root candidate. Populated only
+    /// for the root expansion (`depth == 0`).
+    pub root_omissions: Vec<RootOperatorOmissionTrace>,
 }
 
 /// Why a prerequisite place was excluded from guidance.
@@ -982,6 +1004,26 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                         exp.non_terminal_before_beam,
                         exp.non_terminal_after_beam,
                     );
+                    for omission in &exp.root_omissions {
+                        let _ = write!(
+                            out,
+                            "\n    root omission: {:?} -> {:?}",
+                            omission.op_kind, omission.reason
+                        );
+                    }
+                    for candidate in &exp.root_candidates {
+                        let op_kind = candidate
+                            .op_kind
+                            .map_or_else(|| "none".to_string(), |op| format!("{op:?}"));
+                        let _ = write!(
+                            out,
+                            "\n    root candidate: {} op={} payload={:?} outcome={:?}",
+                            candidate.action_name,
+                            op_kind,
+                            candidate.payload_status,
+                            candidate.outcome
+                        );
+                    }
                 }
             }
             if !planning.unknown_blockers.is_empty() {
@@ -2064,6 +2106,119 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_includes_root_candidate_omissions_and_dependency_diagnostics() {
+        use crate::planner_duration_contract::PlannerDurationDependency;
+
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![GoalKey::new(GoalKind::ClaimOffice { office: entity(4) })],
+                evidence: vec![],
+                ranked: vec![RankedGoalSummary {
+                    goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
+                    priority_class: GoalPriorityClass::High,
+                    motive_score: 400,
+                    provenance: None,
+                    feasibility: FeasibilityHint::Uncertain,
+                }],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace {
+                attempts: vec![PlanAttemptTrace {
+                    goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
+                    outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+                    binding_rejections: vec![],
+                    expansion_summaries: vec![SearchExpansionSummary {
+                        depth: 0,
+                        remaining_travel_ticks: 0,
+                        combined_places_count: 0,
+                        prerequisite_places_count: 0,
+                        candidates_generated: 1,
+                        candidates_skipped: 1,
+                        terminal_successors: 0,
+                        non_terminal_before_beam: 0,
+                        non_terminal_after_beam: 0,
+                        found_goal_satisfied: false,
+                        travel_pruning: None,
+                        prerequisite_guidance: None,
+                        root_candidates: vec![RootCandidateTrace {
+                            def_id: ActionDefId(9),
+                            action_name: "trade".to_string(),
+                            op_kind: Some(PlannerOpKind::Trade),
+                            authoritative_targets: vec![entity(7)],
+                            planner_only: false,
+                            payload_status: RootCandidatePayloadStatus::GoalSynthesized,
+                            outcome: RootCandidateOutcome::Skipped(
+                                RootCandidateSkipReason::DurationEstimateFailed {
+                                    dependency: PlannerDurationDependency::ActorTradeDisposition,
+                                },
+                            ),
+                        }],
+                        root_omissions: vec![RootOperatorOmissionTrace {
+                            op_kind: PlannerOpKind::PressForceClaim,
+                            reason: RootOperatorOmissionReason::NoMatchingActionDef,
+                        }],
+                    }],
+                }],
+            },
+            selection: SelectionTrace {
+                selected: Some(GoalKey::new(GoalKind::ClaimOffice { office: entity(4) })),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let mut action_defs = ActionDefRegistry::new();
+        for id in 0..=9 {
+            action_defs.register(worldwake_sim::ActionDef {
+                id: ActionDefId(id),
+                name: if id == 9 {
+                    "trade".to_string()
+                } else {
+                    format!("action-{id}")
+                },
+                domain: worldwake_sim::ActionDomain::Generic,
+                actor_constraints: vec![],
+                targets: vec![],
+                preconditions: vec![],
+                reservation_requirements: vec![],
+                duration: worldwake_sim::DurationExpr::Fixed(std::num::NonZeroU32::new(1).unwrap()),
+                body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+                interruptibility: worldwake_sim::Interruptibility::FreelyInterruptible,
+                commit_conditions: vec![],
+                visibility: worldwake_core::VisibilitySpec::SamePlace,
+                causal_event_tags: std::collections::BTreeSet::new(),
+                payload: worldwake_sim::ActionPayload::None,
+                handler: worldwake_sim::ActionHandlerId(0),
+            });
+        }
+
+        let summary = format_outcome(&outcome, &action_defs);
+        assert!(summary.contains("root omission: PressForceClaim -> NoMatchingActionDef"));
+        assert!(
+            summary.contains(
+                "root candidate: trade op=Trade payload=GoalSynthesized outcome=Skipped(DurationEstimateFailed { dependency: ActorTradeDisposition })"
+            )
+        );
+    }
+
+    #[test]
     fn binding_rejection_struct_holds_data() {
         let rej = BindingRejection {
             def_id: ActionDefId(42),
@@ -2140,6 +2295,7 @@ mod tests {
             }),
             prerequisite_guidance: None,
             root_candidates: vec![],
+            root_omissions: vec![],
         };
         assert_eq!(summary.depth, 0);
         assert_eq!(summary.remaining_travel_ticks, 4);

@@ -1,7 +1,7 @@
 use worldwake_sim::DurationExpr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub(crate) enum PlannerDurationDependency {
+pub enum PlannerDurationDependency {
     TargetConsumable,
     ActorMetabolism,
     ActorTradeDisposition,
@@ -14,7 +14,7 @@ pub(crate) enum PlannerDurationDependency {
     TravelToTarget,
 }
 
-pub(crate) const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 10] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 10] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
     PlannerDurationDependency::ActorTradeDisposition,
@@ -28,11 +28,11 @@ pub(crate) const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 10] 
 ];
 
 impl PlannerDurationDependency {
-    pub(crate) const fn all() -> &'static [Self] {
+    pub const fn all() -> &'static [Self] {
         &PLANNER_DURATION_DEPENDENCIES
     }
 
-    pub(crate) const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::TargetConsumable => "TargetConsumable",
             Self::ActorMetabolism => "ActorMetabolism",
@@ -47,7 +47,7 @@ impl PlannerDurationDependency {
         }
     }
 
-    pub(crate) const fn from_duration_expr(duration: DurationExpr) -> Option<Self> {
+    pub const fn from_duration_expr(duration: DurationExpr) -> Option<Self> {
         match duration {
             DurationExpr::TargetConsumable { .. } => Some(Self::TargetConsumable),
             DurationExpr::ActorMetabolism { .. } => Some(Self::ActorMetabolism),

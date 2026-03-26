@@ -1963,6 +1963,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         Tick(0),
         None,
         None,
+        None,
         &rel_defs,
     );
     let pick_up = initial_candidates
@@ -1998,6 +1999,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         &handlers,
         &BlockedIntentMemory::default(),
         Tick(0),
+        None,
         None,
         None,
         &rel_defs,
@@ -2740,6 +2742,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
         Tick(0),
         None,
         None,
+        None,
         &rel_defs,
     );
 
@@ -2803,6 +2806,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         &fixture.handlers,
         &BlockedIntentMemory::default(),
         Tick(0),
+        None,
         None,
         None,
         &rel_defs,
@@ -3836,6 +3840,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         Tick(0),
         None,
         None,
+        None,
         &rel_defs,
     )
     .into_iter()
@@ -3961,6 +3966,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
         Tick(0),
         None,
         None,
+        None,
         &rel_defs,
     );
 
@@ -4043,6 +4049,7 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
         &handlers,
         &BlockedIntentMemory::default(),
         Tick(0),
+        None,
         None,
         None,
         &rel_defs,
@@ -4130,6 +4137,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         &handlers,
         &BlockedIntentMemory::default(),
         Tick(0),
+        None,
         None,
         None,
         &accuse_defs,
@@ -5292,6 +5300,203 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
             crate::decision_trace::RootCandidateSkipReason::PayloadOverride(
                 crate::decision_trace::PayloadOverrideFailureReason::UnsupportedGoal,
             ),
+        )
+    );
+}
+
+#[test]
+fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_exists() {
+    let actor = entity(1);
+    let place = entity(10);
+    let office = entity(11);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, office]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(office, EntityKind::Office);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(office, place);
+    view.entities_at.insert(place, vec![actor, office]);
+
+    let registry = ActionDefRegistry::new();
+    let handlers = worldwake_sim::ActionHandlerRegistry::new();
+    let goal = GroundedGoal {
+        key: GoalKey::from(GoalKind::ClaimOffice { office }),
+        evidence_entities: BTreeSet::from([office]),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([office]),
+        &BTreeSet::from([place]),
+        0,
+    );
+    let mut expansions = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+
+    assert!(!result.is_found());
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    assert!(root.root_candidates.is_empty());
+    assert!(root.root_omissions.iter().any(|omission| {
+        omission.op_kind == PlannerOpKind::PressForceClaim
+            && omission.reason
+                == crate::decision_trace::RootOperatorOmissionReason::NoMatchingActionDef
+    }));
+}
+
+#[test]
+fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() {
+    let actor = entity(1);
+    let town = entity(10);
+    let seller_a = entity(20);
+    let seller_b = entity(21);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, seller_a, seller_b]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(seller_a, EntityKind::Agent);
+    view.kinds.insert(seller_b, EntityKind::Agent);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([seller_a, seller_b]),
+        evidence_places: BTreeSet::new(),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([seller_a, seller_b]),
+        &BTreeSet::new(),
+        0,
+    );
+    let mut expansions = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+
+    assert!(!result.is_found());
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    assert!(root.root_candidates.is_empty());
+    assert!(root.root_omissions.iter().any(|omission| {
+        omission.op_kind == PlannerOpKind::Trade
+            && omission.reason
+                == crate::decision_trace::RootOperatorOmissionReason::SynthesisTargetDerivationFailed
+    }));
+}
+
+#[test]
+fn search_trace_records_duration_dependency_when_root_candidate_duration_estimate_fails() {
+    let actor = entity(1);
+    let town = entity(10);
+    let seller = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, seller]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(seller, town);
+    view.entities_at.insert(town, vec![actor, seller]);
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.merchandise_profiles.insert(
+        seller,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_market: None,
+        },
+    );
+    view.commodity_quantities
+        .insert((seller, CommodityKind::Bread), Quantity(3));
+    view.commodity_quantities
+        .insert((actor, CommodityKind::Coin), Quantity(5));
+
+    let (registry, handlers) = build_registry();
+    let goal = acquire_goal(CommodityKind::Bread);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([seller]),
+        &BTreeSet::from([town]),
+        0,
+    );
+    let mut expansions = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+
+    assert!(!result.is_found());
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    let trade = root
+        .root_candidates
+        .iter()
+        .find(|candidate| candidate.op_kind == Some(PlannerOpKind::Trade))
+        .expect("trade root candidate should be traced");
+    assert_eq!(
+        trade.outcome,
+        crate::decision_trace::RootCandidateOutcome::Skipped(
+            crate::decision_trace::RootCandidateSkipReason::DurationEstimateFailed {
+                dependency: crate::planner_duration_contract::PlannerDurationDependency::ActorTradeDisposition,
+            },
         )
     );
 }

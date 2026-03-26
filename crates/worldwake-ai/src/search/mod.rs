@@ -120,6 +120,7 @@ pub fn search_plan(
         let depth = node.steps.len() as u8;
         let record_root_candidates = depth == 0 && expansion_summaries.is_some();
         let mut root_candidates = Vec::new();
+        let mut root_omissions = Vec::new();
 
         let mut candidates = search_candidates(
             goal,
@@ -131,6 +132,7 @@ pub fn search_plan(
             current_tick,
             binding_rejections.as_deref_mut(),
             record_root_candidates.then_some(&mut root_candidates),
+            record_root_candidates.then_some(&mut root_omissions),
             &relevant_defs,
         );
         let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
@@ -226,6 +228,7 @@ pub fn search_plan(
                                 travel_pruning: travel_pruning.clone(),
                                 prerequisite_guidance: combined_places.guidance_trace.clone(),
                                 root_candidates: root_candidates.clone(),
+                                root_omissions: root_omissions.clone(),
                             });
                         }
                         return PlanSearchResult::Found(PlannedPlan::new(
@@ -265,6 +268,7 @@ pub fn search_plan(
                 travel_pruning,
                 prerequisite_guidance: combined_places.guidance_trace,
                 root_candidates,
+                root_omissions,
             });
         }
 

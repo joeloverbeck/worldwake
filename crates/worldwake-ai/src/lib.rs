@@ -22,9 +22,8 @@ pub mod interrupts;
 pub mod knowledge_path;
 pub mod plan_revalidation;
 pub mod plan_selection;
+pub mod planner_duration_contract;
 pub mod planner_ops;
-#[cfg(test)]
-mod planner_duration_contract;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
@@ -49,7 +48,8 @@ pub use decision_trace::{
     PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
     PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
     RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
-    RootCandidateSkipReason, RootCandidateTrace, SelectedPlanReplacementKind,
+    RootCandidateSkipReason, RootCandidateTrace, RootOperatorOmissionReason,
+    RootOperatorOmissionTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
     TravelSuccessorTrace,
@@ -70,6 +70,7 @@ pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
 pub use plan_revalidation::revalidate_next_step;
 pub use plan_selection::select_best_plan;
+pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
     apply_hypothetical_transition, authoritative_target, authoritative_targets,
     build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,

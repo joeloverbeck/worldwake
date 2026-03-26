@@ -1,3 +1,4 @@
+use crate::goal_model::RootCandidateSynthesis;
 use crate::planner_ops::{planner_only_candidates, PlannerOpKind};
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
@@ -102,9 +103,10 @@ pub(super) fn search_candidates(
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    root_omissions: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
     relevant_defs: &BTreeSet<ActionDefId>,
 ) -> Vec<SearchCandidate> {
-    let candidates = get_affordances_for_defs(
+    let affordance_candidates = get_affordances_for_defs(
         &node.state,
         node.state.snapshot().actor(),
         registry,
@@ -116,7 +118,7 @@ pub(super) fn search_candidates(
         search_candidates_from_affordance(goal, &node.state, registry, &affordance)
     })
     .collect::<Vec<_>>();
-    let mut candidates = candidates;
+    let mut candidates = affordance_candidates;
     candidates.extend(
         planner_only_candidates(&node.state, semantics_table)
             .into_iter()
@@ -129,6 +131,13 @@ pub(super) fn search_candidates(
         relevant_defs,
         &candidates,
     ));
+    record_root_operator_omissions(
+        goal,
+        registry,
+        semantics_table,
+        &candidates,
+        root_omissions,
+    );
     let mut root_candidates = root_candidates;
     let mut binding_rejections = binding_rejections;
     let mut filtered = Vec::with_capacity(candidates.len());
@@ -225,9 +234,8 @@ fn goal_synthesized_candidates(
         .filter_map(|def_id| {
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
-            goal.synthesized_root_candidate_targets(def, semantics)
-                .map(|authoritative_targets| {
-                SearchCandidate {
+            match goal.synthesized_root_candidate_targets(def, semantics) {
+                RootCandidateSynthesis::Targets(authoritative_targets) => Some(SearchCandidate {
                     def_id: *def_id,
                     authoritative_targets: authoritative_targets.clone(),
                     planning_targets: authoritative_targets
@@ -237,10 +245,78 @@ fn goal_synthesized_candidates(
                     payload_override: None,
                     planner_only: false,
                     trace_index: None,
-                }
-            })
+                }),
+                RootCandidateSynthesis::NoSynthesisPath
+                | RootCandidateSynthesis::UnsupportedGoalOp
+                | RootCandidateSynthesis::TargetDerivationFailed => None,
+            }
         })
         .collect()
+}
+
+fn record_root_operator_omissions(
+    goal: &GroundedGoal,
+    registry: &ActionDefRegistry,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    candidates: &[SearchCandidate],
+    sink: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
+) {
+    let Some(sink) = sink else {
+        return;
+    };
+    let candidate_ops = candidates
+        .iter()
+        .filter_map(|candidate| semantics_table.get(&candidate.def_id).map(|sem| sem.op_kind))
+        .collect::<BTreeSet<_>>();
+
+    for op_kind in goal.key.kind.relevant_op_kinds() {
+        if candidate_ops.contains(op_kind) {
+            continue;
+        }
+        let defs_for_op = semantics_table
+            .iter()
+            .filter_map(|(def_id, sem)| (sem.op_kind == *op_kind).then_some(*def_id))
+            .collect::<Vec<_>>();
+        if defs_for_op.is_empty() {
+            sink.push(crate::decision_trace::RootOperatorOmissionTrace {
+                op_kind: *op_kind,
+                reason: crate::decision_trace::RootOperatorOmissionReason::NoMatchingActionDef,
+            });
+            continue;
+        }
+
+        let mut saw_target_derivation_failure = false;
+        let mut saw_unsupported_goal_op = false;
+        for def_id in defs_for_op {
+            let Some(def) = registry.get(def_id) else {
+                continue;
+            };
+            let Some(semantics) = semantics_table.get(&def_id) else {
+                continue;
+            };
+            match goal.synthesized_root_candidate_targets(def, semantics) {
+                RootCandidateSynthesis::TargetDerivationFailed => {
+                    saw_target_derivation_failure = true;
+                }
+                RootCandidateSynthesis::UnsupportedGoalOp => {
+                    saw_unsupported_goal_op = true;
+                }
+                RootCandidateSynthesis::Targets(_) | RootCandidateSynthesis::NoSynthesisPath => {}
+            }
+        }
+
+        let reason = if saw_target_derivation_failure {
+            crate::decision_trace::RootOperatorOmissionReason::SynthesisTargetDerivationFailed
+        } else if saw_unsupported_goal_op {
+            crate::decision_trace::RootOperatorOmissionReason::SynthesisUnsupportedGoalOp
+        } else {
+            crate::decision_trace::RootOperatorOmissionReason::NoAffordanceOrSynthesisPath
+        };
+        sink.push(crate::decision_trace::RootOperatorOmissionTrace {
+            op_kind: *op_kind,
+            reason,
+        });
+    }
 }
 
 fn candidate_blocked_facility_use(

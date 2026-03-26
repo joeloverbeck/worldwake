@@ -1566,55 +1566,82 @@ pub struct GroundedGoal {
     pub evidence_places: BTreeSet<EntityId>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RootCandidateSynthesis {
+    Targets(Vec<EntityId>),
+    NoSynthesisPath,
+    UnsupportedGoalOp,
+    TargetDerivationFailed,
+}
+
 impl GroundedGoal {
     pub(crate) fn synthesized_root_candidate_targets(
         &self,
         def: &ActionDef,
         semantics: &PlannerOpSemantics,
-    ) -> Option<Vec<EntityId>> {
-        match (&self.key.kind, semantics.op_kind) {
-            (
+    ) -> RootCandidateSynthesis {
+        match semantics.op_kind {
+            PlannerOpKind::Trade => match &self.key.kind {
                 GoalKind::AcquireCommodity { .. }
                 | GoalKind::ConsumeOwnedCommodity { .. }
                 | GoalKind::RestockCommodity { .. }
-                | GoalKind::TreatWounds { .. },
-                PlannerOpKind::Trade,
-            ) => {
-                let target = self.evidence_entities.iter().copied().next()?;
-                (self.evidence_entities.len() == 1
-                    && matches!(
+                | GoalKind::TreatWounds { .. } => {
+                    if !matches!(
                         def.targets.as_slice(),
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
-                    ))
-                .then_some(vec![target])
-            }
-            (GoalKind::ClaimOffice { .. }, PlannerOpKind::PressForceClaim)
-                if def.targets.is_empty() =>
-            {
-                Some(Vec::new())
-            }
-            (GoalKind::InvestigateViolation { place, .. }, PlannerOpKind::Investigate)
-                if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::ActorPlace]) =>
-            {
-                Some(vec![*place])
-            }
-            (GoalKind::ShareBelief { listener, .. }, PlannerOpKind::Tell)
-                if matches!(
-                    def.targets.as_slice(),
-                    [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
-                ) =>
-            {
-                Some(vec![*listener])
-            }
-            (GoalKind::Accuse { accused, .. }, PlannerOpKind::Accuse)
-                if matches!(
-                    def.targets.as_slice(),
-                    [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
-                ) =>
-            {
-                Some(vec![*accused])
-            }
-            _ => None,
+                    ) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
+                    if self.evidence_entities.len() != 1 {
+                        return RootCandidateSynthesis::TargetDerivationFailed;
+                    }
+                    RootCandidateSynthesis::Targets(
+                        self.evidence_entities.iter().copied().collect(),
+                    )
+                }
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::PressForceClaim => match &self.key.kind {
+                GoalKind::ClaimOffice { .. } if def.targets.is_empty() => {
+                    RootCandidateSynthesis::Targets(Vec::new())
+                }
+                GoalKind::ClaimOffice { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::Investigate => match &self.key.kind {
+                GoalKind::InvestigateViolation { place, .. }
+                    if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::ActorPlace]) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*place])
+                }
+                GoalKind::InvestigateViolation { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::Tell => match &self.key.kind {
+                GoalKind::ShareBelief { listener, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*listener])
+                }
+                GoalKind::ShareBelief { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::Accuse => match &self.key.kind {
+                GoalKind::Accuse { accused, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*accused])
+                }
+                GoalKind::Accuse { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            _ => RootCandidateSynthesis::UnsupportedGoalOp,
         }
     }
 }
@@ -1632,7 +1659,7 @@ pub struct RankedGoal {
 mod tests {
     use super::{
         GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
-        RankedGoal,
+        RankedGoal, RootCandidateSynthesis,
     };
     use crate::{
         build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
@@ -3068,7 +3095,7 @@ mod tests {
 
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, &semantics),
-            Some(vec![listener])
+            RootCandidateSynthesis::Targets(vec![listener])
         );
     }
 
@@ -3112,7 +3139,7 @@ mod tests {
 
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, &semantics),
-            Some(vec![accused])
+            RootCandidateSynthesis::Targets(vec![accused])
         );
     }
 
@@ -3156,7 +3183,7 @@ mod tests {
 
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, &semantics),
-            Some(vec![seller])
+            RootCandidateSynthesis::Targets(vec![seller])
         );
     }
 
@@ -3197,7 +3224,50 @@ mod tests {
             relevant_goal_kinds: &[],
         };
 
-        assert_eq!(goal.synthesized_root_candidate_targets(&def, &semantics), None);
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, &semantics),
+            RootCandidateSynthesis::TargetDerivationFailed
+        );
+    }
+
+    #[test]
+    fn grounded_goal_reports_unsupported_trade_synthesis_for_unrelated_goal() {
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::Sleep),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Trade,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: true,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, &semantics),
+            RootCandidateSynthesis::UnsupportedGoalOp
+        );
     }
 
     #[test]
