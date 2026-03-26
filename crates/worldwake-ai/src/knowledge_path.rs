@@ -4,8 +4,8 @@
 //! they were acquired. See spec S28 for design rationale.
 
 use worldwake_core::{
-    CommodityKind, EntityId, HomeostaticNeedId, InstitutionalClaim,
-    InstitutionalKnowledgeSource, PerceptionSource, Permille, Quantity, Tick, WorkstationTag,
+    CommodityKind, EntityId, HomeostaticNeedId, InstitutionalClaim, InstitutionalKnowledgeSource,
+    PerceptionSource, Permille, Quantity, Tick, WorkstationTag,
 };
 
 /// Which aspect of a believed entity contributed to candidate generation.

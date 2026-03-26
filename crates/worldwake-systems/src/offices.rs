@@ -478,8 +478,7 @@ fn evaluate_force_resolution(tick: Tick, context: &ForceSuccessionContext) -> Fo
                     .vacancy_since
                     .map(|vacancy_since| tick.0.saturating_sub(vacancy_since.0))
                     .unwrap_or_default();
-                let required_ticks =
-                    u64::from(context.profile.vacancy_claim_grace_ticks.get());
+                let required_ticks = u64::from(context.profile.vacancy_claim_grace_ticks.get());
                 if waited_ticks < required_ticks {
                     desired_controller = None;
                     next_state.control_since = None;

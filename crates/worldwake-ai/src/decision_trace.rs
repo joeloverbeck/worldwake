@@ -14,13 +14,13 @@ use worldwake_sim::{
 };
 
 use crate::feasibility::FeasibilityHint;
+use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
+use crate::goal_switching::GoalSwitchKind;
+use crate::interrupts::InterruptDecision;
 use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
     SelfKnowledgeProvenance,
 };
-use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
-use crate::goal_switching::GoalSwitchKind;
-use crate::interrupts::InterruptDecision;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 // ── Frame Transition Trace ──────────────────────────────────────
 
@@ -1172,7 +1172,10 @@ fn format_institutional_knowledge_source(source: &InstitutionalKnowledgeSource) 
             format!("Report(from={from:?}, chain={chain_len})")
         }
         InstitutionalKnowledgeSource::RecordConsultation { record, entry_id } => {
-            format!("RecordConsultation(record={record:?}, entry={})", entry_id.0)
+            format!(
+                "RecordConsultation(record={record:?}, entry={})",
+                entry_id.0
+            )
         }
         InstitutionalKnowledgeSource::SelfDeclaration => "SelfDeclaration".to_string(),
     }
@@ -1222,7 +1225,10 @@ fn format_institutional_belief_provenance(ibp: &InstitutionalBeliefProvenance) -
     let learned_at = ibp
         .learned_at
         .map_or_else(String::new, |place| format!(", learned_at={place:?}"));
-    format!("{claim} — {source} @ tick {}{learned_at}", ibp.learned_tick.0)
+    format!(
+        "{claim} — {source} @ tick {}{learned_at}",
+        ibp.learned_tick.0
+    )
 }
 
 fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
@@ -1232,8 +1238,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             holder,
             effective_tick,
         } => {
-            let holder_str =
-                holder.map_or_else(|| "vacant".to_string(), |h| format!("{h:?}"));
+            let holder_str = holder.map_or_else(|| "vacant".to_string(), |h| format!("{h:?}"));
             format!(
                 "OfficeHolder(office={office:?}, holder={holder_str}, tick={})",
                 effective_tick.0
@@ -1254,8 +1259,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             candidate,
             effective_tick,
         } => {
-            let cand_str =
-                candidate.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
+            let cand_str = candidate.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
             format!(
                 "SupportDeclaration(office={office:?}, supporter={supporter:?}, candidate={cand_str}, tick={})",
                 effective_tick.0
@@ -1267,8 +1271,7 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             contested,
             effective_tick,
         } => {
-            let ctrl_str =
-                controller.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
+            let ctrl_str = controller.map_or_else(|| "none".to_string(), |c| format!("{c:?}"));
             format!(
                 "ForceControl(office={office:?}, controller={ctrl_str}, contested={contested}, tick={})",
                 effective_tick.0
@@ -1591,7 +1594,9 @@ mod tests {
 
         assert_eq!(
             trace.goal_status(&share_goal),
-            GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief)
+            GoalTraceStatus::OmittedSocial(
+                TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
+            )
         );
     }
 
@@ -2215,10 +2220,7 @@ mod tests {
         );
         let from = entity(42);
         assert_eq!(
-            format_perception_source(&PerceptionSource::Report {
-                from,
-                chain_len: 2
-            }),
+            format_perception_source(&PerceptionSource::Report { from, chain_len: 2 }),
             format!("Report(from={from:?}, chain=2)")
         );
         assert_eq!(
@@ -2330,9 +2332,7 @@ mod tests {
                     omitted_political: vec![],
                     omitted_social: vec![],
                 },
-                planning: PlanSearchTrace {
-                    attempts: vec![],
-                },
+                planning: PlanSearchTrace { attempts: vec![] },
                 selection: SelectionTrace {
                     selected: None,
                     selected_plan: None,

@@ -1,8 +1,6 @@
 use super::active_action::handle_current_step_failure;
 use super::observation::update_runtime_observation_snapshot;
-use super::{
-    handle_recoverable_travel_step_blockage, runtime_belief_view, AgentTickContext,
-};
+use super::{handle_recoverable_travel_step_blockage, runtime_belief_view, AgentTickContext};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
     ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FacilityQueueIntents, Tick,
@@ -42,7 +40,16 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         if handled {
             return Ok(());
         }
-        return handle_current_step_failure(ctx, runtime, active_goal, jc, blocked_memory, agent, step, None);
+        return handle_current_step_failure(
+            ctx,
+            runtime,
+            active_goal,
+            jc,
+            blocked_memory,
+            agent,
+            step,
+            None,
+        );
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
@@ -74,7 +81,16 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 runtime,
             );
         }
-        handle_current_step_failure(ctx, runtime, active_goal, jc, blocked_memory, agent, step, None)?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            active_goal,
+            jc,
+            blocked_memory,
+            agent,
+            step,
+            None,
+        )?;
         return finalize_agent_tick(
             ctx.world,
             ctx.event_log,

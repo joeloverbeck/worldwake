@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag,
-    PerceptionSource, RecordedViolation, SocialObservation, SocialObservationDetail, ViolationId,
-    ViolationKind, VisibilitySpec, World, WorldTxn,
+    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, PerceptionSource,
+    RecordedViolation, SocialObservation, SocialObservationDetail, ViolationId, ViolationKind,
+    VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -229,7 +229,9 @@ fn validate_investigate_payload_override(
     };
     view.active_violation_records(actor)
         .into_iter()
-        .any(|record| record.id == payload.violation_id && investigable_binding(&record, place).is_some())
+        .any(|record| {
+            record.id == payload.violation_id && investigable_binding(&record, place).is_some()
+        })
 }
 
 fn validate_investigate_payload_authoritatively(
@@ -477,10 +479,15 @@ mod tests {
         defs: &ActionDefRegistry,
         handlers: &ActionHandlerRegistry,
     ) -> Affordance {
-        get_affordances(&PerAgentBeliefView::from_world(actor, world), actor, defs, handlers)
-            .into_iter()
-            .find(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
-            .expect("investigate affordance should exist")
+        get_affordances(
+            &PerAgentBeliefView::from_world(actor, world),
+            actor,
+            defs,
+            handlers,
+        )
+        .into_iter()
+        .find(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
+        .expect("investigate affordance should exist")
     }
 
     fn investigate_affordance_for_id(
@@ -490,17 +497,22 @@ mod tests {
         handlers: &ActionHandlerRegistry,
         violation_id: ViolationId,
     ) -> Affordance {
-        get_affordances(&PerAgentBeliefView::from_world(actor, world), actor, defs, handlers)
-            .into_iter()
-            .find(|affordance| {
-                defs.get(affordance.def_id).unwrap().name == "investigate"
-                    && affordance
-                        .payload_override
-                        .as_ref()
-                        .and_then(ActionPayload::as_investigate)
-                        .is_some_and(|payload| payload.violation_id == violation_id)
-            })
-            .expect("investigate affordance should exist for violation id")
+        get_affordances(
+            &PerAgentBeliefView::from_world(actor, world),
+            actor,
+            defs,
+            handlers,
+        )
+        .into_iter()
+        .find(|affordance| {
+            defs.get(affordance.def_id).unwrap().name == "investigate"
+                && affordance
+                    .payload_override
+                    .as_ref()
+                    .and_then(ActionPayload::as_investigate)
+                    .is_some_and(|payload| payload.violation_id == violation_id)
+        })
+        .expect("investigate affordance should exist for violation id")
     }
 
     #[test]
@@ -516,10 +528,9 @@ mod tests {
         assert_eq!(def.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(def.visibility, VisibilitySpec::SamePlace);
         assert_eq!(def.causal_event_tags, BTreeSet::from([EventTag::Discovery]));
-        assert!(
-            def.actor_constraints
-                .contains(&Constraint::ActorNotIncapacitated)
-        );
+        assert!(def
+            .actor_constraints
+            .contains(&Constraint::ActorNotIncapacitated));
     }
 
     #[test]
@@ -546,7 +557,9 @@ mod tests {
         assert_eq!(affordance.bound_targets, vec![place]);
         assert_eq!(
             affordance.payload_override,
-            Some(ActionPayload::Investigate(InvestigateActionPayload { violation_id }))
+            Some(ActionPayload::Investigate(InvestigateActionPayload {
+                violation_id
+            }))
         );
 
         let mut event_log = EventLog::new();
@@ -572,7 +585,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            active_actions.get(&instance_id).unwrap().remaining_duration.ticks(),
+            active_actions
+                .get(&instance_id)
+                .unwrap()
+                .remaining_duration
+                .ticks(),
             2
         );
 
@@ -633,12 +650,11 @@ mod tests {
         let memory = world.get_component_violation_memory(actor).unwrap();
         assert!(memory.violations.iter().any(|record| {
             record.id == violation_id
-                &&
-            record.kind
-                == ViolationKind::EntityMissing {
-                    entity: missing,
-                    expected_place: place,
-                }
+                && record.kind
+                    == ViolationKind::EntityMissing {
+                        entity: missing,
+                        expected_place: place,
+                    }
                 && record.observed_tick == Tick(1)
                 && record.resolved_tick == Some(Tick(4))
                 && record.expires_tick == Tick(54)
@@ -742,16 +758,21 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let payload_ids = get_affordances(&PerAgentBeliefView::from_world(actor, &world), actor, &defs, &handlers)
-            .into_iter()
-            .filter(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
-            .filter_map(|affordance| {
-                affordance
-                    .payload_override
-                    .and_then(|payload| payload.as_investigate().cloned())
-                    .map(|payload| payload.violation_id)
-            })
-            .collect::<Vec<_>>();
+        let payload_ids = get_affordances(
+            &PerAgentBeliefView::from_world(actor, &world),
+            actor,
+            &defs,
+            &handlers,
+        )
+        .into_iter()
+        .filter(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
+        .filter_map(|affordance| {
+            affordance
+                .payload_override
+                .and_then(|payload| payload.as_investigate().cloned())
+                .map(|payload| payload.violation_id)
+        })
+        .collect::<Vec<_>>();
 
         assert_eq!(payload_ids, vec![first_id, second_id]);
     }
@@ -774,16 +795,21 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let payload_ids = get_affordances(&PerAgentBeliefView::from_world(actor, &world), actor, &defs, &handlers)
-            .into_iter()
-            .filter(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
-            .filter_map(|affordance| {
-                affordance
-                    .payload_override
-                    .and_then(|payload| payload.as_investigate().cloned())
-                    .map(|payload| payload.violation_id)
-            })
-            .collect::<Vec<_>>();
+        let payload_ids = get_affordances(
+            &PerAgentBeliefView::from_world(actor, &world),
+            actor,
+            &defs,
+            &handlers,
+        )
+        .into_iter()
+        .filter(|affordance| defs.get(affordance.def_id).unwrap().name == "investigate")
+        .filter_map(|affordance| {
+            affordance
+                .payload_override
+                .and_then(|payload| payload.as_investigate().cloned())
+                .map(|payload| payload.violation_id)
+        })
+        .collect::<Vec<_>>();
 
         assert!(
             !payload_ids.contains(&suspected_id),
@@ -1061,7 +1087,8 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let affordance = investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1086,7 +1113,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            active_actions.get(&instance_id).unwrap().remaining_duration.ticks(),
+            active_actions
+                .get(&instance_id)
+                .unwrap()
+                .remaining_duration
+                .ticks(),
             3
         );
     }
@@ -1167,7 +1198,8 @@ mod tests {
         );
 
         let (defs, handlers, _) = setup_registries();
-        let affordance = investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
 
         let mut event_log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1218,7 +1250,10 @@ mod tests {
         let store = world.get_component_agent_belief_store(actor).unwrap();
         assert!(store.social_observations.is_empty());
         assert_eq!(
-            world.get_component_violation_memory(actor).unwrap().violations,
+            world
+                .get_component_violation_memory(actor)
+                .unwrap()
+                .violations,
             before_abort
         );
     }

@@ -163,14 +163,10 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
         (ActionDomain::Social, "tell") => Some(PlannerOpKind::Tell),
-        (ActionDomain::Social, "consult_record") => {
-            Some(PlannerOpKind::ConsultRecord)
-        }
+        (ActionDomain::Social, "consult_record") => Some(PlannerOpKind::ConsultRecord),
         (ActionDomain::Social, "bribe") => Some(PlannerOpKind::Bribe),
         (ActionDomain::Social, "threaten") => Some(PlannerOpKind::Threaten),
-        (ActionDomain::Social, "declare_support") => {
-            Some(PlannerOpKind::DeclareSupport)
-        }
+        (ActionDomain::Social, "declare_support") => Some(PlannerOpKind::DeclareSupport),
         (ActionDomain::Social, "press_force_claim") => Some(PlannerOpKind::PressForceClaim),
         (ActionDomain::Social, "yield_force_claim") => Some(PlannerOpKind::YieldForceClaim),
         (ActionDomain::Combat, "attack") => Some(PlannerOpKind::Attack),
@@ -783,10 +779,10 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
-        BribeActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload,
-        DurationExpr, MaterializationTag, PressForceClaimActionPayload,
-        QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        BribeActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload, DurationExpr,
+        MaterializationTag, PressForceClaimActionPayload, QueueForFacilityUsePayload,
+        RecipeDefinition, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
         YieldForceClaimActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
@@ -1493,9 +1489,7 @@ mod tests {
             ),
             (
                 "yield_force_claim",
-                ActionPayload::YieldForceClaim(YieldForceClaimActionPayload {
-                    office: entity(10),
-                }),
+                ActionPayload::YieldForceClaim(YieldForceClaimActionPayload { office: entity(10) }),
                 PlannerOpKind::YieldForceClaim,
             ),
         ];

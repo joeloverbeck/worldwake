@@ -74,7 +74,11 @@ impl ViolationMemory {
     /// Records a violation, replacing any existing entry for the same kind.
     /// TTL is in ticks (added to `observed_tick` to compute `expires_tick`).
     pub fn record(&mut self, kind: ViolationKind, observed_tick: Tick, ttl: u32) -> ViolationId {
-        if let Some(index) = self.violations.iter().position(|record| record.kind == kind) {
+        if let Some(index) = self
+            .violations
+            .iter()
+            .position(|record| record.kind == kind)
+        {
             let new_expires_tick = Tick(observed_tick.0 + u64::from(ttl));
             if self.violations[index].expires_tick > observed_tick {
                 self.violations[index].observed_tick = observed_tick;
@@ -480,7 +484,10 @@ mod tests {
 
         assert_eq!(profile.investigation_duration_ticks.get(), 3);
         assert_eq!(profile.violation_memory_retention_ticks, 50);
-        assert_eq!(profile.investigation_motive_weight, Permille::new(500).unwrap());
+        assert_eq!(
+            profile.investigation_motive_weight,
+            Permille::new(500).unwrap()
+        );
         assert_eq!(profile.ownership_motive_bonus, Permille::new(200).unwrap());
     }
 

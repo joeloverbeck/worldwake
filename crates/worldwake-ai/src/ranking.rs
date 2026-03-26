@@ -485,9 +485,7 @@ fn motive_score(
             social_pressure_for_topic(context, topic),
         ),
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
-        GoalKind::InvestigateViolation { .. } => {
-            investigation_motive(candidate, context)
-        }
+        GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
             .view
@@ -512,9 +510,12 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                 belief_pressure_from_state(&belief, context.current_tick, &policy)
             })
         }
-        TellTopic::SocialObservation { observation } => {
-            belief_pressure_from_source(observation.source, observation.observed_tick, context.current_tick, &policy)
-        }
+        TellTopic::SocialObservation { observation } => belief_pressure_from_source(
+            observation.source,
+            observation.observed_tick,
+            context.current_tick,
+            &policy,
+        ),
     }
 }
 

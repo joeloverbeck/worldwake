@@ -15,12 +15,11 @@ use crate::{
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    load_per_unit, BelievedEntityState, BlockedIntentMemory, CommodityKind, CommodityPurpose,
-    DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, OfficeData,
-    PerceptionSource, Quantity, RecordKind,
-    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
-    TellTopic, Tick,
+    load_per_unit, social_observation_is_redundant_for_listener,
+    tell_subject_is_directly_observable_by_listener, BelievedEntityState, BlockedIntentMemory,
+    CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind,
+    GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, OfficeData, PerceptionSource, Quantity, RecordKind, TellTopic, Tick,
     ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
@@ -322,8 +321,7 @@ fn emit_social_candidates(
             .iter()
             .copied()
             .filter(|observation| {
-                let redundant =
-                    social_observation_is_redundant_for_listener(observation, listener);
+                let redundant = social_observation_is_redundant_for_listener(observation, listener);
                 if redundant {
                     diagnostics.omitted_social.push(SocialCandidateOmission {
                         listener,
@@ -347,16 +345,18 @@ fn emit_social_candidates(
                     .unwrap_or(worldwake_core::RecipientKnowledgeStatus::UnknownToSpeaker)
             },
         );
-        diagnostics.omitted_social.extend(
-            selection
-                .omitted
-                .into_iter()
-                .map(|omission| SocialCandidateOmission {
-                    listener,
-                    topic: omission.topic,
-                    reason: omission.reason,
-                }),
-        );
+        diagnostics
+            .omitted_social
+            .extend(
+                selection
+                    .omitted
+                    .into_iter()
+                    .map(|omission| SocialCandidateOmission {
+                        listener,
+                        topic: omission.topic,
+                        reason: omission.reason,
+                    }),
+            );
 
         for topic in selection.selected.iter().copied() {
             let mut evidence = Evidence::with_entity(listener);
@@ -1134,9 +1134,7 @@ fn emit_reduce_danger_goal(
             trace
                 .knowledge_path
                 .self_knowledge
-                .push(SelfKnowledgeProvenance::OwnWounds {
-                    count: wound_count,
-                });
+                .push(SelfKnowledgeProvenance::OwnWounds { count: wound_count });
         }
         emit_candidate_with_trace(
             candidates,
@@ -1167,9 +1165,7 @@ fn emit_care_goals(
             trace
                 .knowledge_path
                 .self_knowledge
-                .push(SelfKnowledgeProvenance::OwnWounds {
-                    count: wound_count,
-                });
+                .push(SelfKnowledgeProvenance::OwnWounds { count: wound_count });
         }
         emit_candidate_with_trace(
             candidates,
@@ -1409,14 +1405,15 @@ fn emit_move_cargo_goals(
             trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
         }
         if ctx.tracing_enabled {
-            trace.knowledge_path.entity_beliefs.extend(
-                belief_provenance_for_contributors(
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .extend(belief_provenance_for_contributors(
                     ctx.view,
                     ctx.agent,
                     &trace.contributors,
                     commodity,
-                ),
-            );
+                ));
         }
         emit_candidate_with_trace(
             candidates,
@@ -1581,9 +1578,7 @@ fn belief_provenance_for_contributors(
             CandidateEvidenceKind::Seller | CandidateEvidenceKind::LooseLot => {
                 BeliefAspect::HasCommodity { commodity }
             }
-            CandidateEvidenceKind::ResourceSource => {
-                BeliefAspect::IsResourceSource { commodity }
-            }
+            CandidateEvidenceKind::ResourceSource => BeliefAspect::IsResourceSource { commodity },
             CandidateEvidenceKind::RecipeWorkstation => {
                 if let Some(tag) = view.workstation_tag(contributor.entity) {
                     BeliefAspect::HasWorkstation { tag }
@@ -1641,11 +1636,7 @@ fn emit_recorded_violation_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
-    if ctx
-        .view
-        .violation_disposition_profile(ctx.agent)
-        .is_none()
-    {
+    if ctx.view.violation_disposition_profile(ctx.agent).is_none() {
         return;
     }
 
@@ -1722,9 +1713,7 @@ fn emit_expectation_violation_candidates(
             && ctx.view.locally_observed_is_dead(ctx.agent, *entity_id)
         {
             violations.push((
-                ViolationKind::EntityDead {
-                    entity: *entity_id,
-                },
+                ViolationKind::EntityDead { entity: *entity_id },
                 false, // record only, no goal
             ));
         }
@@ -1759,7 +1748,10 @@ fn emit_expectation_violation_candidates(
         if ctx.violation_memory.is_recorded(&kind, ctx.current_tick) {
             continue;
         }
-        if pending.iter().any(|record: &PendingViolationRecord| record.kind == kind) {
+        if pending
+            .iter()
+            .any(|record: &PendingViolationRecord| record.kind == kind)
+        {
             continue;
         }
 
@@ -1914,10 +1906,13 @@ fn merge_candidate_evidence_trace(
         .knowledge_path
         .self_knowledge
         .extend(incoming.knowledge_path.self_knowledge.iter().cloned());
-    existing
-        .knowledge_path
-        .institutional_beliefs
-        .extend(incoming.knowledge_path.institutional_beliefs.iter().cloned());
+    existing.knowledge_path.institutional_beliefs.extend(
+        incoming
+            .knowledge_path
+            .institutional_beliefs
+            .iter()
+            .cloned(),
+    );
 }
 
 fn acquisition_path_evidence(
@@ -2354,11 +2349,11 @@ mod tests {
         DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
         HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData,
-        PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, SharedTellState, TellMemoryKey, TellProfile,
-        TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity,
+        RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
+        SharedTellState, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, ViolationMemory, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -2722,15 +2717,15 @@ mod tests {
             topic: &TellTopic,
         ) -> Option<RecipientKnowledgeStatus> {
             let current_state = match topic {
-                TellTopic::EntityBelief { subject } => SharedTellState::EntityBelief(
-                    worldwake_core::to_shared_belief_snapshot(
+                TellTopic::EntityBelief { subject } => {
+                    SharedTellState::EntityBelief(worldwake_core::to_shared_belief_snapshot(
                         self.beliefs
                             .get(&actor)?
                             .iter()
                             .find(|(known_subject, _)| *known_subject == *subject)
                             .map(|(_, belief)| belief)?,
-                    ),
-                ),
+                    ))
+                }
                 TellTopic::SocialObservation { observation } => {
                     SharedTellState::SocialObservation(*observation)
                 }
@@ -2747,7 +2742,9 @@ mod tests {
             self.tell_profile(actor)?;
 
             Some(match remembered.as_ref() {
-                Some(memory) => worldwake_core::recipient_knowledge_status(&current_state, Some(memory)),
+                Some(memory) => {
+                    worldwake_core::recipient_knowledge_status(&current_state, Some(memory))
+                }
                 None if had_raw_memory => {
                     RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
                 }
@@ -4983,7 +4980,8 @@ mod tests {
         view.entity_kinds.insert(subject, EntityKind::Agent);
         view.effective_places
             .extend([(speaker, place), (listener, place), (subject, place)]);
-        view.entities_at.insert(place, vec![speaker, listener, subject]);
+        view.entities_at
+            .insert(place, vec![speaker, listener, subject]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         view.beliefs.insert(
             speaker,
@@ -5034,8 +5032,11 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, remote_place),
+        ]);
         view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let belief = known_entity(subject, place).1;
@@ -5085,8 +5086,11 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, remote_place),
+        ]);
         view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
@@ -5142,8 +5146,11 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, remote_place),
+        ]);
         view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
@@ -5197,8 +5204,11 @@ mod tests {
         view.entity_kinds.insert(speaker, EntityKind::Agent);
         view.entity_kinds.insert(listener, EntityKind::Agent);
         view.entity_kinds.insert(subject, EntityKind::Agent);
-        view.effective_places
-            .extend([(speaker, place), (listener, place), (subject, remote_place)]);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, remote_place),
+        ]);
         view.entities_at.insert(place, vec![speaker, listener]);
         view.tell_profiles.insert(speaker, TellProfile::default());
         let belief = known_entity(subject, place).1;
@@ -6632,10 +6642,8 @@ mod tests {
             },
         );
         // Demand memory creates the restock gap
-        view.demand_memory.insert(
-            agent,
-            vec![demand(place, CommodityKind::Sword, 3)],
-        );
+        view.demand_memory
+            .insert(agent, vec![demand(place, CommodityKind::Sword, 3)]);
         // Crafting recipe: Firewood -> Sword at Forge (has inputs, workstation is NOT resource source)
         view.commodity_quantities
             .insert((agent, CommodityKind::Firewood), Quantity(5));
@@ -6708,10 +6716,8 @@ mod tests {
             },
         );
         // Demand memory creates the restock gap
-        view.demand_memory.insert(
-            agent,
-            vec![demand(place, CommodityKind::Bread, 5)],
-        );
+        view.demand_memory
+            .insert(agent, vec![demand(place, CommodityKind::Bread, 5)]);
         // Seller has bread for sale
         view.sellers
             .insert((place, CommodityKind::Bread), vec![seller]);
@@ -6824,8 +6830,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent, attacker]);
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.wounds
-            .insert(agent, vec![wound(1), wound(2)]);
+        view.wounds.insert(agent, vec![wound(1), wound(2)]);
         view.attackers.insert(agent, vec![attacker]);
         view.adjacent_places.insert(place, vec![adjacent]);
 
@@ -6900,15 +6905,14 @@ mod tests {
             .expect("should have evidence trace for TreatWounds(patient)");
 
         assert!(
-            trace
-                .knowledge_path
-                .entity_beliefs
-                .contains(&crate::knowledge_path::BeliefProvenance {
+            trace.knowledge_path.entity_beliefs.contains(
+                &crate::knowledge_path::BeliefProvenance {
                     subject: patient,
                     aspect: BeliefAspect::Wounded,
                     source: PerceptionSource::DirectObservation,
                     observed_tick: Tick(4),
-                }),
+                }
+            ),
             "knowledge_path.entity_beliefs should contain Wounded belief for patient, got {:?}",
             trace.knowledge_path.entity_beliefs,
         );
@@ -6959,15 +6963,14 @@ mod tests {
             .expect("should have evidence trace for LootCorpse");
 
         assert!(
-            trace
-                .knowledge_path
-                .entity_beliefs
-                .contains(&crate::knowledge_path::BeliefProvenance {
+            trace.knowledge_path.entity_beliefs.contains(
+                &crate::knowledge_path::BeliefProvenance {
                     subject: corpse,
                     aspect: BeliefAspect::Dead,
                     source: PerceptionSource::DirectObservation,
                     observed_tick: Tick(2),
-                }),
+                }
+            ),
             "knowledge_path.entity_beliefs should contain Dead belief for corpse, got {:?}",
             trace.knowledge_path.entity_beliefs,
         );
@@ -6982,9 +6985,7 @@ mod tests {
         let result = worldwake_sim::GoalBeliefView::institutional_belief_claims(
             &view,
             entity(1),
-            worldwake_core::InstitutionalBeliefKey::OfficeHolderOf {
-                office: entity(99),
-            },
+            worldwake_core::InstitutionalBeliefKey::OfficeHolderOf { office: entity(99) },
         );
         assert!(
             result.is_empty(),
@@ -7017,10 +7018,8 @@ mod tests {
                 ..TellProfile::default()
             },
         );
-        view.beliefs.insert(
-            speaker,
-            vec![known_entity(subject, place)],
-        );
+        view.beliefs
+            .insert(speaker, vec![known_entity(subject, place)]);
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -7043,12 +7042,14 @@ mod tests {
             .get(&key)
             .expect("should have evidence trace for ShareBelief");
 
-        let has_listener = trace.contributors.iter().any(|c| {
-            c.kind == super::CandidateEvidenceKind::Listener && c.entity == listener
-        });
-        let has_subject = trace.contributors.iter().any(|c| {
-            c.kind == super::CandidateEvidenceKind::TellSubject && c.entity == subject
-        });
+        let has_listener = trace
+            .contributors
+            .iter()
+            .any(|c| c.kind == super::CandidateEvidenceKind::Listener && c.entity == listener);
+        let has_subject = trace
+            .contributors
+            .iter()
+            .any(|c| c.kind == super::CandidateEvidenceKind::TellSubject && c.entity == subject);
         assert!(
             has_listener,
             "evidence trace should contain Listener contributor, got {:?}",
@@ -7124,10 +7125,8 @@ mod tests {
             .expect("should have evidence trace for ShareBelief");
 
         assert!(
-            trace
-                .knowledge_path
-                .entity_beliefs
-                .contains(&crate::knowledge_path::BeliefProvenance {
+            trace.knowledge_path.entity_beliefs.contains(
+                &crate::knowledge_path::BeliefProvenance {
                     subject,
                     aspect: BeliefAspect::LocationAt { place },
                     source: PerceptionSource::Report {
@@ -7135,7 +7134,8 @@ mod tests {
                         chain_len: 1,
                     },
                     observed_tick: Tick(7),
-                }),
+                }
+            ),
             "knowledge_path.entity_beliefs should contain belief about subject, got {:?}",
             trace.knowledge_path.entity_beliefs,
         );
@@ -7158,8 +7158,7 @@ mod tests {
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(None));
         view.factions_by_member.insert(agent, vec![faction]);
-        view.beliefs
-            .insert(agent, vec![known_entity(office, town)]);
+        view.beliefs.insert(agent, vec![known_entity(office, town)]);
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -7214,8 +7213,7 @@ mod tests {
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(None));
         view.factions_by_member.insert(agent, vec![faction]);
-        view.beliefs
-            .insert(agent, vec![known_entity(office, town)]);
+        view.beliefs.insert(agent, vec![known_entity(office, town)]);
         // Configure institutional belief claims
         let claim = InstitutionalClaim::OfficeHolder {
             office,
@@ -7223,10 +7221,7 @@ mod tests {
             effective_tick: Tick(5),
         };
         view.institutional_claims.insert(
-            (
-                agent,
-                InstitutionalBeliefKey::OfficeHolderOf { office },
-            ),
+            (agent, InstitutionalBeliefKey::OfficeHolderOf { office }),
             vec![BelievedInstitutionalClaim {
                 claim: claim.clone(),
                 source: InstitutionalKnowledgeSource::WitnessedEvent,
@@ -7328,10 +7323,7 @@ mod tests {
             true,
         );
 
-        let key = GoalKey::from(GoalKind::SupportCandidateForOffice {
-            office,
-            candidate,
-        });
+        let key = GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate });
         let trace = result
             .diagnostics
             .evidence
@@ -7545,7 +7537,10 @@ mod tests {
 
         assert_eq!(result.pending_violations.len(), 2);
         assert_eq!(result.candidates.len(), 2);
-        assert_ne!(result.pending_violations[0].id, result.pending_violations[1].id);
+        assert_ne!(
+            result.pending_violations[0].id,
+            result.pending_violations[1].id
+        );
         assert!(result.candidates.iter().any(|candidate| {
             candidate.key
                 == GoalKey::from(GoalKind::InvestigateViolation {

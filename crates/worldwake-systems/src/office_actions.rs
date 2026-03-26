@@ -1549,7 +1549,7 @@ mod tests {
             active_actions: &active_actions,
             action_defs: &action_defs,
             politics_trace: None,
-                perception_trace: None,
+            perception_trace: None,
             tick: Tick(tick),
             system_id: SystemId::Perception,
         })

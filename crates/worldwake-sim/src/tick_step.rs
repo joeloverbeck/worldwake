@@ -4,10 +4,9 @@ use crate::{
     ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
     ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
     InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry,
-    RequestBindingKind,
-    RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceEvent,
-    RequestResolutionTraceSink, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
-    TickInputError, TickInputProducer, TickOutcome,
+    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
+    RequestResolutionTraceEvent, RequestResolutionTraceSink, Scheduler, SystemDispatchTable,
+    SystemError, TickInputContext, TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

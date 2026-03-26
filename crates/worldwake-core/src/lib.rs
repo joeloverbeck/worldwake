@@ -74,14 +74,13 @@ pub mod wounds;
 pub use allocator::EntityAllocator;
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-    recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
-    BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
-    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind,
-    social_observation_is_redundant_for_listener, social_observation_is_relayable,
-    tell_subject_is_directly_observable_by_listener, TellMemoryKey, TellProfile, TellTopic,
-    ToldBeliefMemory,
+    recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
+    social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
+    to_shared_belief_snapshot, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+    HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
+    PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
+    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,

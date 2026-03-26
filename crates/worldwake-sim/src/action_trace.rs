@@ -107,10 +107,10 @@ impl ActionTraceEvent {
                 outcome,
             } => {
                 let mat_count = outcome.materializations.len();
-                let commit_trace_suffix = outcome
-                    .trace
-                    .as_ref()
-                    .map_or_else(String::new, |trace| format!(" <{}>", format_commit_trace(trace)));
+                let commit_trace_suffix =
+                    outcome.trace.as_ref().map_or_else(String::new, |trace| {
+                        format!(" <{}>", format_commit_trace(trace))
+                    });
                 format!(
                     "tick {} seq {}: {} committed '{}' (instance {}, {} materializations){}{}",
                     self.tick.0,

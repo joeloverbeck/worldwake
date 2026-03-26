@@ -6,12 +6,11 @@ use worldwake_core::{
     BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecordedViolation,
-    RecipientKnowledgeStatus, RecordData, ResourceSource, SocialObservation, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    IntentionDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag,
-    Wound,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -319,7 +318,8 @@ pub trait RuntimeBeliefView {
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
-    fn intention_disposition_profile(&self, agent: EntityId) -> Option<IntentionDispositionProfile>;
+    fn intention_disposition_profile(&self, agent: EntityId)
+        -> Option<IntentionDispositionProfile>;
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;

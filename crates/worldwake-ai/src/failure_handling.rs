@@ -4,8 +4,7 @@ use crate::{
 };
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
-    EntityId, GoalKey,
-    GoalKind, IntentionFrame, Quantity, Tick,
+    EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -408,9 +407,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::Investigate => {
-            view.entity_kind(target).is_none() || view.is_dead(target)
-        }
+        | PlannerOpKind::Investigate => view.entity_kind(target).is_none() || view.is_dead(target),
         PlannerOpKind::Travel => false,
     }
 }
@@ -755,10 +752,10 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionFrame, IntentionDomain, FrameState, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
+        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1140,7 +1137,9 @@ mod tests {
     fn jc_for_goal(goal: GoalKey) -> IntentionFrame {
         IntentionFrame {
             goal,
-            domain: IntentionDomain::Travel { destination: entity(99) },
+            domain: IntentionDomain::Travel {
+                destination: entity(99),
+            },
             assumptions: Vec::new(),
             state: FrameState::Active,
             established_at: Tick(10),

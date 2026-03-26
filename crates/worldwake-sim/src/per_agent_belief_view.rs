@@ -9,12 +9,11 @@ use worldwake_core::{
     BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CombatProfile,
     CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, IntentionDispositionProfile, UniqueItemKind, WorkstationTag, World,
-    Wound,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -599,7 +598,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn intention_disposition_profile(&self, agent: EntityId) -> Option<IntentionDispositionProfile> {
+    fn intention_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<IntentionDispositionProfile> {
         (agent == self.agent)
             .then(|| {
                 self.world
@@ -668,17 +670,15 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         let current_state = self
             .belief_store
             .shared_tell_state_for_topic(topic, profile.max_relay_chain_len)?;
-        Some(
-            self.belief_store.recipient_knowledge_status(
-                &TellMemoryKey {
-                    counterparty,
-                    topic: *topic,
-                },
-                &current_state,
-                self.current_tick,
-                &profile,
-            ),
-        )
+        Some(self.belief_store.recipient_knowledge_status(
+            &TellMemoryKey {
+                counterparty,
+                topic: *topic,
+            },
+            &current_state,
+            self.current_tick,
+            &profile,
+        ))
     }
 
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -1015,8 +1015,9 @@ mod tests {
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
         Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
-        TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1347,12 +1348,7 @@ mod tests {
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(
-                &expired_view,
-                agent,
-                listener,
-                &topic,
-            ),
+            RuntimeBeliefView::recipient_knowledge_status(&expired_view, agent, listener, &topic,),
             Some(RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired)
         );
     }

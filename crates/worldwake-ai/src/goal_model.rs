@@ -19,8 +19,7 @@ use worldwake_sim::{
     ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
     DeclareSupportActionPayload, InvestigateActionPayload, LootActionPayload,
     PressForceClaimActionPayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-    TellActionPayload, TradeActionPayload,
-    TransportActionPayload,
+    TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -165,8 +164,7 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::ConsultRecord,
     PlannerOpKind::DeclareSupport,
 ];
-const INVESTIGATE_OPS: &[PlannerOpKind] =
-    &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
+const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -2608,13 +2606,8 @@ mod tests {
         view.effective_places.insert(actor, place);
         view.entities_at.insert(place, vec![actor]);
 
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::new(),
-            &BTreeSet::from([place]),
-            1,
-        );
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([place]), 1);
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::InvestigateViolation {
             violation_id: worldwake_core::ViolationId(7),
@@ -2668,13 +2661,8 @@ mod tests {
         view.effective_places.insert(actor, place);
         view.entities_at.insert(place, vec![actor]);
 
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::new(),
-            &BTreeSet::from([place]),
-            1,
-        );
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([place]), 1);
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::InvestigateViolation {
             violation_id: worldwake_core::ViolationId(7),

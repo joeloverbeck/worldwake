@@ -1,9 +1,9 @@
 use crate::{
     classify_frame_plan_relation,
+    frame_switch_policy::compare_relation_aware_goal_switch,
     goal_policy::{goal_family_policy, FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{compare_goal_switch, GoalSwitchKind},
-    frame_switch_policy::compare_relation_aware_goal_switch,
-    AgentDecisionRuntime, DecisionContext, GoalKey, GoalPriorityClass, FramePlanRelation,
+    AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalKey, GoalPriorityClass,
     PlannedPlan, RankedGoal,
 };
 use std::collections::BTreeMap;
@@ -488,14 +488,16 @@ mod tests {
 
     #[test]
     fn freely_interruptible_requires_margin_for_same_class_switch() {
-        use worldwake_core::{IntentionFrame, IntentionDomain, FrameState, Tick};
+        use worldwake_core::{FrameState, IntentionDomain, IntentionFrame, Tick};
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         };
         let jc = Some(IntentionFrame {
             goal: GoalKey::from(current_goal),
-            domain: IntentionDomain::Travel { destination: entity(1) },
+            domain: IntentionDomain::Travel {
+                destination: entity(1),
+            },
             assumptions: Vec::new(),
             state: FrameState::Active,
             established_at: Tick(1),
@@ -694,7 +696,7 @@ mod tests {
 
     #[test]
     fn higher_effective_margin_raises_interrupt_switch_threshold() {
-        use worldwake_core::{IntentionFrame, IntentionDomain, FrameState, Tick};
+        use worldwake_core::{FrameState, IntentionDomain, IntentionFrame, Tick};
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -706,7 +708,9 @@ mod tests {
         });
         let jc = Some(IntentionFrame {
             goal: current_goal_key,
-            domain: IntentionDomain::Travel { destination: entity(1) },
+            domain: IntentionDomain::Travel {
+                destination: entity(1),
+            },
             assumptions: Vec::new(),
             state: FrameState::Active,
             established_at: Tick(1),
@@ -886,7 +890,7 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     #[test]
     fn frame_interrupt_allows_detour_without_route_margin_when_plan_is_local() {
-        use worldwake_core::{IntentionFrame, IntentionDomain, FrameState, Tick};
+        use worldwake_core::{FrameState, IntentionDomain, IntentionFrame, Tick};
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,

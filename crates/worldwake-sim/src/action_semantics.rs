@@ -461,7 +461,10 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
-        assert_eq!(DurationExpr::ActorInvestigationDisposition.fixed_ticks(), None);
+        assert_eq!(
+            DurationExpr::ActorInvestigationDisposition.fixed_ticks(),
+            None
+        );
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(

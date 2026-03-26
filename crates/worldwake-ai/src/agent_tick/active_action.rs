@@ -1,6 +1,5 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FrameState, IntentionFrame,
-    Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FrameState, IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
@@ -11,16 +10,16 @@ use crate::failure_handling::ExecutionFailure;
 use crate::DirtySet;
 use crate::{
     classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
-    AgentDecisionRuntime, DecisionContext, InterruptDecision,
-    PlanFailureContext, PlanTerminalKind, PlannedStep, PlanningBudget, RankedGoal,
+    AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
+    PlannedStep, PlanningBudget, RankedGoal,
 };
 
+use super::frame::progress_op_kinds;
+use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
 use super::{
     build_candidate_plans, persist_blocked_memory, plans_as_options, AgentTickContext,
     FrameSwitchMarginSource,
 };
-use super::frame::progress_op_kinds;
-use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
 
 pub(super) fn active_action_for_agent(
     ctx: &AgentTickContext<'_>,
@@ -64,8 +63,8 @@ pub(super) fn handle_active_action_phase(
     // `planned_candidates` is consumed only by `interrupt_freely`, so we can skip
     // the expensive GOAP search for NonInterruptible and InterruptibleWithPenalty
     // actions.
-    let needs_plans = interruptibility == Interruptibility::FreelyInterruptible
-        && has_frame(jc.as_ref());
+    let needs_plans =
+        interruptibility == Interruptibility::FreelyInterruptible && has_frame(jc.as_ref());
     let no_skip = std::collections::BTreeSet::new();
     let planned_candidates = needs_plans.then(|| {
         build_candidate_plans(

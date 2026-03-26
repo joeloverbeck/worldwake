@@ -14,9 +14,9 @@ use worldwake_core::{
     BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
     ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
     EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
-    Quantity, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
@@ -3041,9 +3041,9 @@ fn run_force_controller_departure_enables_rival_claim(seed: Seed) -> (StateHash,
     // AI runs, so ClaimOffice generation at the departure tick is correct.
     // The assertion: no ClaimOffice STRICTLY before the departure tick.
     let travel_commit_tick = controller_travel_commit.0;
-    let pre_departure_generated = history.iter().any(|entry| {
-        entry.tick < travel_commit_tick && entry.status.is_generated()
-    });
+    let pre_departure_generated = history
+        .iter()
+        .any(|entry| entry.tick < travel_commit_tick && entry.status.is_generated());
     assert!(
         !pre_departure_generated,
         "rival should NOT generate ClaimOffice before controller's travel \
@@ -3513,7 +3513,9 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
-        share_history.iter().any(|entry| entry.status.is_generated()),
+        share_history
+            .iter()
+            .any(|entry| entry.status.is_generated()),
         "witness should generate ShareBelief goal for the office entity \
          targeting the remote listener"
     );
@@ -3885,8 +3887,8 @@ fn run_contested_force_state_propagates_through_belief_system(
         &mut h.event_log,
         witness,
         office,
-        None,    // no sole controller during contested state
-        true,    // contested == true
+        None, // no sole controller during contested state
+        true, // contested == true
         belief_tick,
         Some(VILLAGE_SQUARE),
     );
@@ -4041,7 +4043,9 @@ fn run_contested_force_state_propagates_through_belief_system(
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
-        share_history.iter().any(|entry| entry.status.is_generated()),
+        share_history
+            .iter()
+            .any(|entry| entry.status.is_generated()),
         "witness should generate ShareBelief goal for the office entity \
          targeting the remote listener"
     );
@@ -4163,8 +4167,10 @@ fn run_same_place_concurrent_violation_lifecycle(
 
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_ground_location(first_missing, ORCHARD_FARM).unwrap();
-        txn.set_ground_location(second_missing, ORCHARD_FARM).unwrap();
+        txn.set_ground_location(first_missing, ORCHARD_FARM)
+            .unwrap();
+        txn.set_ground_location(second_missing, ORCHARD_FARM)
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -4526,7 +4532,8 @@ fn run_entity_missing_triggers_investigation(
 
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_ground_location(missing_subject, ORCHARD_FARM).unwrap();
+        txn.set_ground_location(missing_subject, ORCHARD_FARM)
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -4882,15 +4889,18 @@ fn run_supply_depletion_enables_share_belief(
         "first post-refresh planning tick should expose ShareBelief for the depleted source"
     );
 
-    let generated_violation = first_planning.candidates.generated.iter().find_map(|goal| {
-        match goal.kind {
-            GoalKind::InvestigateViolation {
-                violation_id,
-                place,
-            } if place == VILLAGE_SQUARE => Some(violation_id),
-            _ => None,
-        }
-    });
+    let generated_violation =
+        first_planning
+            .candidates
+            .generated
+            .iter()
+            .find_map(|goal| match goal.kind {
+                GoalKind::InvestigateViolation {
+                    violation_id,
+                    place,
+                } if place == VILLAGE_SQUARE => Some(violation_id),
+                _ => None,
+            });
     assert!(
         generated_violation.is_some(),
         "the same local mismatch should also expose InvestigateViolation"

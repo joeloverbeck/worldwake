@@ -22,7 +22,6 @@ use super::{
     AgentTickContext,
 };
 
-
 #[derive(Clone, Copy)]
 pub(crate) struct ReadPhaseContext<'a> {
     pub(super) recipe_registry: &'a RecipeRegistry,
@@ -264,13 +263,31 @@ pub(super) fn reconcile_in_flight_state(
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
-        handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            active_goal.as_ref().map(|ag| ag.goal_key),
+            jc,
+            blocked_memory,
+            agent,
+            &step,
+            None,
+        )?;
         return Ok(());
     };
     let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        handle_current_step_failure(ctx, runtime, active_goal.as_ref().map(|ag| ag.goal_key), jc, blocked_memory, agent, &step, None)?;
+        handle_current_step_failure(
+            ctx,
+            runtime,
+            active_goal.as_ref().map(|ag| ag.goal_key),
+            jc,
+            blocked_memory,
+            agent,
+            &step,
+            None,
+        )?;
         return Ok(());
     }
 
@@ -300,8 +317,8 @@ fn reconcile_committed_facility_queue_intents(
 
     match step.op_kind {
         crate::PlannerOpKind::QueueForFacilityUse => {
-            let Some(goal_key) = active_goal
-                .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+            let Some(goal_key) =
+                active_goal.or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
             else {
                 return;
             };
@@ -373,13 +390,9 @@ pub(super) fn observation_snapshot_changed(
     if runtime.last_wounds != view.wounds(agent) {
         result.insert(crate::DirtySet::WOUNDS);
     }
-    if filtered_commodity_signature(
-        &runtime.last_commodity_signature,
-        commodity_filter.as_ref(),
-    ) != filtered_commodity_signature(
-        &current_commodity_signature,
-        commodity_filter.as_ref(),
-    ) {
+    if filtered_commodity_signature(&runtime.last_commodity_signature, commodity_filter.as_ref())
+        != filtered_commodity_signature(&current_commodity_signature, commodity_filter.as_ref())
+    {
         result.insert(crate::DirtySet::COMMODITY);
     }
     if runtime.last_unique_item_signature != unique_item_signature(view, agent) {

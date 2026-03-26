@@ -878,7 +878,9 @@ fn run_skeptical_listener_scenario(
         .expect("action tracing should be enabled for skeptical-listener scenario")
         .events_for(speaker)
         .into_iter()
-        .find(|event| event.action_name == "tell" && matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .find(|event| {
+            event.action_name == "tell" && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
         .expect("speaker should commit a tell in the skeptical-listener scenario");
     let CommitTraceData::Tell(tell_trace) = match &tell_commit.kind {
         ActionTraceKind::Committed { outcome, .. } => outcome
@@ -1473,11 +1475,12 @@ fn run_retell_after_subject_belief_change_scenario(
     );
     assert_eq!(
         match &final_memory.shared_state {
-            SharedTellState::EntityBelief(state) => state
-                .resource_source
-                .as_ref()
-                .expect("shared subject snapshot should retain resource source")
-                .available_quantity,
+            SharedTellState::EntityBelief(state) =>
+                state
+                    .resource_source
+                    .as_ref()
+                    .expect("shared subject snapshot should retain resource source")
+                    .available_quantity,
             SharedTellState::SocialObservation(_) => panic!("expected entity-belief tell state"),
         },
         Quantity(6),

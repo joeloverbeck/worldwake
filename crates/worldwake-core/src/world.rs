@@ -10,8 +10,8 @@ use crate::{
     IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
     PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile, Tick,
-    TheftDispositionProfile, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
     WoundList,
 };
@@ -595,9 +595,9 @@ mod tests {
         CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
         DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
         EventId, FactionData, FactionPurpose, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalClaim, InstitutionalRecordEntry, ItemLot, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
-        JusticeDispositionProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
+        InstitutionalClaim, InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile,
+        KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+        OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
         Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData,
         RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
         SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile, Tick,
@@ -4450,7 +4450,10 @@ mod tests {
         world
             .insert_component_theft_disposition_profile(id, profile.clone())
             .unwrap();
-        assert_eq!(world.get_component_theft_disposition_profile(id), Some(&profile));
+        assert_eq!(
+            world.get_component_theft_disposition_profile(id),
+            Some(&profile)
+        );
         assert!(world.has_component_theft_disposition_profile(id));
         assert_eq!(
             world.query_theft_disposition_profile().collect::<Vec<_>>(),
@@ -4458,7 +4461,9 @@ mod tests {
         );
         assert_eq!(world.count_with_theft_disposition_profile(), 1);
 
-        let removed = world.remove_component_theft_disposition_profile(id).unwrap();
+        let removed = world
+            .remove_component_theft_disposition_profile(id)
+            .unwrap();
         assert_eq!(removed, Some(profile));
         assert_eq!(world.get_component_theft_disposition_profile(id), None);
     }
@@ -4490,7 +4495,9 @@ mod tests {
         );
         assert!(world.has_component_justice_disposition_profile(id));
         assert_eq!(
-            world.query_justice_disposition_profile().collect::<Vec<_>>(),
+            world
+                .query_justice_disposition_profile()
+                .collect::<Vec<_>>(),
             vec![(id, &profile)]
         );
         assert_eq!(world.count_with_justice_disposition_profile(), 1);

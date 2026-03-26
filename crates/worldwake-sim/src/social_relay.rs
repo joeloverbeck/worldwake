@@ -234,7 +234,10 @@ mod tests {
         }
     }
 
-    fn social_observation(observed_tick: u64, detail: SocialObservationDetail) -> SocialObservation {
+    fn social_observation(
+        observed_tick: u64,
+        detail: SocialObservationDetail,
+    ) -> SocialObservation {
         SocialObservation {
             detail,
             place: entity(40),
@@ -424,10 +427,7 @@ mod tests {
     #[test]
     fn listener_aware_tell_topic_selection_reports_relay_filtering_reasons() {
         let fresh = believed_state(9, PerceptionSource::DirectObservation);
-        let too_deep = believed_state(
-            8,
-            PerceptionSource::Rumor { chain_len: 4 },
-        );
+        let too_deep = believed_state(8, PerceptionSource::Rumor { chain_len: 4 });
         let relayable = social_observation(
             7,
             SocialObservationDetail::WitnessedConflict {
@@ -462,11 +462,15 @@ mod tests {
             }]
         );
         assert!(selection.omitted.contains(&TellTopicOmission {
-            topic: TellTopic::EntityBelief { subject: entity(10) },
+            topic: TellTopic::EntityBelief {
+                subject: entity(10)
+            },
             reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
         }));
         assert!(selection.omitted.contains(&TellTopicOmission {
-            topic: TellTopic::EntityBelief { subject: entity(11) },
+            topic: TellTopic::EntityBelief {
+                subject: entity(11)
+            },
             reason: TellTopicOmissionReason::ExceedsRelayDepth,
         }));
         assert!(selection.omitted.contains(&TellTopicOmission {
@@ -481,8 +485,14 @@ mod tests {
     fn listener_aware_tell_topic_selection_reports_truncation_after_sorting() {
         let selection = listener_aware_tell_topic_selection(
             vec![
-                (entity(10), believed_state(3, PerceptionSource::DirectObservation)),
-                (entity(11), believed_state(9, PerceptionSource::DirectObservation)),
+                (
+                    entity(10),
+                    believed_state(3, PerceptionSource::DirectObservation),
+                ),
+                (
+                    entity(11),
+                    believed_state(9, PerceptionSource::DirectObservation),
+                ),
             ],
             vec![social_observation(
                 8,
@@ -498,7 +508,9 @@ mod tests {
 
         assert_eq!(selection.selected.len(), 2);
         assert!(selection.omitted.contains(&TellTopicOmission {
-            topic: TellTopic::EntityBelief { subject: entity(10) },
+            topic: TellTopic::EntityBelief {
+                subject: entity(10)
+            },
             reason: TellTopicOmissionReason::TruncatedByCandidateLimit,
         }));
     }

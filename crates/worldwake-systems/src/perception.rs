@@ -122,8 +122,8 @@ fn process_witness_event(
 
     let mut traced_entities = Vec::new();
     for (entity, observed) in record.observed_entities() {
-        let snapshot = observed
-            .to_believed_entity_state(record.tick(), PerceptionSource::DirectObservation);
+        let snapshot =
+            observed.to_believed_entity_state(record.tick(), PerceptionSource::DirectObservation);
         record_observed_snapshot(
             event_log,
             DiscoveryContext {
@@ -522,7 +522,9 @@ fn social_observations_for_event(
                 SocialObservationKind::CoPresence
                 | SocialObservationKind::WitnessedAbsence
                 | SocialObservationKind::SuspectedTheft => {
-                    unreachable!("perception event mapping only constructs actor-target social detail")
+                    unreachable!(
+                        "perception event mapping only constructs actor-target social detail"
+                    )
                 }
             },
             place,
@@ -1164,16 +1166,13 @@ mod tests {
             "political witness should record cooperation evidence for agent targets only"
         );
         assert!(
-            beliefs
-                .social_observations
-                .iter()
-                .all(|observation| {
-                    observation.detail
-                        != SocialObservationDetail::WitnessedCooperation {
-                            actor,
-                            counterpart: office,
-                        }
-                }),
+            beliefs.social_observations.iter().all(|observation| {
+                observation.detail
+                    != SocialObservationDetail::WitnessedCooperation {
+                        actor,
+                        counterpart: office,
+                    }
+            }),
             "non-agent office targets must not produce social observations"
         );
     }
@@ -3028,7 +3027,10 @@ mod tests {
             vec![office, observer],
             vec![StateDelta::Relation(RelationDelta::Added {
                 relation_kind: RelationKind::OfficeHolder,
-                relation: RelationValue::OfficeHolder { office, holder: observer },
+                relation: RelationValue::OfficeHolder {
+                    office,
+                    holder: observer,
+                },
             })],
         );
 
@@ -3098,7 +3100,10 @@ mod tests {
             vec![office, observer],
             vec![StateDelta::Relation(RelationDelta::Added {
                 relation_kind: RelationKind::OfficeHolder,
-                relation: RelationValue::OfficeHolder { office, holder: observer },
+                relation: RelationValue::OfficeHolder {
+                    office,
+                    holder: observer,
+                },
             })],
         );
 

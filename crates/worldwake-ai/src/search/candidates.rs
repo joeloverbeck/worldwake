@@ -1,5 +1,7 @@
 use crate::planner_ops::{planner_only_candidates, PlannerOpKind};
-use crate::{GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState};
+use crate::{
+    GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, BlockedIntentMemory, EntityId, GoalKind, Tick};
 use worldwake_sim::{
@@ -176,16 +178,14 @@ pub(super) fn search_candidates(
             continue;
         }
 
-        if let Some((place, blocking_fact)) =
-            candidate_blocked_by_place(
-                &candidate,
-                goal,
-                node,
-                semantics_table,
-                blocked,
-                current_tick,
-            )
-        {
+        if let Some((place, blocking_fact)) = candidate_blocked_by_place(
+            &candidate,
+            goal,
+            node,
+            semantics_table,
+            blocked,
+            current_tick,
+        ) {
             update_root_candidate_outcome(
                 &mut root_candidates,
                 trace_index,

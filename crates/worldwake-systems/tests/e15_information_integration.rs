@@ -445,7 +445,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
-                perception_trace: None,
+                    perception_trace: None,
                     institutional_knowledge_trace: None,
                 },
             )
@@ -526,7 +526,7 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
                     action_trace: None,
                     request_resolution_trace: None,
                     politics_trace: None,
-                perception_trace: None,
+                    perception_trace: None,
                     institutional_knowledge_trace: None,
                 },
             )
@@ -734,7 +734,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
-                perception_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         },
     )
@@ -802,7 +802,7 @@ fn replay_verification_accepts_recorded_tell_and_discovery_scenario() {
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
-                perception_trace: None,
+            perception_trace: None,
             institutional_knowledge_trace: None,
         },
     )

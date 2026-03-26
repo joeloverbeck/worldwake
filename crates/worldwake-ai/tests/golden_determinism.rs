@@ -6,11 +6,11 @@ use golden_harness::*;
 use std::collections::BTreeMap;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    ActiveGoal, BeliefConfidencePolicy, CommodityKind, FacilityQueueIntents,
-    FrameAssumption, FrameState, GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile,
-    IntentionDomain, IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile,
-    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick,
-    UtilityProfile, WorkstationTag,
+    ActiveGoal, BeliefConfidencePolicy, CommodityKind, FacilityQueueIntents, FrameAssumption,
+    FrameState, GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
+    IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile, PrototypePlace,
+    Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick, UtilityProfile,
+    WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -636,10 +636,8 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     let save_tick = save_tick.expect("Agent should have started traveling within 30 ticks");
 
     // --- Pre-save component reads ---
-    let pre_active_goal: Option<ActiveGoal> =
-        h.world.get_component_active_goal(agent).cloned();
-    let pre_frame: Option<IntentionFrame> =
-        h.world.get_component_intention_frame(agent).cloned();
+    let pre_active_goal: Option<ActiveGoal> = h.world.get_component_active_goal(agent).cloned();
+    let pre_frame: Option<IntentionFrame> = h.world.get_component_intention_frame(agent).cloned();
     let pre_facility: Option<FacilityQueueIntents> =
         h.world.get_component_facility_queue_intents(agent).cloned();
 
@@ -649,8 +647,9 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
         pre_active_goal.is_some(),
         "Agent should have an ActiveGoal at save time (tick ~{save_tick})"
     );
-    let pre_frame_val =
-        pre_frame.clone().expect("Agent should have a IntentionFrame at save time");
+    let pre_frame_val = pre_frame
+        .clone()
+        .expect("Agent should have a IntentionFrame at save time");
     assert_eq!(
         pre_frame_val.state,
         FrameState::Active,
@@ -666,8 +665,10 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
         resumed.world.get_component_active_goal(agent).cloned();
     let post_frame: Option<IntentionFrame> =
         resumed.world.get_component_intention_frame(agent).cloned();
-    let post_facility: Option<FacilityQueueIntents> =
-        resumed.world.get_component_facility_queue_intents(agent).cloned();
+    let post_facility: Option<FacilityQueueIntents> = resumed
+        .world
+        .get_component_facility_queue_intents(agent)
+        .cloned();
 
     // --- Field-level equality assertions ---
     assert_eq!(

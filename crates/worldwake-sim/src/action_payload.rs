@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
-    TellTopic, ViolationId, WorkstationTag,
+    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, TellTopic,
+    UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -455,14 +455,13 @@ mod tests {
         ActionPayload, BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload,
         CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload,
         InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
-        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload,
-        YieldForceClaimActionPayload,
+        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
-        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, UniqueItemKind,
-        TellTopic, ViolationId, WorkstationTag,
+        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, TellTopic,
+        UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -855,7 +854,10 @@ mod tests {
         assert_eq!(investigate.as_trade(), None);
         assert_eq!(investigate.as_combat(), None);
         assert_eq!(investigate.as_loot(), None);
-        assert_eq!(investigate.as_investigate(), Some(&sample_investigate_payload()));
+        assert_eq!(
+            investigate.as_investigate(),
+            Some(&sample_investigate_payload())
+        );
 
         assert_eq!(queue.as_consult_record(), None);
         assert_eq!(queue.as_tell(), None);

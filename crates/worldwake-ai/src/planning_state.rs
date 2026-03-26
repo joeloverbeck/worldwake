@@ -7,8 +7,8 @@ use worldwake_core::{
     HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MetabolismProfile,
     OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
     ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+    TellTopic, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -1372,7 +1372,9 @@ impl RuntimeBeliefView for PlanningState<'_> {
         let remembered = self.told_belief_memory(actor, counterparty, topic);
 
         Some(match remembered.as_ref() {
-            Some(memory) => worldwake_core::recipient_knowledge_status(&current_state, Some(memory)),
+            Some(memory) => {
+                worldwake_core::recipient_knowledge_status(&current_state, Some(memory))
+            }
             None if self.snapshot.actor_told_beliefs.contains_key(&key) => {
                 RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired
             }
@@ -1625,11 +1627,11 @@ mod tests {
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, Permille, Quantity, RecipeId, RecipientKnowledgeStatus,
-        RecordData, RecordKind, ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey,
-        TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound, WoundCause, WoundId,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        OfficeData, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+        Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
@@ -2583,7 +2585,10 @@ mod tests {
                     shared_state: SharedTellState::EntityBelief(
                         worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
                             last_known_place: Some(town),
-                            last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                            last_known_inventory: BTreeMap::from([(
+                                CommodityKind::Bread,
+                                Quantity(1),
+                            )]),
                             workstation_tag: None,
                             resource_source: None,
                             alive: true,
@@ -2609,7 +2614,7 @@ mod tests {
                 listener,
                 &TellTopic::EntityBelief { subject: bread },
             )
-                .map(|m| m.told_tick),
+            .map(|m| m.told_tick),
             Some(Tick(6))
         );
         assert_eq!(

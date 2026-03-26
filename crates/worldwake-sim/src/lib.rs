@@ -71,8 +71,7 @@ pub use action_payload::{
     CraftActionPayload, DeclareSupportActionPayload, HarvestActionPayload,
     InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
     QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-    TransportActionPayload,
-    YieldForceClaimActionPayload,
+    TransportActionPayload, YieldForceClaimActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
@@ -105,9 +104,8 @@ pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
 pub use perception_trace::{PerceptionTraceEvent, PerceptionTraceSink};
 pub use politics_trace::{
     ForceCandidateTrace, ForceInstallationDeferralReason, OfficeAvailabilityPhase,
-    OfficeSuccessionOutcome, OfficeSuccessionTrace,
-    PoliticalTraceEvent, PoliticalTraceSink, SupportCountTrace, SupportDeclarationTrace,
-    SupportResolutionTrace, VacancyTimerTrace,
+    OfficeSuccessionOutcome, OfficeSuccessionTrace, PoliticalTraceEvent, PoliticalTraceSink,
+    SupportCountTrace, SupportDeclarationTrace, SupportResolutionTrace, VacancyTimerTrace,
 };
 pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;
@@ -131,8 +129,8 @@ pub use scheduler::{
 };
 pub use simulation_state::SimulationState;
 pub use social_relay::{
-    belief_chain_len, listener_aware_relayable_subjects, listener_aware_tell_topic_selection,
-    listener_aware_relayable_tell_topics, relayable_social_subjects, relayable_tell_topics,
+    belief_chain_len, listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
+    listener_aware_tell_topic_selection, relayable_social_subjects, relayable_tell_topics,
     TellTopicOmission, TellTopicOmissionReason, TellTopicSelection,
 };
 pub use start_gate::start_action;

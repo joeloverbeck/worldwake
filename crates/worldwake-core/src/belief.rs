@@ -183,9 +183,7 @@ impl AgentBeliefStore {
         profile: &TellProfile,
     ) -> RecipientKnowledgeStatus {
         match self.told_belief_memory(key, current_tick, profile) {
-            Some(memory)
-                if memory.shared_state == *current_topic_state =>
-            {
+            Some(memory) if memory.shared_state == *current_topic_state => {
                 RecipientKnowledgeStatus::SpeakerHasAlreadyToldCurrentBelief
             }
             Some(_) => RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief,
@@ -234,14 +232,14 @@ impl AgentBeliefStore {
         max_relay_chain_len: u8,
     ) -> Option<SharedTellState> {
         match topic {
-            TellTopic::EntityBelief { subject } => self
-                .get_entity(subject)
-                .map(|state| self.shared_belief_snapshot_for_subject(*subject, state, max_relay_chain_len)),
-            TellTopic::SocialObservation { observation } => (self
-                .social_observations
-                .contains(observation)
-                && social_observation_is_relayable(observation))
-            .then_some(SharedTellState::SocialObservation(*observation)),
+            TellTopic::EntityBelief { subject } => self.get_entity(subject).map(|state| {
+                self.shared_belief_snapshot_for_subject(*subject, state, max_relay_chain_len)
+            }),
+            TellTopic::SocialObservation { observation } => {
+                (self.social_observations.contains(observation)
+                    && social_observation_is_relayable(observation))
+                .then_some(SharedTellState::SocialObservation(*observation))
+            }
         }
     }
 
@@ -590,7 +588,10 @@ pub fn share_equivalent(
     current_belief: &BelievedEntityState,
     prior_shared_state: &SharedBeliefSnapshot,
 ) -> bool {
-    shared_belief_content_eq(&to_shared_belief_snapshot(current_belief), prior_shared_state)
+    shared_belief_content_eq(
+        &to_shared_belief_snapshot(current_belief),
+        prior_shared_state,
+    )
 }
 
 fn institutional_claim_subject(claim: InstitutionalClaim) -> EntityId {
@@ -641,9 +642,10 @@ pub fn social_observation_is_redundant_for_listener(
         | SocialObservationDetail::WitnessedObligation { actor, target } => {
             actor == listener || target == listener
         }
-        SocialObservationDetail::WitnessedTelling { speaker, listener: heard_by } => {
-            speaker == listener || heard_by == listener
-        }
+        SocialObservationDetail::WitnessedTelling {
+            speaker,
+            listener: heard_by,
+        } => speaker == listener || heard_by == listener,
         SocialObservationDetail::CoPresence { other } => other == listener,
         SocialObservationDetail::WitnessedAbsence { .. }
         | SocialObservationDetail::SuspectedTheft { .. } => false,
@@ -694,18 +696,14 @@ fn shared_tell_content_eq(left: &SharedTellState, right: &SharedTellState) -> bo
         (SharedTellState::EntityBelief(left), SharedTellState::EntityBelief(right)) => {
             shared_belief_content_eq(left, right)
         }
-        (
-            SharedTellState::SocialObservation(left),
-            SharedTellState::SocialObservation(right),
-        ) => shared_social_observation_content_eq(left, right),
+        (SharedTellState::SocialObservation(left), SharedTellState::SocialObservation(right)) => {
+            shared_social_observation_content_eq(left, right)
+        }
         _ => false,
     }
 }
 
-fn shared_belief_content_eq(
-    left: &SharedBeliefSnapshot,
-    right: &SharedBeliefSnapshot,
-) -> bool {
+fn shared_belief_content_eq(left: &SharedBeliefSnapshot, right: &SharedBeliefSnapshot) -> bool {
     left.last_known_place == right.last_known_place
         && left.last_known_inventory == right.last_known_inventory
         && left.workstation_tag == right.workstation_tag

@@ -74,13 +74,9 @@ fn check_blocker_memory(
     blocked_memory: &BlockedIntentMemory,
     current_tick: Tick,
 ) -> Option<FeasibilityHint> {
-    let has_live_blocker = blocked_memory
-        .intents
-        .values()
-        .any(|intent| {
-            intent.blocker_key.goal_key == goal.grounded.key
-                && intent.expires_tick > current_tick
-        });
+    let has_live_blocker = blocked_memory.intents.values().any(|intent| {
+        intent.blocker_key.goal_key == goal.grounded.key && intent.expires_tick > current_tick
+    });
     if has_live_blocker {
         return Some(FeasibilityHint::Unlikely);
     }
@@ -159,9 +155,7 @@ fn goal_specific_feasibility(
             }
             None
         }
-        GoalKind::ShareBelief { listener, .. } => {
-            check_colocated_or_dead(view, agent, *listener)
-        }
+        GoalKind::ShareBelief { listener, .. } => check_colocated_or_dead(view, agent, *listener),
         GoalKind::SupportCandidateForOffice { candidate, .. } => {
             check_colocated_or_dead(view, agent, *candidate)
         }
@@ -215,9 +209,9 @@ mod tests {
     use worldwake_core::{
         BeliefConfidencePolicy, BlockedIntent, BlockerKey, BlockingFact,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, IntentionDomain, TellTopic,
-        IntentionFrame, LoadUnits, MerchandiseProfile, RecipeId, ResourceSource,
-        Tick, UniqueItemKind, WorkstationTag,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, IntentionDomain, IntentionFrame,
+        LoadUnits, MerchandiseProfile, RecipeId, ResourceSource, TellTopic, Tick, UniqueItemKind,
+        WorkstationTag,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -434,11 +428,7 @@ mod tests {
             Vec::new()
         }
 
-        fn agents_selling_at(
-            &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -472,10 +462,7 @@ mod tests {
         }
     }
 
-    fn ranked_goal_with_evidence_places(
-        kind: GoalKind,
-        places: &[EntityId],
-    ) -> RankedGoal {
+    fn ranked_goal_with_evidence_places(kind: GoalKind, places: &[EntityId]) -> RankedGoal {
         let mut g = ranked_goal(kind);
         g.grounded.evidence_places = places.iter().copied().collect();
         g
@@ -787,10 +774,7 @@ mod tests {
             agent_place: Some(place),
             ..Default::default()
         };
-        let goal = ranked_goal_with_evidence_places(
-            GoalKind::ClaimOffice { office },
-            &[place],
-        );
+        let goal = ranked_goal_with_evidence_places(GoalKind::ClaimOffice { office }, &[place]);
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));

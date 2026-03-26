@@ -2523,7 +2523,10 @@ mod tests {
             .unwrap();
 
         let after = txn.get_component_agent_belief_store(agent).unwrap();
-        assert_eq!(after.institutional_beliefs.get(&key), Some(&vec![second.clone()]));
+        assert_eq!(
+            after.institutional_beliefs.get(&key),
+            Some(&vec![second.clone()])
+        );
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,

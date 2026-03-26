@@ -6,9 +6,8 @@ use worldwake_core::{
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SocialObservation,
-    SuccessionLaw,
-    TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, Wound,
+    SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -1194,7 +1193,10 @@ mod tests {
                     shared_state: worldwake_core::SharedTellState::EntityBelief(
                         worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
                             last_known_place: Some(place),
-                            last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
+                            last_known_inventory: BTreeMap::from([(
+                                CommodityKind::Bread,
+                                Quantity(1),
+                            )]),
                             workstation_tag: None,
                             resource_source: None,
                             alive: true,

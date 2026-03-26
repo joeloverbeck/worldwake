@@ -1,6 +1,6 @@
 use crate::{
     goal_switching::{compare_goal_switch, GoalSwitchKind},
-    GoalPriorityClass, FramePlanRelation,
+    FramePlanRelation, GoalPriorityClass,
 };
 use worldwake_core::Permille;
 
@@ -40,7 +40,7 @@ pub(crate) fn compare_relation_aware_goal_switch(
 #[cfg(test)]
 mod tests {
     use super::{compare_relation_aware_goal_switch, switch_margin_for_relation};
-    use crate::{GoalPriorityClass, FramePlanRelation};
+    use crate::{FramePlanRelation, GoalPriorityClass};
     use worldwake_core::Permille;
 
     fn default_switch_margin() -> Permille {
