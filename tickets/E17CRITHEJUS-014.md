@@ -10,7 +10,7 @@
 
 After all E17 implementation tickets are complete, a final workspace-wide verification pass is needed to confirm all tests pass, no clippy warnings exist, golden coverage docs are current, and `IMPLEMENTATION-ORDER.md` reflects E17 completion.
 
-## Assumption Reassessment (2026-03-25)
+## Assumption Reassessment (2026-03-26)
 
 1. `specs/IMPLEMENTATION-ORDER.md` tracks completion status. E17 is listed under Step 13 with dependencies on E15, S01, S03, E16c, S27 (all completed).
 2. Golden coverage documentation exists and must be updated with new E17 golden scenarios.
@@ -22,7 +22,7 @@ After all E17 implementation tickets are complete, a final workspace-wide verifi
 8. N/A.
 9. N/A.
 10. N/A.
-11. No mismatches found.
+11. Mismatch: a separate shared investigate/runtime contradiction remains outside E17-specific crime scope. `tickets/S27INVPROF-001.md` tracks the `ViolationDispositionProfile` requirement cleanup for profile-less investigate fallback/resolution behavior. This ticket should verify the E17 deliverables as implemented, not silently absorb that unrelated shared-runtime change.
 12. N/A.
 
 ## Architecture Check

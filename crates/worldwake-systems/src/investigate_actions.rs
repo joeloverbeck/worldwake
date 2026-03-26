@@ -8,7 +8,7 @@ use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
     CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-    InvestigateActionPayload, Precondition, RuntimeBeliefView, TargetSpec,
+    InvestigateActionPayload, PerAgentBeliefView, Precondition, RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_investigate_action(
@@ -115,6 +115,8 @@ fn commit_investigate(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let (violation_id, subject, place, commodity) = investigate_state(instance)?;
+    let belief = PerAgentBeliefView::from_world(instance.actor, txn);
+    let owner_is_investigating_actor = belief.believed_owner_of(subject) == Some(instance.actor);
 
     let mut store = txn
         .get_component_agent_belief_store(instance.actor)
@@ -134,6 +136,18 @@ fn commit_investigate(
         observed_tick: txn.tick(),
         source: PerceptionSource::DirectObservation,
     });
+    if owner_is_investigating_actor {
+        store.record_social_observation(SocialObservation {
+            detail: SocialObservationDetail::SuspectedTheft {
+                missing_entity: subject,
+                expected_place: place,
+                suspect: None,
+            },
+            place,
+            observed_tick: txn.tick(),
+            source: PerceptionSource::DirectObservation,
+        });
+    }
     txn.set_component_agent_belief_store(instance.actor, store)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
@@ -175,6 +189,17 @@ fn commit_investigate(
                 "violation {} expired before resolution",
                 violation_id.0
             )));
+        }
+        if owner_is_investigating_actor {
+            memory.record(
+                ViolationKind::SuspectedTheft {
+                    missing_entity: subject,
+                    expected_place: place,
+                    suspect: None,
+                },
+                txn.tick(),
+                profile.violation_memory_retention_ticks,
+            );
         }
         txn.set_component_violation_memory(instance.actor, memory)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -331,9 +356,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, AgentBeliefStore, CauseRef, CombatProfile, ControlSource, EventLog,
-        Permille, Seed, Tick, ViolationDispositionProfile, ViolationMemory, WitnessData, World,
-        Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world, AgentBeliefStore, BelievedEntityState, CauseRef, CombatProfile,
+        ControlSource, EventLog, PerceptionSource, Permille, Quantity, Seed, Tick,
+        ViolationDispositionProfile, ViolationMemory, WitnessData, World, Wound, WoundCause,
+        WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -442,6 +468,45 @@ mod tests {
         txn.set_component_violation_memory(actor, memory).unwrap();
         commit_txn(txn);
         violation_id
+    }
+
+    fn create_item_lot_at_place(
+        world: &mut World,
+        place: EntityId,
+        owner: Option<EntityId>,
+    ) -> EntityId {
+        let mut txn = new_txn(world, 1);
+        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+        txn.set_ground_location(lot, place).unwrap();
+        if let Some(owner) = owner {
+            txn.set_owner(lot, owner).unwrap();
+        }
+        commit_txn(txn);
+        lot
+    }
+
+    fn mark_entity_known(world: &mut World, actor: EntityId, entity: EntityId, place: EntityId) {
+        let mut txn = new_txn(world, 1);
+        let mut store = txn
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .expect("actor should have a belief store");
+        store.update_entity(
+            entity,
+            BelievedEntityState {
+                last_known_place: Some(place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            },
+        );
+        txn.set_component_agent_belief_store(actor, store).unwrap();
+        commit_txn(txn);
     }
 
     fn set_incapacitated(world: &mut World, actor: EntityId) {
@@ -1012,6 +1077,251 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(payload_ids, vec![second_id]);
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn owner_investigating_missing_owned_entity_records_suspected_theft() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        let missing = create_item_lot_at_place(&mut world, place, Some(actor));
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([31; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    active_actions: &mut active_actions,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    tick: Tick(3),
+                    cause: CauseRef::Bootstrap,
+                },
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+
+        match tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                tick: Tick(4),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap()
+        {
+            TickOutcome::Committed { .. } => {}
+            other => panic!("expected committed investigate action, got {other:?}"),
+        }
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        assert!(store.social_observations.iter().any(|observation| {
+            observation.detail
+                == SocialObservationDetail::WitnessedAbsence {
+                    missing_entity: missing,
+                    expected_place: place,
+                }
+        }));
+        assert!(store.social_observations.iter().any(|observation| {
+            observation.detail
+                == SocialObservationDetail::SuspectedTheft {
+                    missing_entity: missing,
+                    expected_place: place,
+                    suspect: None,
+                }
+                && observation.place == place
+                && observation.observed_tick == Tick(4)
+                && observation.source == PerceptionSource::DirectObservation
+        }));
+
+        let memory = world.get_component_violation_memory(actor).unwrap();
+        assert!(memory.violations.iter().any(|record| {
+            record.id == violation_id
+                && record.kind
+                    == ViolationKind::EntityMissing {
+                        entity: missing,
+                        expected_place: place,
+                    }
+                && record.resolved_tick == Some(Tick(4))
+        }));
+        assert!(memory.violations.iter().any(|record| {
+            record.id != violation_id
+                && record.kind
+                    == ViolationKind::SuspectedTheft {
+                        missing_entity: missing,
+                        expected_place: place,
+                        suspect: None,
+                    }
+                && record.observed_tick == Tick(4)
+                && record.resolved_tick.is_none()
+                && record.expires_tick == Tick(54)
+        }));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn non_owner_investigating_missing_entity_does_not_record_suspected_theft() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        let owner = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        let missing = create_item_lot_at_place(&mut world, place, Some(owner));
+        mark_entity_known(&mut world, actor, missing, place);
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([32; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    active_actions: &mut active_actions,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    tick: Tick(3),
+                    cause: CauseRef::Bootstrap,
+                },
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+
+        match tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                tick: Tick(4),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap()
+        {
+            TickOutcome::Committed { .. } => {}
+            other => panic!("expected committed investigate action, got {other:?}"),
+        }
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        assert!(store.social_observations.iter().any(|observation| {
+            observation.detail
+                == SocialObservationDetail::WitnessedAbsence {
+                    missing_entity: missing,
+                    expected_place: place,
+                }
+        }));
+        assert!(!store.social_observations.iter().any(|observation| {
+            observation.kind() == worldwake_core::SocialObservationKind::SuspectedTheft
+        }));
+
+        let memory = world.get_component_violation_memory(actor).unwrap();
+        assert!(memory.violations.iter().any(|record| {
+            record.id == violation_id
+                && record.kind
+                    == ViolationKind::EntityMissing {
+                        entity: missing,
+                        expected_place: place,
+                    }
+                && record.resolved_tick == Some(Tick(4))
+        }));
+        assert!(!memory.violations.iter().any(|record| {
+            matches!(record.kind, ViolationKind::SuspectedTheft { .. })
+        }));
     }
 
     #[test]
