@@ -386,16 +386,14 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ProduceCommodity { .. } => PRODUCE_OPS,
             GoalKind::SellCommodity { .. } => SELL_OPS,
             GoalKind::RestockCommodity { .. } => RESTOCK_OPS,
-            GoalKind::MoveCargo { .. } => MOVE_CARGO_OPS,
+            GoalKind::MoveCargo { .. } | GoalKind::StealItem { .. } => MOVE_CARGO_OPS,
             GoalKind::LootCorpse { .. } => LOOT_OPS,
             GoalKind::BuryCorpse { .. } => BURY_OPS,
             GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
             GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
-            GoalKind::StealItem { .. }
-            | GoalKind::Accuse { .. }
-            | GoalKind::PunishAccused { .. } => DEFERRED_CRIME_JUSTICE_OPS,
+            GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => DEFERRED_CRIME_JUSTICE_OPS,
         }
     }
 
@@ -880,6 +878,9 @@ impl GoalKindPlannerExt for GoalKind {
                 commodity,
                 destination,
             } => restock_gap_at_destination(state, actor, *destination, *commodity).is_none(),
+            GoalKind::StealItem { target_item } => {
+                state.direct_possessor(*target_item) == Some(actor)
+            }
             GoalKind::LootCorpse { corpse } => CommodityKind::ALL
                 .iter()
                 .copied()
@@ -902,7 +903,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::InvestigateViolation { .. }
-            | GoalKind::StealItem { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => false,
         }
@@ -1718,11 +1718,16 @@ mod tests {
     }
 
     #[test]
-    fn deferred_crime_and_justice_goals_have_no_live_planner_ops_yet() {
+    fn steal_goal_uses_move_cargo_ops_while_justice_goals_remain_deferred() {
+        let steal = GoalKind::StealItem {
+            target_item: entity_id(9, 0),
+        };
+        assert!(steal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
+        assert!(steal
+            .relevant_op_kinds()
+            .contains(&PlannerOpKind::MoveCargo));
+
         for goal in [
-            GoalKind::StealItem {
-                target_item: entity_id(9, 0),
-            },
             GoalKind::Accuse {
                 accused: entity_id(10, 0),
                 violation_id: ViolationId(2),

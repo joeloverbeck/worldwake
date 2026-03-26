@@ -86,6 +86,7 @@ mod tests {
             "travel",
             "pick_up",
             "put_down",
+            "steal",
             "attack",
             "defend",
             "loot",

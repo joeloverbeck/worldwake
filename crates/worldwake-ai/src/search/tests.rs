@@ -24,9 +24,9 @@ use worldwake_core::{
     EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
     HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
     MetabolismProfile, PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId,
-    ResourceSource, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
-    UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId,
+    ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
+    TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
@@ -43,6 +43,7 @@ struct TestBeliefView {
     entities_at: BTreeMap<EntityId, Vec<EntityId>>,
     direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
     direct_possessors: BTreeMap<EntityId, EntityId>,
+    owners: BTreeMap<EntityId, EntityId>,
     controllable: BTreeSet<(EntityId, EntityId)>,
     adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
     lot_commodities: BTreeMap<EntityId, CommodityKind>,
@@ -53,6 +54,7 @@ struct TestBeliefView {
     needs: BTreeMap<EntityId, HomeostaticNeeds>,
     thresholds: BTreeMap<EntityId, DriveThresholds>,
     trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
+    theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
     merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
     demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
     hostiles: BTreeMap<EntityId, Vec<EntityId>>,
@@ -150,8 +152,8 @@ impl RuntimeBeliefView for TestBeliefView {
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
         self.direct_possessors.get(&entity).copied()
     }
-    fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-        None
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.owners.get(&entity).copied()
     }
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
@@ -205,6 +207,9 @@ impl RuntimeBeliefView for TestBeliefView {
     }
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
         self.trade_profiles.get(&agent).cloned()
+    }
+    fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
+        self.theft_profiles.get(&agent).cloned()
     }
     fn intention_disposition_profile(
         &self,
@@ -3888,10 +3893,93 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
 }
 
 #[test]
-fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land() {
+fn steal_goal_surfaces_search_candidates_after_action_lands() {
+    let actor = entity(1);
+    let owner = entity(2);
+    let target_item = entity(3);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, owner, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(owner, EntityKind::Agent);
+    view.kinds.insert(target_item, EntityKind::ItemLot);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(owner, town);
+    view.effective_places.insert(target_item, town);
+    view.entities_at
+        .insert(town, vec![actor, owner, target_item]);
+    view.owners.insert(target_item, owner);
+    view.controllable.insert((actor, actor));
+    view.lot_commodities
+        .insert(target_item, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((target_item, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(target_item, LoadUnits(1));
+    view.theft_profiles.insert(
+        actor,
+        TheftDispositionProfile {
+            steal_duration_ticks: NonZeroU32::new(2).unwrap(),
+            theft_motive_weight: pm(500),
+            witness_risk_penalty: pm(100),
+        },
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([owner, target_item]),
+        &BTreeSet::from([town]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = PlanningBudget::default();
+    let goal = GroundedGoal {
+        key: GoalKey::from(GoalKind::StealItem { target_item }),
+        evidence_entities: BTreeSet::from([target_item]),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    assert!(
+        rel_defs
+            .iter()
+            .any(|def_id| registry.get(*def_id).is_some_and(|def| def.name == "steal")),
+        "StealItem should recognize the landed steal action as relevant"
+    );
+
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        &rel_defs,
+    );
+    assert!(
+        candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "steal")
+                && candidate.authoritative_targets == vec![target_item]
+        }),
+        "StealItem should surface a steal candidate for the exact bound target"
+    );
+}
+
+#[test]
+fn accuse_and_punish_goals_remain_deferred_without_actions() {
     let actor = entity(1);
     let accused = entity(2);
-    let target_item = entity(3);
     let town = entity(10);
     let faction = entity(20);
 
@@ -3899,19 +3987,16 @@ fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land()
     view.alive.extend([actor, accused, town]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(accused, EntityKind::Agent);
-    view.kinds.insert(target_item, EntityKind::ItemLot);
     view.kinds.insert(town, EntityKind::Place);
     view.kinds.insert(faction, EntityKind::Faction);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(accused, town);
-    view.effective_places.insert(target_item, town);
-    view.entities_at
-        .insert(town, vec![actor, accused, target_item]);
+    view.entities_at.insert(town, vec![actor, accused]);
 
     let snapshot = build_planning_snapshot(
         &view,
         actor,
-        &BTreeSet::from([accused, target_item]),
+        &BTreeSet::from([accused]),
         &BTreeSet::from([town]),
         1,
     );
@@ -3920,11 +4005,6 @@ fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land()
     let recipes = RecipeRegistry::new();
     let budget = PlanningBudget::default();
     let goals = [
-        GroundedGoal {
-            key: GoalKey::from(GoalKind::StealItem { target_item }),
-            evidence_entities: BTreeSet::from([target_item]),
-            evidence_places: BTreeSet::from([town]),
-        },
         GroundedGoal {
             key: GoalKey::from(GoalKind::Accuse {
                 accused,
@@ -3936,7 +4016,9 @@ fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land()
         GroundedGoal {
             key: GoalKey::from(GoalKind::PunishAccused {
                 accused,
-                punishment: worldwake_core::PunishmentKind::Exile { from_faction: faction },
+                punishment: worldwake_core::PunishmentKind::Exile {
+                    from_faction: faction,
+                },
             }),
             evidence_entities: BTreeSet::from([accused]),
             evidence_places: BTreeSet::from([town]),
@@ -3946,13 +4028,8 @@ fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land()
     for goal in goals {
         let node = root_node(&snapshot, &goal, &recipes, &budget);
         let rel_defs = relevant_action_defs(&goal, &semantics);
-        assert!(
-            rel_defs.is_empty(),
-            "Deferred goal {:?} should not expose relevant action defs before crime actions exist",
-            goal.key.kind
-        );
-
-        let candidates = search_candidates(
+        assert!(rel_defs.is_empty());
+        assert!(search_candidates(
             &goal,
             &node,
             &semantics,
@@ -3963,12 +4040,8 @@ fn deferred_crime_and_justice_goals_have_no_search_surface_before_actions_land()
             None,
             None,
             &rel_defs,
-        );
-        assert!(
-            candidates.is_empty(),
-            "Deferred goal {:?} should not surface search candidates before crime actions exist",
-            goal.key.kind
-        );
+        )
+        .is_empty());
     }
 }
 

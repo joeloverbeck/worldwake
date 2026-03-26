@@ -110,6 +110,7 @@ pub enum DurationExpr {
         kind: MetabolismDurationKind,
     },
     ActorTradeDisposition,
+    ActorTheftDisposition,
     ActorInvestigationDisposition,
     ActorDefendStance,
     CombatWeapon,
@@ -129,6 +130,7 @@ impl DurationExpr {
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
+            | Self::ActorTheftDisposition
             | Self::ActorInvestigationDisposition
             | Self::ActorDefendStance
             | Self::CombatWeapon
@@ -191,6 +193,10 @@ impl DurationExpr {
                 .get_component_trade_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
+            Self::ActorTheftDisposition => world
+                .get_component_theft_disposition_profile(actor)
+                .map(|profile| ActionDuration::new(profile.steal_duration_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks theft disposition profile")),
             Self::ActorInvestigationDisposition => Ok(ActionDuration::new(
                 world
                     .get_component_violation_disposition_profile(actor)
@@ -306,8 +312,9 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind,
         ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds, MetabolismProfile,
-        Permille, Quantity, RecipeId, RecordData, RecordKind, Tick, TradeDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        Permille, Quantity, RecipeId, RecordData, RecordKind, TheftDispositionProfile, Tick,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -392,7 +399,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 11] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 12] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -402,6 +409,7 @@ mod tests {
             kind: MetabolismDurationKind::Wash,
         },
         DurationExpr::ActorTradeDisposition,
+        DurationExpr::ActorTheftDisposition,
         DurationExpr::ActorInvestigationDisposition,
         DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
@@ -461,6 +469,7 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
+        assert_eq!(DurationExpr::ActorTheftDisposition.fixed_ticks(), None);
         assert_eq!(
             DurationExpr::ActorInvestigationDisposition.fixed_ticks(),
             None
@@ -707,6 +716,15 @@ mod tests {
                 },
             )
             .unwrap();
+            txn.set_component_theft_disposition_profile(
+                actor,
+                TheftDispositionProfile {
+                    steal_duration_ticks: nz(4),
+                    theft_motive_weight: pm(500),
+                    witness_risk_penalty: pm(100),
+                },
+            )
+            .unwrap();
             txn.set_component_combat_profile(
                 actor,
                 CombatProfile::new(
@@ -733,6 +751,12 @@ mod tests {
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
             ActionDuration::new(11)
+        );
+        assert_eq!(
+            DurationExpr::ActorTheftDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(4)
         );
         assert_eq!(
             DurationExpr::ActorInvestigationDisposition

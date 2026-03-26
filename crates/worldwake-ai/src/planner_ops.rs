@@ -50,6 +50,7 @@ pub enum PlannerTransitionKind {
     GoalModelFallback,
     ConsumeMatchingTargetCommodity,
     PickUpGroundLot,
+    StealGroundLot,
     PutDownGroundLot,
 }
 
@@ -105,6 +106,7 @@ const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
     GoalKindTag::SellCommodity,
     GoalKindTag::RestockCommodity,
     GoalKindTag::MoveCargo,
+    GoalKindTag::StealItem,
 ];
 const GOALS_TREAT_WOUNDS: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::TreatWounds];
 const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
@@ -158,7 +160,9 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         {
             Some(PlannerOpKind::Craft)
         }
-        (ActionDomain::Transport, "pick_up" | "put_down") => Some(PlannerOpKind::MoveCargo),
+        (ActionDomain::Transport, "pick_up" | "put_down" | "steal") => {
+            Some(PlannerOpKind::MoveCargo)
+        }
         (ActionDomain::Care, "heal") => Some(PlannerOpKind::Heal),
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
@@ -249,6 +253,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             false,
             match def.name.as_str() {
                 "pick_up" => PlannerTransitionKind::PickUpGroundLot,
+                "steal" => PlannerTransitionKind::StealGroundLot,
                 "put_down" => PlannerTransitionKind::PutDownGroundLot,
                 _ => PlannerTransitionKind::GoalModelFallback,
             },
@@ -408,6 +413,11 @@ pub fn apply_hypothetical_transition<'snapshot>(
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
             apply_pick_up_transition(state, targets, payload_override)
+        }
+        PlannerTransitionKind::StealGroundLot => {
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
+            apply_steal_transition(state, targets)
         }
         PlannerTransitionKind::PutDownGroundLot => {
             let state =
@@ -579,6 +589,44 @@ fn apply_pick_up_transition<'snapshot>(
             tag: MaterializationTag::SplitOffLot,
             hypothetical_id,
         }],
+    })
+}
+
+fn apply_steal_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let lot_ref = match targets.first().copied()? {
+        PlanningEntityRef::Authoritative(lot) => PlanningEntityRef::Authoritative(lot),
+        PlanningEntityRef::Hypothetical(_) => return None,
+    };
+    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
+        return None;
+    }
+    if state.direct_possessor_ref(lot_ref).is_some()
+        || state.direct_container_ref(lot_ref).is_some()
+    {
+        return None;
+    }
+    if state.effective_place_ref(lot_ref)? != state.effective_place_ref(actor_ref)? {
+        return None;
+    }
+    let commodity = state.item_lot_commodity_ref(lot_ref)?;
+    let quantity = state.commodity_quantity_ref(lot_ref, commodity);
+    if quantity == Quantity(0) {
+        return None;
+    }
+    let remaining_capacity = state.remaining_carry_capacity_ref(actor_ref)?.0;
+    let per_unit = load_per_unit(commodity).0;
+    if quantity.0.saturating_mul(per_unit) > remaining_capacity {
+        return None;
+    }
+
+    Some(HypotheticalTransition {
+        targets: targets.to_vec(),
+        state: state.move_lot_ref_to_holder(lot_ref, actor_ref, commodity, quantity),
+        expected_materializations: Vec::new(),
     })
 }
 
@@ -1377,6 +1425,7 @@ mod tests {
             ("travel", PlannerOpKind::Travel),
             ("pick_up", PlannerOpKind::MoveCargo),
             ("put_down", PlannerOpKind::MoveCargo),
+            ("steal", PlannerOpKind::MoveCargo),
             ("trade", PlannerOpKind::Trade),
             ("queue_for_facility_use", PlannerOpKind::QueueForFacilityUse),
             ("attack", PlannerOpKind::Attack),
@@ -1396,6 +1445,7 @@ mod tests {
                 PlannerTransitionKind::ConsumeMatchingTargetCommodity,
             ),
             ("pick_up", PlannerTransitionKind::PickUpGroundLot),
+            ("steal", PlannerTransitionKind::StealGroundLot),
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
         ];
         let unclassified = defs

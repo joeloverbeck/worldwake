@@ -1311,7 +1311,7 @@ mod tests {
             }),
         ] {
             let outcome = rank(
-                &[grounded.clone()],
+                std::slice::from_ref(&grounded),
                 &view,
                 agent,
                 current_tick(),
