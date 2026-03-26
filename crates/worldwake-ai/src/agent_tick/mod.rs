@@ -468,6 +468,7 @@ fn process_agent(
 
     // ── Active-action path: interrupt evaluation ──
     let outcome_trace = if let Some(active_action) = active_action {
+        let active_goal_before_interrupt = current_active_goal.as_ref().map(|goal| goal.goal_key);
         let interrupt_decision = handle_active_action_phase(
             ctx,
             runtime,
@@ -491,12 +492,20 @@ fn process_agent(
                 .get(active_action.def_id)
                 .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
             let top_challenger = ranked_candidates.first().map(summarize_ranked_goal);
+            let top_challenger_comparison = active_goal_before_interrupt.and_then(|current_goal| {
+                let challenger = ranked_candidates.first()?;
+                let current = ranked_candidates
+                    .iter()
+                    .find(|candidate| candidate.grounded.key == current_goal)?;
+                crate::ranking::explain_ranked_goal_order(challenger, current)
+            });
             DecisionOutcome::ActiveAction {
                 action_def_id: active_action.def_id,
                 action_name,
                 interrupt: InterruptTrace {
                     decision: interrupt_decision,
                     top_challenger,
+                    top_challenger_comparison,
                 },
                 frame_transition: build_frame_transition_trace(&mut frame_transitions),
             }
@@ -592,6 +601,12 @@ fn process_agent(
                     .iter()
                     .map(summarize_ranked_goal)
                     .collect(),
+                top_ranked_comparison: ranked_candidates
+                    .first()
+                    .zip(ranked_candidates.get(1))
+                    .and_then(|(winner, runner_up)| {
+                        crate::ranking::explain_ranked_goal_order(winner, runner_up)
+                    }),
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,

@@ -25,17 +25,19 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart,
-    CarryCapacity, CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory, DemandObservation,
-    DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventPayload, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FrameState,
-    GrantedFacilityUse, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
-    IntentionFrame, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedFacilityIntent, RecipeId, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
-    UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
+    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+    DriveThresholds, EntityId, EntityKind, EventLog, EventPayload, ExclusiveFacilityPolicy,
+    FacilityQueueIntents, FacilityUseQueue, FrameState, GrantedFacilityUse, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, Quantity, QueuedFacilityIntent, RecipeId, RecordData,
+    RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
+    ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
+    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -4186,6 +4188,180 @@ fn trace_social_resend_omission_reason() {
                 crate::GoalTraceStatus::OmittedSocial(
                     worldwake_sim::TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
                 )
+            );
+        }
+        other => panic!("expected Planning outcome, got {other:?}"),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn trace_planning_records_political_over_share_belief_priority_class_reason() {
+    let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    let place = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("harness actor should start at a place");
+    let remote_place = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|candidate| *candidate != place)
+        .expect("prototype world should expose a second place");
+    let vacancy_tick = Tick(1);
+    let (listener, office) = {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
+            .unwrap();
+        txn.set_component_deprivation_exposure(harness.actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(harness.actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(harness.actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_perception_profile(
+            harness.actor,
+            PerceptionProfile {
+                memory_capacity: 32,
+                memory_retention_ticks: 240,
+                observation_fidelity: Permille::new(1000).unwrap(),
+                confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: Permille::new(500).unwrap(),
+                contradiction_tolerance: Permille::new(300).unwrap(),
+            },
+        )
+        .unwrap();
+        txn.set_component_tell_profile(harness.actor, TellProfile::default())
+            .unwrap();
+        txn.set_component_utility_profile(
+            harness.actor,
+            UtilityProfile {
+                enterprise_weight: Permille::new(200).unwrap(),
+                social_weight: Permille::new(1000).unwrap(),
+                ..UtilityProfile::default()
+            },
+        )
+        .unwrap();
+
+        let listener = txn.create_agent("Listener", ControlSource::Ai).unwrap();
+        txn.set_ground_location(listener, place).unwrap();
+
+        let office = txn.create_office("Speaker").unwrap();
+        txn.set_component_office_data(
+            office,
+            OfficeData {
+                title: "Speaker".to_string(),
+                jurisdiction: remote_place,
+                succession_law: SuccessionLaw::Support,
+                succession_period_ticks: 5,
+                eligibility_rules: Vec::new(),
+                vacancy_since: Some(vacancy_tick),
+            },
+        )
+        .unwrap();
+        txn.create_record(RecordData {
+            record_kind: RecordKind::SupportLedger,
+            home_place: remote_place,
+            issuer: harness.actor,
+            consultation_ticks: 3,
+            max_entries_per_consult: 16,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap();
+        commit_txn(txn);
+        (listener, office)
+    };
+
+    sync_selected_beliefs(
+        &mut harness.world,
+        harness.actor,
+        &[listener, office],
+        Tick(2),
+        PerceptionSource::DirectObservation,
+    );
+    {
+        let profile = harness
+            .world
+            .get_component_perception_profile(harness.actor)
+            .cloned()
+            .expect("actor should have a perception profile");
+        let mut store = harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .cloned()
+            .expect("actor should have a belief store");
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: None,
+                    effective_tick: vacancy_tick,
+                },
+                source: InstitutionalKnowledgeSource::WitnessedEvent,
+                learned_tick: Tick(2),
+                learned_at: Some(remote_place),
+            },
+            &profile,
+        );
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_agent_belief_store(harness.actor, store)
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let trace = harness
+        .driver
+        .trace_sink()
+        .unwrap()
+        .traces_for(harness.actor)
+        .into_iter()
+        .next()
+        .expect("expected one planning trace");
+    let share_goal = GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::InstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office,
+                holder: None,
+                effective_tick: vacancy_tick,
+            },
+        },
+    };
+    let claim_goal = GoalKind::ClaimOffice { office };
+
+    match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => {
+            assert!(
+                planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.kind == share_goal),
+                "planning trace should record the share-belief candidate"
+            );
+            assert!(
+                planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.kind == claim_goal),
+                "planning trace should record the political claim candidate"
+            );
+            let comparison = planning
+                .candidates
+                .top_ranked_comparison
+                .expect("ranked comparison should be recorded when two candidates are present");
+            assert_eq!(comparison.winner, GoalKey::new(claim_goal));
+            assert_eq!(comparison.loser, GoalKey::new(share_goal));
+            assert_eq!(
+                comparison.decisive_dimension,
+                crate::RankedGoalComparisonDimension::PriorityClass
             );
         }
         other => panic!("expected Planning outcome, got {other:?}"),

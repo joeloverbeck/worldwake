@@ -22,6 +22,7 @@ use crate::knowledge_path::{
     SelfKnowledgeProvenance,
 };
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
+use crate::ranking::RankedGoalComparison;
 // ── Frame Transition Trace ──────────────────────────────────────
 
 /// One lifecycle event recorded for an `IntentionFrame` during a tick.
@@ -100,8 +101,12 @@ impl DecisionOutcome {
                 ..
             } => {
                 let decision = &interrupt.decision;
+                let ranking_suffix = interrupt
+                    .top_challenger_comparison
+                    .as_ref()
+                    .map_or_else(String::new, format_ranked_goal_comparison_summary);
                 let frame_suffix = format_frame_transition_summary(frame_transition.as_ref());
-                format!("ACTIVE: {action_name} — interrupt: {decision:?}{frame_suffix}")
+                format!("ACTIVE: {action_name} — interrupt: {decision:?}{ranking_suffix}{frame_suffix}")
             }
             DecisionOutcome::Planning(planning) => {
                 let selected = planning
@@ -134,6 +139,11 @@ impl DecisionOutcome {
                     .map(|s| s.feasibility)
                     .filter(|f| *f != FeasibilityHint::Uncertain)
                     .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
+                let ranking_suffix = planning
+                    .candidates
+                    .top_ranked_comparison
+                    .as_ref()
+                    .map_or_else(String::new, format_ranked_goal_comparison_summary);
                 let unknown_suffix = if planning.unknown_blockers.is_empty() {
                     String::new()
                 } else {
@@ -143,7 +153,7 @@ impl DecisionOutcome {
                     format_frame_transition_summary(planning.frame_transition.as_ref());
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking_suffix}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -205,6 +215,9 @@ pub struct CandidateTrace {
     pub evidence: Vec<CandidateEvidenceTrace>,
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoalSummary>,
+    /// Why the highest-ranked goal beat the immediate runner-up, when at least
+    /// two ranked candidates exist.
+    pub top_ranked_comparison: Option<RankedGoalComparison>,
     /// Goals suppressed by situational conditions.
     pub suppressed: Vec<GoalKey>,
     /// Goals filtered by zero motive score.
@@ -613,6 +626,9 @@ pub struct InterruptTrace {
     pub decision: InterruptDecision,
     /// The highest-ranked challenger goal, if any.
     pub top_challenger: Option<RankedGoalSummary>,
+    /// Why the highest-ranked challenger outranked the active goal at the
+    /// ranking boundary, when both were present in the ranked candidate list.
+    pub top_challenger_comparison: Option<RankedGoalComparison>,
 }
 
 /// Semantic status of one goal within one recorded agent tick.
@@ -889,8 +905,12 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .as_ref()
                 .and_then(|summary| summary.provenance.as_ref())
                 .map_or_else(String::new, format_ranked_goal_provenance_summary);
+            let ranking = interrupt
+                .top_challenger_comparison
+                .as_ref()
+                .map_or_else(String::new, format_ranked_goal_comparison_summary);
             let frame_suffix = format_frame_transition_summary(frame_transition.as_ref());
-            format!("ACTIVE: {name} — interrupt: {decision:?}{challenger}{frame_suffix}")
+            format!("ACTIVE: {name} — interrupt: {decision:?}{challenger}{ranking}{frame_suffix}")
         }
         DecisionOutcome::Planning(planning) => {
             let selected = planning
@@ -923,9 +943,14 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .map(|s| s.feasibility)
                 .filter(|f| *f != FeasibilityHint::Uncertain)
                 .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
+            let ranking = planning
+                .candidates
+                .top_ranked_comparison
+                .as_ref()
+                .map_or_else(String::new, format_ranked_goal_comparison_summary);
             let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking}"
             );
             for attempt in &planning.planning.attempts {
                 for rej in &attempt.binding_rejections {
@@ -1029,6 +1054,13 @@ fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> S
             )
         }
     }
+}
+
+fn format_ranked_goal_comparison_summary(comparison: &RankedGoalComparison) -> String {
+    format!(
+        ", ranking={:?} {:?}>{:?}",
+        comparison.decisive_dimension, comparison.winner.kind, comparison.loser.kind
+    )
 }
 
 fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
@@ -1345,6 +1377,7 @@ mod tests {
                     generated,
                     evidence: Vec::new(),
                     ranked,
+                    top_ranked_comparison: None,
                     suppressed,
                     zero_motive,
                     omitted_political,
@@ -1723,6 +1756,7 @@ mod tests {
             interrupt: InterruptTrace {
                 decision: InterruptDecision::NoInterrupt,
                 top_challenger: None,
+                top_challenger_comparison: None,
             },
             frame_transition: None,
         };
@@ -1748,6 +1782,7 @@ mod tests {
                     provenance: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
+                top_ranked_comparison: None,
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
@@ -1818,6 +1853,71 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_includes_ranking_comparison() {
+        use crate::ranking::{RankedGoalComparison, RankedGoalComparisonDimension};
+        use worldwake_core::GoalKind;
+
+        let winner = GoalKey::new(GoalKind::Sleep);
+        let loser = GoalKey::new(GoalKind::Wash);
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![winner, loser],
+                evidence: vec![],
+                ranked: vec![
+                    RankedGoalSummary {
+                        goal: winner,
+                        priority_class: GoalPriorityClass::Critical,
+                        motive_score: 800,
+                        provenance: None,
+                        feasibility: FeasibilityHint::Likely,
+                    },
+                    RankedGoalSummary {
+                        goal: loser,
+                        priority_class: GoalPriorityClass::Critical,
+                        motive_score: 600,
+                        provenance: None,
+                        feasibility: FeasibilityHint::Likely,
+                    },
+                ],
+                top_ranked_comparison: Some(RankedGoalComparison {
+                    winner,
+                    loser,
+                    decisive_dimension: RankedGoalComparisonDimension::MotiveScore,
+                }),
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(winner),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("ranking=MotiveScore"));
+        assert!(summary.contains("Sleep"));
+        assert!(summary.contains("Wash"));
+    }
+
+    #[test]
     fn summary_planning_includes_selected_danger_provenance() {
         use worldwake_core::GoalKind;
 
@@ -1842,6 +1942,7 @@ mod tests {
                     })),
                     feasibility: FeasibilityHint::Uncertain,
                 }],
+                top_ranked_comparison: None,
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
@@ -1908,6 +2009,7 @@ mod tests {
                     )),
                     feasibility: FeasibilityHint::Uncertain,
                 }],
+                top_ranked_comparison: None,
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
@@ -2138,6 +2240,7 @@ mod tests {
             interrupt: InterruptTrace {
                 decision: InterruptDecision::NoInterrupt,
                 top_challenger: None,
+                top_challenger_comparison: None,
             },
             frame_transition: Some(FrameTransitionTrace {
                 transitions: vec![FrameTransitionKind::Progressed { tick: Tick(5) }],
@@ -2158,6 +2261,7 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 ranked: vec![],
+                top_ranked_comparison: None,
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
@@ -2203,6 +2307,7 @@ mod tests {
             interrupt: InterruptTrace {
                 decision: InterruptDecision::NoInterrupt,
                 top_challenger: None,
+                top_challenger_comparison: None,
             },
             frame_transition: None,
         };
@@ -2327,6 +2432,7 @@ mod tests {
                         provenance: None,
                         feasibility: FeasibilityHint::Likely,
                     }],
+                    top_ranked_comparison: None,
                     suppressed: vec![],
                     zero_motive: vec![],
                     omitted_political: vec![],

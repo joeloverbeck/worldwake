@@ -83,7 +83,10 @@ pub use planning_state::{
 pub use pressure::{
     assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure, DangerAssessment,
 };
-pub use ranking::{build_decision_context, rank_candidates, RankingOutcome};
+pub use ranking::{
+    build_decision_context, rank_candidates, RankedGoalComparison, RankedGoalComparisonDimension,
+    RankingOutcome,
+};
 pub use search::{search_plan, PlanSearchResult};
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
 

@@ -6,7 +6,7 @@
 
 use crate::{
     ActionInstanceId, ActionPayload, CommitOutcome, CommitTraceData, ResolvedRequestTrace,
-    TellBeliefDeltaKind, TellCommitResult,
+    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId, TellTopic, Tick, ViolationId};
@@ -81,6 +81,31 @@ impl ActionTraceEvent {
     pub fn with_detail(mut self, detail: Option<ActionTraceDetail>) -> Self {
         self.detail = detail;
         self
+    }
+
+    #[must_use]
+    pub fn tell_commit_trace(&self) -> Option<&TellCommitTrace> {
+        match &self.kind {
+            ActionTraceKind::Committed {
+                outcome:
+                    CommitOutcome {
+                        trace: Some(CommitTraceData::Tell(trace)),
+                        ..
+                    },
+                ..
+            } => Some(trace),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn tell_commit_result(&self) -> Option<TellCommitResult> {
+        self.tell_commit_trace().map(|trace| trace.result)
+    }
+
+    #[must_use]
+    pub fn tell_belief_delta(&self) -> Option<TellBeliefDeltaKind> {
+        self.tell_commit_trace().map(|trace| trace.belief_delta)
     }
 
     /// One-line human-readable summary (no registry lookups required).
@@ -567,6 +592,36 @@ mod tests {
         assert!(summary.contains("AlreadyHeldEqualOrNewer"));
         assert!(summary.contains("changed=false"));
         assert!(summary.contains("delta=no_change"));
+        assert_eq!(
+            committed.tell_commit_result(),
+            Some(crate::TellCommitResult::AlreadyHeldEqualOrNewer)
+        );
+        assert_eq!(
+            committed.tell_belief_delta(),
+            Some(crate::TellBeliefDeltaKind::None)
+        );
+        assert_eq!(
+            committed
+                .tell_commit_trace()
+                .expect("tell commit trace should be queryable")
+                .listener,
+            listener
+        );
+    }
+
+    #[test]
+    fn tell_commit_query_helpers_return_none_for_non_tell_commit() {
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        );
+
+        assert!(committed.tell_commit_trace().is_none());
+        assert!(committed.tell_commit_result().is_none());
+        assert!(committed.tell_belief_delta().is_none());
     }
 
     #[test]

@@ -3156,6 +3156,16 @@ fn run_force_control_locality_and_tell(seed: Seed) -> (StateHash, StateHash) {
             )
     });
     let tell_event = tell_event.expect("witness should commit tell for the force-control claim");
+    assert_eq!(
+        tell_event.tell_commit_result(),
+        Some(worldwake_sim::TellCommitResult::Accepted),
+        "the high-signal action trace surface should expose the tell result"
+    );
+    assert_eq!(
+        tell_event.tell_belief_delta(),
+        Some(worldwake_sim::TellBeliefDeltaKind::InstitutionalBelief),
+        "the high-signal action trace surface should expose the institutional tell delta"
+    );
 
     let listener_force_belief = h
         .world

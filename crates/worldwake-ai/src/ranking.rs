@@ -765,25 +765,96 @@ fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RankedGoalComparisonDimension {
+    PriorityClass,
+    Feasibility,
+    MotiveScore,
+    ShareBeliefTopicOrder,
+    GoalKindOrder,
+    CommodityKey,
+    EntityKey,
+    PlaceKey,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RankedGoalComparison {
+    pub winner: GoalKey,
+    pub loser: GoalKey,
+    pub decisive_dimension: RankedGoalComparisonDimension,
+}
+
+fn ranked_goal_ordering(
+    left: &RankedGoal,
+    right: &RankedGoal,
+) -> (Ordering, Option<RankedGoalComparisonDimension>) {
+    let ordering = right.priority_class.cmp(&left.priority_class);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::PriorityClass));
+    }
+
+    let ordering = left.feasibility.cmp(&right.feasibility);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::Feasibility));
+    }
+
+    let ordering = right.motive_score.cmp(&left.motive_score);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
+    }
+
+    let ordering = compare_share_belief_topics(&left.grounded.key.kind, &right.grounded.key.kind);
+    if ordering != Ordering::Equal {
+        return (
+            ordering,
+            Some(RankedGoalComparisonDimension::ShareBeliefTopicOrder),
+        );
+    }
+
+    let ordering = goal_kind_discriminant(left.grounded.key.kind)
+        .cmp(&goal_kind_discriminant(right.grounded.key.kind));
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::GoalKindOrder));
+    }
+
+    let ordering = left.grounded.key.commodity.cmp(&right.grounded.key.commodity);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::CommodityKey));
+    }
+
+    let ordering = left.grounded.key.entity.cmp(&right.grounded.key.entity);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::EntityKey));
+    }
+
+    let ordering = left.grounded.key.place.cmp(&right.grounded.key.place);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::PlaceKey));
+    }
+
+    (Ordering::Equal, None)
+}
+
+pub(crate) fn explain_ranked_goal_order(
+    left: &RankedGoal,
+    right: &RankedGoal,
+) -> Option<RankedGoalComparison> {
+    let (ordering, decisive_dimension) = ranked_goal_ordering(left, right);
+    let decisive_dimension = decisive_dimension?;
+    let (winner, loser) = match ordering {
+        Ordering::Less => (left.grounded.key, right.grounded.key),
+        Ordering::Greater => (right.grounded.key, left.grounded.key),
+        Ordering::Equal => return None,
+    };
+    Some(RankedGoalComparison {
+        winner,
+        loser,
+        decisive_dimension,
+    })
+}
+
 pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
-    right
-        .priority_class
-        .cmp(&left.priority_class)
-        .then_with(|| left.feasibility.cmp(&right.feasibility))
-        .then_with(|| right.motive_score.cmp(&left.motive_score))
-        .then_with(|| compare_share_belief_topics(&left.grounded.key.kind, &right.grounded.key.kind))
-        .then_with(|| {
-            goal_kind_discriminant(left.grounded.key.kind)
-                .cmp(&goal_kind_discriminant(right.grounded.key.kind))
-        })
-        .then_with(|| {
-            left.grounded
-                .key
-                .commodity
-                .cmp(&right.grounded.key.commodity)
-        })
-        .then_with(|| left.grounded.key.entity.cmp(&right.grounded.key.entity))
-        .then_with(|| left.grounded.key.place.cmp(&right.grounded.key.place))
+    ranked_goal_ordering(left, right).0
 }
 
 fn compare_share_belief_topics(left: &GoalKind, right: &GoalKind) -> Ordering {
@@ -2686,6 +2757,7 @@ mod tests {
     // ── Feasibility sort-order tests ──
 
     fn make_ranked_goal(
+        kind: GoalKind,
         priority_class: GoalPriorityClass,
         motive: u32,
         feasibility: crate::feasibility::FeasibilityHint,
@@ -2693,7 +2765,7 @@ mod tests {
         crate::RankedGoal {
             grounded: GroundedGoal {
                 key: GoalKey {
-                    kind: GoalKind::Sleep,
+                    kind,
                     commodity: None,
                     entity: None,
                     place: None,
@@ -2712,8 +2784,18 @@ mod tests {
     fn test_feasibility_tiebreak_within_priority_class() {
         use crate::feasibility::FeasibilityHint;
         let mut goals = [
-            make_ranked_goal(GoalPriorityClass::Critical, 900, FeasibilityHint::Unlikely),
-            make_ranked_goal(GoalPriorityClass::Critical, 600, FeasibilityHint::Likely),
+            make_ranked_goal(
+                GoalKind::Sleep,
+                GoalPriorityClass::Critical,
+                900,
+                FeasibilityHint::Unlikely,
+            ),
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::Critical,
+                600,
+                FeasibilityHint::Likely,
+            ),
         ];
         goals.sort_by(super::compare_ranked_goals);
         // Likely(600) should outrank Unlikely(900) within same priority class.
@@ -2727,8 +2809,18 @@ mod tests {
     fn test_feasibility_does_not_cross_priority_class() {
         use crate::feasibility::FeasibilityHint;
         let mut goals = [
-            make_ranked_goal(GoalPriorityClass::Low, 500, FeasibilityHint::Likely),
-            make_ranked_goal(GoalPriorityClass::Critical, 500, FeasibilityHint::Unlikely),
+            make_ranked_goal(
+                GoalKind::Sleep,
+                GoalPriorityClass::Low,
+                500,
+                FeasibilityHint::Likely,
+            ),
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::Critical,
+                500,
+                FeasibilityHint::Unlikely,
+            ),
         ];
         goals.sort_by(super::compare_ranked_goals);
         // Critical+Unlikely must still outrank Low+Likely.
@@ -2740,12 +2832,101 @@ mod tests {
     fn test_same_feasibility_falls_through_to_motive() {
         use crate::feasibility::FeasibilityHint;
         let mut goals = [
-            make_ranked_goal(GoalPriorityClass::High, 400, FeasibilityHint::Uncertain),
-            make_ranked_goal(GoalPriorityClass::High, 800, FeasibilityHint::Uncertain),
+            make_ranked_goal(
+                GoalKind::Sleep,
+                GoalPriorityClass::High,
+                400,
+                FeasibilityHint::Uncertain,
+            ),
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::High,
+                800,
+                FeasibilityHint::Uncertain,
+            ),
         ];
         goals.sort_by(super::compare_ranked_goals);
         // Same priority class + same feasibility → higher motive wins.
         assert_eq!(goals[0].motive_score, 800);
         assert_eq!(goals[1].motive_score, 400);
+    }
+
+    #[test]
+    fn explain_ranked_goal_order_reports_decisive_dimension() {
+        use crate::feasibility::FeasibilityHint;
+
+        let winner = make_ranked_goal(
+            GoalKind::Sleep,
+            GoalPriorityClass::High,
+            800,
+            FeasibilityHint::Likely,
+        );
+        let loser = make_ranked_goal(
+            GoalKind::Wash,
+            GoalPriorityClass::High,
+            600,
+            FeasibilityHint::Likely,
+        );
+
+        let comparison =
+            super::explain_ranked_goal_order(&winner, &loser).expect("ordering should explain");
+
+        assert_eq!(comparison.winner.kind, GoalKind::Sleep);
+        assert_eq!(comparison.loser.kind, GoalKind::Wash);
+        assert_eq!(
+            comparison.decisive_dimension,
+            super::RankedGoalComparisonDimension::MotiveScore
+        );
+    }
+
+    #[test]
+    fn explain_ranked_goal_order_reports_priority_class_for_political_over_social() {
+        use crate::feasibility::FeasibilityHint;
+
+        let office = entity(7);
+        let listener = entity(8);
+        let political = make_ranked_goal(
+            GoalKind::ClaimOffice { office },
+            GoalPriorityClass::Medium,
+            200,
+            FeasibilityHint::Uncertain,
+        );
+        let social = make_ranked_goal(
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::InstitutionalClaim {
+                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(1),
+                    },
+                },
+            },
+            GoalPriorityClass::Low,
+            950_000,
+            FeasibilityHint::Likely,
+        );
+
+        let comparison =
+            super::explain_ranked_goal_order(&political, &social).expect("ordering should explain");
+
+        assert_eq!(comparison.winner.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(
+            comparison.loser.kind,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::InstitutionalClaim {
+                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(1),
+                    },
+                },
+            }
+        );
+        assert_eq!(
+            comparison.decisive_dimension,
+            super::RankedGoalComparisonDimension::PriorityClass
+        );
     }
 }
