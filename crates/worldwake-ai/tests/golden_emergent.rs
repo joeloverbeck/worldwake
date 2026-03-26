@@ -10,13 +10,15 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
-    BeliefConfidencePolicy, CombatProfile, CommodityKind, ComponentKind, ComponentValue,
-    ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EventTag,
-    EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    PrototypePlace, Quantity, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
-    TellProfile, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationDispositionProfile,
+    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
+    verify_live_lot_conservation, AgentData, BeliefConfidencePolicy, BelievedEntityState,
+    CombatProfile, CommodityKind, ComponentKind, ComponentValue, ControlSource, DeadAt,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKind,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
+    Quantity, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile,
+    TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
+    ViolationDispositionProfile,
     WorkstationTag,
 };
 use worldwake_sim::{
@@ -97,6 +99,18 @@ fn set_violation_profile(
 ) {
     let mut txn = new_txn(&mut h.world, tick);
     txn.set_component_violation_disposition_profile(agent, profile)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_theft_profile(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    profile: TheftDispositionProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_theft_disposition_profile(agent, profile)
         .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
@@ -4809,7 +4823,383 @@ fn golden_entity_missing_triggers_investigation_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 37: Supply Depletion Enables ShareBelief
+// Scenario 37: Theft Leads Owner To Local Suspected Theft Discovery
+// ---------------------------------------------------------------------------
+//
+// Systems: Transport, Perception, AI, Generic Actions
+// GoalKinds: StealItem, InvestigateViolation
+// ActionDomains: Transport, Generic, Travel
+// Places: VillageSquare, GeneralStore, CommonHouse
+// Principles: 3, 7, 12, 15
+//
+// Proves the canonical owner-local theft-discovery path under the live
+// architecture: thief steals, departs with the lot, owner later returns
+// lawfully, mismatch detection records EntityMissing, and investigate upgrades
+// the owner's discovery into typed SuspectedTheft evidence.
+
+#[allow(clippy::too_many_lines)]
+fn run_theft_leads_owner_to_local_suspected_theft_discovery(
+    seed: Seed,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let common_house = prototype_place_entity(PrototypePlace::CommonHouse);
+
+    let thief = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Thief",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let owner = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Owner",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_control_source(&mut h, owner, ControlSource::Human, 0);
+
+    let mut sharp_perception = default_perception_profile();
+    sharp_perception.observation_fidelity = pm(1000);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, thief, sharp_perception);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, owner, sharp_perception);
+
+    set_theft_profile(
+        &mut h,
+        thief,
+        TheftDispositionProfile {
+            steal_duration_ticks: nz(2),
+            theft_motive_weight: pm(900),
+            witness_risk_penalty: pm(400),
+        },
+        0,
+    );
+    set_violation_profile(
+        &mut h,
+        owner,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(400),
+        },
+        0,
+    );
+
+    let stolen_lot = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        txn.set_ground_location(lot, VILLAGE_SQUARE).unwrap();
+        txn.set_owner(lot, owner).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        lot
+    };
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        stolen_lot,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        owner,
+        stolen_lot,
+        BelievedEntityState {
+            last_known_place: Some(VILLAGE_SQUARE),
+            last_known_inventory: std::collections::BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+
+    let mut steal_committed = false;
+    for _ in 0..12 {
+        h.step_once();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+        steal_committed = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(thief)
+            .iter()
+            .any(|event| {
+                event.action_name == "steal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if steal_committed {
+            break;
+        }
+    }
+
+    assert!(steal_committed, "thief should commit a steal action");
+    assert_eq!(
+        h.world.possessor_of(stolen_lot),
+        Some(thief),
+        "steal should transfer possession to the thief",
+    );
+    assert_eq!(
+        h.world.owner_of(stolen_lot),
+        Some(owner),
+        "steal should preserve ownership for the original owner",
+    );
+
+    let travel_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("full registries should include travel");
+
+    let thief_departure_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, thief, ControlSource::Human, thief_departure_tick.0);
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        thief_departure_tick,
+        InputKind::RequestAction {
+            actor: thief,
+            def_id: travel_def_id,
+            targets: vec![common_house],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+
+    assert_eq!(
+        h.world.effective_place(thief),
+        Some(common_house),
+        "thief should depart the stash before the owner returns",
+    );
+    assert_eq!(
+        h.world.effective_place(stolen_lot),
+        Some(common_house),
+        "the stolen lot should leave the stash with the thief",
+    );
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(thief)
+            .iter()
+            .any(|event| {
+                event.action_name == "travel"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "thief departure should commit as a lawful travel action",
+    );
+
+    let owner_return_tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        owner_return_tick,
+        InputKind::RequestAction {
+            actor: owner,
+            def_id: travel_def_id,
+            targets: vec![VILLAGE_SQUARE],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+
+    assert_eq!(
+        h.world.effective_place(owner),
+        Some(VILLAGE_SQUARE),
+        "owner should return to the expected stash place lawfully via travel",
+    );
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(owner)
+            .iter()
+            .any(|event| {
+                event.action_name == "travel"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "owner return should commit as a lawful travel action",
+    );
+
+    let detection_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, owner, ControlSource::Ai, detection_tick.0);
+    h.step_once();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+
+    let detection_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(owner, detection_tick)
+        .expect("owner should produce a decision trace on the arrival tick");
+    let detection_planning = match &detection_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace after owner arrival, got {other:?}"),
+    };
+
+    let generated_violation_id = detection_planning
+        .candidates
+        .generated
+        .iter()
+        .find_map(|goal| match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some(violation_id),
+            _ => None,
+        })
+        .expect("owner arrival should generate an investigate goal for the missing owned lot");
+    assert_eq!(
+        detection_planning.selection.selected,
+        Some(
+            GoalKind::InvestigateViolation {
+                violation_id: generated_violation_id,
+                place: VILLAGE_SQUARE,
+            }
+            .into(),
+        ),
+        "owner should select the local investigate goal after discovering the missing lot",
+    );
+
+    let memory_after_detection = h
+        .world
+        .get_component_violation_memory(owner)
+        .expect("owner should have violation memory");
+    let detected_record = memory_after_detection
+        .violations
+        .iter()
+        .find(|record| record.id == generated_violation_id)
+        .expect("generated violation should be recorded");
+    match &detected_record.kind {
+        worldwake_core::ViolationKind::EntityMissing {
+            entity,
+            expected_place,
+        } => {
+            assert_eq!(*entity, stolen_lot);
+            assert_eq!(*expected_place, VILLAGE_SQUARE);
+        }
+        other => panic!("expected EntityMissing record after owner arrival, got {other:?}"),
+    }
+    assert_eq!(
+        detected_record.resolved_tick, None,
+        "the arrival-triggered violation should remain unresolved until investigate commits",
+    );
+
+    let expected_theft = TheftFacts {
+        missing_entity: stolen_lot,
+        expected_place: VILLAGE_SQUARE,
+        commodity: CommodityKind::Bread,
+        quantity: Quantity(2),
+    };
+
+    let mut investigate_committed = false;
+    for _ in 0..10 {
+        h.step_once();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+        investigate_committed = h
+            .action_trace_sink()
+            .expect("action tracing should remain enabled")
+            .events_for(owner)
+            .iter()
+            .any(|event| {
+                event.action_name == "investigate"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && event.detail == Some(ActionTraceDetail::Investigate {
+                        violation_id: generated_violation_id,
+                    })
+            });
+        if investigate_committed {
+            break;
+        }
+    }
+
+    assert!(
+        investigate_committed,
+        "owner should commit investigate for the recorded missing-entity violation",
+    );
+
+    let final_store = h
+        .world
+        .get_component_agent_belief_store(owner)
+        .expect("owner should retain a belief store");
+    assert!(
+        final_store.social_observations.iter().any(|observation| {
+            observation.detail
+                == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                    theft: expected_theft,
+                    suspect: None,
+                }
+                && observation.place == VILLAGE_SQUARE
+        }),
+        "owner investigate aftermath should record typed suspected-theft evidence",
+    );
+
+    let final_memory = h
+        .world
+        .get_component_violation_memory(owner)
+        .expect("owner should retain violation memory");
+    assert!(final_memory.violations.iter().any(|record| {
+        record.id == generated_violation_id
+            && record.kind
+                == worldwake_core::ViolationKind::EntityMissing {
+                    entity: stolen_lot,
+                    expected_place: VILLAGE_SQUARE,
+                }
+            && record.resolved_tick.is_some()
+    }));
+    assert!(final_memory.violations.iter().any(|record| {
+        record.kind
+            == worldwake_core::ViolationKind::SuspectedTheft {
+                theft: expected_theft,
+                suspect: None,
+            }
+            && record.resolved_tick.is_none()
+    }));
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_theft_leads_owner_to_local_suspected_theft_discovery() {
+    let _ = run_theft_leads_owner_to_local_suspected_theft_discovery(Seed([61; 32]));
+}
+
+#[test]
+fn golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically() {
+    let first = run_theft_leads_owner_to_local_suspected_theft_discovery(Seed([62; 32]));
+    let second = run_theft_leads_owner_to_local_suspected_theft_discovery(Seed([62; 32]));
+    assert_eq!(
+        first, second,
+        "theft-to-owner-discovery scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 38: Supply Depletion Enables ShareBelief
 // ---------------------------------------------------------------------------
 //
 // Systems: Perception, AI, Generic Actions, Social Tell
