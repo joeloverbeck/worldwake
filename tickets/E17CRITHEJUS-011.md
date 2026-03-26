@@ -24,6 +24,7 @@ Agents cannot form accusation or punishment goals. No candidate generation funct
 10. N/A.
 11. Mismatch: the original ticket scoped accusation candidates to local `ViolationMemory` only. That is too narrow for the spec and would exclude witness-to-authority accusation chains. Correct scope is to generate accusation candidates from concrete typed evidence available in the actor's belief state, including local `SuspectedTheft`, relayed typed theft testimony, and possession evidence after `E17CRITHEJUS-015`/`016`.
 12. Follow-up architectural note: office/control and record-related institutional knowledge still propagates through Tell via `TellTopic::EntityBelief { subject: office_or_record }` sidecar claims. `emit_justice_candidates()` may consume those belief surfaces if present, but it must not add new entity-topic special cases; the Tell-boundary cleanup is tracked in `E17CRITHEJUS-017`.
+13. Follow-up architectural note: profile-driven crime/justice motive ordering in [`crates/worldwake-ai/src/ranking.rs`](../crates/worldwake-ai/src/ranking.rs) is tracked separately in `E17CRITHEJUS-021`. This ticket should admit `Accuse`/`PunishAccused` candidates cleanly, but it should not duplicate ranking logic inside candidate generation.
 
 ## Architecture Check
 

@@ -225,6 +225,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -284,6 +285,14 @@ fn emit_combat_candidates(
     emit_care_goals(candidates, diagnostics, ctx);
     emit_loot_goals(candidates, diagnostics, ctx);
     emit_bury_goals(candidates, diagnostics, ctx);
+}
+
+fn emit_crime_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    emit_theft_candidates(candidates, diagnostics, ctx);
 }
 
 fn emit_social_candidates(
@@ -1612,6 +1621,90 @@ fn emit_bury_goals(
     }
 }
 
+fn emit_theft_candidates(
+    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(place) = ctx.place else {
+        return;
+    };
+    let Some(profile) = ctx.view.theft_disposition_profile(ctx.agent) else {
+        return;
+    };
+
+    let locally_observed = ctx.view.locally_observed_entities_at(ctx.agent, place);
+    let witness_count = locally_observed
+        .iter()
+        .copied()
+        .filter(|entity| *entity != ctx.agent)
+        .filter(|entity| ctx.view.entity_kind(*entity) == Some(EntityKind::Agent))
+        .filter(|entity| ctx.view.is_alive(*entity))
+        .count() as u32;
+    let witness_penalty =
+        u32::from(profile.witness_risk_penalty.value()).saturating_mul(witness_count);
+    if u32::from(profile.theft_motive_weight.value()) <= witness_penalty {
+        return;
+    }
+
+    let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else {
+        return;
+    };
+    let Some(current_load) = ctx.view.load_of_entity(ctx.agent) else {
+        return;
+    };
+    let remaining_capacity = carry_capacity.0.saturating_sub(current_load.0);
+    let beliefs = if ctx.tracing_enabled {
+        ctx.view.known_entity_beliefs(ctx.agent)
+    } else {
+        Vec::new()
+    };
+
+    for item in locally_observed {
+        if ctx.view.entity_kind(item) != Some(EntityKind::ItemLot) {
+            continue;
+        }
+        let Some(owner) = ctx.view.believed_owner_of(item) else {
+            continue;
+        };
+        if owner == ctx.agent || ctx.view.can_control(ctx.agent, item) {
+            continue;
+        }
+        if ctx.view.direct_container(item).is_some() || ctx.view.direct_possessor(item).is_some() {
+            continue;
+        }
+        let Some(item_load) = ctx.view.load_of_entity(item) else {
+            continue;
+        };
+        if item_load.0 > remaining_capacity {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(item);
+        evidence.places.insert(place);
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            if let Some((_, state)) = beliefs.iter().find(|(entity, _)| *entity == item) {
+                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                    subject: item,
+                    aspect: BeliefAspect::LocationAt { place },
+                    source: state.source,
+                    observed_tick: state.observed_tick,
+                });
+            }
+        }
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::StealItem { target_item: item },
+            evidence,
+            trace,
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
 /// Build `BeliefProvenance` entries for evidence-trace contributors by cross-referencing
 /// them against `known_entity_beliefs()`. Only called when tracing is enabled.
 fn belief_provenance_for_contributors(
@@ -2462,6 +2555,8 @@ mod tests {
             BTreeMap<(EntityId, InstitutionalBeliefKey), Vec<BelievedInstitutionalClaim>>,
         violation_disposition_profiles:
             BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
+        theft_disposition_profiles: BTreeMap<EntityId, worldwake_core::TheftDispositionProfile>,
+        reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
         in_transit: BTreeSet<EntityId>,
         believed_owners: BTreeMap<EntityId, EntityId>,
     }
@@ -2517,6 +2612,8 @@ mod tests {
                 support_declaration_beliefs: BTreeMap::new(),
                 institutional_claims: BTreeMap::new(),
                 violation_disposition_profiles: BTreeMap::new(),
+                theft_disposition_profiles: BTreeMap::new(),
+                reservation_ranges: BTreeMap::new(),
                 in_transit: BTreeSet::new(),
                 believed_owners: BTreeMap::new(),
             }
@@ -2682,8 +2779,11 @@ mod tests {
             false
         }
 
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
+        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+            self.reservation_ranges
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn is_dead(&self, entity: EntityId) -> bool {
@@ -2720,6 +2820,13 @@ mod tests {
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
+        }
+
+        fn theft_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<worldwake_core::TheftDispositionProfile> {
+            self.theft_disposition_profiles.get(&agent).cloned()
         }
 
         fn intention_disposition_profile(
@@ -4862,6 +4969,266 @@ mod tests {
                 burial_site: grave_plot,
             }
         ));
+    }
+
+    #[test]
+    fn local_owned_item_emits_theft_goal() {
+        let agent = entity(1);
+        let owner = entity(2);
+        let place = entity(10);
+        let item = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, owner]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(owner, EntityKind::Agent);
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(owner, place);
+        view.effective_places.insert(item, place);
+        view.entities_at.insert(place, vec![agent, owner, item]);
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.carry_capacities.insert(agent, LoadUnits(5));
+        view.entity_loads.insert(item, LoadUnits(2));
+        view.theft_disposition_profiles.insert(
+            agent,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(400),
+                witness_risk_penalty: pm(100),
+            },
+        );
+        view.believed_owners.insert(item, owner);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::StealItem { target_item: item }
+        ));
+    }
+
+    #[test]
+    fn theft_candidate_respects_preconditions_and_witness_gate() {
+        let agent = entity(1);
+        let owner = entity(2);
+        let observer_a = entity(3);
+        let observer_b = entity(4);
+        let observer_c = entity(5);
+        let place = entity(10);
+        let valid_item = entity(20);
+        let self_owned = entity(21);
+        let unowned = entity(22);
+        let controllable = entity(23);
+        let possessed = entity(24);
+        let contained = entity(25);
+        let too_heavy = entity(26);
+
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, owner, observer_a, observer_b, observer_c]);
+        for actor in [agent, owner, observer_a, observer_b, observer_c] {
+            view.entity_kinds.insert(actor, EntityKind::Agent);
+            view.effective_places.insert(actor, place);
+        }
+        for item in [
+            valid_item,
+            self_owned,
+            unowned,
+            controllable,
+            possessed,
+            contained,
+            too_heavy,
+        ] {
+            view.entity_kinds.insert(item, EntityKind::ItemLot);
+            view.effective_places.insert(item, place);
+        }
+        view.entities_at.insert(
+            place,
+            vec![
+                agent,
+                owner,
+                observer_a,
+                observer_b,
+                valid_item,
+                self_owned,
+                unowned,
+                controllable,
+                possessed,
+                contained,
+                too_heavy,
+            ],
+        );
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.carry_capacities.insert(agent, LoadUnits(5));
+        for item in [
+            valid_item,
+            self_owned,
+            unowned,
+            controllable,
+            possessed,
+            contained,
+        ] {
+            view.entity_loads.insert(item, LoadUnits(2));
+        }
+        view.entity_loads.insert(too_heavy, LoadUnits(10));
+        view.theft_disposition_profiles.insert(
+            agent,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(400),
+                witness_risk_penalty: pm(100),
+            },
+        );
+        view.believed_owners.insert(valid_item, owner);
+        view.believed_owners.insert(self_owned, agent);
+        view.believed_owners.insert(controllable, owner);
+        view.believed_owners.insert(possessed, owner);
+        view.believed_owners.insert(contained, owner);
+        view.believed_owners.insert(too_heavy, owner);
+        view.controllable.insert((agent, controllable));
+        view.direct_possessors.insert(possessed, owner);
+        view.direct_containers.insert(contained, entity(99));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::StealItem {
+                target_item: valid_item
+            }
+        ));
+        for rejected in [
+            self_owned,
+            unowned,
+            controllable,
+            possessed,
+            contained,
+            too_heavy,
+        ] {
+            assert!(
+                !contains_goal(
+                    &candidates,
+                    GoalKind::StealItem {
+                        target_item: rejected
+                    }
+                ),
+                "unexpected theft goal for rejected item {rejected:?}"
+            );
+        }
+
+        view.entities_at.insert(
+            place,
+            vec![agent, owner, observer_a, observer_b, observer_c, valid_item],
+        );
+        let witness_blocked = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(
+            !contains_goal(
+                &witness_blocked,
+                GoalKind::StealItem {
+                    target_item: valid_item
+                }
+            ),
+            "witness deterrence should suppress theft when motive gate reaches zero"
+        );
+
+        view.theft_disposition_profiles.clear();
+        let profileless = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(
+            !contains_goal(
+                &profileless,
+                GoalKind::StealItem {
+                    target_item: valid_item
+                }
+            ),
+            "agents without TheftDispositionProfile should not emit theft candidates"
+        );
+    }
+
+    #[test]
+    fn theft_candidate_knowledge_path_records_direct_local_observation() {
+        let agent = entity(1);
+        let owner = entity(2);
+        let place = entity(10);
+        let item = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, owner]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(owner, EntityKind::Agent);
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(owner, place);
+        view.effective_places.insert(item, place);
+        view.entities_at.insert(place, vec![agent, owner, item]);
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.carry_capacities.insert(agent, LoadUnits(5));
+        view.entity_loads.insert(item, LoadUnits(2));
+        view.theft_disposition_profiles.insert(
+            agent,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(500),
+                witness_risk_penalty: pm(100),
+            },
+        );
+        view.believed_owners.insert(item, owner);
+        view.beliefs.insert(agent, vec![known_entity(item, place)]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        let goal = GoalKey::from(GoalKind::StealItem { target_item: item });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&goal)
+            .expect("theft candidate should have evidence trace");
+        assert!(
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .contains(&crate::knowledge_path::BeliefProvenance {
+                    subject: item,
+                    aspect: BeliefAspect::LocationAt { place },
+                    source: PerceptionSource::DirectObservation,
+                    observed_tick: Tick(5),
+                }),
+            "theft candidate should record direct local observation provenance, got {:?}",
+            trace.knowledge_path.entity_beliefs
+        );
     }
 
     #[test]

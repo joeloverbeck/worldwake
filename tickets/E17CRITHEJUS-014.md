@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: E17CRITHEJUS-001 through E17CRITHEJUS-016 (all implementation and golden tickets)
+**Deps**: E17CRITHEJUS-001 through E17CRITHEJUS-016, E17CRITHEJUS-021 (all implementation and golden tickets)
 
 ## Problem
 
@@ -23,7 +23,7 @@ After all E17 implementation tickets are complete, a final workspace-wide verifi
 9. N/A.
 10. N/A.
 11. Mismatch: a separate shared investigate/runtime contradiction remains outside E17-specific crime scope. `tickets/S27INVPROF-001.md` tracks the `ViolationDispositionProfile` requirement cleanup for profile-less investigate fallback/resolution behavior. This ticket should verify the E17 deliverables as implemented, not silently absorb that unrelated shared-runtime change.
-12. N/A.
+12. Follow-up architectural note: profile-driven crime/justice ranking is tracked in `E17CRITHEJUS-021`; final E17 workspace verification should not mark the epic complete while crime goals still rely on the placeholder constant-motive ranking path.
 
 ## Architecture Check
 
