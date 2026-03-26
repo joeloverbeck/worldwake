@@ -154,6 +154,7 @@ pub(super) fn build_candidate_plans(
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
     collect_expansion_summaries: bool,
+    skip_exhausted: &std::collections::BTreeSet<crate::GoalKey>,
 ) -> Vec<(
     crate::GoalKey,
     PlanSearchResult,
@@ -163,6 +164,7 @@ pub(super) fn build_candidate_plans(
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
+        .filter(|c| !skip_exhausted.contains(&c.grounded.key))
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
 
@@ -277,6 +279,20 @@ pub(super) fn plan_and_validate_next_step(
             }
         }
 
+        // Clear exhausted-goal memory when the world changed in ways that could
+        // make previously impossible plans feasible (position, inventory, wounds,
+        // facilities).  Needs-only changes rarely alter the search space.
+        let significant_change_mask = DirtySet::POSITION
+            | DirtySet::COMMODITY
+            | DirtySet::UNIQUE_ITEMS
+            | DirtySet::WOUNDS
+            | DirtySet::FACILITIES
+            | DirtySet::REPLAN_SIGNAL
+            | DirtySet::BLOCKER_CLEANUP;
+        if runtime.dirty.contains_any(significant_change_mask) {
+            runtime.search_exhausted_goals.clear();
+        }
+
         let plans = build_candidate_plans(
             world,
             scheduler,
@@ -291,7 +307,21 @@ pub(super) fn plan_and_validate_next_step(
             recipe_registry,
             false,
             false,
+            &runtime.search_exhausted_goals,
         );
+
+        // Record newly exhausted goals for next tick.
+        runtime.search_exhausted_goals.clear();
+        for (key, result, _, _) in &plans {
+            if matches!(
+                result,
+                crate::PlanSearchResult::BudgetExhausted { .. }
+                    | crate::PlanSearchResult::FrontierExhausted { .. }
+            ) {
+                runtime.search_exhausted_goals.insert(*key);
+            }
+        }
+
         let plans_options = plans_as_options(&plans);
 
         if let Some(selected_plan) = select_best_plan(
@@ -456,6 +486,8 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
         }
 
+        // Traced path does not skip exhausted goals — tracing needs full visibility.
+        let no_skip = std::collections::BTreeSet::new();
         let plans = build_candidate_plans(
             world,
             scheduler,
@@ -470,6 +502,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             recipe_registry,
             true,
             true,
+            &no_skip,
         );
 
         for (goal_key, result, rejections, expansions) in &plans {

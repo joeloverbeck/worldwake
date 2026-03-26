@@ -3,8 +3,8 @@ use worldwake_core::{
     Permille, Tick,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, PerAgentBeliefView, RuntimeBeliefView, SchedulerActionRuntime,
-    TickInputError,
+    ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
+    SchedulerActionRuntime, TickInputError,
 };
 
 use crate::failure_handling::ExecutionFailure;
@@ -60,7 +60,14 @@ pub(super) fn handle_active_action_phase(
         .current_plan
         .as_ref()
         .is_some_and(|plan| runtime.current_step_index < plan.steps.len());
-    let planned_candidates = has_frame(jc.as_ref()).then(|| {
+    // Only compute candidate plans when the interrupt pathway actually uses them.
+    // `planned_candidates` is consumed only by `interrupt_freely`, so we can skip
+    // the expensive GOAP search for NonInterruptible and InterruptibleWithPenalty
+    // actions.
+    let needs_plans = interruptibility == Interruptibility::FreelyInterruptible
+        && has_frame(jc.as_ref());
+    let no_skip = std::collections::BTreeSet::new();
+    let planned_candidates = needs_plans.then(|| {
         build_candidate_plans(
             ctx.world,
             ctx.scheduler,
@@ -75,6 +82,7 @@ pub(super) fn handle_active_action_phase(
             ctx.recipe_registry,
             false,
             false,
+            &no_skip,
         )
     });
     let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));

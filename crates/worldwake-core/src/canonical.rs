@@ -49,7 +49,11 @@ pub fn hash_bytes(bytes: &[u8]) -> StateHash {
 }
 
 pub fn hash_serializable<T: Serialize>(value: &T) -> Result<StateHash, CanonicalError> {
-    canonical_bytes(value).map(|bytes| hash_bytes(&bytes))
+    // Stream serialized bytes directly into blake3 hasher to avoid intermediate
+    // Vec allocation.  blake3::Hasher implements std::io::Write.
+    let mut hasher = blake3::Hasher::new();
+    bincode::serialize_into(&mut hasher, value).map_err(CanonicalError::from)?;
+    Ok(StateHash(*hasher.finalize().as_bytes()))
 }
 
 pub fn hash_world(world: &World) -> Result<StateHash, CanonicalError> {

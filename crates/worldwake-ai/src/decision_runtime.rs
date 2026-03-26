@@ -1,4 +1,4 @@
-use crate::{DirtySet, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
+use crate::{DirtySet, GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
@@ -66,6 +66,10 @@ pub struct AgentDecisionRuntime {
     pub last_unique_item_signature: Vec<(UniqueItemKind, u32)>,
     pub last_facility_access_signature: Vec<(EntityId, bool, Option<ActionDefId>)>,
     pub materialization_bindings: MaterializationBindings,
+    /// Goals whose plan search exhausted the budget on the previous planning
+    /// cycle.  These are skipped on the next cycle unless significant world
+    /// changes occur (position, commodity, wounds, or facility changes).
+    pub search_exhausted_goals: std::collections::BTreeSet<GoalKey>,
 }
 
 impl AgentDecisionRuntime {

@@ -103,6 +103,12 @@ impl DirtySet {
         (self.0 & other.0) == other.0
     }
 
+    /// Returns `true` if this set shares any bit with `other`.
+    #[inline]
+    pub fn contains_any(self, other: DirtySet) -> bool {
+        (self.0 & other.0) != 0
+    }
+
     /// Returns `true` if the set is non-empty and contains only snapshot
     /// domain bits (no structural or frame bits).
     #[inline]
