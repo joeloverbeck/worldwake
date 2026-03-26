@@ -225,7 +225,8 @@ fn goal_synthesized_candidates(
         .filter_map(|def_id| {
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
-            synthesized_candidate_for_goal(goal, def, semantics).map(|authoritative_targets| {
+            goal.synthesized_root_candidate_targets(def, semantics)
+                .map(|authoritative_targets| {
                 SearchCandidate {
                     def_id: *def_id,
                     authoritative_targets: authoritative_targets.clone(),
@@ -240,43 +241,6 @@ fn goal_synthesized_candidates(
             })
         })
         .collect()
-}
-
-fn synthesized_candidate_for_goal(
-    goal: &GroundedGoal,
-    def: &worldwake_sim::ActionDef,
-    semantics: &PlannerOpSemantics,
-) -> Option<Vec<EntityId>> {
-    match (&goal.key.kind, semantics.op_kind) {
-        (
-            GoalKind::AcquireCommodity { .. }
-            | GoalKind::ConsumeOwnedCommodity { .. }
-            | GoalKind::RestockCommodity { .. }
-            | GoalKind::TreatWounds { .. },
-            PlannerOpKind::Trade,
-        ) => {
-            let target = goal.evidence_entities.iter().copied().next()?;
-            (goal.evidence_entities.len() == 1
-                && matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]))
-            .then_some(vec![target])
-        }
-        (GoalKind::ClaimOffice { .. }, PlannerOpKind::PressForceClaim)
-            if def.targets.is_empty() =>
-        {
-            Some(Vec::new())
-        }
-        (GoalKind::InvestigateViolation { place, .. }, PlannerOpKind::Investigate)
-            if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::ActorPlace]) =>
-        {
-            Some(vec![*place])
-        }
-        (GoalKind::ShareBelief { listener, .. }, PlannerOpKind::Tell)
-            if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]) =>
-        {
-            Some(vec![*listener])
-        }
-        _ => None,
-    }
 }
 
 fn candidate_blocked_facility_use(

@@ -1566,6 +1566,59 @@ pub struct GroundedGoal {
     pub evidence_places: BTreeSet<EntityId>,
 }
 
+impl GroundedGoal {
+    pub(crate) fn synthesized_root_candidate_targets(
+        &self,
+        def: &ActionDef,
+        semantics: &PlannerOpSemantics,
+    ) -> Option<Vec<EntityId>> {
+        match (&self.key.kind, semantics.op_kind) {
+            (
+                GoalKind::AcquireCommodity { .. }
+                | GoalKind::ConsumeOwnedCommodity { .. }
+                | GoalKind::RestockCommodity { .. }
+                | GoalKind::TreatWounds { .. },
+                PlannerOpKind::Trade,
+            ) => {
+                let target = self.evidence_entities.iter().copied().next()?;
+                (self.evidence_entities.len() == 1
+                    && matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ))
+                .then_some(vec![target])
+            }
+            (GoalKind::ClaimOffice { .. }, PlannerOpKind::PressForceClaim)
+                if def.targets.is_empty() =>
+            {
+                Some(Vec::new())
+            }
+            (GoalKind::InvestigateViolation { place, .. }, PlannerOpKind::Investigate)
+                if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::ActorPlace]) =>
+            {
+                Some(vec![*place])
+            }
+            (GoalKind::ShareBelief { listener, .. }, PlannerOpKind::Tell)
+                if matches!(
+                    def.targets.as_slice(),
+                    [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                ) =>
+            {
+                Some(vec![*listener])
+            }
+            (GoalKind::Accuse { accused, .. }, PlannerOpKind::Accuse)
+                if matches!(
+                    def.targets.as_slice(),
+                    [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                ) =>
+            {
+                Some(vec![*accused])
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RankedGoal {
     pub grounded: GroundedGoal,
@@ -2971,6 +3024,180 @@ mod tests {
                 violation_id: worldwake_core::ViolationId(9),
             }))
         );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_tell_root_targets_from_goal_identity() {
+        let listener = entity(8);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief {
+                    subject: entity(20),
+                },
+            }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "tell".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Tell,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, &semantics),
+            Some(vec![listener])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_accuse_root_targets_from_goal_identity() {
+        let accused = entity(10);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::Accuse {
+                accused,
+                violation_id: worldwake_core::ViolationId(9),
+            }),
+            evidence_entities: BTreeSet::from([accused]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "accuse".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Accuse,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, &semantics),
+            Some(vec![accused])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_trade_root_targets_from_single_evidence_entity() {
+        let seller = entity(11);
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Trade,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: true,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, &semantics),
+            Some(vec![seller])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_trade_root_targets_from_ambiguous_evidence() {
+        let goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            evidence_entities: BTreeSet::from([entity(11), entity(12)]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Trade,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: true,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            relevant_goal_kinds: &[],
+        };
+
+        assert_eq!(goal.synthesized_root_candidate_targets(&def, &semantics), None);
     }
 
     #[test]

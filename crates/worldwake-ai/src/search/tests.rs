@@ -4053,12 +4053,13 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         &accuse_defs,
     );
     assert!(
-        !candidates.iter().any(|candidate| {
+        candidates.iter().any(|candidate| {
             registry
                 .get(candidate.def_id)
                 .is_some_and(|def| def.name == "accuse")
+                && candidate.authoritative_targets == vec![accused]
         }),
-        "Without accusation evidence payloads, search must not synthesize accuse candidates from thin air"
+        "Accuse goals should surface the exact bound accuse candidate from goal identity once the action exists"
     );
 }
 

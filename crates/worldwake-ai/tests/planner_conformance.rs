@@ -19,11 +19,14 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     total_live_lot_quantity, AgentBeliefStore, AgentData, CommodityKind, ControlSource, EntityId,
-    GoalKey, GoalKind, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille, Quantity,
-    Seed, SuccessionLaw, Tick, UtilityProfile,
+    GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim, MetabolismProfile,
+    PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed, SuccessionLaw,
+    TellProfile, TellTopic, Tick, UtilityProfile, ViolationDispositionProfile, ViolationKind,
+    ViolationMemory,
 };
 use worldwake_sim::{
-    ActionPayload, ActionRequestMode, InputKind, PerAgentBeliefView, RequestProvenance,
+    AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
+    PerAgentBeliefView, RequestProvenance, TellActionPayload,
 };
 
 // ---------------------------------------------------------------------------
@@ -947,9 +950,7 @@ fn conformance_travel() {
 }
 
 #[test]
-fn conformance_trade_noop_coverage_gap() {
-    // Trade uses GoalModelFallback with no state change — known coverage gap.
-    // Complex bilateral negotiation; planner relies on goal-model satisfaction.
+fn conformance_trade_exact_acquisition() {
     let mut ch = ConformanceHarness::new();
 
     let buyer = seed_agent(
@@ -957,7 +958,7 @@ fn conformance_trade_noop_coverage_gap() {
         &mut ch.h.event_log,
         "Buyer",
         VILLAGE_SQUARE,
-        HomeostaticNeeds::new_sated(),
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
@@ -1068,11 +1069,302 @@ fn conformance_trade_noop_coverage_gap() {
         ch.h.world
             .controlled_commodity_quantity(buyer, CommodityKind::Bread);
 
-    // Trade may or may not succeed (depends on valuation), but handler at least attempted.
-    // The key conformance check is that the planner claims no state change.
-    // If the trade succeeded, buyer should have gained bread.
-    // We don't assert success because trade negotiation is bilateral and may reject.
-    let _ = (buyer_bread_before, buyer_bread_after);
+    assert!(
+        buyer_bread_after > buyer_bread_before,
+        "handler should complete the exact local trade and increase buyer bread"
+    );
+}
+
+#[test]
+fn conformance_tell() {
+    let mut ch = ConformanceHarness::new();
+    let speaker = seed_agent(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let listener = seed_agent(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject = seed_agent(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Remote Subject",
+        RULERS_HALL,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    disable_ai_control(&mut ch.h, speaker);
+    disable_ai_control(&mut ch.h, listener);
+    set_agent_tell_profile(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        speaker,
+        TellProfile {
+            acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        listener,
+        worldwake_core::PerceptionProfile::default(),
+    );
+    seed_belief_from_world(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        speaker,
+        subject,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let topic = TellTopic::EntityBelief { subject };
+
+    let snapshot = ch.snapshot_for(speaker);
+    let semantics = ch.semantics_for("tell");
+    let goal = grounded(GoalKind::ShareBelief { listener, topic });
+    let initial_state = PlanningState::new(&snapshot);
+
+    let transition = apply_hypothetical_transition(
+        &goal,
+        &semantics,
+        initial_state.clone(),
+        &[PlanningEntityRef::Authoritative(listener)],
+        None,
+    )
+    .expect("tell transition should produce Some");
+    assert_planner_noop("tell", &initial_state, &transition.state, speaker);
+
+    let tell_payload = ActionPayload::Tell(TellActionPayload { listener, topic });
+    ch.run_action_to_completion(speaker, "tell", vec![listener], Some(tell_payload), 10);
+
+    let listener_store = ch
+        .h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should have AgentBeliefStore");
+    assert!(
+        listener_store.known_entities.contains_key(&subject),
+        "handler should transfer the subject belief to the listener"
+    );
+}
+
+#[test]
+fn conformance_investigate() {
+    let mut ch = ConformanceHarness::new();
+    let investigator = seed_agent(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Investigator",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    disable_ai_control(&mut ch.h, investigator);
+    let source = place_workstation_with_source(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        VILLAGE_SQUARE,
+        worldwake_core::WorkstationTag::OrchardRow,
+        worldwake_core::ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(0),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let violation_id = {
+        let mut memory = ViolationMemory::default();
+        let violation_id = memory.record(
+            ViolationKind::SupplyDepleted {
+                commodity: CommodityKind::Apple,
+                source,
+                place: VILLAGE_SQUARE,
+            },
+            Tick(0),
+            16,
+        );
+        let mut txn = new_txn(&mut ch.h.world, 0);
+        txn.set_component_violation_memory(investigator, memory)
+            .unwrap();
+        txn.set_component_violation_disposition_profile(
+            investigator,
+            ViolationDispositionProfile {
+                investigation_duration_ticks: nz(1),
+                violation_memory_retention_ticks: 16,
+                investigation_motive_weight: pm(500),
+                ownership_motive_bonus: pm(0),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut ch.h.event_log);
+        violation_id
+    };
+
+    let snapshot = ch.snapshot_for(investigator);
+    let semantics = ch.semantics_for("investigate");
+    let goal = grounded(GoalKind::InvestigateViolation {
+        violation_id,
+        place: VILLAGE_SQUARE,
+    });
+    let initial_state = PlanningState::new(&snapshot);
+
+    let transition = apply_hypothetical_transition(
+        &goal,
+        &semantics,
+        initial_state.clone(),
+        &[PlanningEntityRef::Authoritative(VILLAGE_SQUARE)],
+        None,
+    )
+    .expect("investigate transition should produce Some");
+    assert_planner_noop("investigate", &initial_state, &transition.state, investigator);
+
+    let investigate_payload =
+        ActionPayload::Investigate(InvestigateActionPayload { violation_id });
+    ch.run_action_to_completion(
+        investigator,
+        "investigate",
+        vec![VILLAGE_SQUARE],
+        Some(investigate_payload),
+        10,
+    );
+
+    let store = ch
+        .h
+        .world
+        .get_component_agent_belief_store(investigator)
+        .expect("investigator should have AgentBeliefStore");
+    assert!(
+        store.social_observations.iter().copied().any(|observation| {
+            observation.detail
+                == worldwake_core::SocialObservationDetail::WitnessedAbsence {
+                    missing_entity: source,
+                    expected_place: VILLAGE_SQUARE,
+                }
+        }),
+        "handler should record the witnessed absence observation"
+    );
+}
+
+#[test]
+fn conformance_accuse() {
+    let mut ch = ConformanceHarness::new();
+    let accuser = seed_agent(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Accuser",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let accused = seed_agent(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        "Accused",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    disable_ai_control(&mut ch.h, accuser);
+    disable_ai_control(&mut ch.h, accused);
+    seed_actor_local_beliefs(
+        &mut ch.h.world,
+        &mut ch.h.event_log,
+        accuser,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let violation_id = {
+        let mut memory = ViolationMemory::default();
+        let violation_id = memory.record(
+            ViolationKind::SuspectedTheft {
+                missing_entity: EntityId {
+                    slot: 900,
+                    generation: 1,
+                },
+                expected_place: VILLAGE_SQUARE,
+                suspect: Some(accused),
+            },
+            Tick(0),
+            16,
+        );
+        let mut txn = new_txn(&mut ch.h.world, 0);
+        txn.set_component_violation_memory(accuser, memory).unwrap();
+        txn.create_record(RecordData {
+            record_kind: RecordKind::CrimeRegister,
+            home_place: VILLAGE_SQUARE,
+            issuer: VILLAGE_SQUARE,
+            consultation_ticks: 1,
+            max_entries_per_consult: 8,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap();
+        commit_txn(txn, &mut ch.h.event_log);
+        violation_id
+    };
+
+    let snapshot = ch.snapshot_for(accuser);
+    let semantics = ch.semantics_for("accuse");
+    let goal = grounded(GoalKind::Accuse {
+        accused,
+        violation_id,
+    });
+    let initial_state = PlanningState::new(&snapshot);
+
+    let transition = apply_hypothetical_transition(
+        &goal,
+        &semantics,
+        initial_state.clone(),
+        &[PlanningEntityRef::Authoritative(accused)],
+        None,
+    )
+    .expect("accuse transition should produce Some");
+    assert_planner_noop("accuse", &initial_state, &transition.state, accuser);
+
+    let accuse_payload = ActionPayload::Accuse(AccuseActionPayload { violation_id });
+    ch.run_action_to_completion(accuser, "accuse", vec![accused], Some(accuse_payload), 10);
+
+    let record_data = ch
+        .h
+        .world
+        .query_record_data()
+        .find_map(|(_, data)| (data.record_kind == RecordKind::CrimeRegister).then_some(data))
+        .expect("crime register should exist");
+    assert!(
+        record_data.active_entries().into_iter().any(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::Accusation {
+                    accuser: claim_accuser,
+                    accused: claim_accused,
+                    violation_id: claim_violation,
+                    ..
+                } if claim_accuser == accuser
+                    && claim_accused == accused
+                    && claim_violation == violation_id
+            )
+        }),
+        "handler should append the accusation record"
+    );
 }
 
 #[test]
