@@ -1274,7 +1274,7 @@ fn conformance_accuse() {
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
-    let accused = seed_agent(
+    let suspect = seed_agent(
         &mut ch.h.world,
         &mut ch.h.event_log,
         "Accused",
@@ -1284,7 +1284,7 @@ fn conformance_accuse() {
         UtilityProfile::default(),
     );
     disable_ai_control(&mut ch.h, accuser);
-    disable_ai_control(&mut ch.h, accused);
+    disable_ai_control(&mut ch.h, suspect);
     seed_actor_local_beliefs(
         &mut ch.h.world,
         &mut ch.h.event_log,
@@ -1301,7 +1301,7 @@ fn conformance_accuse() {
                     generation: 1,
                 },
                 expected_place: VILLAGE_SQUARE,
-                suspect: Some(accused),
+                suspect: Some(suspect),
             },
             Tick(0),
             16,
@@ -1325,7 +1325,7 @@ fn conformance_accuse() {
     let snapshot = ch.snapshot_for(accuser);
     let semantics = ch.semantics_for("accuse");
     let goal = grounded(GoalKind::Accuse {
-        accused,
+        accused: suspect,
         violation_id,
     });
     let initial_state = PlanningState::new(&snapshot);
@@ -1334,14 +1334,14 @@ fn conformance_accuse() {
         &goal,
         &semantics,
         initial_state.clone(),
-        &[PlanningEntityRef::Authoritative(accused)],
+        &[PlanningEntityRef::Authoritative(suspect)],
         None,
     )
     .expect("accuse transition should produce Some");
     assert_planner_noop("accuse", &initial_state, &transition.state, accuser);
 
     let accuse_payload = ActionPayload::Accuse(AccuseActionPayload { violation_id });
-    ch.run_action_to_completion(accuser, "accuse", vec![accused], Some(accuse_payload), 10);
+    ch.run_action_to_completion(accuser, "accuse", vec![suspect], Some(accuse_payload), 10);
 
     let record_data = ch
         .h
@@ -1355,11 +1355,11 @@ fn conformance_accuse() {
                 entry.claim,
                 InstitutionalClaim::Accusation {
                     accuser: claim_accuser,
-                    accused: claim_accused,
+                    accused: claim_subject,
                     violation_id: claim_violation,
                     ..
                 } if claim_accuser == accuser
-                    && claim_accused == accused
+                    && claim_subject == suspect
                     && claim_violation == violation_id
             )
         }),

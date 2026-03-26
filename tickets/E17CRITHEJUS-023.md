@@ -4,14 +4,14 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: E17CRITHEJUS-020, E17CRITHEJUS-021, E17CRITHEJUS-022
+**Deps**: E17CRITHEJUS-020, archive/tickets/completed/E17CRITHEJUS-021.md, E17CRITHEJUS-022, E17CRITHEJUS-024
 
 ## Problem
 
 The architectural lessons from `E17CRITHEJUS-008` are now clearer than the current docs. The repository explains mixed-layer ticket drafting and traceability escalation well, but it does not yet document the specific planner contracts that matter here:
 
 - when a live goal may surface a terminal operator from goal identity
-- which planner-visible runtime belief data must survive into `PlanningSnapshot`
+- which planner-visible runtime belief data must survive into `PlanningSnapshot`, including the centralized dynamic duration-backed dependency inventory if `E17CRITHEJUS-024` lands first
 - what decision traces should explain when a relevant operator is absent or a planner prerequisite is missing
 
 Without those contracts written down, future tickets are likely to repeat the same stale-narrative failure mode: a narrow symptom gets treated as the bug while the shared planner boundary remains implicit.
@@ -21,7 +21,7 @@ Without those contracts written down, future tickets are likely to repeat the sa
 1. `AGENTS.md`, `tickets/README.md`, and `docs/precision-rules.md` already require assumption reassessment, layer naming, verification-layer mapping, and traceability escalation. The current gap is planner-specific contract documentation, not a missing general authoring framework.
 2. `AGENTS.md` already includes the Authoritative-To-AI impact rule and decision-trace debugging guidance, but it does not state the exact-goal terminal surfacing contract or a planning-snapshot completeness checklist.
 3. No single current doc explains the planner path end to end: `GroundedGoal` / relevant operators -> root candidate surfacing -> payload/target synthesis -> snapshot-backed duration estimation -> decision-trace omission/prerequisite diagnostics.
-4. The intended invariant is documentation clarity, not behavior change. This ticket should document the final architecture after `E17CRITHEJUS-020` through `E17CRITHEJUS-022`, not invent an alternate contract in prose.
+4. The intended invariant is documentation clarity, not behavior change. This ticket should document the final architecture after `E17CRITHEJUS-020`, `E17CRITHEJUS-022`, and `E17CRITHEJUS-024`, using the completed `E17CRITHEJUS-021` outcome as historical context rather than inventing an alternate contract in prose.
 5. This is a documentation-only ticket. Verification is doc-content inspection plus regression safety that the workspace still builds/tests after doc edits.
 6. `docs/FOUNDATIONS.md` is the governing design source and should not be diluted or duplicated. The new docs should align to it by naming how these planner contracts support explainable emergence, locality of information, concrete state, and no workaround architecture.
 7. Adjacent process guidance already exists in `archive/tickets/completed/E17CRITHEJUS-019.md`. This ticket should extend planner-specific documentation, not re-open the broader ticket-authoring contract work.
@@ -47,7 +47,7 @@ Without those contracts written down, future tickets are likely to repeat the sa
 
 Create or update one planner-focused doc that explains:
 - exact-goal terminal operator surfacing
-- the snapshot completeness contract for planner-visible runtime belief data
+- the snapshot completeness contract for planner-visible runtime belief data, including the centralized dynamic duration-backed planner contract if present
 - traceability expectations for omitted relevant operators and named missing prerequisites
 
 ### 2. Add concise contributor cross-references

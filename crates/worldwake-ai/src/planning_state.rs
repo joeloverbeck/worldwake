@@ -7,9 +7,9 @@ use worldwake_core::{
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData, Permille, PlaceTag,
     Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
-    WorkstationTag, Wound,
+    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+    TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -1297,6 +1297,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
     }
 
+    fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.theft_disposition_profile.clone())
+    }
+
     fn violation_disposition_profile(
         &self,
         agent: EntityId,
@@ -1706,14 +1713,15 @@ mod tests {
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
         ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-        Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
-        get_affordances, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
-        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress,
-        ActionState, Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
-        Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
+        estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
+        ActionDomain, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, Constraint,
+        DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
+        ReservationReq, RuntimeBeliefView, TargetSpec,
     };
     use worldwake_systems::register_office_actions;
 
@@ -1736,6 +1744,9 @@ mod tests {
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
+        theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
+        violation_profiles: BTreeMap<EntityId, ViolationDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
@@ -1747,6 +1758,7 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         record_data: BTreeMap<EntityId, RecordData>,
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
+        combat_profiles: BTreeMap<EntityId, CombatProfile>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
@@ -1777,6 +1789,9 @@ mod tests {
                 resource_sources: BTreeMap::new(),
                 needs: BTreeMap::new(),
                 thresholds: BTreeMap::new(),
+                trade_profiles: BTreeMap::new(),
+                theft_profiles: BTreeMap::new(),
+                violation_profiles: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
@@ -1788,6 +1803,7 @@ mod tests {
                 attackers: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 consultation_speed_factors: BTreeMap::new(),
+                combat_profiles: BTreeMap::new(),
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 courages: BTreeMap::new(),
@@ -1997,8 +2013,12 @@ mod tests {
             None
         }
 
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
+        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+            self.trade_profiles.get(&agent).cloned()
+        }
+
+        fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
+            self.theft_profiles.get(&agent).cloned()
         }
 
         fn intention_disposition_profile(
@@ -2019,8 +2039,8 @@ mod tests {
             self.told_beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
-            None
+        fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+            self.combat_profiles.get(&agent).copied()
         }
 
         fn courage(&self, agent: EntityId) -> Option<Permille> {
@@ -2029,6 +2049,13 @@ mod tests {
 
         fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
             self.consultation_speed_factors.get(&agent).copied()
+        }
+
+        fn violation_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<ViolationDispositionProfile> {
+            self.violation_profiles.get(&agent).cloned()
         }
 
         fn believed_office_holder(
@@ -3464,6 +3491,210 @@ mod tests {
             RuntimeBeliefView::consultation_speed_factor(&state, actor),
             Some(Permille::new(500).unwrap())
         );
+    }
+
+    #[test]
+    fn planning_state_matches_runtime_duration_estimation_for_dynamic_duration_contract() {
+        let actor = entity(1);
+        let town = entity(10);
+        let market = entity(11);
+        let record = entity(40);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(record, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(market, EntityKind::Place);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(record, town);
+        view.entities_at.insert(town, vec![actor, record]);
+        view.entities_at.insert(market, Vec::new());
+        view.adjacent
+            .insert(town, vec![(market, NonZeroU32::new(3).unwrap())]);
+        view.adjacent
+            .insert(market, vec![(town, NonZeroU32::new(3).unwrap())]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.trade_profiles.insert(
+            actor,
+            TradeDispositionProfile {
+                negotiation_round_ticks: NonZeroU32::new(4).unwrap(),
+                initial_offer_bias: pm(120),
+                concession_rate: pm(80),
+                demand_memory_retention_ticks: 12,
+            },
+        );
+        view.theft_profiles.insert(
+            actor,
+            TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(5).unwrap(),
+                theft_motive_weight: pm(400),
+                witness_risk_penalty: pm(100),
+            },
+        );
+        view.violation_profiles.insert(
+            actor,
+            ViolationDispositionProfile {
+                investigation_duration_ticks: NonZeroU32::new(6).unwrap(),
+                violation_memory_retention_ticks: 12,
+                investigation_motive_weight: pm(500),
+                ownership_motive_bonus: pm(150),
+            },
+        );
+        view.combat_profiles.insert(
+            actor,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(620),
+                pm(580),
+                pm(80),
+                pm(25),
+                pm(18),
+                pm(120),
+                pm(35),
+                NonZeroU32::new(7).unwrap(),
+                NonZeroU32::new(11).unwrap(),
+            ),
+        );
+        view.consultation_speed_factors
+            .insert(actor, Permille::new(500).unwrap());
+        view.record_data.insert(
+            record,
+            RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: town,
+                issuer: actor,
+                consultation_ticks: 4,
+                max_entries_per_consult: 2,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([record, market]),
+            &BTreeSet::from([town, market]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            RuntimeBeliefView::trade_disposition_profile(&state, actor),
+            view.trade_profiles.get(&actor).cloned()
+        );
+        assert_eq!(
+            RuntimeBeliefView::theft_disposition_profile(&state, actor),
+            view.theft_profiles.get(&actor).cloned()
+        );
+        assert_eq!(
+            RuntimeBeliefView::violation_disposition_profile(&state, actor),
+            view.violation_profiles.get(&actor).cloned()
+        );
+        assert_eq!(
+            RuntimeBeliefView::combat_profile(&state, actor),
+            view.combat_profiles.get(&actor).copied()
+        );
+
+        let payload = ActionPayload::None;
+        let runtime_trade = estimate_duration_from_beliefs(
+            &view,
+            actor,
+            &DurationExpr::ActorTradeDisposition,
+            &[],
+            &payload,
+        );
+        let snapshot_trade = estimate_duration_from_beliefs(
+            &state,
+            actor,
+            &DurationExpr::ActorTradeDisposition,
+            &[],
+            &payload,
+        );
+        assert_eq!(snapshot_trade, runtime_trade);
+
+        let runtime_theft = estimate_duration_from_beliefs(
+            &view,
+            actor,
+            &DurationExpr::ActorTheftDisposition,
+            &[],
+            &payload,
+        );
+        let snapshot_theft = estimate_duration_from_beliefs(
+            &state,
+            actor,
+            &DurationExpr::ActorTheftDisposition,
+            &[],
+            &payload,
+        );
+        assert_eq!(snapshot_theft, runtime_theft);
+
+        let runtime_investigate = estimate_duration_from_beliefs(
+            &view,
+            actor,
+            &DurationExpr::ActorInvestigationDisposition,
+            &[],
+            &payload,
+        );
+        let snapshot_investigate = estimate_duration_from_beliefs(
+            &state,
+            actor,
+            &DurationExpr::ActorInvestigationDisposition,
+            &[],
+            &payload,
+        );
+        assert_eq!(snapshot_investigate, runtime_investigate);
+
+        let runtime_defend = estimate_duration_from_beliefs(
+            &view,
+            actor,
+            &DurationExpr::ActorDefendStance,
+            &[],
+            &payload,
+        );
+        let snapshot_defend = estimate_duration_from_beliefs(
+            &state,
+            actor,
+            &DurationExpr::ActorDefendStance,
+            &[],
+            &payload,
+        );
+        assert_eq!(snapshot_defend, runtime_defend);
+
+        let runtime_consult = estimate_duration_from_beliefs(
+            &view,
+            actor,
+            &DurationExpr::ConsultRecord { target_index: 0 },
+            &[record],
+            &payload,
+        );
+        let snapshot_consult = estimate_duration_from_beliefs(
+            &state,
+            actor,
+            &DurationExpr::ConsultRecord { target_index: 0 },
+            &[record],
+            &payload,
+        );
+        assert_eq!(snapshot_consult, runtime_consult);
+
+        let runtime_travel = estimate_duration_from_beliefs(
+            &view,
+            actor,
+            &DurationExpr::TravelToTarget { target_index: 0 },
+            &[market],
+            &payload,
+        );
+        let snapshot_travel = estimate_duration_from_beliefs(
+            &state,
+            actor,
+            &DurationExpr::TravelToTarget { target_index: 0 },
+            &[market],
+            &payload,
+        );
+        assert_eq!(snapshot_travel, runtime_travel);
     }
 
     #[test]

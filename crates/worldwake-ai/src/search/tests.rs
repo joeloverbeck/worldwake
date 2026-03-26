@@ -2203,6 +2203,88 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
 }
 
 #[test]
+fn build_successor_estimates_steal_ticks_from_theft_profile() {
+    let actor = entity(1);
+    let owner = entity(2);
+    let target_item = entity(3);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, owner, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(owner, EntityKind::Agent);
+    view.kinds.insert(target_item, EntityKind::ItemLot);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(owner, town);
+    view.effective_places.insert(target_item, town);
+    view.entities_at
+        .insert(town, vec![actor, owner, target_item]);
+    view.owners.insert(target_item, owner);
+    view.lot_commodities
+        .insert(target_item, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((target_item, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(target_item, LoadUnits(1));
+    view.theft_profiles.insert(
+        actor,
+        TheftDispositionProfile {
+            steal_duration_ticks: NonZeroU32::new(2).unwrap(),
+            theft_motive_weight: pm(500),
+            witness_risk_penalty: pm(100),
+        },
+    );
+
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let steal = registry.iter().find(|def| def.name == "steal").unwrap();
+    let goal = GroundedGoal {
+        key: GoalKey::from(GoalKind::StealItem { target_item }),
+        evidence_entities: BTreeSet::from([target_item]),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let node = SearchNode {
+        state: PlanningState::new(&snapshot),
+        steps: Vec::new(),
+        total_estimated_ticks: 0,
+        heuristic_ticks: 0,
+    };
+    let candidate = SearchCandidate {
+        def_id: steal.id,
+        authoritative_targets: vec![target_item],
+        planning_targets: vec![PlanningEntityRef::Authoritative(target_item)],
+        payload_override: None,
+        planner_only: false,
+        trace_index: None,
+    };
+
+    let (_, successor) = build_successor(
+        &goal,
+        &semantics_table,
+        &registry,
+        &node,
+        &candidate,
+        &RecipeRegistry::new(),
+        &PlanningBudget::default(),
+    )
+    .expect("steal successor should estimate duration from the preserved theft profile");
+
+    assert_eq!(successor.steps.len(), 1);
+    assert_eq!(successor.steps[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(successor.steps[0].estimated_ticks, 2);
+    assert_eq!(successor.total_estimated_ticks, 2);
+}
+
+#[test]
 fn build_successor_uses_transition_metadata_for_partial_pickup() {
     let (node, _actor, _place, lot, registry, _handlers) =
         pickup_node(CommodityKind::Water, Quantity(3), LoadUnits(4));
