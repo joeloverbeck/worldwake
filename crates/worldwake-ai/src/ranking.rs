@@ -8,8 +8,8 @@ use crate::{
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, PerceptionSource, Permille, TellTopic,
-    ThresholdBand, Tick, UtilityProfile,
+    EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, PerceptionSource, Permille,
+    TellTopic, ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -490,11 +490,9 @@ fn motive_score(
             context.utility.social_weight,
             social_pressure_for_topic(context, topic),
         ),
-        GoalKind::LootCorpse { .. }
-        | GoalKind::BuryCorpse { .. }
-        | GoalKind::StealItem { .. }
-        | GoalKind::Accuse { .. }
-        | GoalKind::PunishAccused { .. } => 1,
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::StealItem { .. } => theft_motive(context),
+        GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
@@ -585,6 +583,35 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                 )
             }),
     }
+}
+
+fn theft_motive(context: &RankingContext<'_>) -> u32 {
+    let Some(profile) = context.view.theft_disposition_profile(context.agent) else {
+        return 0;
+    };
+    let Some(place) = context.view.effective_place(context.agent) else {
+        return 0;
+    };
+
+    let witness_count = context
+        .view
+        .locally_observed_entities_at(context.agent, place)
+        .into_iter()
+        .filter(|entity| *entity != context.agent)
+        .filter(|entity| context.view.entity_kind(*entity) == Some(EntityKind::Agent))
+        .filter(|entity| context.view.is_alive(*entity))
+        .count() as u32;
+
+    let witness_penalty =
+        u32::from(profile.witness_risk_penalty.value()).saturating_mul(witness_count);
+    u32::from(profile.theft_motive_weight.value()).saturating_sub(witness_penalty)
+}
+
+fn justice_motive(context: &RankingContext<'_>) -> u32 {
+    context
+        .view
+        .justice_disposition_profile(context.agent)
+        .map_or(0, |profile| u32::from(profile.accusation_motive_weight.value()))
 }
 
 fn belief_pressure_from_state(
@@ -968,10 +995,11 @@ mod tests {
         belief_confidence, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId,
-        ResourceSource, TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
+        EntityKind, HomeostaticNeeds, InTransitOnEdge, JusticeDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, PunishmentKind,
+        Quantity, RecipeId, ResourceSource, TellTopic, TheftDispositionProfile, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -981,6 +1009,9 @@ mod tests {
     #[derive(Default)]
     struct TestBeliefView {
         alive: BTreeSet<EntityId>,
+        entity_kinds: BTreeMap<EntityId, EntityKind>,
+        effective_places: BTreeMap<EntityId, EntityId>,
+        place_entities: BTreeMap<EntityId, Vec<EntityId>>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
@@ -988,6 +1019,8 @@ mod tests {
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
+        justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
@@ -1001,17 +1034,17 @@ mod tests {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
-        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
-            None
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.entity_kinds.get(&entity).copied()
         }
-        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
         }
         fn is_in_transit(&self, _entity: EntityId) -> bool {
             false
         }
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.place_entities.get(&place).cloned().unwrap_or_default()
         }
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
@@ -1123,6 +1156,15 @@ mod tests {
         }
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
+        }
+        fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
+            self.theft_profiles.get(&agent).cloned()
+        }
+        fn justice_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<JusticeDispositionProfile> {
+            self.justice_profiles.get(&agent).cloned()
         }
         fn intention_disposition_profile(
             &self,
@@ -1279,6 +1321,10 @@ mod tests {
     fn base_view(agent: EntityId) -> TestBeliefView {
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        let place = entity(99);
+        view.effective_places.insert(agent, place);
+        view.place_entities.insert(place, vec![agent]);
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
@@ -1290,41 +1336,147 @@ mod tests {
     }
 
     #[test]
-    fn deferred_crime_and_justice_goals_rank_low_with_minimal_motive() {
+    fn crime_goals_use_profile_driven_motive_scores() {
         let agent = entity(1);
-        let view = base_view(agent);
+        let mut view = base_view(agent);
         let recipes = RecipeRegistry::new();
+        view.theft_profiles.insert(
+            agent,
+            TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(700),
+                witness_risk_penalty: pm(150),
+            },
+        );
+        view.justice_profiles.insert(
+            agent,
+            JusticeDispositionProfile {
+                accusation_motive_weight: pm(640),
+                fine_severity: pm(500),
+            },
+        );
+        let place = entity(99);
+        view.entity_kinds.insert(entity(2), EntityKind::ItemLot);
+        view.entity_kinds.insert(entity(8), EntityKind::Agent);
+        view.entity_kinds.insert(entity(9), EntityKind::Agent);
+        view.alive.insert(entity(8));
+        view.alive.insert(entity(9));
+        view.place_entities
+            .insert(place, vec![agent, entity(8), entity(9)]);
 
-        for grounded in [
-            goal(GoalKind::StealItem {
+        let outcome = rank(
+            &[
+                goal(GoalKind::StealItem {
                 target_item: entity(2),
-            }),
-            goal(GoalKind::Accuse {
-                accused: entity(3),
-                violation_id: ViolationId(1),
-            }),
-            goal(GoalKind::PunishAccused {
-                office: entity(6),
-                accused: entity(4),
-                accusation_entry: worldwake_core::RecordEntryId(1),
-                punishment: PunishmentKind::Exile {
-                    from_faction: entity(5),
-                },
-            }),
-        ] {
-            let outcome = rank(
-                std::slice::from_ref(&grounded),
-                &view,
-                agent,
-                current_tick(),
-                &utility(),
-                &recipes,
-            );
+                }),
+                goal(GoalKind::Accuse {
+                    accused: entity(3),
+                    violation_id: ViolationId(1),
+                }),
+                goal(GoalKind::PunishAccused {
+                    office: entity(6),
+                    accused: entity(4),
+                    accusation_entry: worldwake_core::RecordEntryId(1),
+                    punishment: PunishmentKind::Exile {
+                        from_faction: entity(5),
+                    },
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &recipes,
+        );
 
-            assert_eq!(outcome.ranked.len(), 1);
-            assert_eq!(outcome.ranked[0].priority_class, GoalPriorityClass::Low);
-            assert_eq!(outcome.ranked[0].motive_score, 1);
-        }
+        assert_eq!(outcome.ranked.len(), 3);
+        let steal = outcome
+            .ranked
+            .iter()
+            .find(|ranked| {
+                ranked.grounded.key.kind
+                    == GoalKind::StealItem {
+                        target_item: entity(2),
+                    }
+            })
+            .unwrap();
+        assert_eq!(steal.priority_class, GoalPriorityClass::Low);
+        assert_eq!(steal.motive_score, 400);
+
+        let accuse = outcome
+            .ranked
+            .iter()
+            .find(|ranked| {
+                ranked.grounded.key.kind
+                    == GoalKind::Accuse {
+                        accused: entity(3),
+                        violation_id: ViolationId(1),
+                    }
+            })
+            .unwrap();
+        assert_eq!(accuse.priority_class, GoalPriorityClass::Low);
+        assert_eq!(accuse.motive_score, 640);
+
+        let punish = outcome
+            .ranked
+            .iter()
+            .find(|ranked| {
+                ranked.grounded.key.kind
+                    == GoalKind::PunishAccused {
+                        office: entity(6),
+                        accused: entity(4),
+                        accusation_entry: worldwake_core::RecordEntryId(1),
+                        punishment: PunishmentKind::Exile {
+                            from_faction: entity(5),
+                        },
+                    }
+            })
+            .unwrap();
+        assert_eq!(punish.priority_class, GoalPriorityClass::Low);
+        assert_eq!(punish.motive_score, 640);
+    }
+
+    #[test]
+    fn theft_goal_is_zero_motive_when_witness_penalty_cancels_profile_weight() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let recipes = RecipeRegistry::new();
+        let place = entity(99);
+
+        view.theft_profiles.insert(
+            agent,
+            TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(600),
+                witness_risk_penalty: pm(300),
+            },
+        );
+        view.entity_kinds.insert(entity(2), EntityKind::ItemLot);
+        view.entity_kinds.insert(entity(8), EntityKind::Agent);
+        view.entity_kinds.insert(entity(9), EntityKind::Agent);
+        view.alive.insert(entity(8));
+        view.alive.insert(entity(9));
+        view.place_entities
+            .insert(place, vec![agent, entity(2), entity(8), entity(9)]);
+
+        let outcome = rank(
+            &[goal(GoalKind::StealItem {
+                target_item: entity(2),
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &recipes,
+        );
+
+        assert!(outcome.ranked.is_empty());
+        assert_eq!(
+            outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::StealItem {
+                target_item: entity(2),
+            })]
+        );
     }
 
     /// Test helper: builds `DecisionContext` from the view and delegates to `rank_candidates`.

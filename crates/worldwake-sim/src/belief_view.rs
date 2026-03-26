@@ -6,11 +6,12 @@ use worldwake_core::{
     BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile, DemandObservation,
     DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    RecordedViolation, ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -107,6 +108,10 @@ pub trait GoalBeliefView {
         &self,
         agent: EntityId,
     ) -> Option<worldwake_core::TheftDispositionProfile> {
+        let _ = agent;
+        None
+    }
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
         let _ = agent;
         None
     }
@@ -337,6 +342,10 @@ pub trait RuntimeBeliefView {
         &self,
         agent: EntityId,
     ) -> Option<worldwake_core::TheftDispositionProfile> {
+        let _ = agent;
+        None
+    }
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
         let _ = agent;
         None
     }
@@ -759,6 +768,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::TheftDispositionProfile> {
                 $crate::RuntimeBeliefView::theft_disposition_profile(self, agent)
+            }
+
+            fn justice_disposition_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::JusticeDispositionProfile> {
+                $crate::RuntimeBeliefView::justice_disposition_profile(self, agent)
             }
 
             fn tell_profile(

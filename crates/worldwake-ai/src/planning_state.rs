@@ -5,11 +5,11 @@ use worldwake_core::{
     load_per_unit, to_shared_belief_snapshot, ActionDefId, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, LoadUnits, MetabolismProfile, OfficeData, Permille, PlaceTag,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-    TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
+    TellProfile, TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -1304,6 +1304,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.theft_disposition_profile.clone())
     }
 
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.justice_disposition_profile.clone())
+    }
+
     fn violation_disposition_profile(
         &self,
         agent: EntityId,
@@ -1711,11 +1718,12 @@ mod tests {
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-        TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
+        InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
+        SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
@@ -1748,6 +1756,7 @@ mod tests {
         metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
+        justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
         violation_profiles: BTreeMap<EntityId, ViolationDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
@@ -1794,6 +1803,7 @@ mod tests {
                 metabolism_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 theft_profiles: BTreeMap::new(),
+                justice_profiles: BTreeMap::new(),
                 violation_profiles: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
@@ -2022,6 +2032,13 @@ mod tests {
 
         fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
             self.theft_profiles.get(&agent).cloned()
+        }
+
+        fn justice_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<JusticeDispositionProfile> {
+            self.justice_profiles.get(&agent).cloned()
         }
 
         fn intention_disposition_profile(
@@ -3573,6 +3590,13 @@ mod tests {
                 witness_risk_penalty: pm(100),
             },
         );
+        view.justice_profiles.insert(
+            actor,
+            JusticeDispositionProfile {
+                accusation_motive_weight: pm(650),
+                fine_severity: pm(500),
+            },
+        );
         view.violation_profiles.insert(
             actor,
             ViolationDispositionProfile {
@@ -3640,6 +3664,10 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::theft_disposition_profile(&state, actor),
             view.theft_profiles.get(&actor).cloned()
+        );
+        assert_eq!(
+            RuntimeBeliefView::justice_disposition_profile(&state, actor),
+            view.justice_profiles.get(&actor).cloned()
         );
         assert_eq!(
             RuntimeBeliefView::violation_disposition_profile(&state, actor),

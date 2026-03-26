@@ -3,12 +3,12 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity,
+    RecipeId, RecordData, ResourceSource, SocialObservation, SuccessionLaw, TellMemoryKey,
+    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -48,6 +48,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
     pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
     pub(crate) theft_disposition_profile: Option<TheftDispositionProfile>,
+    pub(crate) justice_disposition_profile: Option<JusticeDispositionProfile>,
     pub(crate) violation_disposition_profile: Option<ViolationDispositionProfile>,
     pub(crate) combat_profile: Option<CombatProfile>,
     pub(crate) courage: Option<Permille>,
@@ -90,6 +91,7 @@ impl Default for SnapshotEntity {
             metabolism_profile: None,
             trade_disposition_profile: None,
             theft_disposition_profile: None,
+            justice_disposition_profile: None,
             violation_disposition_profile: None,
             combat_profile: None,
             courage: None,
@@ -530,6 +532,7 @@ fn build_snapshot_entity(
         metabolism_profile: view.metabolism_profile(entity),
         trade_disposition_profile: view.trade_disposition_profile(entity),
         theft_disposition_profile: view.theft_disposition_profile(entity),
+        justice_disposition_profile: view.justice_disposition_profile(entity),
         violation_disposition_profile: view.violation_disposition_profile(entity),
         combat_profile: view.combat_profile(entity),
         courage: view.courage(entity),

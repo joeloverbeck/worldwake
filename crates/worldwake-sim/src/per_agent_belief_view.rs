@@ -9,11 +9,11 @@ use worldwake_core::{
     BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CombatProfile,
     CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, World, Wound,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
+    ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -632,6 +632,16 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .then(|| {
                 self.world
                     .get_component_theft_disposition_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_justice_disposition_profile(agent)
                     .cloned()
             })
             .flatten()
