@@ -1,112 +1,92 @@
-# S31-007: Golden Tests for Over/Under-Invalidation and Save/Load Parity
+# S31-007: Golden Tests for Exhaustion Invalidation End-State
 
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None — tests only
-**Deps**: S31-004, S31-005, S31-006
+**Engine Changes**: Yes — tests plus any trace/debug proof surface required by S31-008
+**Deps**: S31-004, S31-005, S31-006, S31-008
 
 ## Problem
 
-The S31 spec requires golden test proof that the new condition-based invalidation correctly avoids over-invalidation (irrelevant changes don't trigger re-search) and under-invalidation (relevant changes do trigger re-search). It also requires save/load parity proof that the current S31 exhaustion runtime shape survives round-trip under the live save format.
+The S31 spec needs integrated proof that the completed exhaustion invalidation architecture avoids both over-invalidation and under-invalidation, preserves save/load parity, and remains explainable under the live golden scenarios that already exposed indefinite-caching failures.
 
 ## Assumption Reassessment (2026-03-27)
 
-1. `golden_save_load_round_trip_under_ai` exists in `crates/worldwake-ai/tests/` and tests save/load parity for the AI runtime including `exhaustion_cache`.
-2. `golden_wash_action` exists and tests the Wash goal behavior — previously broke in exp-005 with indefinite caching.
-3. `golden_three_way_need_competition` exists and tests need priority competition — previously broke in exp-005.
-4. The spec calls for a golden test showing bread consumption does NOT clear Apple acquisition cache.
-5. The spec calls for a golden test showing dirtiness crossing threshold DOES clear Wash exhaustion cache.
-6. Decision traces (`h.driver.enable_tracing()`) and action traces (`h.enable_action_tracing()`) are available for debugging golden test failures.
-7. Golden tests live in `crates/worldwake-ai/tests/` as integration tests.
-8. Reassessment after S31-002: golden coverage should explicitly guard against accidental unconditional invalidation of facility-tagged and blocker-tagged goals. A cache that clears `Wash` or `ProduceCommodity` every tick would still satisfy some naive "eventually replans" assertions while violating the architecture.
+1. Existing golden coverage already proves this is not merely a missing-test problem. With TTL removed, `cargo test -p worldwake-ai` fails `golden_goal_invalidation_by_another_agent`, `golden_wash_action`, `golden_three_way_need_competition`, and `golden_utility_weight_diversity_in_need_selection` in [golden_ai_decisions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_ai_decisions.rs).
+2. Those failures expose a production contradiction in the current invalidation contract, so this ticket can no longer honestly remain “tests only” in isolation. It depends on `S31-008` completing the missing substrate first.
+3. `golden_save_load_round_trip_under_ai` already exists in `crates/worldwake-ai/tests/` and remains the live save/load parity surface for the AI runtime including `exhaustion_cache`.
+4. The intended over-invalidation invariant is still valid: unrelated commodity changes must not clear exhausted goals whose search space did not materially change.
+5. The intended under-invalidation invariant needs more precision than the old narrative. For needs-driven goals such as `GoalKind::Wash`, `GoalKind::Sleep`, and local `GoalKind::ConsumeOwnedCommodity`, the retry trigger must align with the live planner/candidate-generation decision surface, not merely an arbitrary fixed need delta.
+6. Decision traces and action traces remain the preferred debugging surfaces, but the contract under test here is golden E2E because the question is whether the integrated world + planner + runtime retry chain behaves lawfully under live simulation.
+7. Reassessment after the failed TTL-removal experiment shows this ticket must also guard against “architecturally clean but explanatorily weak” assertions. If the final implementation relies on richer invalidation facts, the tests should prove those facts through the strongest available trace or state surface rather than only by eventual downstream success.
 
 ## Architecture Check
 
-1. Test-only changes. No production code modified.
-2. Golden tests use the full simulation harness — they test the integrated behavior of S31-001 through S31-006.
+1. This ticket should prove the final architecture, not compensate for missing substrate. That aligns with `docs/FOUNDATIONS.md`: tests should validate a concrete, local, explainable retry contract rather than justify keeping a workaround.
+2. The production fix belongs in `S31-008`, and the TTL cleanup belongs in `S31-006`. This ticket should then certify that the combined end-state is robust.
 
 ## Verification Layers
 
-1. No over-invalidation -> golden test with decision trace showing Apple cache retained after bread consumption
-2. No under-invalidation -> golden test with decision trace showing Wash cache cleared after dirtiness crosses threshold
-3. Save/load parity -> `golden_save_load_round_trip_under_ai` passes without driver reset
-4. Facility-tagged goals stay exhausted until an actual facility dirty event occurs -> golden or focused integration test
-5. Existing golden tests pass -> `cargo test -p worldwake-ai`
+1. no over-invalidation -> golden E2E plus decision-trace proof that irrelevant changes do not re-open unrelated exhausted searches
+2. no under-invalidation for needs-driven goals -> golden E2E plus the strongest available decision-trace or lower-layer proof for the retry trigger
+3. save/load parity -> `golden_save_load_round_trip_under_ai`
+4. facility-tagged and blocker-tagged goals do not self-invalidate spuriously -> golden or focused integration coverage, depending on the final substrate
 
 ## What to Change
 
-### 1. Add `golden_no_over_invalidation_commodity` golden test
+### 1. Add golden proof for no over-invalidation
 
-Setup: Agent with exhausted `AcquireCommodity(Apple)` and bread in inventory.
-Action: Agent eats bread (commodity change: bread consumed).
-Assert: Apple acquisition goal remains in exhaustion cache (not re-searched). Use decision trace to verify no Apple-related search occurred.
+Add a golden scenario showing that bread consumption does not clear an unrelated exhausted acquisition/search path.
 
-### 2. Add `golden_no_under_invalidation_wash` golden test
+### 2. Add golden proof for no under-invalidation
 
-Setup: Agent with exhausted `Wash` goal and low dirtiness.
-Action: Run ticks until dirtiness crosses threshold (increases by 100+ permille).
-Assert: Wash goal is removed from exhaustion cache and re-searched. Use decision trace to verify Wash search occurred.
+Add golden scenarios showing that needs-driven exhausted goals retry when their concrete planner-relevant local state changes enough to reopen the search space.
 
-### 2b. Add facility-signal retention proof
+### 3. Keep parity and existing regressions in the required pass set
 
-Setup: Agent with exhausted facility-tagged goal such as `Wash` or `ProduceCommodity`, with no facility-access change across the observed ticks.
-Action: Advance at least one planning cycle without changing facility access.
-Assert: The goal remains exhausted and is not re-searched merely because it carries `FacilitiesChanged`.
-
-### 3. Verify existing golden tests pass
-
-- `golden_save_load_round_trip_under_ai` — conditions survive serialization round-trip
-- `golden_wash_action` — the test that broke in exp-005
-- `golden_three_way_need_competition` — the test that broke in exp-005
-- All other golden tests in `crates/worldwake-ai/tests/`
-
-### 4. Keep save/load proof aligned with the current format only
-
-Do not add old-format or empty-condition compatibility tests here. S31 should validate the current exhaustion runtime contract after S31-005 removes the stale serde-default fallback, not preserve a superseded shape.
+The existing goldens that previously failed under indefinite caching remain required verification, not optional background coverage.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/tests/golden_exhaustion.rs` (new — or add to existing golden test file)
+- `crates/worldwake-ai/tests/golden_exhaustion.rs` (new or modify, depending on final placement)
+- `crates/worldwake-ai/tests/golden_ai_decisions.rs` (modify if the existing regressions become the canonical proof surface)
 
 ## Out of Scope
 
-- Production code changes (all done in S31-001 through S31-006)
-- Profiling / performance benchmarks (documented in spec but not blocking acceptance)
-- Changes to any non-test files
+- Implementing the invalidation substrate itself
+- Removing the planner TTL gate directly
+- Save-format compatibility cleanup unrelated to golden proof
 
 ## Acceptance Criteria
 
 ### Tests That Must Pass
 
-1. `golden_no_over_invalidation_commodity` — bread consumption does not clear Apple acquisition cache
-2. `golden_no_under_invalidation_wash` — dirtiness threshold crossing clears Wash exhaustion cache
-3. `golden_save_load_round_trip_under_ai` — passes without driver reset (S30 parity preserved)
-4. `golden_wash_action` — passes (the test that broke in exp-005)
-5. `golden_three_way_need_competition` — passes (the test that broke in exp-005)
-6. Facility-tagged exhaustion is retained when no facility dirty event occurred
-7. Full suite: `cargo test --workspace`
+1. `golden_goal_invalidation_by_another_agent`
+2. `golden_wash_action`
+3. `golden_three_way_need_competition`
+4. `golden_utility_weight_diversity_in_need_selection`
+5. new over-invalidation golden coverage
+6. `golden_save_load_round_trip_under_ai`
+7. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
-1. No over-invalidation: irrelevant commodity changes do not trigger re-searches (spec AC 2)
-2. No under-invalidation: needs-driven goals re-search when relevant need crosses threshold (spec AC 3)
-3. Save/load parity: exhaustion conditions survive serialization round-trip (spec AC 7)
-4. Facility-tagged goals do not self-invalidate without an observed facility access change
-5. All existing golden tests continue to pass
+1. Irrelevant local changes do not clear unrelated exhausted goals
+2. Needs-driven exhausted goals retry when the concrete local decision surface changes enough to make the search space materially different
+3. Save/load round-trip preserves the canonical exhaustion runtime behavior under the current live format
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_exhaustion.rs` — `golden_no_over_invalidation_commodity`
-2. `crates/worldwake-ai/tests/golden_exhaustion.rs` — `golden_no_under_invalidation_wash`
-3. `crates/worldwake-ai/tests/golden_exhaustion.rs` — facility-signal retention proof
+1. `crates/worldwake-ai/tests/golden_exhaustion.rs` — over-invalidation proof for unrelated commodity changes
+2. `crates/worldwake-ai/tests/golden_exhaustion.rs` or [golden_ai_decisions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_ai_decisions.rs) — under-invalidation proof for needs-driven retries
+3. `crates/worldwake-ai/tests/golden_ai_decisions.rs` — keep the four existing regression goldens in the required verification set
 
 ### Commands
 
-1. `cargo test -p worldwake-ai golden_exhaustion`
-2. `cargo test -p worldwake-ai golden_save_load`
-3. `cargo test -p worldwake-ai golden_wash`
-4. `cargo test -p worldwake-ai golden_three_way`
-5. `cargo clippy --workspace && cargo test --workspace`
+1. `cargo test -p worldwake-ai`
+2. `cargo test -p worldwake-ai --test golden_ai_decisions golden_wash_action -- --exact`
+3. `cargo test -p worldwake-ai --test golden_ai_decisions golden_three_way_need_competition -- --exact`
+4. `cargo test -p worldwake-ai --test golden_ai_decisions golden_goal_invalidation_by_another_agent -- --exact`
+5. `cargo test -p worldwake-ai --test golden_ai_decisions golden_utility_weight_diversity_in_need_selection -- --exact`

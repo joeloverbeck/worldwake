@@ -144,12 +144,6 @@ pub(super) fn determine_selected_plan_source(
     }
 }
 
-fn exhaustion_skip_active(entry: &ExhaustionEntry, current_tick: Tick) -> bool {
-    entry.exhausted_at.is_some_and(|exhausted_at| {
-        current_tick.0.saturating_sub(exhausted_at.0) < EXHAUSTION_SKIP_TTL
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_candidate_plans(
     world: &worldwake_core::World,
@@ -256,6 +250,12 @@ pub(super) fn build_candidate_plans(
         }
     }
     results
+}
+
+fn exhaustion_skip_active(entry: &ExhaustionEntry, current_tick: Tick) -> bool {
+    entry.exhausted_at.is_some_and(|exhausted_at| {
+        current_tick.0.saturating_sub(exhausted_at.0) < EXHAUSTION_SKIP_TTL
+    })
 }
 
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
