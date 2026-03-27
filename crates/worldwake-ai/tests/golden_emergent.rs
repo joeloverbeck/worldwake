@@ -5506,7 +5506,10 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
     );
 
     let mut tell_commit_order = None;
-    for _ in 0..40 {
+    // 80-tick window: the witness needs to plan and execute a Tell action.
+    // Budget tuning (max_candidates=2, TTL-based exhaustion skip) may cause
+    // the Tell goal to take longer to surface as a top candidate.
+    for _ in 0..80 {
         h.step_once();
         let store = h
             .world
