@@ -18,19 +18,23 @@
 4. With `SharedVec`, the plan construction sites need `into_vec()` to convert back to `Vec<PlannedStep>` for `PlannedPlan::new()`.
 5. The `best_barrier` variable at `search/mod.rs:97` stores `Option<PlannedPlan>` which already has `Vec<PlannedStep>` — the conversion happens at construction time, not storage time.
 6. `SearchNode` is private to the search module. No external consumers.
-7. This ticket is independent of S29-002 (both depend on S29-001 but not on each other). They can be done in parallel.
+7. S29-001 is now completed and `SharedVec` already exists at `crates/worldwake-ai/src/shared_collections.rs` as a crate-private type. This ticket should import and consume that type directly rather than revisiting the wrapper design.
+8. The initial-node assumption in `What to Change` was slightly off: `SearchNode` root initialization happens in `crates/worldwake-ai/src/search/heuristic.rs::root_node`, not in `search_plan()` inside `search/mod.rs`.
+9. This ticket is still logically independent of S29-002. Both depend on S29-001 but touch disjoint consumer surfaces, so they can be implemented separately if desired.
+10. S29-001 added a temporary module-level `#![allow(dead_code)]` because none of the wrappers were consumed yet. Once this ticket and/or S29-002 lands, that allowance should be removed or narrowed so the optimization layer does not remain permanently exempt from lint pressure.
 
 ## Architecture Check
 
 1. Minimal change: one field type change, one clone+push pattern change, and `into_vec()` calls at plan construction boundaries. The `SharedVec` API from S29-001 provides all needed operations.
-2. No backwards-compatibility shims. `Vec<PlannedStep>` is replaced, not aliased.
+2. The clean architecture constraint here is to keep `SharedVec` internal to search only. `PlannedPlan` should keep owning a plain `Vec<PlannedStep>` at the module boundary so the structural-sharing detail does not leak outward.
+3. No backwards-compatibility shims. `Vec<PlannedStep>` is replaced inside `SearchNode`, not aliased or carried in parallel.
 
 ## Verification Layers
 
 1. Step accumulation correctness → existing search unit tests
 2. Plan construction correctness → existing golden tests (plans are the end product)
 3. Determinism preserved → golden hash comparisons
-4. Single-module ticket: changes are contained within `search/`.
+4. Staged infrastructure hygiene (`SharedVec` becomes a real consumer and temporary unused-code allowance can shrink or disappear) -> `cargo clippy --workspace`
 
 ## What to Change
 
@@ -40,7 +44,7 @@ Change `steps: Vec<PlannedStep>` to `steps: SharedVec<PlannedStep>` in `search/m
 
 ### 2. Update initial node construction
 
-In `search_plan()` at `search/mod.rs`, the initial `SearchNode` construction uses `steps: Vec::new()` — change to `steps: SharedVec::new()`.
+In `root_node()` at `search/heuristic.rs`, the initial `SearchNode` construction currently uses `steps: Vec::new()` — change that to `steps: SharedVec::new()`.
 
 ### 3. Update transition clone+push
 
@@ -68,7 +72,8 @@ Add `use crate::shared_collections::SharedVec;` in `search/mod.rs` and `search/t
 ## Files to Touch
 
 - `crates/worldwake-ai/src/search/mod.rs` (modify — struct field, initial construction, plan construction sites, import)
-- `crates/worldwake-ai/src/search/transition.rs` (modify — import only; clone+push pattern is API-compatible)
+- `crates/worldwake-ai/src/search/transition.rs` (modify — import only if needed; clone+push pattern is API-compatible)
+- `crates/worldwake-ai/src/search/heuristic.rs` (modify — root node initialization, import)
 
 ## Out of Scope
 
@@ -93,12 +98,13 @@ Add `use crate::shared_collections::SharedVec;` in `search/mod.rs` and `search/t
 2. Plans produced by `search_plan` are identical before and after (same steps, same order, same terminal kinds).
 3. Golden test hash values are unchanged (determinism preserved).
 4. `PlannedPlan.steps` is always a `Vec<PlannedStep>` — the `SharedVec` is internal to search only.
+5. Any temporary unused-code allowance introduced in S29-001 is removed or narrowed once `SharedVec` becomes consumed.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. None — this is a pure type-substitution refactor within the search module. All behavioral verification comes from existing search and golden test suites. The `SharedVec` unit tests from S29-001 cover the wrapper's correctness.
+1. None expected unless reassessment finds a search-boundary conversion edge case not already covered by focused search tests. `SharedVec` wrapper semantics themselves remain covered by S29-001's unit tests.
 
 ### Commands
 

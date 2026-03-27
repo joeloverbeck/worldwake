@@ -12,25 +12,27 @@
 
 ## Assumption Reassessment (2026-03-27)
 
-1. `PlanningState` at `planning_state.rs:38-60` has exactly 15 `BTreeMap` fields and 1 `BTreeSet` field. The `snapshot: &'snapshot PlanningSnapshot` reference and `next_hypothetical_id: u32` scalar are NOT collection fields and remain unchanged.
-2. All mutation methods on `PlanningState` (`move_entity_ref`, `with_support_declaration`, `set_needs`, `set_pain`, `consume_resource`, `split_lot`, etc.) take `mut self` and modify specific BTreeMap fields via `.insert()`, `.remove()`, `.entry()`. These map exactly to the `SharedMap` API from S29-001.
-3. All read methods (`entity_place`, `direct_container_of`, `is_removed`, `homeostatic_needs_for`, etc.) use `.get()`, `.contains_key()`, `.iter()`, `.keys()` — all available on `SharedMap`/`SharedSet`.
-4. `PlanningState` derives `Clone` — this derive works with `SharedMap`/`SharedSet` since they also derive `Clone`.
-5. `PlanningState` is never serialized (transient within `search_plan`). No save/load impact.
-6. The file is ~3879 lines. Most mutation/read methods need only type changes (BTreeMap → SharedMap, BTreeSet → SharedSet) in the field declarations; the API calls are the same.
-7. `planning_state.rs` also has `#[cfg(test)] mod tests` at the bottom with existing tests — these must continue to pass unchanged.
+1. `PlanningState` at `crates/worldwake-ai/src/planning_state.rs` still has exactly 15 `BTreeMap` fields and 1 `BTreeSet` field. The `snapshot: &'snapshot PlanningSnapshot` reference and `next_hypothetical_id: u32` scalar remain outside the migration scope.
+2. S29-001 is now completed and the wrappers live at `crates/worldwake-ai/src/shared_collections.rs` as crate-private `SharedMap`, `SharedSet`, and `SharedVec`. This ticket should consume those exact types rather than redefining or widening them.
+3. The wrapper API that actually exists is intentionally minimal and matches the current `PlanningState` needs: `SharedMap` exposes `new`, `get`, `insert`, `remove`, `entry`, `iter`, `keys`, `is_empty`, `contains_key`, and `len`; `SharedSet` exposes `new`, `contains`, `insert`, `is_empty`, and `len`.
+4. `PlanningState` mutation sites do line up with that surface, including the real `reservation_shadows.entry(entity).or_default()` path in `crates/worldwake-ai/src/planning_state.rs`. This remains the main method-body compatibility constraint.
+5. The ticket is not a pure find-and-replace. `planning_state.rs` still uses `BTreeMap`/`BTreeSet` for local temporaries and test fixtures, so the imports need to be narrowed rather than removed wholesale.
+6. `PlanningState` derives `Clone`, and the wrapper derives preserve that surface. The ticket should continue to rely on deriving `Clone`, not custom clone logic.
+7. `PlanningState` is transient search state and is never serialized. No save/load or cross-crate data-contract change is involved.
+8. `crates/worldwake-ai/src/planning_state.rs` already has extensive focused tests. Those existing tests remain the primary behavioral proof surface, but this ticket should also remove S29-001's temporary `#![allow(dead_code)]` if `PlanningState` becomes the last missing consumer keeping `SharedMap`/`SharedSet` unused.
 
 ## Architecture Check
 
-1. This is a mechanical type substitution. `SharedMap` exposes the same API surface as `BTreeMap` for the operations used by `PlanningState`. No new abstractions, no new indirection patterns.
-2. No backwards-compatibility shims. The old BTreeMap fields are replaced, not wrapped or aliased.
+1. This is a contained migration of the planner's transient overlay state onto the structural-sharing layer already introduced in S29-001. That is cleaner than adding ad hoc clone-avoidance special cases inside `PlanningState` methods because the clone policy stays centralized in one internal abstraction.
+2. The migration should stay exact and narrow: replace the overlay storage types, keep the `PlanningState` public method surface stable, and avoid broad local rewrites in a file that already carries a lot of planner semantics.
+3. No backwards-compatibility shims. The raw `BTreeMap`/`BTreeSet` overlay fields are replaced, not aliased or kept in parallel.
 
 ## Verification Layers
 
 1. `PlanningState::clone()` produces logically identical state → existing `planning_state` unit tests
 2. Search outcomes unchanged → all golden tests (`cargo test -p worldwake-ai`)
-3. Determinism preserved → golden hash comparisons in existing golden tests
-4. Single-crate ticket: no cross-system interaction.
+3. Determinism preserved at planner/search outcome level -> existing search and golden tests
+4. Staged infrastructure hygiene (`SharedMap` / `SharedSet` are now real consumers, so temporary unused-code allowance can shrink or disappear) -> `cargo clippy --workspace`
 
 ## What to Change
 
@@ -52,7 +54,7 @@ Methods using `.get()`, `.contains_key()`, `.keys()`, `.iter()`, `.is_empty()` w
 
 ### 5. Update imports
 
-Add `use crate::shared_collections::{SharedMap, SharedSet};` and remove `use std::collections::{BTreeMap, BTreeSet};` (or keep BTreeMap if still used for local temporaries).
+Add `use crate::shared_collections::{SharedMap, SharedSet};` and keep `BTreeMap` / `BTreeSet` imports only where local temporaries or tests still need them.
 
 ## Files to Touch
 
@@ -63,7 +65,7 @@ Add `use crate::shared_collections::{SharedMap, SharedSet};` and remove `use std
 - `SearchNode.steps` migration (that is S29-003).
 - `search/mod.rs`, `search/transition.rs` (that is S29-003).
 - Benchmarking (that is S29-004).
-- Adding new methods to `SharedMap`/`SharedSet` beyond what S29-001 provides (if needed, update S29-001 first).
+- Adding new methods to `SharedMap`/`SharedSet` beyond what S29-001 now provides unless reassessment proves `PlanningState` has a real unmet consumer need.
 - Any file outside `planning_state.rs`.
 - `planner_ops.rs`, `search/*.rs`, or any other consumer of `PlanningState` — they only call public methods whose signatures do not change.
 
@@ -84,13 +86,13 @@ Add `use crate::shared_collections::{SharedMap, SharedSet};` and remove `use std
 3. All `PlanningState` query methods return identical results before and after this change.
 4. Search plans produced are bit-identical (same steps, same terminal kinds, same expansion counts).
 5. Golden test hash values are unchanged (determinism preserved).
-6. `PlanningState` is still `!Send` (Rc is !Send, matching the existing &'snapshot borrow constraint).
+6. Any temporary unused-code allowance introduced in S29-001 is removed or narrowed once `PlanningState` starts consuming `SharedMap` / `SharedSet`.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. None — this is a pure type-substitution refactor. All behavioral verification comes from the existing test suite. No new tests needed because the existing planning_state, search, and golden test suites cover all affected code paths.
+1. None expected unless reassessment uncovers a `PlanningState` edge path not already covered by the existing focused tests. This remains a migration ticket, not a semantics-changing planner ticket.
 
 ### Commands
 
