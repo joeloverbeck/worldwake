@@ -1267,8 +1267,20 @@ impl GoldenHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::{Deserialize, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
+    use worldwake_ai::{
+        AgentDecisionRuntime, ExhaustionEntry, GoalKey, GoalKind, GoalPriorityClass,
+        HypotheticalEntityId, PlanningBudget,
+    };
+    use worldwake_core::{ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
+
+    #[derive(Serialize, Deserialize)]
+    struct DriverStateMirror {
+        runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
+        budget: PlanningBudget,
+    }
 
     fn emit_test_event(
         log: &mut EventLog,
@@ -1291,6 +1303,90 @@ mod tests {
                 tags: tags.iter().copied().collect::<BTreeSet<_>>(),
             },
         ))
+    }
+
+    #[test]
+    fn save_load_roundtrip_prunes_stale_runtime_state_via_post_load_validation() {
+        let mut h = GoldenHarness::new(Seed([40; 32]));
+        let actor = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "Roundtrip Actor",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::default(),
+            MetabolismProfile::default(),
+            worldwake_core::UtilityProfile::default(),
+        );
+        let live_place = h.world.topology().place_ids().next().unwrap();
+        let dead_agent = EntityId {
+            slot: 90_001,
+            generation: 0,
+        };
+        let dead_entity = EntityId {
+            slot: 90_002,
+            generation: 0,
+        };
+        let mut runtime = AgentDecisionRuntime {
+            last_effective_place: Some(dead_entity),
+            last_facility_access_signature: vec![
+                (dead_entity, true, None),
+                (live_place, false, Some(ActionDefId(2))),
+            ],
+            last_priority_class: Some(GoalPriorityClass::High),
+            last_frame_clear_reason: Some(FrameClearReason::PlanFailed),
+            ..AgentDecisionRuntime::default()
+        };
+        runtime
+            .materialization_bindings
+            .bind(HypotheticalEntityId(7), dead_entity);
+        runtime.exhaustion_cache.insert(
+            GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity }),
+            ExhaustionEntry {
+                exhausted_at: Some(Tick(3)),
+                count: 2,
+            },
+        );
+        runtime.exhaustion_cache.insert(
+            GoalKey::from(GoalKind::TreatWounds { patient: actor }),
+            ExhaustionEntry {
+                exhausted_at: Some(Tick(4)),
+                count: 1,
+            },
+        );
+        let runtime_bytes = bincode::serialize(&DriverStateMirror {
+            runtime_by_agent: BTreeMap::from([
+                (actor, runtime),
+                (dead_agent, AgentDecisionRuntime::default()),
+            ]),
+            budget: PlanningBudget::default(),
+        })
+        .unwrap();
+        h.driver.restore_runtime_state(&runtime_bytes).unwrap();
+
+        let restored = h.save_load_roundtrip();
+        let restored_runtime_bytes = restored.driver.save_runtime_state().unwrap();
+        let restored_state: DriverStateMirror = bincode::deserialize(&restored_runtime_bytes).unwrap();
+
+        assert!(!restored_state.runtime_by_agent.contains_key(&dead_agent));
+
+        let runtime = restored_state.runtime_by_agent.get(&actor).unwrap();
+        assert_eq!(runtime.last_effective_place, None);
+        assert_eq!(
+            runtime.last_facility_access_signature,
+            vec![(live_place, false, Some(ActionDefId(2)))]
+        );
+        assert_eq!(
+            runtime
+                .materialization_bindings
+                .resolve(HypotheticalEntityId(7)),
+            None
+        );
+        assert!(!runtime
+            .exhaustion_cache
+            .contains_key(&GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity })));
+        assert!(runtime
+            .exhaustion_cache
+            .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: actor })));
     }
 
     #[test]
