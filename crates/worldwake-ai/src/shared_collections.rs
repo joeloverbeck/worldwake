@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -39,10 +37,12 @@ impl<K: Ord + Clone, V: Clone> SharedMap<K, V> {
         self.0.is_empty()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn contains_key(&self, key: &K) -> bool {
         self.0.contains_key(key)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
@@ -74,6 +74,7 @@ impl<K: Ord + Clone> SharedSet<K> {
         self.0.is_empty()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
@@ -85,9 +86,11 @@ impl<K: Ord + Clone> Default for SharedSet<K> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SharedVec<T>(Rc<Vec<T>>);
 
+#[allow(dead_code)]
 impl<T: Clone> SharedVec<T> {
     pub(crate) fn new() -> Self {
         Self(Rc::new(Vec::new()))

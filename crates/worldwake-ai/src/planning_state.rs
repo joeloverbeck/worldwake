@@ -1,3 +1,4 @@
+use crate::shared_collections::{SharedMap, SharedSet};
 use crate::planning_snapshot::PlanningSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,24 +39,27 @@ struct HypotheticalQueueJoin {
 #[derive(Clone)]
 pub struct PlanningState<'snapshot> {
     snapshot: &'snapshot PlanningSnapshot,
-    entity_place_overrides: BTreeMap<PlanningEntityRef, Option<EntityId>>,
-    direct_container_overrides: BTreeMap<PlanningEntityRef, Option<PlanningEntityRef>>,
-    direct_possessor_overrides: BTreeMap<PlanningEntityRef, Option<PlanningEntityRef>>,
-    resource_quantity_overrides: BTreeMap<EntityId, Quantity>,
-    commodity_quantity_overrides: BTreeMap<(PlanningEntityRef, CommodityKind), Quantity>,
-    reservation_shadows: BTreeMap<EntityId, Vec<TickRange>>,
-    removed_entities: BTreeSet<PlanningEntityRef>,
-    needs_overrides: BTreeMap<EntityId, HomeostaticNeeds>,
-    pain_overrides: BTreeMap<EntityId, Permille>,
-    support_declaration_overrides: BTreeMap<(EntityId, EntityId), Option<EntityId>>,
-    office_holder_belief_overrides: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+    entity_place_overrides: SharedMap<PlanningEntityRef, Option<EntityId>>,
+    direct_container_overrides: SharedMap<PlanningEntityRef, Option<PlanningEntityRef>>,
+    direct_possessor_overrides: SharedMap<PlanningEntityRef, Option<PlanningEntityRef>>,
+    resource_quantity_overrides: SharedMap<EntityId, Quantity>,
+    commodity_quantity_overrides: SharedMap<(PlanningEntityRef, CommodityKind), Quantity>,
+    reservation_shadows: SharedMap<EntityId, Vec<TickRange>>,
+    removed_entities: SharedSet<PlanningEntityRef>,
+    needs_overrides: SharedMap<EntityId, HomeostaticNeeds>,
+    pain_overrides: SharedMap<EntityId, Permille>,
+    support_declaration_overrides: SharedMap<(EntityId, EntityId), Option<EntityId>>,
+    office_holder_belief_overrides: SharedMap<
+        EntityId,
+        InstitutionalBeliefRead<Option<EntityId>>,
+    >,
     force_controller_belief_overrides:
-        BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
+        SharedMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
     support_declaration_belief_overrides:
-        BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
-    facility_queue_membership_overrides: BTreeMap<EntityId, Option<HypotheticalQueueJoin>>,
-    facility_grant_overrides: BTreeMap<EntityId, Option<GrantedFacilityUse>>,
-    hypothetical_registry: BTreeMap<HypotheticalEntityId, HypotheticalEntityMeta>,
+        SharedMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+    facility_queue_membership_overrides: SharedMap<EntityId, Option<HypotheticalQueueJoin>>,
+    facility_grant_overrides: SharedMap<EntityId, Option<GrantedFacilityUse>>,
+    hypothetical_registry: SharedMap<HypotheticalEntityId, HypotheticalEntityMeta>,
     next_hypothetical_id: u32,
 }
 
@@ -64,22 +68,22 @@ impl<'snapshot> PlanningState<'snapshot> {
     pub fn new(snapshot: &'snapshot PlanningSnapshot) -> Self {
         Self {
             snapshot,
-            entity_place_overrides: BTreeMap::new(),
-            direct_container_overrides: BTreeMap::new(),
-            direct_possessor_overrides: BTreeMap::new(),
-            resource_quantity_overrides: BTreeMap::new(),
-            commodity_quantity_overrides: BTreeMap::new(),
-            reservation_shadows: BTreeMap::new(),
-            removed_entities: BTreeSet::new(),
-            needs_overrides: BTreeMap::new(),
-            pain_overrides: BTreeMap::new(),
-            support_declaration_overrides: BTreeMap::new(),
-            office_holder_belief_overrides: BTreeMap::new(),
-            force_controller_belief_overrides: BTreeMap::new(),
-            support_declaration_belief_overrides: BTreeMap::new(),
-            facility_queue_membership_overrides: BTreeMap::new(),
-            facility_grant_overrides: BTreeMap::new(),
-            hypothetical_registry: BTreeMap::new(),
+            entity_place_overrides: SharedMap::new(),
+            direct_container_overrides: SharedMap::new(),
+            direct_possessor_overrides: SharedMap::new(),
+            resource_quantity_overrides: SharedMap::new(),
+            commodity_quantity_overrides: SharedMap::new(),
+            reservation_shadows: SharedMap::new(),
+            removed_entities: SharedSet::new(),
+            needs_overrides: SharedMap::new(),
+            pain_overrides: SharedMap::new(),
+            support_declaration_overrides: SharedMap::new(),
+            office_holder_belief_overrides: SharedMap::new(),
+            force_controller_belief_overrides: SharedMap::new(),
+            support_declaration_belief_overrides: SharedMap::new(),
+            facility_queue_membership_overrides: SharedMap::new(),
+            facility_grant_overrides: SharedMap::new(),
+            hypothetical_registry: SharedMap::new(),
             next_hypothetical_id: 0,
         }
     }
@@ -196,7 +200,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             .map(|(supporter, read)| (*supporter, read.clone()))
             .collect();
 
-        for (&(override_office, supporter), read) in &self.support_declaration_belief_overrides {
+        for (&(override_office, supporter), read) in self.support_declaration_belief_overrides.iter()
+        {
             if override_office == office {
                 combined.insert(supporter, read.clone());
             }
@@ -260,7 +265,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         }
 
         // Add purely hypothetical declarations (supporters NOT in base)
-        for (&(supporter, decl_office), override_val) in &self.support_declaration_overrides {
+        for (&(supporter, decl_office), override_val) in self.support_declaration_overrides.iter() {
             if decl_office == office {
                 if let Some(decl_candidate) = override_val {
                     if *decl_candidate == candidate
@@ -290,7 +295,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         for &(_, c) in base {
             all_candidates.insert(c);
         }
-        for (&(_, decl_office), override_val) in &self.support_declaration_overrides {
+        for (&(_, decl_office), override_val) in self.support_declaration_overrides.iter() {
             if decl_office == office {
                 if let Some(c) = override_val {
                     all_candidates.insert(*c);
@@ -2848,6 +2853,27 @@ mod tests {
 
         assert!(std::ptr::eq(base_wounds.as_ptr(), moved_wounds.as_ptr()));
         assert!(std::ptr::eq(base_demand.as_ptr(), moved_demand.as_ptr()));
+    }
+
+    #[test]
+    fn cloned_overlay_mutations_do_not_leak_between_branches() {
+        let (view, actor, town, field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let base = PlanningState::new(&snapshot);
+        let range = TickRange::new(Tick(4), Tick(6)).unwrap();
+
+        let branched = base
+            .clone()
+            .move_actor_to(field)
+            .reserve(bread, range)
+            .mark_removed(bread);
+
+        assert_eq!(RuntimeBeliefView::effective_place(&base, actor), Some(town));
+        assert_eq!(RuntimeBeliefView::effective_place(&branched, actor), Some(field));
+        assert!(!base.reservation_conflicts(bread, range));
+        assert!(branched.reservation_conflicts(bread, range));
+        assert!(RuntimeBeliefView::is_alive(&base, bread));
+        assert!(RuntimeBeliefView::is_dead(&branched, bread));
     }
 
     #[test]
