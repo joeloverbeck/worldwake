@@ -1,4 +1,7 @@
-use crate::{DirtySet, GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
+use crate::{
+    DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey, GoalPriorityClass,
+    HypotheticalEntityId, PlannedPlan,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -52,10 +55,14 @@ impl MaterializationBindings {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ExhaustionEntry {
     pub exhausted_at: Option<Tick>,
     pub count: u8,
+    #[serde(default)]
+    pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
+    #[serde(default)]
+    pub baseline: ExhaustionBaseline,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -196,8 +203,9 @@ mod tests {
         FramePlanRelation, MaterializationBindings,
     };
     use crate::{
-        CommodityPurpose, DirtySet, GoalKey, GoalPriorityClass, HypotheticalEntityId,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
+        GoalPriorityClass, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
+        PlannerOpKind, PlanningEntityRef,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
@@ -318,6 +326,13 @@ mod tests {
 
     #[test]
     fn agent_decision_runtime_bincode_round_trip_skips_derived_fields() {
+        let last_needs = HomeostaticNeeds::new(
+            worldwake_core::Permille::new(500).unwrap(),
+            worldwake_core::Permille::new(200).unwrap(),
+            worldwake_core::Permille::new(50).unwrap(),
+            worldwake_core::Permille::new(300).unwrap(),
+            worldwake_core::Permille::new(100).unwrap(),
+        );
         let runtime = AgentDecisionRuntime {
             current_plan: Some(sample_plan(vec![
                 PlannedStep {
@@ -332,13 +347,7 @@ mod tests {
             dirty: DirtySet::NEEDS | DirtySet::POSITION,
             last_priority_class: Some(GoalPriorityClass::Critical),
             last_effective_place: Some(entity(11)),
-            last_needs: Some(HomeostaticNeeds::new(
-                worldwake_core::Permille::new(500).unwrap(),
-                worldwake_core::Permille::new(200).unwrap(),
-                worldwake_core::Permille::new(50).unwrap(),
-                worldwake_core::Permille::new(300).unwrap(),
-                worldwake_core::Permille::new(100).unwrap(),
-            )),
+            last_needs: Some(last_needs.clone()),
             last_wounds: vec![Wound {
                 id: WoundId(9),
                 body_part: BodyPart::Torso,
@@ -365,6 +374,18 @@ mod tests {
                 ExhaustionEntry {
                     exhausted_at: Some(Tick(13)),
                     count: 2,
+                    invalidation_conditions: vec![
+                        ExhaustionInvalidationCondition::PositionChanged,
+                        ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Water),
+                    ],
+                    baseline: ExhaustionBaseline {
+                        position: Some(entity(11)),
+                        needs: Some(last_needs),
+                        commodity_quantities: vec![(CommodityKind::Water, Quantity(1))],
+                        unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                        wound_count: 1,
+                        hostile_count: 0,
+                    },
                 },
             )]),
         };

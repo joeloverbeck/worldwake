@@ -9,6 +9,7 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
 pub mod dirty_set;
+pub mod exhaustion;
 mod enterprise;
 pub mod failure_handling;
 pub mod feasibility;
@@ -56,6 +57,7 @@ pub use decision_trace::{
     SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace,
 };
 pub use dirty_set::DirtySet;
+pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use feasibility::{feasibility_hint, FeasibilityHint};
 pub use goal_model::{

@@ -372,6 +372,8 @@ fn record_exhausted_goals(
                 .or_insert(ExhaustionEntry {
                     exhausted_at: Some(tick),
                     count: 0,
+                    invalidation_conditions: Vec::new(),
+                    baseline: crate::ExhaustionBaseline::default(),
                 });
         } else {
             // Goal was searched and did NOT exhaust — clear both active skip
@@ -807,6 +809,8 @@ mod tests {
             ExhaustionEntry {
                 exhausted_at: Some(Tick(3)),
                 count: 2,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             },
         );
 
@@ -825,6 +829,8 @@ mod tests {
             Some(&ExhaustionEntry {
                 exhausted_at: Some(Tick(9)),
                 count: 2,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             })
         );
     }
@@ -839,6 +845,8 @@ mod tests {
             ExhaustionEntry {
                 exhausted_at: Some(Tick(4)),
                 count: 1,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             },
         );
 
@@ -849,6 +857,8 @@ mod tests {
             Some(&ExhaustionEntry {
                 exhausted_at: None,
                 count: 2,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             })
         );
     }
@@ -863,6 +873,8 @@ mod tests {
             ExhaustionEntry {
                 exhausted_at: Some(Tick(2)),
                 count: 3,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             },
         );
         runtime.exhaustion_cache.insert(
@@ -870,6 +882,8 @@ mod tests {
             ExhaustionEntry {
                 exhausted_at: None,
                 count: 4,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             },
         );
 
@@ -887,6 +901,8 @@ mod tests {
             Some(&ExhaustionEntry {
                 exhausted_at: None,
                 count: 4,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
             })
         );
     }
@@ -896,6 +912,8 @@ mod tests {
         let entry = ExhaustionEntry {
             exhausted_at: Some(Tick(5)),
             count: 2,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
         };
 
         assert!(exhaustion_skip_active(&entry, Tick(24)));
@@ -907,6 +925,8 @@ mod tests {
         let entry = ExhaustionEntry {
             exhausted_at: None,
             count: 5,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
         };
 
         assert!(!exhaustion_skip_active(&entry, Tick(200)));

@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 6;
+pub const SAVE_FORMAT_VERSION: u32 = 7;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -128,7 +128,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>
 
     match found {
         LEGACY_SAVE_FORMAT_VERSION => load_legacy_v5(payload),
-        SAVE_FORMAT_VERSION => load_v6(payload),
+        SAVE_FORMAT_VERSION => load_v7(payload),
         _ => Err(SaveError::UnsupportedVersion {
             found,
             expected: SAVE_FORMAT_VERSION,
@@ -142,7 +142,7 @@ fn load_legacy_v5(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), Sa
     Ok((state, None))
 }
 
-fn load_v6(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
+fn load_v7(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
     let (sim_payload, rest) = split_length_prefixed_payload(bytes, "simulation")?;
     let state = bincode::deserialize(sim_payload)
         .map_err(|error| SaveError::Deserialization(error.to_string()))?;
@@ -561,6 +561,21 @@ mod tests {
         assert_eq!(restored.replay_state().checkpoints().len(), 1);
         assert_eq!(restored.controller_state().controlled_entity(), Some(actor));
         assert!(!restored.world().reservations_for(reserved_item).is_empty());
+    }
+
+    #[test]
+    fn save_to_bytes_writes_current_format_version() {
+        let (state, _, _) = populated_state();
+
+        let bytes = save_to_bytes(&state, None).unwrap();
+        let version_offset = SAVE_MAGIC.len();
+        let version = u32::from_le_bytes(
+            bytes[version_offset..version_offset + std::mem::size_of::<u32>()]
+                .try_into()
+                .unwrap(),
+        );
+
+        assert_eq!(version, SAVE_FORMAT_VERSION);
     }
 
     #[test]

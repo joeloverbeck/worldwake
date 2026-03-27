@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
 /// Authoritative current body state for agent physiology.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct HomeostaticNeeds {
     pub hunger: Permille,
     pub thirst: Permille,

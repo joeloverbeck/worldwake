@@ -15,9 +15,10 @@ use super::{
 use crate::PlanningBudget;
 use crate::{
     build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet,
-    ExpectedMaterialization, FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass,
-    HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlanningEntityRef, RankedGoal, RankedGoalProvenance, SelectedPlanReplacementKind,
+    ExpectedMaterialization, ExhaustionBaseline, ExhaustionInvalidationCondition,
+    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
+    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
+    RankedGoalProvenance, SelectedPlanReplacementKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -188,6 +189,24 @@ fn save_runtime_state_serializes_persisted_driver_state() {
         crate::ExhaustionEntry {
             exhausted_at: Some(Tick(9)),
             count: 3,
+            invalidation_conditions: vec![
+                ExhaustionInvalidationCondition::WoundsChanged,
+                ExhaustionInvalidationCondition::TargetDead(agent),
+            ],
+            baseline: ExhaustionBaseline {
+                position: Some(place),
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(100).unwrap(),
+                    Permille::new(200).unwrap(),
+                    Permille::new(300).unwrap(),
+                    Permille::new(400).unwrap(),
+                    Permille::new(500).unwrap(),
+                )),
+                commodity_quantities: vec![(CommodityKind::Medicine, Quantity(2))],
+                unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                wound_count: 2,
+                hostile_count: 1,
+            },
         },
     );
     driver.runtime_by_agent.insert(agent, runtime);
@@ -221,6 +240,24 @@ fn save_runtime_state_serializes_persisted_driver_state() {
         Some(&crate::ExhaustionEntry {
             exhausted_at: Some(Tick(9)),
             count: 3,
+            invalidation_conditions: vec![
+                ExhaustionInvalidationCondition::WoundsChanged,
+                ExhaustionInvalidationCondition::TargetDead(agent),
+            ],
+            baseline: ExhaustionBaseline {
+                position: Some(place),
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(100).unwrap(),
+                    Permille::new(200).unwrap(),
+                    Permille::new(300).unwrap(),
+                    Permille::new(400).unwrap(),
+                    Permille::new(500).unwrap(),
+                )),
+                commodity_quantities: vec![(CommodityKind::Medicine, Quantity(2))],
+                unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                wound_count: 2,
+                hostile_count: 1,
+            },
         })
     );
     assert_eq!(restored_runtime.dirty, DirtySet::default());
@@ -258,6 +295,15 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         crate::ExhaustionEntry {
             exhausted_at: Some(Tick(4)),
             count: 2,
+            invalidation_conditions: vec![ExhaustionInvalidationCondition::TargetDead(dead_entity)],
+            baseline: ExhaustionBaseline {
+                position: Some(dead_entity),
+                needs: Some(HomeostaticNeeds::new_sated()),
+                commodity_quantities: vec![(CommodityKind::Bread, Quantity(1))],
+                unique_item_counts: Vec::new(),
+                wound_count: 0,
+                hostile_count: 0,
+            },
         },
     );
     runtime.exhaustion_cache.insert(
@@ -265,6 +311,24 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         crate::ExhaustionEntry {
             exhausted_at: Some(Tick(5)),
             count: 1,
+            invalidation_conditions: vec![
+                ExhaustionInvalidationCondition::WoundsChanged,
+                ExhaustionInvalidationCondition::TargetDead(h.actor),
+            ],
+            baseline: ExhaustionBaseline {
+                position: Some(live_place),
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(10).unwrap(),
+                    Permille::new(20).unwrap(),
+                    Permille::new(30).unwrap(),
+                    Permille::new(40).unwrap(),
+                    Permille::new(50).unwrap(),
+                )),
+                commodity_quantities: vec![(CommodityKind::Medicine, Quantity(1))],
+                unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                wound_count: 1,
+                hostile_count: 0,
+            },
         },
     );
     driver.runtime_by_agent.insert(h.actor, runtime);
@@ -300,9 +364,33 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         .contains_key(&GoalKey::from(GoalKind::LootCorpse {
             corpse: dead_entity
         })));
-    assert!(runtime
-        .exhaustion_cache
-        .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })));
+    assert_eq!(
+        runtime
+            .exhaustion_cache
+            .get(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })),
+        Some(&crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(5)),
+            count: 1,
+            invalidation_conditions: vec![
+                ExhaustionInvalidationCondition::WoundsChanged,
+                ExhaustionInvalidationCondition::TargetDead(h.actor),
+            ],
+            baseline: ExhaustionBaseline {
+                position: Some(live_place),
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(10).unwrap(),
+                    Permille::new(20).unwrap(),
+                    Permille::new(30).unwrap(),
+                    Permille::new(40).unwrap(),
+                    Permille::new(50).unwrap(),
+                )),
+                commodity_quantities: vec![(CommodityKind::Medicine, Quantity(1))],
+                unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                wound_count: 1,
+                hostile_count: 0,
+            },
+        })
+    );
     assert_eq!(
         runtime.dirty,
         DirtySet::STRUCTURAL_MASK | DirtySet::SNAPSHOT_MASK | DirtySet::FRAME_MASK
@@ -348,6 +436,8 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
         crate::ExhaustionEntry {
             exhausted_at: Some(Tick(4)),
             count: 2,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
         },
     );
     runtime.exhaustion_cache.insert(
@@ -355,6 +445,8 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
         crate::ExhaustionEntry {
             exhausted_at: Some(Tick(5)),
             count: 1,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
         },
     );
     h.driver.runtime_by_agent.insert(h.actor, runtime);

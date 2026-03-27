@@ -1275,8 +1275,8 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_ai::{
-        AgentDecisionRuntime, ExhaustionEntry, GoalKey, GoalKind, GoalPriorityClass,
-        HypotheticalEntityId, PlanningBudget,
+        AgentDecisionRuntime, ExhaustionBaseline, ExhaustionEntry, GoalKey, GoalKind,
+        GoalPriorityClass, HypotheticalEntityId, PlanningBudget,
     };
     use worldwake_core::{ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
@@ -1351,6 +1351,8 @@ mod tests {
             ExhaustionEntry {
                 exhausted_at: Some(Tick(3)),
                 count: 2,
+                invalidation_conditions: Vec::new(),
+                baseline: ExhaustionBaseline::default(),
             },
         );
         runtime.exhaustion_cache.insert(
@@ -1358,6 +1360,8 @@ mod tests {
             ExhaustionEntry {
                 exhausted_at: Some(Tick(4)),
                 count: 1,
+                invalidation_conditions: Vec::new(),
+                baseline: ExhaustionBaseline::default(),
             },
         );
         let runtime_bytes = bincode::serialize(&DriverStateMirror {
