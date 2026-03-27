@@ -162,15 +162,15 @@ pub(super) fn build_candidate_plans(
     Vec<BindingRejection>,
     Vec<crate::decision_trace::SearchExpansionSummary>,
 )> {
-    let view = runtime_belief_view(agent, world, scheduler, action_defs);
     // Skip goals whose search exhausted the budget within the TTL window.
     const EXHAUSTION_SKIP_TTL: u64 = 16;
+    let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
             skip_exhausted
                 .get(&c.grounded.key)
-                .map_or(true, |&exhausted_at| {
+                .is_none_or(|&exhausted_at| {
                     current_tick.0.saturating_sub(exhausted_at.0) >= EXHAUSTION_SKIP_TTL
                 })
         })
@@ -322,7 +322,7 @@ fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently
         | DirtySet::REPLAN_SIGNAL
         | DirtySet::BLOCKER_CLEANUP;
     if runtime.dirty.contains_any(non_position_mask) {
-        for (goal, _tick) in &runtime.search_exhausted_goals {
+        for goal in runtime.search_exhausted_goals.keys() {
             *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
         }
         runtime.search_exhausted_goals.clear();
@@ -334,7 +334,7 @@ fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently
         let arrived = runtime.last_in_transit && !currently_in_transit;
         let was_settled = !runtime.last_in_transit;
         if arrived || was_settled {
-            for (goal, _tick) in &runtime.search_exhausted_goals {
+            for goal in runtime.search_exhausted_goals.keys() {
                 *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
             }
             runtime.search_exhausted_goals.clear();
