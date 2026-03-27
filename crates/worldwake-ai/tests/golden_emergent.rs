@@ -6364,6 +6364,251 @@ fn golden_supply_depletion_enables_share_belief_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 42: Witness Deterrence Suppresses Theft Candidate
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Perception, Needs
+// GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
+// ActionDomains: Needs
+// Places: VillageSquare, GeneralStore
+// Principles: 1, 10, 24
+//
+// Proves the live witness-deterrence contract without extra branch noise:
+// the thief locally observes enough nearby agents to suppress `StealItem`,
+// then follows a lawful self-care branch instead of idling.
+
+#[allow(clippy::too_many_lines)]
+fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+
+    let thief = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Thief",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(650), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let witness_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness A",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let witness_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness B",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let witness_c = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness C",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let owner = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Owner",
+        general_store,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    for witness in [witness_a, witness_b, witness_c, owner] {
+        set_control_source(&mut h, witness, ControlSource::Human, 0);
+    }
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        default_perception_profile(),
+    );
+    for witness in [witness_a, witness_b, witness_c] {
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            witness,
+            default_perception_profile(),
+        );
+    }
+
+    set_theft_profile(
+        &mut h,
+        thief,
+        TheftDispositionProfile {
+            steal_duration_ticks: nz(2),
+            theft_motive_weight: pm(400),
+            witness_risk_penalty: pm(150),
+        },
+        0,
+    );
+
+    let owned_food = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        VILLAGE_SQUARE,
+        CommodityKind::Apple,
+        Quantity(1),
+    );
+    let theft_target = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        txn.set_ground_location(lot, VILLAGE_SQUARE).unwrap();
+        txn.set_owner(lot, owner).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        lot
+    };
+
+    let initial_hunger = h.agent_hunger(thief);
+    let initial_target_quantity = h
+        .world
+        .get_component_item_lot(theft_target)
+        .expect("theft target should be a live lot")
+        .quantity;
+
+    let mut saw_planning_tick = false;
+    let mut saw_self_care_selection = false;
+    let mut hunger_decreased = false;
+    let mut eat_committed = false;
+
+    for _ in 0..12 {
+        h.step_once();
+
+        let current_tick = h.scheduler.current_tick() - 1;
+        let trace = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .trace_at(thief, current_tick)
+            .unwrap_or_else(|| panic!("thief should have a trace at tick {current_tick:?}"));
+        if let DecisionOutcome::Planning(planning) = &trace.outcome {
+            saw_planning_tick = true;
+            assert!(
+                planning.candidates.generated.iter().all(|goal| {
+                    !matches!(goal.kind, GoalKind::StealItem { target_item } if target_item == theft_target)
+                }),
+                "witness deterrence should suppress theft candidate generation; tick={current_tick:?}, generated={:?}",
+                planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .map(|goal| goal.kind)
+                    .collect::<Vec<_>>()
+            );
+
+            saw_self_care_selection |= matches!(
+                planning.selection.selected.as_ref().map(|goal| goal.kind),
+                Some(GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Apple,
+                })
+            );
+        }
+
+        hunger_decreased |= h.agent_hunger(thief) < initial_hunger;
+        eat_committed |= h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(thief)
+            .iter()
+            .any(|event| {
+                event.action_name == "eat"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+
+        if saw_self_care_selection && hunger_decreased && eat_committed {
+            break;
+        }
+    }
+
+    assert!(saw_planning_tick, "scenario should produce at least one planning tick");
+    assert!(
+        saw_self_care_selection,
+        "thief should select ConsumeOwnedCommodity(Apple) after theft is deterred"
+    );
+    assert!(
+        eat_committed,
+        "thief should commit eat after witness deterrence suppresses theft"
+    );
+    assert!(
+        hunger_decreased,
+        "thief hunger should decrease after the lawful self-care fallback executes"
+    );
+
+    assert_eq!(
+        h.world.effective_place(theft_target),
+        Some(VILLAGE_SQUARE),
+        "deterrence scenario should leave the theft target at the original place"
+    );
+    assert_eq!(
+        h.world.owner_of(theft_target),
+        Some(owner),
+        "deterrence scenario should preserve the original owner on the theft target"
+    );
+    assert_eq!(
+        h.world
+            .get_component_item_lot(theft_target)
+            .expect("theft target should still be live")
+            .quantity,
+        initial_target_quantity,
+        "deterrence scenario should not mutate the theft-target quantity"
+    );
+    assert_eq!(
+        h.world.effective_place(owned_food),
+        None,
+        "the owned food should be consumed by the self-care fallback"
+    );
+    verify_live_lot_conservation(
+        &h.world,
+        CommodityKind::Bread,
+        u64::from(initial_target_quantity.0),
+    )
+    .unwrap();
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_witness_deterrence_suppresses_theft_candidate() {
+    let _ = run_witness_deterrence_suppresses_theft_candidate(Seed([63; 32]));
+}
+
+#[test]
+fn golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically() {
+    let first = run_witness_deterrence_suppresses_theft_candidate(Seed([64; 32]));
+    let second = run_witness_deterrence_suppresses_theft_candidate(Seed([64; 32]));
+    assert_eq!(
+        first, second,
+        "witness-deterrence scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 // ---------------------------------------------------------------------------
 //
