@@ -18,14 +18,14 @@ The current TTL-based skip is a compromise: it periodically re-searches everythi
 
 ## Assumption Reassessment (2026-03-27)
 
-1. The live exhaustion runtime stores a unified `ExhaustionEntry { exhausted_at: Option<Tick>, count: u8 }` in `BTreeMap<GoalKey, ExhaustionEntry>` at `AgentDecisionRuntime.exhaustion_cache` (`crates/worldwake-ai/src/decision_runtime.rs:55-84`). The `ExhaustionEntry` currently derives `Copy`; S31 must remove `Copy` since the new fields contain `Vec`.
+1. The live exhaustion runtime already stores `ExhaustionEntry` in `BTreeMap<GoalKey, ExhaustionEntry>` at `AgentDecisionRuntime.exhaustion_cache` (`crates/worldwake-ai/src/decision_runtime.rs`). The live shape already includes `invalidation_conditions` and `baseline`, and `ExhaustionEntry` no longer derives `Copy`.
 2. The live planner uses `EXHAUSTION_SKIP_TTL = 20` in `crates/worldwake-ai/src/agent_tick/planning.rs:21`.
 3. Live verification during S30-007 established that `golden_save_load_round_trip_under_ai` fails at `EXHAUSTION_SKIP_TTL >= 21`, confirming the coarse TTL architecture has a hard determinism ceiling that S31 removes.
 4. `HomeostaticNeedId` already exists in `crates/worldwake-core/src/needs.rs:18-25` with variants `Hunger`, `Thirst`, `Fatigue`, `Bladder`, `Dirtiness`. No new `NeedKind` enum is needed.
-5. `GoalKind` currently has 23 variants (as of E17 completion). All must be covered by `derive_invalidation_conditions`.
-6. `SAVE_FORMAT_VERSION` is currently 6 (`crates/worldwake-sim/src/save_load.rs:6`). Adding `Vec` fields to `ExhaustionEntry` changes the bincode format.
-7. The `reset_exhausted_goals_if_needed` function (`planning.rs:311-348`) uses `DirtySet::COMMODITY | UNIQUE_ITEMS | WOUNDS | FACILITIES | REPLAN_SIGNAL | BLOCKER_CLEANUP` as the non-position invalidation mask. NEEDS is intentionally excluded.
-8. The exponential backoff in `build_candidate_plans` (`planning.rs:214-223`) halves the search budget per `entry.count`, capped at 3 halvings (floor 64 expansions).
+5. The live `GoalKind` surface under this spec currently has 21 variants, and all must be covered by `derive_invalidation_conditions`.
+6. `SAVE_FORMAT_VERSION` is currently 7 in [`crates/worldwake-sim/src/save_load.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/save_load.rs). The exhaustion-entry shape is already part of the live persisted runtime contract.
+7. The live planner already replaced the old coarse reset path with goal-aware invalidation in [`crates/worldwake-ai/src/exhaustion.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/exhaustion.rs) and calls it from [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs).
+8. The exponential backoff in `build_candidate_plans` still halves the search budget per `entry.count`, capped at 3 halvings (floor 64 expansions), and live refresh semantics preserve `count` until invalidation removes the entry.
 
 ## Phase
 
@@ -90,7 +90,7 @@ Note: uses `HomeostaticNeedId` from `worldwake-core::needs`, not a new `NeedKind
 
 ### 2. `ExhaustionEntry` struct (extended)
 
-Extend the live `ExhaustionEntry` shape. Remove the `Copy` derive since the new fields contain `Vec`. Preserve `exhausted_at` and `count` for compatibility with the existing backoff logic:
+Extend the live `ExhaustionEntry` shape. Preserve `exhausted_at` and `count` for compatibility with the existing backoff logic:
 
 ```rust
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -102,15 +102,13 @@ pub struct ExhaustionEntry {
     /// genuinely changed, so the goal deserves a full-budget re-search).
     pub count: u8,
     /// Conditions that would warrant re-searching this goal.
-    #[serde(default)]
     pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
     /// Snapshot of relevant state at exhaustion time (for delta detection).
-    #[serde(default)]
     pub baseline: ExhaustionBaseline,
 }
 ```
 
-The `#[serde(default)]` on new fields ensures backward compatibility with save files that contain the old 2-field `ExhaustionEntry` (format version 6). No `SAVE_FORMAT_VERSION` bump is required because the existing post-load validation in `agent_tick/mod.rs:143-173` already prunes stale entries, and entries without conditions will be treated as always-invalidated (conservative fallback per Invariant 5).
+S31 treats these fields as part of the required persisted runtime shape. There is no backward-compatibility alias path where a format-7 exhaustion entry may omit conditions or a baseline. This keeps the save/load contract honest and avoids preserving empty-condition entries that later logic would need to special-case.
 
 ### 3. `ExhaustionBaseline` struct
 
@@ -191,12 +189,6 @@ fn invalidate_exhausted_goals(
     currently_in_transit: bool,
 ) {
     exhaustion_cache.retain(|_goal, entry| {
-        if entry.invalidation_conditions.is_empty() {
-            // Conservative fallback: entries without conditions
-            // (e.g., from old save files) are always invalidated.
-            return false;
-        }
-        // Keep the entry (don't invalidate) if none of the conditions changed.
         !entry.invalidation_conditions.iter().any(|condition| {
             condition_changed(condition, &entry.baseline, view, agent, currently_in_transit)
         })
@@ -381,7 +373,7 @@ No new ECS components. `ExhaustionEntry`, `ExhaustionInvalidationCondition`, and
 
 ## Save/Load Compatibility
 
-The new `ExhaustionEntry` fields use `#[serde(default)]` to maintain backward compatibility with existing save files (format version 6). Old entries without conditions will have empty `invalidation_conditions`, triggering the conservative always-invalidate fallback (Invariant 5). No `SAVE_FORMAT_VERSION` bump is required.
+The live runtime contract already includes `invalidation_conditions` and `baseline` as required fields in `ExhaustionEntry`, and the save format is already version 7. S31 does not preserve a compatibility path where new-format exhaustion entries may deserialize without those fields. This is intentional: exhaustion invalidation is now part of the canonical AI runtime shape, not an optional extension.
 
 Post-load validation in `agent_tick/mod.rs:143-173` already prunes entries with dead entity/place references. S31 adds no new entity references that require additional pruning (the `TargetDead` condition references the same entities already tracked by `GoalKey`).
 
@@ -434,24 +426,22 @@ Together, these mechanisms ensure that the system is no more expensive than the 
 2. `derive_invalidation_conditions` is a pure function of `GoalKind` + agent belief state. Given the same inputs, it produces the same conditions.
 3. The exhaustion cache is deterministic: same world state history -> same cache contents.
 4. No goal is permanently cached — every condition set includes at least one condition that references mutable world state (position, commodity quantities, needs, wounds, hostiles, or target liveness). World evolution will eventually trigger one of these conditions.
-5. The system degrades gracefully to "re-search everything" when `invalidation_conditions` is empty (conservative fallback for entries from old save files or unknown goal kinds).
+5. Every persisted exhaustion entry in the live format carries explicit invalidation conditions and a baseline; no empty-condition compatibility path remains.
 
 ## Tests
 
-- [ ] Unit test: `derive_invalidation_conditions` for each of the 23 GoalKind variants returns non-empty conditions.
+- [ ] Unit test: `derive_invalidation_conditions` for each live `GoalKind` variant returns non-empty conditions.
 - [ ] Unit test: `condition_changed` correctly detects position change (including in-transit filtering).
 - [ ] Unit test: `condition_changed` correctly detects commodity quantity change.
 - [ ] Unit test: `condition_changed` correctly detects wound count change.
 - [ ] Unit test: `condition_changed` correctly detects need threshold crossing.
 - [ ] Unit test: `condition_changed` correctly detects hostile count change.
 - [ ] Unit test: `condition_changed` correctly detects target death.
-- [ ] Unit test: entries with empty conditions are always invalidated (backward compatibility).
 - [ ] Golden test: Agent with exhausted `AcquireCommodity(Apple)` does NOT re-search when bread is consumed (no over-invalidation).
 - [ ] Golden test: Agent with exhausted `Wash` goal re-searches when dirtiness crosses threshold (no under-invalidation).
 - [ ] Golden test: `golden_save_load_round_trip_under_ai` passes without driver reset (S30 parity preserved).
 - [ ] Golden test: `golden_wash_action` passes (the test that broke in exp-005 due to indefinite caching).
 - [ ] Golden test: `golden_three_way_need_competition` passes (the test that broke in exp-005).
-- [ ] Golden test: Old save files (without invalidation conditions) load cleanly and behave correctly.
 - [ ] Profiling: fewer total exhausted re-searches than TTL=20 approach on `golden_world_runs_without_observers`.
 - [ ] All workspace tests pass (`cargo test --workspace`).
 
@@ -462,15 +452,14 @@ Together, these mechanisms ensure that the system is no more expensive than the 
 3. No under-invalidation: needs-driven goals re-search when the relevant need crosses a threshold.
 4. All golden tests pass (including the 4 that broke in exp-005 with indefinite caching).
 5. Profiling shows fewer total exhausted searches than TTL=20 on the `golden_world_runs_without_observers` test.
-6. Per-goal invalidation conditions are documented and testable for all 23 GoalKind variants.
-7. Save/load backward compatibility: old save files without conditions load cleanly.
-8. `ExhaustionEntry` no longer derives `Copy`.
+6. Per-goal invalidation conditions are documented and testable for all live `GoalKind` variants.
+7. `ExhaustionEntry` no longer derives `Copy`.
 
 ## References
 
 - golden-perf campaign: exp-005 (indefinite caching broke 4 tests), exp-013/014/015 (TTL tuning), exp-016 (TTL=32 too aggressive)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` — `reset_exhausted_goals_if_needed`, `record_exhausted_goals`, `EXHAUSTION_SKIP_TTL`
 - `crates/worldwake-ai/src/decision_runtime.rs` — `exhaustion_cache: BTreeMap<GoalKey, ExhaustionEntry>`
-- `crates/worldwake-ai/src/goal_model.rs` — `GoalKind` (23 variants) and `GoalKindPlannerExt`
+- `crates/worldwake-ai/src/goal_model.rs` — `GoalKind` and `GoalKindPlannerExt`
 - `crates/worldwake-core/src/needs.rs` — `HomeostaticNeedId`
 - `docs/FOUNDATIONS.md` Principles 2, 3, 10, 11, 12, 13, 18, 19, 24, 25
