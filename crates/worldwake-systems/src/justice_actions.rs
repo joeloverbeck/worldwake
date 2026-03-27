@@ -277,22 +277,9 @@ fn actor_has_subjective_accusation_evidence(
 fn crime_case_already_recorded(
     record_data: &RecordData,
     accused: EntityId,
-    violation_id: ViolationId,
+    theft: TheftFacts,
 ) -> bool {
-    record_data.active_entries().into_iter().any(|entry| {
-        matches!(
-            entry.claim,
-            InstitutionalClaim::Accusation {
-                accused: claim_accused,
-                violation_id: claim_violation,
-                ..
-            } | InstitutionalClaim::Verdict {
-                accused: claim_accused,
-                violation_id: claim_violation,
-                ..
-            } if claim_accused == accused && claim_violation == violation_id
-        )
-    })
+    record_data.has_accusation_case_for(accused, &theft)
 }
 
 fn validate_accuse_subjective_context(
@@ -456,11 +443,13 @@ fn start_accuse(
         validate_accuse_context(txn, instance.actor, &instance.targets, payload)?;
     let view = PerAgentBeliefView::from_world(instance.actor, txn);
     validate_accuse_subjective_context(&view, instance.actor, accused, violation_id)?;
+    let theft =
+        subjective_theft_facts_for_accusation(&view, instance.actor, accused, violation_id)?;
     let record = locate_unique_crime_register(txn, actor_place)?;
     let record_data = txn.get_component_record_data(record).ok_or_else(|| {
         ActionError::InternalError(format!("record {record} lacks RecordData"))
     })?;
-    if crime_case_already_recorded(record_data, accused, violation_id) {
+    if crime_case_already_recorded(record_data, accused, theft) {
         return Err(ActionError::PreconditionFailed(format!(
             "crime case ({accused}, {}) is already recorded",
             violation_id.0
@@ -496,7 +485,7 @@ fn commit_accuse(
     let record_data = txn.get_component_record_data(record).ok_or_else(|| {
         ActionError::InternalError(format!("record {record} lacks RecordData"))
     })?;
-    if crime_case_already_recorded(record_data, accused, violation_id) {
+    if crime_case_already_recorded(record_data, accused, theft) {
         return Err(ActionError::PreconditionFailed(format!(
             "crime case ({accused}, {}) is already recorded",
             violation_id.0
@@ -1689,6 +1678,43 @@ mod tests {
         let instance = fx.instance(id, fx.accused);
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(1);
+
+        let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
+
+        assert!(matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded")));
+    }
+
+    #[test]
+    fn duplicate_accusation_for_same_theft_rejects_at_start_even_with_different_violation_id() {
+        let (defs, handlers, id) = setup_registries();
+        let mut fx = JusticeFixture::new();
+        fx.seed_social_observation(fx.accused, 2);
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            txn.append_record_entry(
+                fx.crime_register,
+                InstitutionalClaim::Accusation {
+                    accuser: fx.witness,
+                    accused: fx.accused,
+                    violation_id: ViolationId(99),
+                    theft: TheftFacts {
+                        missing_entity: fx.missing_item,
+                        expected_place: fx.place,
+                        commodity: worldwake_core::CommodityKind::Bread,
+                        quantity: Quantity(1),
+                    },
+                    effective_tick: Tick(2),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let def = defs.get(id).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let instance = fx.instance(id, fx.accused);
+        let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
+        let mut rng = test_rng(11);
 
         let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
 

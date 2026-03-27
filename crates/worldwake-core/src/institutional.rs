@@ -136,6 +136,20 @@ impl RecordData {
             .filter(|entry| !superseded.contains(&entry.entry_id))
             .collect()
     }
+
+    #[must_use]
+    pub fn has_accusation_case_for(&self, accused: EntityId, theft: &TheftFacts) -> bool {
+        self.entries.iter().any(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::Accusation {
+                    accused: claim_accused,
+                    theft: claim_theft,
+                    ..
+                } if claim_accused == accused && claim_theft == *theft
+            )
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

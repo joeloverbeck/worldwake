@@ -7167,3 +7167,702 @@ fn golden_exile_punishment_when_fine_is_not_locally_collectible_replays_determin
         "exile punishment fallback scenario should replay deterministically"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 43: Dual Discovery Converges Without Double Accusation
+// ---------------------------------------------------------------------------
+//
+// Systems: Transport, Perception, Social Tell, AI, Institutions
+// GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
+// ActionDomains: Transport, Social, Travel
+// Places: VillageSquare, GeneralStore, RulersHall, CommonHouse
+// Principles: 1, 7, 13, 16, 24
+//
+// Proves the live convergence boundary after the accusation dedupe fix:
+// witness discovery files the first accusation, owner-local discovery reaches
+// the same authority later through a distinct evidence lane, and the concrete
+// recorded theft case prevents a second accusation for the same theft.
+
+#[allow(clippy::too_many_lines)]
+fn run_dual_discovery_converges_without_double_accusation(
+    seed: Seed,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let rulers_hall = prototype_place_entity(PrototypePlace::RulersHall);
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let common_house = prototype_place_entity(PrototypePlace::CommonHouse);
+
+    let thief = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Thief",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let victim = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Victim",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let authority = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        rulers_hall,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_control_source(&mut h, victim, ControlSource::Human, 0);
+
+    let sharp_perception = PerceptionProfile {
+        observation_fidelity: pm(1000),
+        ..default_perception_profile()
+    };
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, witness, sharp_perception);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, victim, sharp_perception);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, authority, sharp_perception);
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        broad_accepting_tell_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        victim,
+        broad_accepting_tell_profile(),
+    );
+    set_theft_profile(
+        &mut h,
+        thief,
+        TheftDispositionProfile {
+            steal_duration_ticks: nz(2),
+            theft_motive_weight: pm(1000),
+            witness_risk_penalty: pm(0),
+        },
+        0,
+    );
+    set_violation_profile(
+        &mut h,
+        victim,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 80,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(400),
+        },
+        0,
+    );
+    set_violation_profile(
+        &mut h,
+        authority,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(1),
+            violation_memory_retention_ticks: 80,
+            investigation_motive_weight: pm(600),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+    set_justice_profile(
+        &mut h,
+        authority,
+        JusticeDispositionProfile {
+            accusation_motive_weight: pm(900),
+            fine_severity: pm(500),
+        },
+        0,
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        rulers_hall,
+        SuccessionLaw::Support,
+        8,
+        Vec::new(),
+    );
+    let (crime_register, stolen_lot) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.assign_office(office, authority).unwrap();
+        let crime_register = txn
+            .create_record(RecordData {
+                record_kind: RecordKind::CrimeRegister,
+                home_place: rulers_hall,
+                issuer: office,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
+        let stolen_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        txn.set_ground_location(stolen_lot, VILLAGE_SQUARE).unwrap();
+        txn.set_owner(stolen_lot, victim).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (crime_register, stolen_lot)
+    };
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        authority,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        stolen_lot,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        victim,
+        stolen_lot,
+        BelievedEntityState {
+            last_known_place: Some(VILLAGE_SQUARE),
+            last_known_inventory: std::collections::BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        thief,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        crime_register,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        office,
+        Some(authority),
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(rulers_hall),
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+
+    let theft_facts = TheftFacts {
+        missing_entity: stolen_lot,
+        expected_place: VILLAGE_SQUARE,
+        commodity: CommodityKind::Bread,
+        quantity: Quantity(2),
+    };
+
+    let mut steal_commit_tick = None;
+    for _ in 0..12 {
+        h.step_once();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+        if h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(thief)
+            .iter()
+            .any(|event| {
+                event.action_name == "steal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            })
+        {
+            steal_commit_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+    let steal_commit_tick = steal_commit_tick.expect("thief should commit the theft");
+    set_control_source(&mut h, thief, ControlSource::Human, steal_commit_tick.0);
+
+    assert!(
+        h.world
+            .get_component_agent_belief_store(witness)
+            .expect("witness should keep a belief store")
+            .social_observations
+            .iter()
+            .any(|observation| {
+                observation.detail
+                    == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                        theft: theft_facts,
+                        suspect: Some(thief),
+                    }
+                    && matches!(observation.source, PerceptionSource::DirectObservation)
+            }),
+        "witness should develop firsthand suspected-theft evidence"
+    );
+
+    let travel_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("full registries should include travel");
+
+    let thief_departure_tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        thief_departure_tick,
+        InputKind::RequestAction {
+            actor: thief,
+            def_id: travel_def_id,
+            targets: vec![common_house],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+    assert_eq!(h.world.effective_place(thief), Some(common_house));
+    assert_eq!(h.world.effective_place(stolen_lot), Some(common_house));
+
+    {
+        let relocate_tick = h.scheduler.current_tick();
+        let mut txn = new_txn(&mut h.world, relocate_tick.0);
+        txn.set_ground_location(witness, rulers_hall).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        h.scheduler.current_tick(),
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut witness_tell_order = None;
+    for _ in 0..80 {
+        h.step_once();
+        let store = h
+            .world
+            .get_component_agent_belief_store(authority)
+            .expect("authority should keep a belief store");
+        if store.social_observations.iter().any(|observation| {
+            observation.detail
+                == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: Some(thief),
+                }
+                && matches!(
+                    observation.source,
+                    PerceptionSource::Report { from, chain_len: 1 } if from == witness
+                )
+        }) {
+            witness_tell_order = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled")
+                .events_for(witness)
+                .iter()
+                .find_map(|event| {
+                    (event.action_name == "tell"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                        && matches!(
+                            event.detail,
+                            Some(ActionTraceDetail::Tell {
+                                listener,
+                                topic: TellTopic::SocialObservation { observation },
+                            }) if listener == authority
+                                && observation.detail
+                                    == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                                        theft: theft_facts,
+                                        suspect: Some(thief),
+                                    }
+                        ))
+                    .then_some((event.tick, event.sequence_in_tick))
+                });
+            if witness_tell_order.is_some() {
+                break;
+            }
+        }
+    }
+    let witness_tell_order =
+        witness_tell_order.expect("witness should tell the authority about the theft");
+
+    let authority_witness_violation_id = h
+        .world
+        .get_component_violation_memory(authority)
+        .expect("authority should gain violation memory from witness tell")
+        .violations
+        .iter()
+        .find(|record| {
+            record.kind
+                == worldwake_core::ViolationKind::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: Some(thief),
+                }
+        })
+        .map(|record| record.id)
+        .expect("witness report should create the first authority-side theft record");
+
+    let first_accuse_goal = GoalKind::Accuse {
+        crime_register,
+        accused: thief,
+        violation_id: authority_witness_violation_id,
+    };
+
+    let mut first_accuse_order = None;
+    for _ in 0..20 {
+        h.step_once();
+        let event = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(authority)
+            .iter()
+            .find_map(|event| {
+                (event.action_name == "accuse"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some((event.tick, event.sequence_in_tick))
+            });
+        if event.is_some() {
+            first_accuse_order = event;
+            break;
+        }
+    }
+    let first_accuse_order =
+        first_accuse_order.expect("authority should file the first accusation from witness evidence");
+
+    assert!(
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .goal_history_for(authority, &first_accuse_goal)
+            .iter()
+            .any(|entry| entry.status.is_generated()),
+        "witness report should generate the initial accuse goal"
+    );
+
+    let accusation_count = |record: &RecordData| {
+        record
+            .entries
+            .iter()
+            .filter(|entry| {
+                matches!(
+                    entry.claim,
+                    InstitutionalClaim::Accusation {
+                        accused,
+                        theft,
+                        ..
+                    } if accused == thief && theft == theft_facts
+                )
+            })
+            .count()
+    };
+    assert_eq!(
+        accusation_count(
+            h.world
+                .get_component_record_data(crime_register)
+                .expect("crime register should exist after the first accusation")
+        ),
+        1,
+        "witness path should file exactly one accusation for the theft"
+    );
+
+    let victim_return_tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        victim_return_tick,
+        InputKind::RequestAction {
+            actor: victim,
+            def_id: travel_def_id,
+            targets: vec![VILLAGE_SQUARE],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+    assert_eq!(h.world.effective_place(victim), Some(VILLAGE_SQUARE));
+
+    let detection_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, victim, ControlSource::Ai, detection_tick.0);
+    h.step_once();
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+
+    let victim_detection_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(victim, detection_tick)
+        .expect("victim should produce a decision trace on the discovery tick");
+    let victim_detection_planning = match &victim_detection_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace after victim arrival, got {other:?}"),
+    };
+    let victim_violation_id = victim_detection_planning
+        .candidates
+        .generated
+        .iter()
+        .find_map(|goal| match goal.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == VILLAGE_SQUARE => Some(violation_id),
+            _ => None,
+        })
+        .expect("victim arrival should generate an investigate goal");
+
+    let mut investigate_committed = false;
+    for _ in 0..10 {
+        h.step_once();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+        investigate_committed = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(victim)
+            .iter()
+            .any(|event| {
+                event.action_name == "investigate"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && event.detail == Some(ActionTraceDetail::Investigate {
+                        violation_id: victim_violation_id,
+                    })
+            });
+        if investigate_committed {
+            break;
+        }
+    }
+    assert!(
+        investigate_committed,
+        "victim should complete local investigation before telling the authority"
+    );
+
+    let victim_store = h
+        .world
+        .get_component_agent_belief_store(victim)
+        .expect("victim should keep a belief store");
+    assert!(
+        victim_store.social_observations.iter().any(|observation| {
+            observation.detail
+                == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: None,
+                }
+                && matches!(observation.source, PerceptionSource::DirectObservation)
+        }),
+        "victim investigation should produce owner-local suspected-theft evidence"
+    );
+    assert!(
+        h.world
+            .get_component_violation_memory(victim)
+            .expect("victim should keep violation memory")
+            .violations
+            .iter()
+            .any(|record| {
+                record.kind
+                    == worldwake_core::ViolationKind::SuspectedTheft {
+                        theft: theft_facts,
+                        suspect: None,
+                    }
+            }),
+        "victim violation memory should retain the investigated theft record"
+    );
+
+    {
+        let relocate_tick = h.scheduler.current_tick();
+        let mut txn = new_txn(&mut h.world, relocate_tick.0);
+        txn.set_ground_location(victim, rulers_hall).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        victim,
+        h.scheduler.current_tick(),
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut victim_tell_tick = None;
+    for _ in 0..80 {
+        h.step_once();
+        let store = h
+            .world
+            .get_component_agent_belief_store(authority)
+            .expect("authority should keep a belief store");
+        if store.social_observations.iter().any(|observation| {
+            observation.detail
+                == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: None,
+                }
+                && matches!(
+                    observation.source,
+                    PerceptionSource::Report { from, chain_len: 1 } if from == victim
+                )
+        }) {
+            victim_tell_tick = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled")
+                .events_for(victim)
+                .iter()
+                .find_map(|event| {
+                    (event.action_name == "tell"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                        && matches!(
+                            event.detail,
+                            Some(ActionTraceDetail::Tell {
+                                listener,
+                                topic: TellTopic::SocialObservation { observation },
+                            }) if listener == authority
+                                && observation.detail
+                                    == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                                        theft: theft_facts,
+                                        suspect: None,
+                                    }
+                        ))
+                    .then_some(event.tick)
+                });
+            if victim_tell_tick.is_some() {
+                break;
+            }
+        }
+    }
+    let victim_tell_tick =
+        victim_tell_tick.expect("victim should later tell the authority about the investigated theft");
+
+    let authority_memory_after_both = h
+        .world
+        .get_component_violation_memory(authority)
+        .expect("authority should keep violation memory after both paths converge");
+    let authority_owner_violation_id = authority_memory_after_both
+        .violations
+        .iter()
+        .find(|record| {
+            record.kind
+                == worldwake_core::ViolationKind::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: None,
+                }
+        })
+        .map(|record| record.id)
+        .expect("owner-local tell should create a second authority-side theft record");
+    assert_ne!(
+        authority_owner_violation_id, authority_witness_violation_id,
+        "dual discovery should reach the authority through a distinct violation lane"
+    );
+
+    let second_accuse_goal = GoalKind::Accuse {
+        crime_register,
+        accused: thief,
+        violation_id: authority_owner_violation_id,
+    };
+
+    for _ in 0..20 {
+        h.step_once();
+        verify_live_lot_conservation(&h.world, CommodityKind::Bread, 2).unwrap();
+        assert_eq!(
+            accusation_count(
+                h.world
+                    .get_component_record_data(crime_register)
+                    .expect("crime register should persist")
+            ),
+            1,
+            "owner-local convergence must not create a second accusation entry"
+        );
+    }
+
+    let authority_accuse_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(authority)
+        .iter()
+        .filter(|event| {
+            event.action_name == "accuse"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .count();
+    assert_eq!(
+        authority_accuse_events, 1,
+        "authority should only commit one accusation across both discovery paths"
+    );
+
+    let second_accuse_history = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .goal_history_for(authority, &second_accuse_goal);
+    assert!(
+        second_accuse_history
+            .iter()
+            .filter(|entry| entry.tick >= victim_tell_tick)
+            .all(|entry| !entry.status.is_generated()),
+        "the second authority-side violation lane must not generate a duplicate accuse goal after the case is already recorded"
+    );
+
+    assert!(
+        witness_tell_order < first_accuse_order,
+        "witness tell should precede the first accusation"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_dual_discovery_converges_without_double_accusation() {
+    let _ = run_dual_discovery_converges_without_double_accusation(Seed([67; 32]));
+}
+
+#[test]
+fn golden_dual_discovery_converges_without_double_accusation_replays_deterministically() {
+    let first = run_dual_discovery_converges_without_double_accusation(Seed([68; 32]));
+    let second = run_dual_discovery_converges_without_double_accusation(Seed([68; 32]));
+    assert_eq!(
+        first, second,
+        "dual-discovery convergence scenario should replay deterministically"
+    );
+}

@@ -322,7 +322,6 @@ fn emit_justice_candidates(
         diagnostics,
         ctx,
         &known_social_observations,
-        &current_crime_case_claims,
     );
     emit_punishment_candidates(
         candidates,
@@ -338,7 +337,6 @@ fn emit_accusation_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     known_social_observations: &[SocialObservation],
-    current_crime_case_claims: &[BelievedInstitutionalClaim],
 ) {
     let known_crime_registers = known_authority_crime_registers(ctx);
 
@@ -367,23 +365,10 @@ fn emit_accusation_candidates(
             if !ctx.view.is_alive(accused) {
                 continue;
             }
-            if current_crime_case_claims.iter().any(|belief| {
-                matches!(
-                    belief.claim,
-                    InstitutionalClaim::Accusation {
-                        accused: claim_accused,
-                        violation_id,
-                        ..
-                    } | InstitutionalClaim::Verdict {
-                        accused: claim_accused,
-                        violation_id,
-                        ..
-                    } if claim_accused == accused && violation_id == record.id
-                )
-            }) {
-                continue;
-            }
             for (crime_register, record_data) in &known_crime_registers {
+                if record_data.has_accusation_case_for(accused, &theft) {
+                    continue;
+                }
                 let mut evidence = Evidence {
                     entities: BTreeSet::from([accused, theft.missing_entity, *crime_register]),
                     places: BTreeSet::from([theft.expected_place, record_data.home_place]),
@@ -5757,6 +5742,100 @@ mod tests {
                 }
             ),
             "known current crime case should suppress duplicate accusation candidate"
+        );
+    }
+
+    #[test]
+    fn justice_candidates_suppress_duplicate_accusation_when_same_theft_is_already_recorded_under_different_violation_id(
+    ) {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(4);
+        let crime_register = entity(5);
+        let place = entity(10);
+        let recorded_violation_id = worldwake_core::ViolationId(4);
+        let incoming_violation_id = worldwake_core::ViolationId(0);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: place,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(2),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.entity_kinds.insert(crime_register, EntityKind::Record);
+        view.record_data.insert(
+            crime_register,
+            crime_register_record(
+                office,
+                place,
+                RecordEntryId(0),
+                InstitutionalClaim::Accusation {
+                    accuser: entity(9),
+                    accused,
+                    violation_id: recorded_violation_id,
+                    theft,
+                    effective_tick: Tick(4),
+                },
+            ),
+        );
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.beliefs.insert(agent, vec![known_entity(crime_register, place)]);
+        view.justice_disposition_profiles
+            .insert(agent, default_justice_profile());
+        view.social_observations.insert(
+            agent,
+            vec![SocialObservation {
+                detail: SocialObservationDetail::SuspectedTheft {
+                    theft,
+                    suspect: Some(accused),
+                },
+                place,
+                observed_tick: Tick(5),
+                source: PerceptionSource::Report {
+                    from: entity(8),
+                    chain_len: 1,
+                },
+            }],
+        );
+
+        let mut violations = ViolationMemory::default();
+        let actual_violation_id = violations.record(
+            ViolationKind::SuspectedTheft {
+                theft,
+                suspect: None,
+            },
+            Tick(5),
+            50,
+        );
+        assert_eq!(
+            actual_violation_id, incoming_violation_id,
+            "test setup should use a distinct incoming violation id"
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &violations,
+            &RecipeRegistry::new(),
+            Tick(6),
+            6,
+            false,
+        );
+
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::Accuse {
+                    crime_register,
+                    accused,
+                    violation_id: incoming_violation_id,
+                }
+            ),
+            "recorded accusation for the same theft facts should suppress a second accuse candidate even when the incoming evidence uses a different violation id"
         );
     }
 
