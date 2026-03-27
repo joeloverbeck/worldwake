@@ -274,6 +274,29 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
   - shipped exact-id `InvestigateViolation` goals plus unresolved/resolved incident lifecycle
   - golden coverage proves single-incident investigation, local depletion reporting, and same-place sibling isolation
 
+**Step 13.5 Wave 4** (parallel, golden-perf-derived):
+- **S29**: Planning State Structural Sharing — PENDING
+  - replace clone-per-expansion PlanningState with Rc-based copy-on-write SharedMap
+  - reduces per-expansion cost from O(total state) to O(mutations)
+  - pure Principle 11 optimization; zero behavioral change
+- **S30**: AI Runtime Save/Load Parity — PENDING
+  - promote AgentDecisionRuntime caches to serializable state
+  - fixes save/load boundary violating Principle 11 (boundary changes world meaning)
+  - enables higher EXHAUSTION_SKIP_TTL without breaking determinism tests
+  - depends on: none (standalone, but synergizes with S29)
+- **S31**: Goal-Aware Exhaustion Invalidation — PENDING
+  - per-goal invalidation conditions replace coarse dirty-bit mask
+  - eliminates over-invalidation (irrelevant commodity changes) and under-invalidation (needs-driven goals)
+  - removes EXHAUSTION_SKIP_TTL in favor of condition-based cache management
+  - depends on: S30 (invalidation conditions must survive save/load)
+
+Dependency graph:
+```
+S29 (independent)
+S30 (independent)
+S31 ──→ S30
+```
+
 ---
 
 ### Phase 4: Adaptation & Integration
@@ -329,6 +352,9 @@ All specs in `specs/` must appear exactly once in this order. Completed/archived
 | ~~`S24-typed-invalidation-domains.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
+| `S29-planning-state-structural-sharing.md` | 3+ | 13.5 W4 | none |
+| `S30-ai-runtime-save-load-parity.md` | 3+ | 13.5 W4 | none |
+| `S31-goal-aware-exhaustion-invalidation.md` | 3+ | 13.5 W4 | S30 |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
@@ -358,6 +384,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
-| 3+: AI Architecture Overhaul | S20–S28 | Honest causal state, general intentions, refined diagnostics | IN PROGRESS (S20, S21, S22, S23, S24, S25, S26, S27, S28 complete) |
+| 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | IN PROGRESS (S20–S28 complete; S29, S30, S31 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
