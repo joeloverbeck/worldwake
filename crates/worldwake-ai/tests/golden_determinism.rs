@@ -97,8 +97,7 @@ fn run_save_load_roundtrip_scenario(seed: Seed) -> GoldenHarness {
         "Save boundary should occur after non-trivial AI progress"
     );
 
-    let resumed_state = uninterrupted.save_load_roundtrip();
-    let mut resumed = GoldenHarness::from_simulation_state(&resumed_state);
+    let mut resumed = uninterrupted.save_load_roundtrip();
 
     for _ in 0..RESUME_TICKS {
         uninterrupted.step_once();
@@ -679,8 +678,7 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     );
 
     // --- Save/load round-trip ---
-    let resumed_state = h.save_load_roundtrip();
-    let mut resumed = GoldenHarness::from_simulation_state(&resumed_state);
+    let mut resumed = h.save_load_roundtrip();
 
     // --- Post-load component reads ---
     let post_active_goal: Option<ActiveGoal> =
@@ -820,8 +818,7 @@ fn golden_save_load_preserves_suspended_intention_frame() {
     );
 
     // Save/load round-trip.
-    let resumed_state = h.save_load_roundtrip();
-    let resumed = GoldenHarness::from_simulation_state(&resumed_state);
+    let resumed = h.save_load_roundtrip();
 
     let post_load = resumed
         .world
@@ -873,8 +870,7 @@ fn golden_save_load_preserves_intention_disposition_profile() {
         .expect("Profile should be set before save");
 
     // Save/load round-trip.
-    let resumed_state = h.save_load_roundtrip();
-    let resumed = GoldenHarness::from_simulation_state(&resumed_state);
+    let resumed = h.save_load_roundtrip();
 
     let post_load = resumed
         .world
@@ -964,8 +960,7 @@ fn golden_save_load_preserves_frame_assumptions() {
         .unwrap();
 
     // Save/load round-trip.
-    let resumed_state = h.save_load_roundtrip();
-    let resumed = GoldenHarness::from_simulation_state(&resumed_state);
+    let resumed = h.save_load_roundtrip();
 
     let post_load = resumed
         .world

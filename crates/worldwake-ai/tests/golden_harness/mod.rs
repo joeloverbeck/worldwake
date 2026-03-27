@@ -31,8 +31,8 @@ use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
     ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
     InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
-    RecipeRegistry, ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink, Scheduler,
-    SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    RecipeRegistry, ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink,
+    SaveableRuntime, Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -1157,12 +1157,21 @@ impl GoldenHarness {
         )
     }
 
-    pub fn save_load_roundtrip(&self) -> SimulationState {
-        load_from_bytes(
-            &save_to_bytes(&self.snapshot_state())
+    pub fn save_load_roundtrip(&self) -> Self {
+        let (state, runtime_bytes) = load_from_bytes(
+            &save_to_bytes(&self.snapshot_state(), Some(&self.driver))
                 .expect("golden harness simulation state should serialize"),
         )
-        .expect("golden harness simulation state should deserialize")
+        .expect("golden harness simulation state should deserialize");
+        let mut restored = Self::from_simulation_state(&state);
+        if let Some(bytes) = runtime_bytes {
+            restored
+                .driver
+                .restore_runtime_state(&bytes)
+                .expect("golden harness runtime should deserialize");
+            restored.driver.post_load_validate(&restored.world);
+        }
+        restored
     }
 
     pub fn from_simulation_state(state: &SimulationState) -> Self {

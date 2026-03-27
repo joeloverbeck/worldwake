@@ -39,6 +39,7 @@ use crate::{
     build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
     PlanningBudget,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
@@ -47,7 +48,7 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
     PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
-    Scheduler, TickInputError,
+    SaveError, SaveableRuntime, Scheduler, TickInputError,
 };
 
 pub struct AgentTickDriver {
@@ -56,6 +57,12 @@ pub struct AgentTickDriver {
     semantics_cache: Option<(usize, BTreeMap<ActionDefId, PlannerOpSemantics>)>,
     /// Optional trace collector. When `Some`, decision traces are recorded.
     trace_sink: Option<DecisionTraceSink>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct AgentTickDriverState {
+    runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
+    budget: PlanningBudget,
 }
 
 impl AgentTickDriver {
@@ -121,6 +128,56 @@ impl AgentTickDriver {
             effective_switch_margin,
             switch_margin_source,
         })
+    }
+
+    pub fn post_load_validate(&mut self, world: &worldwake_core::World) {
+        self.runtime_by_agent.retain(|agent, _| world.is_alive(*agent));
+
+        for runtime in self.runtime_by_agent.values_mut() {
+            runtime.exhaustion_cache.retain(|key, _| {
+                key.entity.is_none_or(|entity| world.is_alive(entity))
+                    && key.place.is_none_or(|place| world.is_alive(place))
+            });
+            runtime
+                .materialization_bindings
+                .hypothetical_to_authoritative
+                .retain(|_, authoritative| world.is_alive(*authoritative));
+            if runtime
+                .last_effective_place
+                .is_some_and(|place| !world.is_alive(place))
+            {
+                runtime.last_effective_place = None;
+            }
+            runtime
+                .last_facility_access_signature
+                .retain(|(entity, _, _)| world.is_alive(*entity));
+            runtime.dirty =
+                crate::DirtySet::STRUCTURAL_MASK | crate::DirtySet::SNAPSHOT_MASK | crate::DirtySet::FRAME_MASK;
+            runtime.last_priority_class = None;
+            runtime.last_frame_clear_reason = None;
+        }
+
+        self.semantics_cache = None;
+    }
+}
+
+impl SaveableRuntime for AgentTickDriver {
+    fn save_runtime_state(&self) -> Result<Vec<u8>, SaveError> {
+        bincode::serialize(&AgentTickDriverState {
+            runtime_by_agent: self.runtime_by_agent.clone(),
+            budget: self.budget.clone(),
+        })
+        .map_err(|error| SaveError::RuntimeSerialization(error.to_string()))
+    }
+
+    fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveError> {
+        let state: AgentTickDriverState = bincode::deserialize(bytes)
+            .map_err(|error| SaveError::RuntimeDeserialization(error.to_string()))?;
+        self.runtime_by_agent = state.runtime_by_agent;
+        self.budget = state.budget;
+        self.semantics_cache = None;
+        self.trace_sink = None;
+        Ok(())
     }
 }
 

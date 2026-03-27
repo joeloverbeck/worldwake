@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bincode = "1"
 serde = { version = "1", features = ["derive"] }
 worldwake-core = { path = "../worldwake-core" }
 worldwake-sim = { path = "../worldwake-sim" }
@@ -13,7 +14,6 @@ worldwake-systems = { path = "../worldwake-systems" }
 bench-profiling = ["worldwake-sim/bench-profiling"]
 
 [dev-dependencies]
-bincode = "1"
 blake3 = "1"
 
 [lints]

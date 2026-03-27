@@ -40,6 +40,7 @@ pub mod replay_execution;
 pub mod replay_state;
 pub mod request_resolution_trace;
 pub mod save_load;
+pub mod saveable_runtime;
 pub mod scheduler;
 pub mod simulation_state;
 pub mod social_relay;
@@ -127,6 +128,7 @@ pub use request_resolution_trace::{
 pub use save_load::{
     load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
 };
+pub use saveable_runtime::SaveableRuntime;
 pub use scheduler::{
     ActionStartFailure, ActionStartFailureReason, CommittedAction, Scheduler,
     SchedulerActionRuntime,

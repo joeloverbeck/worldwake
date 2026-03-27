@@ -14,9 +14,10 @@ use super::{
 };
 use crate::PlanningBudget;
 use crate::{
-    build_semantics_table, AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization,
-    FrameSwitchMarginSource, GoalKey, GoalKind, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
+    build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet,
+    ExpectedMaterialization, FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass,
+    HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+    PlanningEntityRef, RankedGoal, RankedGoalProvenance,
     SelectedPlanReplacementKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -42,8 +43,8 @@ use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
     DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, Scheduler, SystemDispatchTable, SystemExecutionContext,
-    SystemId, SystemManifest, TickStepServices,
+    RecipeRegistry, RuntimeBeliefView, SaveableRuntime, Scheduler, SystemDispatchTable,
+    SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -157,6 +158,148 @@ impl Harness {
     fn runtime(&self) -> Option<&crate::AgentDecisionRuntime> {
         self.driver.runtime_by_agent.get(&self.actor)
     }
+}
+
+#[test]
+fn saveable_runtime_roundtrip_restores_persisted_driver_state() {
+    let agent = entity(700);
+    let place = entity(701);
+    let facility = entity(702);
+    let authoritative = entity(703);
+    let mut driver = AgentTickDriver::new(PlanningBudget {
+        max_candidates_to_plan: 7,
+        ..PlanningBudget::default()
+    });
+    let mut runtime = AgentDecisionRuntime {
+        current_step_index: 2,
+        step_in_flight: true,
+        last_effective_place: Some(place),
+        last_facility_access_signature: vec![(facility, true, Some(ActionDefId(4)))],
+        last_in_transit: true,
+        dirty: DirtySet::NEEDS,
+        last_priority_class: Some(GoalPriorityClass::Critical),
+        last_frame_clear_reason: Some(worldwake_core::FrameClearReason::LostPlan),
+        ..AgentDecisionRuntime::default()
+    };
+    runtime
+        .materialization_bindings
+        .bind(HypotheticalEntityId(11), authoritative);
+    runtime.exhaustion_cache.insert(
+        GoalKey::from(GoalKind::TreatWounds { patient: agent }),
+        crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(9)),
+            count: 3,
+        },
+    );
+    driver.runtime_by_agent.insert(agent, runtime);
+    driver.semantics_cache = Some((1, BTreeMap::new()));
+    driver.trace_sink = Some(crate::DecisionTraceSink::new());
+
+    let bytes = driver.save_runtime_state().unwrap();
+    let mut restored = AgentTickDriver::new(PlanningBudget::default());
+    restored.restore_runtime_state(&bytes).unwrap();
+
+    assert_eq!(restored.budget.max_candidates_to_plan, 7);
+    assert!(restored.semantics_cache.is_none());
+    assert!(restored.trace_sink.is_none());
+
+    let restored_runtime = restored.runtime_by_agent.get(&agent).unwrap();
+    assert_eq!(restored_runtime.current_step_index, 2);
+    assert!(restored_runtime.step_in_flight);
+    assert_eq!(restored_runtime.last_effective_place, Some(place));
+    assert_eq!(
+        restored_runtime.last_facility_access_signature,
+        vec![(facility, true, Some(ActionDefId(4)))]
+    );
+    assert!(restored_runtime.last_in_transit);
+    assert_eq!(
+        restored_runtime
+            .materialization_bindings
+            .resolve(HypotheticalEntityId(11)),
+        Some(authoritative)
+    );
+    assert_eq!(
+        restored_runtime
+            .exhaustion_cache
+            .get(&GoalKey::from(GoalKind::TreatWounds { patient: agent })),
+        Some(&crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(9)),
+            count: 3,
+        })
+    );
+    assert_eq!(restored_runtime.dirty, DirtySet::default());
+    assert_eq!(restored_runtime.last_priority_class, None);
+    assert_eq!(restored_runtime.last_frame_clear_reason, None);
+}
+
+#[test]
+fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
+    let mut h = Harness::new(ControlSource::Ai);
+    let live_place = h.world.topology().place_ids().next().unwrap();
+    let dead_agent = entity(800);
+    let dead_entity = entity(801);
+    let mut runtime = AgentDecisionRuntime {
+        last_effective_place: Some(dead_entity),
+        last_facility_access_signature: vec![
+            (dead_entity, true, None),
+            (live_place, false, Some(ActionDefId(2))),
+        ],
+        last_priority_class: Some(GoalPriorityClass::High),
+        last_frame_clear_reason: Some(worldwake_core::FrameClearReason::PlanFailed),
+        ..AgentDecisionRuntime::default()
+    };
+    runtime
+        .materialization_bindings
+        .bind(HypotheticalEntityId(12), dead_entity);
+    runtime.exhaustion_cache.insert(
+        GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity }),
+        crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(4)),
+            count: 2,
+        },
+    );
+    runtime.exhaustion_cache.insert(
+        GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+        crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(5)),
+            count: 1,
+        },
+    );
+    h.driver.runtime_by_agent.insert(h.actor, runtime);
+    h.driver
+        .runtime_by_agent
+        .insert(dead_agent, AgentDecisionRuntime::default());
+    h.driver.semantics_cache = Some((3, BTreeMap::new()));
+
+    h.driver.post_load_validate(&h.world);
+
+    assert!(!h.driver.runtime_by_agent.contains_key(&dead_agent));
+    assert!(h.driver.semantics_cache.is_none());
+
+    let runtime = h.driver.runtime_by_agent.get(&h.actor).unwrap();
+    assert_eq!(runtime.last_effective_place, None);
+    assert_eq!(
+        runtime.last_facility_access_signature,
+        vec![(live_place, false, Some(ActionDefId(2)))]
+    );
+    assert_eq!(
+        runtime
+            .materialization_bindings
+            .resolve(HypotheticalEntityId(12)),
+        None
+    );
+    assert!(!runtime
+        .exhaustion_cache
+        .contains_key(&GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity })));
+    assert!(runtime
+        .exhaustion_cache
+        .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })));
+    assert_eq!(
+        runtime.dirty,
+        DirtySet::STRUCTURAL_MASK | DirtySet::SNAPSHOT_MASK | DirtySet::FRAME_MASK
+    );
+    assert_eq!(runtime.last_priority_class, None);
+    assert_eq!(runtime.last_frame_clear_reason, None);
 }
 
 fn cargo_topology(origin: EntityId, destination: EntityId) -> Topology {

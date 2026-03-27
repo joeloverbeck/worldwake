@@ -1,19 +1,23 @@
-use crate::SimulationState;
+use crate::{SaveableRuntime, SimulationState};
 use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 5;
+pub const SAVE_FORMAT_VERSION: u32 = 6;
+const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
+const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
 
 #[derive(Debug)]
 pub enum SaveError {
     Io(std::io::Error),
     Serialization(String),
+    RuntimeSerialization(String),
     InvalidMagic,
     UnsupportedVersion { found: u32, expected: u32 },
     Deserialization(String),
+    RuntimeDeserialization(String),
 }
 
 impl fmt::Display for SaveError {
@@ -23,6 +27,9 @@ impl fmt::Display for SaveError {
             Self::Serialization(message) => {
                 write!(f, "failed to serialize simulation state: {message}")
             }
+            Self::RuntimeSerialization(message) => {
+                write!(f, "failed to serialize runtime state: {message}")
+            }
             Self::InvalidMagic => f.write_str("save data does not start with Worldwake save magic"),
             Self::UnsupportedVersion { found, expected } => write!(
                 f,
@@ -30,6 +37,9 @@ impl fmt::Display for SaveError {
             ),
             Self::Deserialization(message) => {
                 write!(f, "failed to deserialize simulation state: {message}")
+            }
+            Self::RuntimeDeserialization(message) => {
+                write!(f, "failed to deserialize runtime state: {message}")
             }
         }
     }
@@ -40,9 +50,11 @@ impl std::error::Error for SaveError {
         match self {
             Self::Io(source) => Some(source),
             Self::Serialization(_)
+            | Self::RuntimeSerialization(_)
             | Self::InvalidMagic
             | Self::UnsupportedVersion { .. }
-            | Self::Deserialization(_) => None,
+            | Self::Deserialization(_)
+            | Self::RuntimeDeserialization(_) => None,
         }
     }
 }
@@ -53,27 +65,49 @@ impl From<std::io::Error> for SaveError {
     }
 }
 
-pub fn save(state: &SimulationState, path: &Path) -> Result<(), SaveError> {
-    let bytes = save_to_bytes(state)?;
+pub fn save(
+    state: &SimulationState,
+    runtime: Option<&dyn SaveableRuntime>,
+    path: &Path,
+) -> Result<(), SaveError> {
+    let bytes = save_to_bytes(state, runtime)?;
     std::fs::write(path, bytes).map_err(SaveError::Io)
 }
 
-pub fn load(path: &Path) -> Result<SimulationState, SaveError> {
+pub fn load(path: &Path) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
     let bytes = std::fs::read(path).map_err(SaveError::Io)?;
     load_from_bytes(&bytes)
 }
 
-pub fn save_to_bytes(state: &SimulationState) -> Result<Vec<u8>, SaveError> {
-    let payload =
+pub fn save_to_bytes(
+    state: &SimulationState,
+    runtime: Option<&dyn SaveableRuntime>,
+) -> Result<Vec<u8>, SaveError> {
+    let sim_payload =
         bincode::serialize(state).map_err(|error| SaveError::Serialization(error.to_string()))?;
-    let mut bytes = Vec::with_capacity(SAVE_HEADER_LEN + payload.len());
+    let runtime_payload = runtime
+        .map(SaveableRuntime::save_runtime_state)
+        .transpose()?
+        .unwrap_or_default();
+    let sim_payload_len = u64::try_from(sim_payload.len()).map_err(|_| {
+        SaveError::Serialization("simulation payload exceeds u64 length".to_string())
+    })?;
+    let runtime_payload_len = u64::try_from(runtime_payload.len()).map_err(|_| {
+        SaveError::RuntimeSerialization("runtime payload exceeds u64 length".to_string())
+    })?;
+    let mut bytes = Vec::with_capacity(
+        SAVE_HEADER_LEN + PAYLOAD_LEN_WIDTH * 2 + sim_payload.len() + runtime_payload.len(),
+    );
     bytes.extend_from_slice(&SAVE_MAGIC);
     bytes.extend_from_slice(&SAVE_FORMAT_VERSION.to_le_bytes());
-    bytes.extend_from_slice(&payload);
+    bytes.extend_from_slice(&sim_payload_len.to_le_bytes());
+    bytes.extend_from_slice(&sim_payload);
+    bytes.extend_from_slice(&runtime_payload_len.to_le_bytes());
+    bytes.extend_from_slice(&runtime_payload);
     Ok(bytes)
 }
 
-pub fn load_from_bytes(bytes: &[u8]) -> Result<SimulationState, SaveError> {
+pub fn load_from_bytes(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
     if bytes.len() < SAVE_HEADER_LEN {
         return Err(SaveError::Deserialization(
             "save data is truncated before the fixed header completes".to_string(),
@@ -91,27 +125,81 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<SimulationState, SaveError> {
             .try_into()
             .expect("validated fixed-width save header"),
     );
-    if found != SAVE_FORMAT_VERSION {
-        return Err(SaveError::UnsupportedVersion {
+
+    match found {
+        LEGACY_SAVE_FORMAT_VERSION => load_legacy_v5(payload),
+        SAVE_FORMAT_VERSION => load_v6(payload),
+        _ => Err(SaveError::UnsupportedVersion {
             found,
             expected: SAVE_FORMAT_VERSION,
-        });
+        }),
+    }
+}
+
+fn load_legacy_v5(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
+    let state = bincode::deserialize(bytes)
+        .map_err(|error| SaveError::Deserialization(error.to_string()))?;
+    Ok((state, None))
+}
+
+fn load_v6(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
+    let (sim_payload, rest) = split_length_prefixed_payload(bytes, "simulation")?;
+    let state = bincode::deserialize(sim_payload)
+        .map_err(|error| SaveError::Deserialization(error.to_string()))?;
+    let (runtime_payload, trailing) = split_length_prefixed_payload(rest, "runtime")?;
+    if !trailing.is_empty() {
+        return Err(SaveError::Deserialization(
+            "save data has trailing bytes after runtime payload".to_string(),
+        ));
     }
 
-    bincode::deserialize(payload).map_err(|error| SaveError::Deserialization(error.to_string()))
+    let runtime = (!runtime_payload.is_empty()).then(|| runtime_payload.to_vec());
+    Ok((state, runtime))
+}
+
+fn split_length_prefixed_payload<'a>(
+    bytes: &'a [u8],
+    label: &str,
+) -> Result<(&'a [u8], &'a [u8]), SaveError> {
+    if bytes.len() < PAYLOAD_LEN_WIDTH {
+        return Err(SaveError::Deserialization(format!(
+            "save data is truncated before the {label} length prefix completes"
+        )));
+    }
+
+    let (len_bytes, rest) = bytes.split_at(PAYLOAD_LEN_WIDTH);
+    let payload_len = u64::from_le_bytes(
+        len_bytes
+            .try_into()
+            .expect("validated fixed-width payload length"),
+    );
+    let payload_len = usize::try_from(payload_len).map_err(|_| {
+        SaveError::Deserialization(format!(
+            "{label} payload length does not fit into platform usize"
+        ))
+    })?;
+    if rest.len() < payload_len {
+        return Err(SaveError::Deserialization(format!(
+            "save data is truncated before the full {label} payload completes"
+        )));
+    }
+
+    Ok(rest.split_at(payload_len))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
+        load, load_from_bytes, save, save_to_bytes, SaveError, LEGACY_SAVE_FORMAT_VERSION,
+        SAVE_FORMAT_VERSION, SAVE_MAGIC,
     };
     use crate::{
         step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance,
         ActionInstanceId, ActionPayload, ActionState, ActionStatus, ControllerState,
         DeterministicRng, InputKind, RecipeDefinition, RecipeRegistry, ReplayCheckpoint,
-        ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemDispatchTable,
-        SystemError, SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
+        ReplayRecordingConfig, ReplayState, SaveableRuntime, Scheduler, SimulationState,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemId, SystemManifest,
+        TickStepServices,
     };
     use std::num::NonZeroU64;
     use std::path::PathBuf;
@@ -429,12 +517,37 @@ mod tests {
         ))
     }
 
+    fn legacy_v5_bytes(state: &SimulationState) -> Vec<u8> {
+        let payload = bincode::serialize(state).unwrap();
+        let mut bytes =
+            Vec::with_capacity(SAVE_MAGIC.len() + std::mem::size_of::<u32>() + payload.len());
+        bytes.extend_from_slice(&SAVE_MAGIC);
+        bytes.extend_from_slice(&LEGACY_SAVE_FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes
+    }
+
+    struct MockRuntime {
+        bytes: Vec<u8>,
+    }
+
+    impl SaveableRuntime for MockRuntime {
+        fn save_runtime_state(&self) -> Result<Vec<u8>, SaveError> {
+            Ok(self.bytes.clone())
+        }
+
+        fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveError> {
+            self.bytes = bytes.to_vec();
+            Ok(())
+        }
+    }
+
     #[test]
     fn save_to_bytes_roundtrip_preserves_full_nondefault_state() {
         let (state, actor, reserved_item) = populated_state();
 
-        let bytes = save_to_bytes(&state).unwrap();
-        let restored = load_from_bytes(&bytes).unwrap();
+        let bytes = save_to_bytes(&state, None).unwrap();
+        let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
         assert_eq!(
@@ -445,6 +558,7 @@ mod tests {
             ),
             SAVE_FORMAT_VERSION
         );
+        assert_eq!(runtime, None);
         assert_eq!(restored, state);
         assert_eq!(restored.scheduler().active_actions().len(), 1);
         assert_eq!(restored.scheduler().input_queue().len(), 2);
@@ -458,22 +572,47 @@ mod tests {
     fn file_save_roundtrip_matches_in_memory_format() {
         let (state, _, _) = populated_state();
         let path = temp_save_path("roundtrip");
-        let expected_bytes = save_to_bytes(&state).unwrap();
+        let expected_bytes = save_to_bytes(&state, None).unwrap();
 
-        save(&state, &path).unwrap();
+        save(&state, None, &path).unwrap();
         let file_bytes = std::fs::read(&path).unwrap();
-        let restored = load(&path).unwrap();
+        let (restored, runtime) = load(&path).unwrap();
 
         assert_eq!(file_bytes, expected_bytes);
+        assert_eq!(runtime, None);
         assert_eq!(restored, state);
 
         let _ = std::fs::remove_file(path);
     }
 
     #[test]
+    fn save_to_bytes_roundtrip_preserves_runtime_payload() {
+        let (state, _, _) = populated_state();
+        let runtime = MockRuntime {
+            bytes: vec![9, 8, 7, 6],
+        };
+
+        let bytes = save_to_bytes(&state, Some(&runtime)).unwrap();
+        let (restored, runtime_payload) = load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored, state);
+        assert_eq!(runtime_payload, Some(vec![9, 8, 7, 6]));
+    }
+
+    #[test]
+    fn load_accepts_legacy_v5_format_and_returns_no_runtime_payload() {
+        let (state, _, _) = populated_state();
+
+        let (restored, runtime_payload) = load_from_bytes(&legacy_v5_bytes(&state)).unwrap();
+
+        assert_eq!(restored, state);
+        assert_eq!(runtime_payload, None);
+    }
+
+    #[test]
     fn load_rejects_wrong_magic() {
         let (state, _, _) = populated_state();
-        let mut bytes = save_to_bytes(&state).unwrap();
+        let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[..SAVE_MAGIC.len()].copy_from_slice(b"NOPE");
 
         let error = load_from_bytes(&bytes).unwrap_err();
@@ -484,7 +623,7 @@ mod tests {
     #[test]
     fn load_rejects_wrong_version() {
         let (state, _, _) = populated_state();
-        let mut bytes = save_to_bytes(&state).unwrap();
+        let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
             .copy_from_slice(&(SAVE_FORMAT_VERSION + 1).to_le_bytes());
 
@@ -502,9 +641,20 @@ mod tests {
     #[test]
     fn load_rejects_truncated_payload() {
         let (state, _, _) = populated_state();
-        let bytes = save_to_bytes(&state).unwrap();
+        let bytes = save_to_bytes(&state, None).unwrap();
 
         let error = load_from_bytes(&bytes[..bytes.len() - 1]).unwrap_err();
+
+        assert!(matches!(error, SaveError::Deserialization(_)));
+    }
+
+    #[test]
+    fn load_rejects_trailing_bytes_after_runtime_payload() {
+        let (state, _, _) = populated_state();
+        let mut bytes = save_to_bytes(&state, None).unwrap();
+        bytes.push(0xAA);
+
+        let error = load_from_bytes(&bytes).unwrap_err();
 
         assert!(matches!(error, SaveError::Deserialization(_)));
     }
@@ -519,7 +669,9 @@ mod tests {
     #[test]
     fn loaded_state_continues_identically_to_uninterrupted_execution() {
         let mut uninterrupted = continuation_state();
-        let mut restored = load_from_bytes(&save_to_bytes(&uninterrupted).unwrap()).unwrap();
+        let (mut restored, runtime) =
+            load_from_bytes(&save_to_bytes(&uninterrupted, None).unwrap()).unwrap();
+        assert_eq!(runtime, None);
 
         advance_state(&mut uninterrupted, 4);
         advance_state(&mut restored, 4);

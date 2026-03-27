@@ -50,7 +50,7 @@ pub fn dispatch_command(
         CliCommand::Places => world_overview::handle_places(sim),
         CliCommand::Agents => world_overview::handle_agents(sim, registries),
         CliCommand::Goods => world_overview::handle_goods(sim),
-        CliCommand::Save { path } => persistence::handle_save(sim, &path),
+        CliCommand::Save { path } => persistence::handle_save(sim, driver, &path),
         CliCommand::Load { path } => persistence::handle_load(sim, driver, repl_state, &path),
         CliCommand::Quit => Ok(CommandOutcome::Quit),
     }

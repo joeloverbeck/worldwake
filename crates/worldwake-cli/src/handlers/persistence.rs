@@ -1,16 +1,16 @@
 use std::path::Path;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
-use worldwake_sim::SimulationState;
+use worldwake_sim::{SaveableRuntime, SimulationState};
 
 use crate::commands::{CommandOutcome, CommandResult};
 use crate::repl::ReplState;
 
 /// Save current simulation state to a file.
 #[allow(clippy::unnecessary_wraps)] // Must return CommandResult for dispatch interface.
-pub fn handle_save(sim: &SimulationState, path: &str) -> CommandResult {
+pub fn handle_save(sim: &SimulationState, driver: &AgentTickDriver, path: &str) -> CommandResult {
     let file_path = Path::new(path);
-    match worldwake_sim::save(sim, file_path) {
+    match worldwake_sim::save(sim, Some(driver), file_path) {
         Ok(()) => {
             println!("Saved to {path}");
             Ok(CommandOutcome::Continue)
@@ -24,9 +24,9 @@ pub fn handle_save(sim: &SimulationState, path: &str) -> CommandResult {
 
 /// Load simulation state from a file, replacing the current state.
 ///
-/// On success, replaces `*sim` with the loaded state, resets the AI driver
-/// (since `AgentTickDriver` is not part of the save file), and clears stale
-/// REPL state (last affordances).
+/// On success, replaces `*sim` with the loaded state, restores the persisted
+/// AI driver runtime when present, and clears stale REPL state (last
+/// affordances).
 ///
 /// On error, the current state is left unchanged.
 #[allow(clippy::unnecessary_wraps)] // Must return CommandResult for dispatch interface.
@@ -38,10 +38,17 @@ pub fn handle_load(
 ) -> CommandResult {
     let file_path = Path::new(path);
     match worldwake_sim::load(file_path) {
-        Ok(loaded) => {
+        Ok((loaded, runtime_bytes)) => {
             let tick = loaded.scheduler().current_tick();
             *sim = loaded;
             *driver = AgentTickDriver::new(PlanningBudget::default());
+            if let Some(bytes) = runtime_bytes {
+                if let Err(err) = driver.restore_runtime_state(&bytes) {
+                    println!("Load failed: {err}");
+                    return Ok(CommandOutcome::Continue);
+                }
+                driver.post_load_validate(sim.world());
+            }
             repl_state.last_affordances.clear();
             println!("Loaded from {path} — tick {}", tick.0);
             Ok(CommandOutcome::Continue)
@@ -106,11 +113,12 @@ mod tests {
     #[test]
     fn test_save_creates_file() {
         let sim = build_test_sim();
+        let driver = AgentTickDriver::new(PlanningBudget::default());
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.save");
         let path_str = path.to_str().unwrap();
 
-        let result = handle_save(&sim, path_str);
+        let result = handle_save(&sim, &driver, path_str);
         assert!(result.is_ok());
         assert!(path.exists(), "save file should exist");
     }
@@ -125,7 +133,11 @@ mod tests {
         let path = dir.path().join("roundtrip.save");
         let path_str = path.to_str().unwrap();
 
-        handle_save(&sim, path_str).unwrap();
+        let saving_driver = AgentTickDriver::new(PlanningBudget {
+            max_candidates_to_plan: 9,
+            ..PlanningBudget::default()
+        });
+        handle_save(&sim, &saving_driver, path_str).unwrap();
 
         let mut loaded_sim = build_test_sim(); // different instance
         let mut driver = AgentTickDriver::new(PlanningBudget::default());
@@ -196,11 +208,12 @@ mod tests {
     #[test]
     fn test_load_clears_repl_state() {
         let sim = build_test_sim();
+        let driver = AgentTickDriver::new(PlanningBudget::default());
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clear_repl.save");
         let path_str = path.to_str().unwrap();
 
-        handle_save(&sim, path_str).unwrap();
+        handle_save(&sim, &driver, path_str).unwrap();
 
         let mut loaded_sim = build_test_sim();
         let mut driver = AgentTickDriver::new(PlanningBudget::default());
