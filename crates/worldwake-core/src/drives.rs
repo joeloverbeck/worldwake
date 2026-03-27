@@ -4,7 +4,7 @@ use crate::{Component, Permille};
 use serde::{Deserialize, Serialize};
 
 /// Ordered urgency thresholds for a single drive or derived pressure.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ThresholdBand {
     low: Permille,
     medium: Permille,

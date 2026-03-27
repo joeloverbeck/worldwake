@@ -59,9 +59,7 @@ impl MaterializationBindings {
 pub struct ExhaustionEntry {
     pub exhausted_at: Option<Tick>,
     pub count: u8,
-    #[serde(default)]
     pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
-    #[serde(default)]
     pub baseline: ExhaustionBaseline,
 }
 
@@ -347,7 +345,7 @@ mod tests {
             dirty: DirtySet::NEEDS | DirtySet::POSITION,
             last_priority_class: Some(GoalPriorityClass::Critical),
             last_effective_place: Some(entity(11)),
-            last_needs: Some(last_needs.clone()),
+            last_needs: Some(last_needs),
             last_wounds: vec![Wound {
                 id: WoundId(9),
                 body_part: BodyPart::Torso,

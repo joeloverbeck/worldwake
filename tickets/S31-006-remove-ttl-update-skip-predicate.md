@@ -18,15 +18,16 @@ The intended S31 end-state is still correct: the planner should not keep a separ
 4. The live TTL-focused planner coverage is in `crates/worldwake-ai/src/agent_tick/planning.rs`: `agent_tick::planning::tests::exhausted_goal_skip_window_remains_active_until_20_tick_boundary` and `agent_tick::planning::tests::exhausted_goal_without_ttl_marker_is_not_skipped`.
 5. The motivating invariant is planner retry correctness for exhausted goals: a previously exhausted goal should become searchable again when, and only when, concrete planner-relevant local state has changed enough to make the search space materially different. The planner must not retry only because abstract time passed, but it also must not stay indefinitely stale when the local decision surface changed.
 6. The live `GoalKind` families exposed by the failing scenarios are needs-driven goals such as `GoalKind::ConsumeOwnedCommodity`, `GoalKind::Sleep`, and `GoalKind::Wash`. These scenarios rely on the current candidate-generation thresholds in `crates/worldwake-ai/src/candidate_generation.rs`, where `emit_sleep_goal()`, `emit_relieve_goal()`, and `emit_wash_goal()` are driven by `DriveThresholds::* .low()` rather than by a generic fixed delta.
-7. Live verification after removing TTL showed that the replacement substrate is incomplete. `cargo test -p worldwake-ai` failed these existing goldens: `golden_goal_invalidation_by_another_agent`, `golden_wash_action`, `golden_three_way_need_competition`, and `golden_utility_weight_diversity_in_need_selection` in [golden_ai_decisions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_ai_decisions.rs). This reproduces the exact “indefinite caching” failure class called out in `specs/S31-goal-aware-exhaustion-invalidation.md`.
-8. Those failures show that removing TTL now would not merely simplify dead code; it would reopen a production contradiction in the live AI retry contract. Under `tickets/README.md` and `docs/FOUNDATIONS.md`, that means the ticket is blocked on missing substrate rather than ready for implementation.
-9. Adjacent contradiction exposed during reassessment: `ExhaustionEntry` in `crates/worldwake-ai/src/decision_runtime.rs` still uses `#[serde(default)]` on `invalidation_conditions` and `baseline`, which preserves a compatibility path the S31 spec says should not survive. That contradiction is separate from TTL removal and should not be folded silently into this ticket.
+7. `S31-008` has now landed the needs-driven substrate upgrade: `NeedCrossedThreshold` was replaced by profile-driven `NeedChangedBands` in [`crates/worldwake-ai/src/exhaustion.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/exhaustion.rs), `ExhaustionEntry` no longer uses `#[serde(default)]` fallback loading in [`crates/worldwake-ai/src/decision_runtime.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_runtime.rs), and the persisted runtime format moved to version 8 in [`crates/worldwake-sim/src/save_load.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/save_load.rs).
+8. Re-running the TTL-removal experiment after `S31-008` narrowed, but did not eliminate, the remaining contradiction. Without TTL, `golden_wash_action` now passes, but `golden_goal_invalidation_by_another_agent`, `golden_three_way_need_competition`, and `golden_utility_weight_diversity_in_need_selection` still fail in [golden_ai_decisions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_ai_decisions.rs).
+9. That updated result changes the diagnosis: this ticket is no longer blocked on the needs-band substrate itself. It is now blocked on a remaining retry-authority dependency that still affects non-wash planner behavior, including local consume and multi-goal competition scenarios.
+10. Under `tickets/README.md` and `docs/FOUNDATIONS.md`, those surviving failures mean TTL removal is still not ready for implementation. The next pass must explain which concrete local planner facts for those scenarios are still not represented by the current invalidation model, rather than removing TTL and relying on eventual downstream behavior.
 
 ## Architecture Check
 
 1. The clean architecture is still “one authority over exhaustion invalidation.” TTL removal remains the correct eventual direction because time alone is not a concrete, local reason to retry search under `docs/FOUNDATIONS.md` Principles 2, 3, 25, and 26.
 2. The wrong move is to remove TTL before the replacement substrate is complete. That would leave the planner unable to revise exhausted goals when concrete local conditions changed but the current invalidation signals did not fire, which conflicts with Principles 19 and 27.
-3. This ticket therefore becomes a follow-through ticket, not a substrate ticket. `S31-008` must first complete the missing exhaustion invalidation contract. Only then can `S31-006` safely remove the temporary TTL fallback without reopening regressions.
+3. This ticket is now a follow-through ticket on the remaining retry gap, not on the original needs-band substrate. `S31-008` completed the needs-driven band invalidation, but the accepted goldens show that at least one broader retry dependency still survives.
 4. No backward-compatibility aliasing or shim work belongs here. If `S31-008` makes TTL unnecessary, `S31-006` should remove it outright rather than layering a second live path beside the condition-driven one.
 
 ## Verification Layers
@@ -38,13 +39,13 @@ The intended S31 end-state is still correct: the planner should not keep a separ
 
 ## What to Change
 
-### 1. Do not remove TTL until `S31-008` completes
+### 1. Do not remove TTL until the remaining non-needs retry dependency is identified
 
-Keep the current planner-local TTL gate in place. Treat this ticket as blocked on the invalidation-completeness work rather than partially implementing it.
+Keep the current planner-local TTL gate in place. Treat this ticket as blocked on explaining and fixing the remaining retry dependency rather than partially implementing removal.
 
-### 2. Re-run this ticket only after the substrate is complete
+### 2. Re-run this ticket only after the remaining retry dependency is covered by concrete invalidation facts
 
-When `S31-008` lands and the needs-driven goldens pass without relying on periodic TTL refreshes, remove:
+When the remaining failing goldens pass in a TTL-removal experiment, remove:
 - `EXHAUSTION_SKIP_TTL`
 - `exhaustion_skip_active()`
 - the TTL-based skip predicate in `build_candidate_plans()`
@@ -59,7 +60,7 @@ When this ticket is resumed, it should remain a small planner cleanup. It should
 
 ## Out of Scope
 
-- Completing needs-driven exhaustion invalidation semantics
+- Completing needs-driven exhaustion invalidation semantics already delivered by `S31-008`
 - Golden proof for the missing substrate
 - Removing the `ExhaustionEntry` save-compatibility defaults in `decision_runtime.rs`
 
@@ -77,7 +78,7 @@ When this ticket is resumed, it should remain a small planner cleanup. It should
 ### Invariants
 
 1. No TTL-based retry remains in live planner code once this ticket is actually implemented
-2. Removing TTL must not reintroduce indefinite caching for needs-driven goals
+2. Removing TTL must not reintroduce indefinite caching for the still-failing local consume and multi-goal competition scenarios
 3. Condition-driven invalidation remains the single live authority over exhausted-goal retry behavior after implementation
 
 ## Test Plan

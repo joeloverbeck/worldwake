@@ -763,6 +763,43 @@ pub(super) fn plan_and_validate_next_step_traced(
     )
 }
 
+/// Convert a `PlanSearchResult` into a `PlanAttemptTrace` for the trace model.
+pub(super) fn plan_search_result_to_trace(
+    goal: worldwake_core::GoalKey,
+    result: &PlanSearchResult,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    binding_rejections: Vec<BindingRejection>,
+    expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
+) -> PlanAttemptTrace {
+    let outcome = match result {
+        PlanSearchResult::Found(plan) => PlanSearchOutcome::Found {
+            steps: plan
+                .steps
+                .iter()
+                .map(|s| summarize_step(s, action_defs))
+                .collect(),
+            terminal_kind: plan.terminal_kind,
+        },
+        PlanSearchResult::Unsupported => PlanSearchOutcome::Unsupported,
+        PlanSearchResult::BudgetExhausted { expansions_used } => {
+            PlanSearchOutcome::BudgetExhausted {
+                expansions_used: *expansions_used,
+            }
+        }
+        PlanSearchResult::FrontierExhausted { expansions_used } => {
+            PlanSearchOutcome::FrontierExhausted {
+                expansions_used: *expansions_used,
+            }
+        }
+    };
+    PlanAttemptTrace {
+        goal,
+        outcome,
+        binding_rejections,
+        expansion_summaries,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{exhaustion_skip_active, record_exhausted_goals};
@@ -986,42 +1023,5 @@ mod tests {
         };
 
         assert!(!exhaustion_skip_active(&entry, Tick(200)));
-    }
-}
-
-/// Convert a `PlanSearchResult` into a `PlanAttemptTrace` for the trace model.
-pub(super) fn plan_search_result_to_trace(
-    goal: worldwake_core::GoalKey,
-    result: &PlanSearchResult,
-    action_defs: &worldwake_sim::ActionDefRegistry,
-    binding_rejections: Vec<BindingRejection>,
-    expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
-) -> PlanAttemptTrace {
-    let outcome = match result {
-        PlanSearchResult::Found(plan) => PlanSearchOutcome::Found {
-            steps: plan
-                .steps
-                .iter()
-                .map(|s| summarize_step(s, action_defs))
-                .collect(),
-            terminal_kind: plan.terminal_kind,
-        },
-        PlanSearchResult::Unsupported => PlanSearchOutcome::Unsupported,
-        PlanSearchResult::BudgetExhausted { expansions_used } => {
-            PlanSearchOutcome::BudgetExhausted {
-                expansions_used: *expansions_used,
-            }
-        }
-        PlanSearchResult::FrontierExhausted { expansions_used } => {
-            PlanSearchOutcome::FrontierExhausted {
-                expansions_used: *expansions_used,
-            }
-        }
-    };
-    PlanAttemptTrace {
-        goal,
-        outcome,
-        binding_rejections,
-        expansion_summaries,
     }
 }

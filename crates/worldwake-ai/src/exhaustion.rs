@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    Permille, Quantity, UniqueItemKind,
+    Permille, Quantity, ThresholdBand, UniqueItemKind,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -17,9 +17,9 @@ pub enum ExhaustionInvalidationCondition {
     FacilitiesChanged,
     BlockerExpired,
     HostilesChanged,
-    NeedCrossedThreshold {
+    NeedChangedBands {
         need: HomeostaticNeedId,
-        threshold_delta: Permille,
+        band: ThresholdBand,
     },
     TargetDead(EntityId),
 }
@@ -58,23 +58,23 @@ pub(crate) fn derive_invalidation_conditions(
             }
         }
         GoalKind::Sleep => {
-            conditions.insert(ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
                 need: HomeostaticNeedId::Fatigue,
-                threshold_delta: default_need_threshold_delta(),
+                band: need_threshold_band(view, agent, HomeostaticNeedId::Fatigue),
             });
             conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
         }
         GoalKind::Relieve => {
-            conditions.insert(ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
                 need: HomeostaticNeedId::Bladder,
-                threshold_delta: default_need_threshold_delta(),
+                band: need_threshold_band(view, agent, HomeostaticNeedId::Bladder),
             });
             conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
         }
         GoalKind::Wash => {
-            conditions.insert(ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
                 need: HomeostaticNeedId::Dirtiness,
-                threshold_delta: default_need_threshold_delta(),
+                band: need_threshold_band(view, agent, HomeostaticNeedId::Dirtiness),
             });
             conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
         }
@@ -225,19 +225,15 @@ pub(crate) fn condition_changed(
         ExhaustionInvalidationCondition::HostilesChanged => {
             view.visible_hostiles_for(agent).len() != baseline.hostile_count
         }
-        ExhaustionInvalidationCondition::NeedCrossedThreshold {
-            need,
-            threshold_delta,
-        } => {
+        ExhaustionInvalidationCondition::NeedChangedBands { need, band } => {
             let Some(current_needs) = view.homeostatic_needs(agent) else {
                 return false;
             };
             let Some(baseline_needs) = baseline.needs else {
                 return true;
             };
-            let current_value = need_value(&current_needs, *need).value();
-            let baseline_value = need_value(&baseline_needs, *need).value();
-            current_value.abs_diff(baseline_value) >= threshold_delta.value()
+            classify_need_band(need_value(&current_needs, *need), *band)
+                != classify_need_band(need_value(&baseline_needs, *need), *band)
         }
         ExhaustionInvalidationCondition::TargetDead(target) => !view.is_alive(*target),
     }
@@ -292,15 +288,41 @@ fn build_baseline(
 }
 
 #[allow(dead_code)]
-fn default_need_threshold_delta() -> Permille {
-    Permille::new(100).expect("fixed need threshold delta must be valid")
+fn need_threshold_band(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    need: HomeostaticNeedId,
+) -> ThresholdBand {
+    let thresholds = view.drive_thresholds(agent).unwrap_or_default();
+    match need {
+        HomeostaticNeedId::Hunger => thresholds.hunger,
+        HomeostaticNeedId::Thirst => thresholds.thirst,
+        HomeostaticNeedId::Fatigue => thresholds.fatigue,
+        HomeostaticNeedId::Bladder => thresholds.bladder,
+        HomeostaticNeedId::Dirtiness => thresholds.dirtiness,
+    }
+}
+
+#[allow(dead_code)]
+fn classify_need_band(value: worldwake_core::Permille, band: ThresholdBand) -> u8 {
+    if value < band.low() {
+        0
+    } else if value < band.medium() {
+        1
+    } else if value < band.high() {
+        2
+    } else if value < band.critical() {
+        3
+    } else {
+        4
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        condition_changed, default_need_threshold_delta, derive_invalidation_conditions,
-        invalidate_exhausted_goals, need_value,
+        classify_need_band, condition_changed, derive_invalidation_conditions,
+        invalidate_exhausted_goals, need_threshold_band, need_value,
         ExhaustionBaseline, ExhaustionInvalidationCondition,
     };
     use crate::{ExhaustionEntry, GoalKey};
@@ -312,7 +334,7 @@ mod tests {
         HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, JusticeDispositionProfile,
         LoadUnits, MerchandiseProfile, OfficeData, Permille, PunishmentKind, Quantity,
         RecipientKnowledgeStatus, RecordEntryId, ResourceSource, TellMemoryKey, TellProfile,
-        TellTopic, TheftDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+        TellTopic, TheftDispositionProfile, ThresholdBand, UniqueItemKind, ViolationDispositionProfile,
         ViolationId, Wound, WoundCause, WoundId, WorkstationTag,
     };
     use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
@@ -323,6 +345,7 @@ mod tests {
         commodity_quantities: Vec<((EntityId, CommodityKind), Quantity)>,
         unique_item_counts: Vec<((EntityId, UniqueItemKind), u32)>,
         needs: Vec<(EntityId, HomeostaticNeeds)>,
+        drive_thresholds: Vec<(EntityId, DriveThresholds)>,
         wounds: Vec<(EntityId, Vec<Wound>)>,
         visible_hostiles: Vec<(EntityId, Vec<EntityId>)>,
         dead: Vec<EntityId>,
@@ -477,8 +500,11 @@ mod tests {
                 .map(|(_, needs)| *needs)
         }
 
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.drive_thresholds
+                .iter()
+                .find(|(subject, _)| *subject == agent)
+                .map(|(_, thresholds)| *thresholds)
         }
 
         fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
@@ -666,13 +692,11 @@ mod tests {
 
     fn assert_has_condition(
         conditions: &[ExhaustionInvalidationCondition],
-        expected: ExhaustionInvalidationCondition,
+        expected: &ExhaustionInvalidationCondition,
     ) {
         assert!(
-            conditions.contains(&expected),
-            "missing condition {:?} from {:?}",
-            expected,
-            conditions
+            conditions.contains(expected),
+            "missing condition {expected:?} from {conditions:?}"
         );
     }
 
@@ -903,20 +927,17 @@ mod tests {
     }
 
     #[test]
-    fn condition_changed_need_threshold_uses_absolute_delta() {
+    fn condition_changed_need_band_detects_boundary_crossing_without_fixed_delta() {
         let agent = entity(1);
-        let baseline_needs = HomeostaticNeeds::new(pm(100), pm(100), pm(400), pm(100), pm(100));
-        let raised_view = MockView {
-            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(520), pm(100), pm(100)))],
+        let band = DriveThresholds::default().fatigue;
+        let baseline_needs = HomeostaticNeeds::new(pm(100), pm(100), pm(250), pm(100), pm(100));
+        let crossed_view = MockView {
+            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(310), pm(100), pm(100)))],
             ..MockView::default()
         };
-        let lowered_view = MockView {
-            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(320), pm(100), pm(100)))],
-            ..MockView::default()
-        };
-        let condition = ExhaustionInvalidationCondition::NeedCrossedThreshold {
+        let condition = ExhaustionInvalidationCondition::NeedChangedBands {
             need: HomeostaticNeedId::Fatigue,
-            threshold_delta: pm(100),
+            band,
         };
         let baseline = ExhaustionBaseline {
             needs: Some(baseline_needs),
@@ -926,16 +947,7 @@ mod tests {
         assert!(condition_changed(
             &condition,
             &baseline,
-            &raised_view,
-            agent,
-            false,
-            false,
-            false,
-        ));
-        assert!(!condition_changed(
-            &condition,
-            &baseline,
-            &lowered_view,
+            &crossed_view,
             agent,
             false,
             false,
@@ -944,11 +956,40 @@ mod tests {
     }
 
     #[test]
-    fn condition_changed_need_threshold_is_conservative_when_baseline_missing_and_stable_when_current_missing() {
+    fn condition_changed_need_band_ignores_large_within_band_drift() {
         let agent = entity(1);
-        let condition = ExhaustionInvalidationCondition::NeedCrossedThreshold {
+        let band = DriveThresholds::default().fatigue;
+        let baseline_needs = HomeostaticNeeds::new(pm(100), pm(100), pm(410), pm(100), pm(100));
+        let same_band_view = MockView {
+            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(520), pm(100), pm(100)))],
+            ..MockView::default()
+        };
+        let condition = ExhaustionInvalidationCondition::NeedChangedBands {
             need: HomeostaticNeedId::Fatigue,
-            threshold_delta: pm(100),
+            band,
+        };
+        let baseline = ExhaustionBaseline {
+            needs: Some(baseline_needs),
+            ..ExhaustionBaseline::default()
+        };
+
+        assert!(!condition_changed(
+            &condition,
+            &baseline,
+            &same_band_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_need_band_is_conservative_when_baseline_missing_and_stable_when_current_missing() {
+        let agent = entity(1);
+        let condition = ExhaustionInvalidationCondition::NeedChangedBands {
+            need: HomeostaticNeedId::Fatigue,
+            band: DriveThresholds::default().fatigue,
         };
 
         assert!(condition_changed(
@@ -1103,8 +1144,7 @@ mod tests {
                 derive_invalidation_conditions(&goal, agent, &view, &recipes);
             assert!(
                 !conditions.is_empty(),
-                "goal {:?} should derive at least one invalidation condition",
-                goal
+                "goal {goal:?} should derive at least one invalidation condition"
             );
         }
     }
@@ -1160,7 +1200,7 @@ mod tests {
 
         assert_has_condition(
             &restock_conditions,
-            ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin),
+            &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin),
         );
         assert!(
             !self_consume_conditions.contains(
@@ -1202,19 +1242,19 @@ mod tests {
 
         assert_has_condition(
             &conditions,
-            ExhaustionInvalidationCondition::PositionChanged,
+            &ExhaustionInvalidationCondition::PositionChanged,
         );
         assert_has_condition(
             &conditions,
-            ExhaustionInvalidationCondition::FacilitiesChanged,
+            &ExhaustionInvalidationCondition::FacilitiesChanged,
         );
         assert_has_condition(
             &conditions,
-            ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Grain),
+            &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Grain),
         );
         assert_has_condition(
             &conditions,
-            ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Water),
+            &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Water),
         );
         assert_eq!(
             baseline.commodity_quantities,
@@ -1249,37 +1289,77 @@ mod tests {
     }
 
     #[test]
-    fn sleep_and_wash_use_spec_threshold_delta() {
+    fn sleep_relieve_and_wash_use_live_threshold_bands() {
         let sleep = GoalKind::Sleep;
+        let relieve = GoalKind::Relieve;
         let wash = GoalKind::Wash;
+        let view = MockView {
+            drive_thresholds: vec![(
+                entity(1),
+                DriveThresholds::new(
+                    ThresholdBand::new(pm(250), pm(500), pm(700), pm(900)).unwrap(),
+                    ThresholdBand::new(pm(200), pm(450), pm(700), pm(850)).unwrap(),
+                    ThresholdBand::new(pm(350), pm(600), pm(780), pm(930)).unwrap(),
+                    ThresholdBand::new(pm(450), pm(650), pm(820), pm(940)).unwrap(),
+                    ThresholdBand::new(pm(500), pm(700), pm(860), pm(960)).unwrap(),
+                    ThresholdBand::new(pm(150), pm(350), pm(600), pm(850)).unwrap(),
+                    ThresholdBand::new(pm(100), pm(300), pm(550), pm(800)).unwrap(),
+                ),
+            )],
+            ..MockView::default()
+        };
 
         let (sleep_conditions, _) = derive_invalidation_conditions(
             &sleep,
             entity(1),
-            &MockView::default(),
+            &view,
+            &RecipeRegistry::new(),
+        );
+        let (relieve_conditions, _) = derive_invalidation_conditions(
+            &relieve,
+            entity(1),
+            &view,
             &RecipeRegistry::new(),
         );
         let (wash_conditions, _) = derive_invalidation_conditions(
             &wash,
             entity(1),
-            &MockView::default(),
+            &view,
             &RecipeRegistry::new(),
         );
 
         assert_has_condition(
             &sleep_conditions,
-            ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            &ExhaustionInvalidationCondition::NeedChangedBands {
                 need: HomeostaticNeedId::Fatigue,
-                threshold_delta: default_need_threshold_delta(),
+                band: need_threshold_band(&view, entity(1), HomeostaticNeedId::Fatigue),
+            },
+        );
+        assert_has_condition(
+            &relieve_conditions,
+            &ExhaustionInvalidationCondition::NeedChangedBands {
+                need: HomeostaticNeedId::Bladder,
+                band: need_threshold_band(&view, entity(1), HomeostaticNeedId::Bladder),
             },
         );
         assert_has_condition(
             &wash_conditions,
-            ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            &ExhaustionInvalidationCondition::NeedChangedBands {
                 need: HomeostaticNeedId::Dirtiness,
-                threshold_delta: default_need_threshold_delta(),
+                band: need_threshold_band(&view, entity(1), HomeostaticNeedId::Dirtiness),
             },
         );
+    }
+
+    #[test]
+    fn classify_need_band_distinguishes_below_low_from_critical() {
+        let band = DriveThresholds::default().fatigue;
+
+        assert_eq!(classify_need_band(pm(0), band), 0);
+        assert_eq!(classify_need_band(band.low(), band), 1);
+        assert_eq!(classify_need_band(band.medium(), band), 2);
+        assert_eq!(classify_need_band(band.high(), band), 3);
+        assert_eq!(classify_need_band(band.critical(), band), 4);
     }
 
     #[test]
@@ -1294,7 +1374,7 @@ mod tests {
 
         assert_has_condition(
             &conditions,
-            ExhaustionInvalidationCondition::TargetDead(target),
+            &ExhaustionInvalidationCondition::TargetDead(target),
         );
     }
 
