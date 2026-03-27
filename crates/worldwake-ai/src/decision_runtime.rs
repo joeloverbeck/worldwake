@@ -68,10 +68,11 @@ pub struct AgentDecisionRuntime {
     /// Whether the agent was in transit on the last observed tick.
     pub last_in_transit: bool,
     pub materialization_bindings: MaterializationBindings,
-    /// Goals whose plan search exhausted the budget on the previous planning
-    /// cycle.  These are skipped on the next cycle unless significant world
+    /// Goals whose plan search exhausted the budget, mapped to the tick when
+    /// they were last marked exhausted.  Skipped for a short TTL window (see
+    /// `EXHAUSTION_SKIP_TTL`) then re-searched.  Reset when significant world
     /// changes occur (position, commodity, wounds, or facility changes).
-    pub search_exhausted_goals: std::collections::BTreeSet<GoalKey>,
+    pub search_exhausted_goals: std::collections::BTreeMap<GoalKey, Tick>,
     /// Goals that have repeatedly exhausted the search budget.  Maps each
     /// goal key to a cumulative exhaust count.  The search budget is halved
     /// for each count (exponential backoff), floored at 64 expansions.

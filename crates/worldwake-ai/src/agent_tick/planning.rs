@@ -154,7 +154,7 @@ pub(super) fn build_candidate_plans(
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
     collect_expansion_summaries: bool,
-    skip_exhausted: &std::collections::BTreeSet<crate::GoalKey>,
+    skip_exhausted: &std::collections::BTreeMap<crate::GoalKey, Tick>,
     exhaustion_counts: &std::collections::BTreeMap<crate::GoalKey, u8>,
 ) -> Vec<(
     crate::GoalKey,
@@ -163,9 +163,17 @@ pub(super) fn build_candidate_plans(
     Vec<crate::decision_trace::SearchExpansionSummary>,
 )> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    // Skip goals whose search exhausted the budget within the TTL window.
+    const EXHAUSTION_SKIP_TTL: u64 = 16;
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
-        .filter(|c| !skip_exhausted.contains(&c.grounded.key))
+        .filter(|c| {
+            skip_exhausted
+                .get(&c.grounded.key)
+                .map_or(true, |&exhausted_at| {
+                    current_tick.0.saturating_sub(exhausted_at.0) >= EXHAUSTION_SKIP_TTL
+                })
+        })
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
 
@@ -193,49 +201,55 @@ pub(super) fn build_candidate_plans(
         current_tick,
     );
 
-    candidates_to_plan
-        .into_iter()
-        .map(|ranked| {
-            let mut rejections = Vec::new();
-            let mut expansions = Vec::new();
-            // Use a reduced node expansion budget for goals that previously
-            // exhausted the search budget. This avoids wasting the full budget
-            // on goals that are likely to exhaust again.
-            let effective_budget = if let Some(&count) = exhaustion_counts.get(&ranked.grounded.key)
-            {
-                let mut reduced = budget.clone();
-                // Exponential backoff: halve the budget for each prior
-                // exhaustion, floored at 64 expansions.
-                let shift = count.min(3); // cap at 3 halvings (512→64)
-                reduced.max_node_expansions = (budget.max_node_expansions >> shift).max(64);
-                reduced
+    let mut results = Vec::with_capacity(candidates_to_plan.len());
+    for ranked in candidates_to_plan {
+        let mut rejections = Vec::new();
+        let mut expansions = Vec::new();
+        // Use a reduced node expansion budget for goals that previously
+        // exhausted the search budget. This avoids wasting the full budget
+        // on goals that are likely to exhaust again.
+        let effective_budget = if let Some(&count) = exhaustion_counts.get(&ranked.grounded.key) {
+            let mut reduced = budget.clone();
+            // Exponential backoff: halve the budget for each prior
+            // exhaustion, floored at 64 expansions.
+            let shift = count.min(3); // cap at 3 halvings (512→64)
+            reduced.max_node_expansions = (budget.max_node_expansions >> shift).max(64);
+            reduced
+        } else {
+            budget.clone()
+        };
+        let result = search_plan(
+            &snapshot,
+            &ranked.grounded,
+            semantics_table,
+            action_defs,
+            action_handlers,
+            &effective_budget,
+            recipe_registry,
+            blocked_memory,
+            current_tick,
+            if collect_rejections {
+                Some(&mut rejections)
             } else {
-                budget.clone()
-            };
-            let result = search_plan(
-                &snapshot,
-                &ranked.grounded,
-                semantics_table,
-                action_defs,
-                action_handlers,
-                &effective_budget,
-                recipe_registry,
-                blocked_memory,
-                current_tick,
-                if collect_rejections {
-                    Some(&mut rejections)
-                } else {
-                    None
-                },
-                if collect_expansion_summaries {
-                    Some(&mut expansions)
-                } else {
-                    None
-                },
-            );
-            (ranked.grounded.key, result, rejections, expansions)
-        })
-        .collect()
+                None
+            },
+            if collect_expansion_summaries {
+                Some(&mut expansions)
+            } else {
+                None
+            },
+        );
+        let found = result.is_found();
+        results.push((ranked.grounded.key, result, rejections, expansions));
+        // Early termination: candidates are ranked by priority. If the
+        // top-ranked candidate found a plan, lower-ranked candidates
+        // cannot produce a better selection (compare_ranked_plans sorts
+        // by priority_class first). Skip remaining searches.
+        if found {
+            break;
+        }
+    }
+    results
 }
 
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
@@ -308,7 +322,7 @@ fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently
         | DirtySet::REPLAN_SIGNAL
         | DirtySet::BLOCKER_CLEANUP;
     if runtime.dirty.contains_any(non_position_mask) {
-        for goal in &runtime.search_exhausted_goals {
+        for (goal, _tick) in &runtime.search_exhausted_goals {
             *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
         }
         runtime.search_exhausted_goals.clear();
@@ -320,7 +334,7 @@ fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently
         let arrived = runtime.last_in_transit && !currently_in_transit;
         let was_settled = !runtime.last_in_transit;
         if arrived || was_settled {
-            for goal in &runtime.search_exhausted_goals {
+            for (goal, _tick) in &runtime.search_exhausted_goals {
                 *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
             }
             runtime.search_exhausted_goals.clear();
@@ -336,15 +350,20 @@ fn record_exhausted_goals(
         Vec<BindingRejection>,
         Vec<crate::decision_trace::SearchExpansionSummary>,
     )],
+    tick: Tick,
 ) {
-    runtime.search_exhausted_goals.clear();
+    // Update exhaustion timestamps for searched goals. Goals not in `plans`
+    // (skipped by TTL) retain their existing timestamp until it expires.
     for (key, result, _, _) in plans {
         if matches!(
             result,
             crate::PlanSearchResult::BudgetExhausted { .. }
                 | crate::PlanSearchResult::FrontierExhausted { .. }
         ) {
-            runtime.search_exhausted_goals.insert(*key);
+            runtime.search_exhausted_goals.insert(*key, tick);
+        } else {
+            // Goal was searched and did NOT exhaust — remove from skip map.
+            runtime.search_exhausted_goals.remove(key);
         }
     }
 }
@@ -450,10 +469,15 @@ pub(super) fn plan_and_validate_next_step(
         );
 
         // Record newly exhausted goals for next tick.
-        record_exhausted_goals(runtime, &plans);
-        // Clear exhaustion counts on plan success to reset the penalty.
-        if plans.iter().any(|(_, r, _, _)| r.is_found()) {
-            runtime.exhaustion_counts.clear();
+        record_exhausted_goals(runtime, &plans, tick);
+        // Clear exhaustion counts only for goals that actually found plans.
+        // Previously, ANY successful plan cleared ALL counts, defeating the
+        // exponential backoff for chronically unsolvable goals that share a
+        // tick with solvable ones.
+        for (key, result, _, _) in &plans {
+            if result.is_found() {
+                runtime.exhaustion_counts.remove(key);
+            }
         }
         let plans_options = plans_as_options(&plans);
 
@@ -604,7 +628,7 @@ pub(super) fn plan_and_validate_next_step_traced(
         }
 
         // Traced path does not skip exhausted goals — tracing needs full visibility.
-        let no_skip = std::collections::BTreeSet::new();
+        let no_skip = std::collections::BTreeMap::new();
         let plans = build_candidate_plans(
             world,
             scheduler,

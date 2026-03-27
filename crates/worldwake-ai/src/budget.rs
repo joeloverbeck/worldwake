@@ -18,11 +18,11 @@ pub struct PlanningBudget {
 impl Default for PlanningBudget {
     fn default() -> Self {
         Self {
-            max_candidates_to_plan: 4,
+            max_candidates_to_plan: 2,
             max_plan_depth: 8,
             snapshot_travel_horizon: 6,
             max_prerequisite_locations: 3,
-            max_node_expansions: 512,
+            max_node_expansions: 256,
             beam_width: 8,
             switch_margin_permille: Permille::new_unchecked(100),
             transient_block_ticks: 20,
@@ -41,11 +41,11 @@ mod tests {
     fn planning_budget_default_matches_ticket_values() {
         let budget = PlanningBudget::default();
 
-        assert_eq!(budget.max_candidates_to_plan, 4);
+        assert_eq!(budget.max_candidates_to_plan, 2);
         assert_eq!(budget.max_plan_depth, 8);
         assert_eq!(budget.snapshot_travel_horizon, 6);
         assert_eq!(budget.max_prerequisite_locations, 3);
-        assert_eq!(budget.max_node_expansions, 512);
+        assert_eq!(budget.max_node_expansions, 256);
         assert_eq!(budget.beam_width, 8);
         assert_eq!(budget.switch_margin_permille, Permille::new(100).unwrap());
         assert_eq!(budget.transient_block_ticks, 20);

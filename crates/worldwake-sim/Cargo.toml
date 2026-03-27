@@ -9,5 +9,8 @@ rand_chacha = { version = "0.3", features = ["serde1"] }
 serde = { version = "1", features = ["derive"] }
 worldwake-core = { path = "../worldwake-core" }
 
+[features]
+bench-profiling = []
+
 [lints]
 workspace = true

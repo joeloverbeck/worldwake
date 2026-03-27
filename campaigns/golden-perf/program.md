@@ -34,9 +34,11 @@ If profiling reveals bottlenecks in code not yet listed here (e.g., build script
 
 - `campaigns/golden-perf/harness.sh`
 - `campaigns/golden-perf/checks.sh`
-- `crates/worldwake-ai/tests/**/*.rs` (all test files and harness infrastructure)
 - `docs/FOUNDATIONS.md`
-- Any file outside the mutable file list above
+
+## Conditionally Mutable Files
+
+- `crates/worldwake-ai/tests/**/*.rs` (golden test files): May be modified ONLY when a production-side optimization changes behavior in a way that causes test failures. The fix must preserve the **behavioral intent** of the test (what it proves), even if specific assertion values change (e.g., hash values, tick counts, exact commodity quantities). Never weaken assertions or remove test coverage — adapt assertions to the new correct behavior.
 
 ## FOUNDATIONS.md Constraints
 

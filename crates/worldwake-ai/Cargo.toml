@@ -9,6 +9,9 @@ worldwake-core = { path = "../worldwake-core" }
 worldwake-sim = { path = "../worldwake-sim" }
 worldwake-systems = { path = "../worldwake-systems" }
 
+[features]
+bench-profiling = ["worldwake-sim/bench-profiling"]
+
 [dev-dependencies]
 bincode = "1"
 blake3 = "1"

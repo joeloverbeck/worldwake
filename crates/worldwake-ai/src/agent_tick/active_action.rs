@@ -65,7 +65,7 @@ pub(super) fn handle_active_action_phase(
     // actions.
     let needs_plans =
         interruptibility == Interruptibility::FreelyInterruptible && has_frame(jc.as_ref());
-    let no_skip = std::collections::BTreeSet::new();
+    let no_skip = std::collections::BTreeMap::new();
     let planned_candidates = needs_plans.then(|| {
         build_candidate_plans(
             ctx.world,
