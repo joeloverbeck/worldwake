@@ -1,4 +1,5 @@
 use crate::{DirtySet, GoalKey, GoalPriorityClass, HypotheticalEntityId, PlannedPlan};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
@@ -26,7 +27,7 @@ pub struct FrameRuntimeSnapshot {
     pub last_clear_reason: Option<FrameClearReason>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MaterializationBindings {
     pub hypothetical_to_authoritative: BTreeMap<HypotheticalEntityId, EntityId>,
 }
@@ -51,19 +52,22 @@ impl MaterializationBindings {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ExhaustionEntry {
     pub exhausted_at: Option<Tick>,
     pub count: u8,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentDecisionRuntime {
     pub current_plan: Option<PlannedPlan>,
     pub current_step_index: usize,
+    #[serde(skip)]
     pub last_frame_clear_reason: Option<FrameClearReason>,
     pub step_in_flight: bool,
+    #[serde(skip)]
     pub dirty: DirtySet,
+    #[serde(skip)]
     pub last_priority_class: Option<GoalPriorityClass>,
     pub last_effective_place: Option<EntityId>,
     pub last_needs: Option<HomeostaticNeeds>,
@@ -188,16 +192,20 @@ pub fn classify_frame_plan_relation(
 mod tests {
     use super::{
         classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
-        has_active_frame_travel, has_frame, AgentDecisionRuntime, FramePlanRelation,
-        MaterializationBindings,
+        has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry,
+        FramePlanRelation, MaterializationBindings,
     };
     use crate::{
         CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef,
+        PlannedStep, PlannerOpKind, PlanningEntityRef, DirtySet, GoalPriorityClass,
     };
+    use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
-    use worldwake_core::{CommodityKind, EntityId, Tick};
-    use worldwake_core::{FrameClearReason, FrameState, IntentionDomain, IntentionFrame};
+    use worldwake_core::{
+        BodyPart, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
+        IntentionDomain, IntentionFrame, Quantity, Tick, UniqueItemKind, Wound, WoundId,
+        WoundCause,
+    };
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -292,6 +300,108 @@ mod tests {
         assert_eq!(bindings.resolve(HypotheticalEntityId(1)), None);
         assert_eq!(bindings.resolve(HypotheticalEntityId(3)), None);
         assert!(bindings.hypothetical_to_authoritative.is_empty());
+    }
+
+    #[test]
+    fn materialization_bindings_bincode_round_trip_preserves_entries() {
+        let mut bindings = MaterializationBindings::new();
+        bindings.bind(HypotheticalEntityId(1), entity(2));
+        bindings.bind(HypotheticalEntityId(3), entity(4));
+
+        let encoded =
+            bincode::serialize(&bindings).expect("materialization bindings should serialize");
+        let decoded: MaterializationBindings = bincode::deserialize(&encoded)
+            .expect("materialization bindings should deserialize");
+
+        assert_eq!(decoded, bindings);
+    }
+
+    #[test]
+    fn agent_decision_runtime_bincode_round_trip_skips_derived_fields() {
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(sample_plan(vec![
+                PlannedStep {
+                    targets: vec![PlanningEntityRef::Authoritative(entity(77))],
+                    ..sample_step(1, PlannerOpKind::Travel)
+                },
+                sample_step(2, PlannerOpKind::Consume),
+            ])),
+            current_step_index: 1,
+            last_frame_clear_reason: Some(FrameClearReason::PlanFailed),
+            step_in_flight: true,
+            dirty: DirtySet::NEEDS | DirtySet::POSITION,
+            last_priority_class: Some(GoalPriorityClass::Critical),
+            last_effective_place: Some(entity(11)),
+            last_needs: Some(HomeostaticNeeds::new(
+                worldwake_core::Permille::new(500).unwrap(),
+                worldwake_core::Permille::new(200).unwrap(),
+                worldwake_core::Permille::new(50).unwrap(),
+                worldwake_core::Permille::new(300).unwrap(),
+                worldwake_core::Permille::new(100).unwrap(),
+            )),
+            last_wounds: vec![Wound {
+                id: WoundId(9),
+                body_part: BodyPart::Torso,
+                cause: WoundCause::Deprivation(worldwake_core::DeprivationKind::Starvation),
+                severity: worldwake_core::Permille::new(400).unwrap(),
+                inflicted_at: Tick(8),
+                bleed_rate_per_tick: worldwake_core::Permille::new(25).unwrap(),
+            }],
+            last_commodity_signature: vec![(CommodityKind::Bread, Quantity(3))],
+            last_unique_item_signature: vec![(UniqueItemKind::SimpleTool, 1)],
+            last_facility_access_signature: vec![(entity(12), true, Some(ActionDefId(6)))],
+            last_in_transit: true,
+            materialization_bindings: MaterializationBindings {
+                hypothetical_to_authoritative: BTreeMap::from([
+                    (HypotheticalEntityId(4), entity(5)),
+                    (HypotheticalEntityId(6), entity(7)),
+                ]),
+            },
+            exhaustion_cache: BTreeMap::from([(
+                GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                ExhaustionEntry {
+                    exhausted_at: Some(Tick(13)),
+                    count: 2,
+                },
+            )]),
+        };
+
+        let encoded =
+            bincode::serialize(&runtime).expect("agent decision runtime should serialize");
+        let decoded: AgentDecisionRuntime =
+            bincode::deserialize(&encoded).expect("agent decision runtime should deserialize");
+
+        assert_eq!(decoded.current_plan, runtime.current_plan);
+        assert_eq!(decoded.current_step_index, runtime.current_step_index);
+        assert_eq!(decoded.step_in_flight, runtime.step_in_flight);
+        assert_eq!(decoded.last_effective_place, runtime.last_effective_place);
+        assert_eq!(decoded.last_needs, runtime.last_needs);
+        assert_eq!(decoded.last_wounds, runtime.last_wounds);
+        assert_eq!(
+            decoded.last_commodity_signature,
+            runtime.last_commodity_signature
+        );
+        assert_eq!(
+            decoded.last_unique_item_signature,
+            runtime.last_unique_item_signature
+        );
+        assert_eq!(
+            decoded.last_facility_access_signature,
+            runtime.last_facility_access_signature
+        );
+        assert_eq!(decoded.last_in_transit, runtime.last_in_transit);
+        assert_eq!(
+            decoded.materialization_bindings,
+            runtime.materialization_bindings
+        );
+        assert_eq!(decoded.exhaustion_cache, runtime.exhaustion_cache);
+
+        assert_eq!(decoded.last_frame_clear_reason, None);
+        assert!(decoded.dirty.is_empty());
+        assert_eq!(decoded.last_priority_class, None);
     }
 
     #[test]
