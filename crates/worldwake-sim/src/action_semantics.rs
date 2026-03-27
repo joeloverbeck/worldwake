@@ -24,6 +24,10 @@ pub enum Constraint {
         kind: CommodityKind,
         min_qty: Quantity,
     },
+    ActorHasCommodityAtActorPlace {
+        kind: CommodityKind,
+        min_qty: Quantity,
+    },
     ActorKind(EntityKind),
 }
 
@@ -325,7 +329,7 @@ mod tests {
         generation: 2,
     };
 
-    const ALL_CONSTRAINTS: [Constraint; 10] = [
+    const ALL_CONSTRAINTS: [Constraint; 11] = [
         Constraint::ActorAlive,
         Constraint::ActorNotIncapacitated,
         Constraint::ActorNotDead,
@@ -340,6 +344,10 @@ mod tests {
         Constraint::ActorHasCommodity {
             kind: CommodityKind::Bread,
             min_qty: Quantity(3),
+        },
+        Constraint::ActorHasCommodityAtActorPlace {
+            kind: CommodityKind::Water,
+            min_qty: Quantity(2),
         },
         Constraint::ActorKind(EntityKind::Agent),
     ];

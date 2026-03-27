@@ -1,8 +1,23 @@
 use super::World;
 use crate::{CommodityKind, EntityId, Quantity, UniqueItemKind, WorldError};
-use std::collections::BTreeSet;
 
 impl World {
+    fn controlled_item_lots_for(
+        &self,
+        holder: EntityId,
+    ) -> impl Iterator<Item = (EntityId, &crate::ItemLot)> + '_ {
+        self.query_item_lot()
+            .filter(move |(entity, _)| self.can_exercise_control(holder, *entity).is_ok())
+    }
+
+    fn controlled_unique_items_for(
+        &self,
+        holder: EntityId,
+    ) -> impl Iterator<Item = (EntityId, &crate::UniqueItem)> + '_ {
+        self.query_unique_item()
+            .filter(move |(entity, _)| self.can_exercise_control(holder, *entity).is_ok())
+    }
+
     #[must_use]
     pub fn owner_of(&self, entity: EntityId) -> Option<EntityId> {
         let owner = self
@@ -42,28 +57,16 @@ impl World {
 
     #[must_use]
     pub fn controlled_commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-        let mut total = 0u32;
-        let mut frontier = vec![holder];
-        let mut visited = BTreeSet::new();
-
-        while let Some(current) = frontier.pop() {
-            if !visited.insert(current) || !self.is_alive(current) {
-                continue;
-            }
-
-            if let Some(lot) = self.get_component_item_lot(current) {
-                if lot.commodity == kind {
-                    total = total
+        self.controlled_item_lots_for(holder)
+            .filter(|(_, lot)| lot.commodity == kind)
+            .fold(Quantity(0), |total, (_, lot)| {
+                Quantity(
+                    total
+                        .0
                         .checked_add(lot.quantity.0)
-                        .expect("controlled commodity quantity overflowed");
-                }
-            }
-
-            frontier.extend(self.direct_contents_of(current).into_iter().rev());
-            frontier.extend(self.possessions_of(current).into_iter().rev());
-        }
-
-        Quantity(total)
+                        .expect("controlled commodity quantity overflowed"),
+                )
+            })
     }
 
     #[must_use]
@@ -73,11 +76,9 @@ impl World {
         place: EntityId,
         kind: CommodityKind,
     ) -> Quantity {
-        self.query_item_lot()
+        self.controlled_item_lots_for(holder)
             .filter(|(entity, lot)| {
-                lot.commodity == kind
-                    && self.effective_place(*entity) == Some(place)
-                    && self.can_exercise_control(holder, *entity).is_ok()
+                lot.commodity == kind && self.effective_place(*entity) == Some(place)
             })
             .fold(Quantity(0), |total, (_, lot)| {
                 Quantity(
@@ -91,29 +92,13 @@ impl World {
 
     #[must_use]
     pub fn controlled_unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-        let mut total = 0u32;
-        let mut frontier = vec![holder];
-        let mut visited = BTreeSet::new();
-
-        while let Some(current) = frontier.pop() {
-            if !visited.insert(current) || !self.is_alive(current) {
-                continue;
-            }
-
-            if self
-                .get_component_unique_item(current)
-                .is_some_and(|item| item.kind == kind)
-            {
-                total = total
+        self.controlled_unique_items_for(holder)
+            .filter(|(_, item)| item.kind == kind)
+            .fold(0u32, |total, _| {
+                total
                     .checked_add(1)
-                    .expect("controlled unique item count overflowed");
-            }
-
-            frontier.extend(self.direct_contents_of(current).into_iter().rev());
-            frontier.extend(self.possessions_of(current).into_iter().rev());
-        }
-
-        total
+                    .expect("controlled unique item count overflowed")
+            })
     }
 
     pub(crate) fn set_owner(

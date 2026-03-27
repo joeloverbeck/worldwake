@@ -998,7 +998,15 @@ pub fn build_observed_entity_snapshot(
 
     let mut inventory = BTreeMap::new();
     for commodity in CommodityKind::ALL {
-        let quantity = world.controlled_commodity_quantity(entity, commodity);
+        let quantity = if let Some(lot) = world.get_component_item_lot(entity) {
+            if lot.commodity == commodity {
+                lot.quantity
+            } else {
+                Quantity(0)
+            }
+        } else {
+            world.controlled_commodity_quantity(entity, commodity)
+        };
         if quantity > Quantity(0) {
             inventory.insert(commodity, quantity);
         }
@@ -2833,6 +2841,49 @@ mod tests {
         assert!(snapshot.alive);
         assert!(snapshot.wounds.is_empty());
         assert_eq!(snapshot.courage, None); // no UtilityProfile set
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_includes_lawfully_controlled_unpossessed_stock() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let member = world
+            .create_agent("Holder", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let faction = world.create_faction("River Pact", Tick(2)).unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(3), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(member, place).unwrap();
+        world.set_ground_location(bread, place).unwrap();
+        world.set_owner(bread, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, member).unwrap();
+
+        assert_eq!(
+            snapshot.last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(3))])
+        );
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_preserves_item_lot_self_quantity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(4), Tick(1))
+            .unwrap();
+
+        world.set_ground_location(bread, place).unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, bread).unwrap();
+
+        assert_eq!(
+            snapshot.last_known_inventory,
+            BTreeMap::from([(CommodityKind::Bread, Quantity(4))])
+        );
     }
 
     #[test]

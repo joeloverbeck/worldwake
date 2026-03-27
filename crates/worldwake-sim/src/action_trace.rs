@@ -981,7 +981,7 @@ mod tests {
                         required_amount: Quantity(2),
                     },
                     authoritative_accessible_quantity: Quantity(0),
-                    authoritative_total_controlled_quantity: Quantity(0),
+                    authoritative_total_controlled_quantity: Quantity(4),
                 }
             ))
         );

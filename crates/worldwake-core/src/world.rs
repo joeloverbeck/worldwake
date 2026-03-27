@@ -3057,7 +3057,7 @@ mod tests {
     }
 
     #[test]
-    fn possessions_and_controlled_commodity_queries_follow_custody_graph() {
+    fn possessions_queries_follow_custody_graph_and_controlled_queries_include_possessions() {
         let mut world = World::new(test_topology()).unwrap();
         let holder = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
@@ -3073,9 +3073,6 @@ mod tests {
             .unwrap();
         let nested_water = world
             .create_item_lot(CommodityKind::Water, Quantity(9), Tick(5))
-            .unwrap();
-        let foreign_bread = world
-            .create_item_lot(CommodityKind::Bread, Quantity(8), Tick(6))
             .unwrap();
         let place = entity(5);
 
@@ -3097,10 +3094,6 @@ mod tests {
         assert_eq!(
             world.controlled_commodity_quantity(holder, CommodityKind::Coin),
             Quantity(0)
-        );
-        assert_eq!(
-            world.controlled_commodity_quantity(foreign_bread, CommodityKind::Bread),
-            Quantity(8)
         );
 
         world.archive_entity(bread, Tick(7)).unwrap();
@@ -3630,6 +3623,133 @@ mod tests {
 
         assert!(world.can_exercise_control(actor, satchel).is_ok());
         assert!(world.can_exercise_control(actor, bread).is_ok());
+    }
+
+    #[test]
+    fn controlled_aggregate_queries_include_lawful_unpossessed_owned_and_delegated_stock() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let direct_owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let faction = world.create_faction("River Pact", Tick(2)).unwrap();
+        let faction_member = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let office = world.create_office("Mayor", Tick(4)).unwrap();
+        let office_holder = world
+            .create_agent("Cora", ControlSource::Ai, Tick(5))
+            .unwrap();
+        let direct_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(6))
+            .unwrap();
+        let faction_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(3), Tick(7))
+            .unwrap();
+        let office_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(5), Tick(8))
+            .unwrap();
+        let direct_tool = world
+            .create_unique_item(UniqueItemKind::SimpleTool, None, BTreeMap::new(), Tick(9))
+            .unwrap();
+        let faction_tool = world
+            .create_unique_item(UniqueItemKind::SimpleTool, None, BTreeMap::new(), Tick(10))
+            .unwrap();
+        let office_tool = world
+            .create_unique_item(UniqueItemKind::SimpleTool, None, BTreeMap::new(), Tick(11))
+            .unwrap();
+
+        world.set_owner(direct_bread, direct_owner).unwrap();
+        world.set_owner(faction_bread, faction).unwrap();
+        world.set_owner(office_bread, office).unwrap();
+        world.set_owner(direct_tool, direct_owner).unwrap();
+        world.set_owner(faction_tool, faction).unwrap();
+        world.set_owner(office_tool, office).unwrap();
+        world.add_member(faction_member, faction).unwrap();
+        world.assign_office(office, office_holder).unwrap();
+
+        assert_eq!(
+            world.controlled_commodity_quantity(direct_owner, CommodityKind::Bread),
+            Quantity(2)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(faction_member, CommodityKind::Bread),
+            Quantity(3)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(office_holder, CommodityKind::Bread),
+            Quantity(5)
+        );
+        assert_eq!(
+            world.controlled_unique_item_count(direct_owner, UniqueItemKind::SimpleTool),
+            1
+        );
+        assert_eq!(
+            world.controlled_unique_item_count(faction_member, UniqueItemKind::SimpleTool),
+            1
+        );
+        assert_eq!(
+            world.controlled_unique_item_count(office_holder, UniqueItemKind::SimpleTool),
+            1
+        );
+    }
+
+    #[test]
+    fn controlled_aggregate_queries_match_lawful_control_and_exclude_possessed_by_other() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let possessor = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let accessible_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(4), Tick(4))
+            .unwrap();
+        let blocked_bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(7), Tick(5))
+            .unwrap();
+        let accessible_tool = world
+            .create_unique_item(UniqueItemKind::SimpleTool, None, BTreeMap::new(), Tick(6))
+            .unwrap();
+        let blocked_tool = world
+            .create_unique_item(UniqueItemKind::SimpleTool, None, BTreeMap::new(), Tick(7))
+            .unwrap();
+
+        world.add_member(member, faction).unwrap();
+        for entity in [accessible_bread, blocked_bread, accessible_tool, blocked_tool] {
+            world.set_owner(entity, faction).unwrap();
+        }
+        world.set_possessor(blocked_bread, possessor).unwrap();
+        world.set_possessor(blocked_tool, possessor).unwrap();
+
+        let expected_bread = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Bread
+                    && world.can_exercise_control(member, *entity).is_ok()
+            })
+            .fold(Quantity(0), |total, (_, lot)| {
+                Quantity(total.0.checked_add(lot.quantity.0).unwrap())
+            });
+        let expected_tools = world
+            .query_unique_item()
+            .filter(|(entity, item)| {
+                item.kind == UniqueItemKind::SimpleTool
+                    && world.can_exercise_control(member, *entity).is_ok()
+            })
+            .count() as u32;
+
+        assert_eq!(expected_bread, Quantity(4));
+        assert_eq!(
+            world.controlled_commodity_quantity(member, CommodityKind::Bread),
+            expected_bread
+        );
+        assert_eq!(expected_tools, 1);
+        assert_eq!(
+            world.controlled_unique_item_count(member, UniqueItemKind::SimpleTool),
+            expected_tools
+        );
     }
 
     #[test]

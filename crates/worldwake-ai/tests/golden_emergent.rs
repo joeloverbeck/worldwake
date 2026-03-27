@@ -24,7 +24,7 @@ use worldwake_core::{
     WorkstationTag,
 };
 use worldwake_sim::{
-    ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionStartLegalityTrace,
+    ActionPayload, ActionRequestMode, ActionStartFailureReason,
     ActionTraceDetail, ActionTraceKind, AutonomousController, AutonomousControllerContext,
     DeclareSupportActionPayload, InputKind, OfficeAvailabilityPhase, OfficeSuccessionOutcome,
     PressForceClaimActionPayload, RequestProvenance, RequestResolutionOutcome,
@@ -6039,25 +6039,36 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
     )
     .expect("queued fine request should be processed");
 
-    let start_failed = h
+    let fine_events = h
         .action_trace_sink()
         .expect("action tracing should be enabled")
         .events_for(authority)
         .into_iter()
-        .find(|event| event.action_name == "fine")
-        .expect("authority should attempt the fine");
+        .filter(|event| event.action_name == "fine")
+        .collect::<Vec<_>>();
+    assert!(
+        fine_events
+            .iter()
+            .any(|event| matches!(event.kind, ActionTraceKind::Started { .. })),
+        "authority should start the fine once global lawful control still exists: {:?}",
+        fine_events
+    );
     assert!(matches!(
-        &start_failed.kind,
-        ActionTraceKind::StartFailed {
-            legality: Some(ActionStartLegalityTrace::PunishmentFineStartFailure(trace)),
-            ..
-        } if trace.facts.office == office
-            && trace.facts.accusation_entry == accusation_entry
-            && trace.facts.accused == accused
-            && trace.facts.required_amount == Quantity(2)
-            && trace.authoritative_accessible_quantity == Quantity(0)
-            && trace.authoritative_total_controlled_quantity == Quantity(0)
-    ), "unexpected fine trace event: {:?}", start_failed);
+        fine_events.iter().find(|event| matches!(event.kind, ActionTraceKind::Aborted { .. })),
+        Some(event)
+            if matches!(
+                &event.kind,
+                ActionTraceKind::Aborted { reason, .. }
+                    if reason.contains("HolderLacksAccessibleCommodity")
+            )
+    ), "unexpected fine trace events: {:?}", fine_events);
+    assert!(
+        fine_events
+            .iter()
+            .all(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. })),
+        "fine should no longer fail at authoritative start once remote stock is still lawfully controlled: {:?}",
+        fine_events
+    );
 }
 
 #[test]

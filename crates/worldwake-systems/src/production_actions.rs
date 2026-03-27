@@ -141,7 +141,7 @@ fn craft_action_def(
     actor_constraints.extend(
         aggregate_recipe_entries(&recipe.inputs)
             .into_iter()
-            .map(|(kind, min_qty)| Constraint::ActorHasCommodity { kind, min_qty }),
+            .map(|(kind, min_qty)| Constraint::ActorHasCommodityAtActorPlace { kind, min_qty }),
     );
     actor_constraints.extend(
         recipe
@@ -1727,7 +1727,7 @@ mod tests {
             vec![
                 Constraint::ActorAlive,
                 Constraint::ActorKnowsRecipe(recipe_id),
-                Constraint::ActorHasCommodity {
+                Constraint::ActorHasCommodityAtActorPlace {
                     kind: CommodityKind::Grain,
                     min_qty: Quantity(2),
                 },

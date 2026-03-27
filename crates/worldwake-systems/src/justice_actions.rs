@@ -1856,6 +1856,54 @@ mod tests {
     }
 
     #[test]
+    fn fine_accepts_unpossessed_owned_ground_stock() {
+        let (defs, handlers, fine_id, _exile_id) = setup_punishment_registries();
+        let mut fx = PunishmentFixture::new();
+        let instance = fx.punishment_instance(
+            fine_id,
+            PunishmentKind::Fine {
+                commodity: worldwake_core::CommodityKind::Bread,
+                amount: Quantity(2),
+            },
+        );
+        {
+            let bread = fx
+                .world
+                .possessions_of(fx.accused)
+                .into_iter()
+                .find(|entity| {
+                    fx.world
+                        .get_component_item_lot(*entity)
+                        .is_some_and(|lot| lot.commodity == worldwake_core::CommodityKind::Bread)
+                })
+                .unwrap();
+            let mut txn = new_txn(&mut fx.world, 2);
+            txn.clear_possessor(bread).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let def = defs.get(fine_id).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let mut start_txn = new_action_txn(&mut fx.world, fx.actor, 3);
+        let mut start_rng = test_rng(5);
+        (handler.on_start)(def, &instance, &mut start_rng, &mut start_txn).unwrap();
+
+        let _ = commit_action(&mut fx.world, &defs, &handlers, fine_id, &instance, 7, 3);
+
+        assert_eq!(
+            fx.world
+                .controlled_commodity_quantity(fx.accused, worldwake_core::CommodityKind::Bread),
+            Quantity(2)
+        );
+        assert_eq!(
+            fx.world
+                .controlled_commodity_quantity(fx.office, worldwake_core::CommodityKind::Bread),
+            Quantity(2)
+        );
+    }
+
+    #[test]
     fn exile_removes_membership_adds_hostility_and_supersedes_exact_accusation() {
         let (defs, handlers, _fine_id, exile_id) = setup_punishment_registries();
         let mut fx = PunishmentFixture::new();

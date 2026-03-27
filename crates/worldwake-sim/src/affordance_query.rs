@@ -192,6 +192,11 @@ pub fn evaluate_constraint(
         Constraint::ActorHasCommodity { kind, min_qty } => {
             view.commodity_quantity(actor, *kind) >= *min_qty
         }
+        Constraint::ActorHasCommodityAtActorPlace { kind, min_qty } => view
+            .effective_place(actor)
+            .is_some_and(|place| {
+                view.controlled_commodity_quantity_at_place(actor, place, *kind) >= *min_qty
+            }),
         Constraint::ActorKind(kind) => view.entity_kind(actor) == Some(*kind),
     }
 }
@@ -917,12 +922,23 @@ mod tests {
     #[test]
     fn evaluate_constraint_checks_control_and_commodity_requirements() {
         let actor = entity(1);
+        let place = entity(10);
+        let bread_lot = entity(11);
         let mut view = StubBeliefView::default();
         view.alive.insert(actor, true);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(bread_lot, EntityKind::ItemLot);
         view.control.insert(actor, true);
+        view.places.insert(actor, place);
         view.commodities
             .insert((actor, CommodityKind::Bread), Quantity(3));
+        view.commodities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(3));
+        view.item_lot_commodities
+            .insert(bread_lot, CommodityKind::Bread);
+        view.colocated.insert(place, vec![actor, bread_lot]);
+        view.controllable.insert((actor, bread_lot), true);
 
         assert!(evaluate_constraint(&Constraint::ActorAlive, actor, &view));
         assert!(evaluate_constraint(
@@ -950,6 +966,22 @@ mod tests {
         ));
         assert!(!evaluate_constraint(
             &Constraint::ActorHasCommodity {
+                kind: CommodityKind::Water,
+                min_qty: Quantity(1),
+            },
+            actor,
+            &view,
+        ));
+        assert!(evaluate_constraint(
+            &Constraint::ActorHasCommodityAtActorPlace {
+                kind: CommodityKind::Bread,
+                min_qty: Quantity(2),
+            },
+            actor,
+            &view,
+        ));
+        assert!(!evaluate_constraint(
+            &Constraint::ActorHasCommodityAtActorPlace {
                 kind: CommodityKind::Water,
                 min_qty: Quantity(1),
             },

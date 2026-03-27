@@ -2484,7 +2484,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
 
 #[allow(clippy::too_many_lines)]
 #[test]
-fn goal_stability_across_cargo_replan_after_materialization() {
+fn goal_stability_across_cargo_materialization_continuity() {
     let (mut harness, original_lot, origin, destination) = cargo_harness(false);
     let expected_goal = GoalKey::from(GoalKind::MoveCargo {
         commodity: CommodityKind::Bread,
@@ -2694,7 +2694,6 @@ fn goal_stability_across_cargo_replan_after_materialization() {
         false,
     )
     .ranked;
-    assert!(!runtime.dirty.is_empty());
     let mut jc2 = None;
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,

@@ -586,7 +586,15 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
                 && matches!(event.kind, ActionTraceKind::Committed { .. }))
             .then_some((event.tick, event.sequence_in_tick))
         })
-        .expect("craft-restock scenario should commit Bake Bread");
+        .unwrap_or_else(|| {
+            panic!(
+                "craft-restock scenario should commit Bake Bread; final_place={:?} merchant_bread={:?} merchant_firewood={:?} live_bread={} events={merchant_events:?}",
+                h.world.effective_place(merchant),
+                h.agent_commodity_qty(merchant, CommodityKind::Bread),
+                h.agent_commodity_qty(merchant, CommodityKind::Firewood),
+                total_live_lot_quantity(&h.world, CommodityKind::Bread),
+            )
+        });
     assert!(
         travel_commits.len() >= 2,
         "craft-restock scenario should commit outbound and return travel; events={merchant_events:?}"

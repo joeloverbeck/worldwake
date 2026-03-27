@@ -29,6 +29,11 @@ pub(crate) fn evaluate_constraint_authoritatively(
         Constraint::ActorHasCommodity { kind, min_qty } => {
             world.controlled_commodity_quantity(actor, *kind) >= *min_qty
         }
+        Constraint::ActorHasCommodityAtActorPlace { kind, min_qty } => world
+            .effective_place(actor)
+            .is_some_and(|place| {
+                world.controlled_commodity_quantity_at_place(actor, place, *kind) >= *min_qty
+            }),
         Constraint::ActorKind(kind) => world.entity_kind(actor) == Some(*kind),
     }
 }
@@ -179,8 +184,9 @@ mod tests {
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
         build_prototype_world, BodyPart, CauseRef, CommodityKind, ControlSource, EntityKind,
-        EventLog, Permille, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        EventLog, Permille, Quantity, RecipeId, ResourceSource, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -269,6 +275,60 @@ mod tests {
             Precondition::TargetDead(0),
             actor,
             &[corpse],
+        ));
+    }
+
+    #[test]
+    fn authoritative_constraint_checks_accept_lawful_unpossessed_stock() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let faction = txn.create_faction("River Pact").unwrap();
+            let office = txn.create_office("Mayor").unwrap();
+            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let tool = txn
+                .create_unique_item(
+                    UniqueItemKind::SimpleTool,
+                    None,
+                    std::collections::BTreeMap::new(),
+                )
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_ground_location(tool, place).unwrap();
+            txn.set_owner(bread, faction).unwrap();
+            txn.set_owner(tool, office).unwrap();
+            txn.add_member(actor, faction).unwrap();
+            txn.assign_office(office, actor).unwrap();
+            commit_txn(txn);
+            actor
+        };
+
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorHasCommodity {
+                kind: CommodityKind::Bread,
+                min_qty: Quantity(2),
+            },
+            actor,
+        ));
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorHasCommodityAtActorPlace {
+                kind: CommodityKind::Bread,
+                min_qty: Quantity(2),
+            },
+            actor,
+        ));
+        assert!(evaluate_constraint_authoritatively(
+            &world,
+            &Constraint::ActorHasUniqueItemKind {
+                kind: UniqueItemKind::SimpleTool,
+                min_count: 1,
+            },
+            actor,
         ));
     }
 
