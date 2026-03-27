@@ -4,6 +4,7 @@ use crate::decision_trace::{
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace,
 };
+use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
@@ -14,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, Tick,
 };
-use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, RuntimeBeliefView, Scheduler};
+use worldwake_sim::{
+    ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
+};
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 
@@ -308,47 +311,11 @@ fn try_continue_snapshot_plan(
     Some(step)
 }
 
-fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently_in_transit: bool) {
-    // Clear exhausted-goal memory when the world changed in ways that could
-    // make previously impossible plans feasible (position, inventory, wounds,
-    // facilities). Needs-only changes rarely alter the search space.
-    //
-    // POSITION is handled specially: during multi-leg travel, the agent's
-    // effective_place changes at each waypoint, but the search space doesn't
-    // materially change while in transit (most actions require being settled).
-    // Only clear on POSITION when the agent actually arrived (was in transit
-    // but is now settled), or was never in transit (direct placement).
-    let non_position_mask = DirtySet::COMMODITY
-        | DirtySet::UNIQUE_ITEMS
-        | DirtySet::WOUNDS
-        | DirtySet::FACILITIES
-        | DirtySet::REPLAN_SIGNAL
-        | DirtySet::BLOCKER_CLEANUP;
-    if runtime.dirty.contains_any(non_position_mask) {
-        for entry in runtime.exhaustion_cache.values_mut() {
-            if entry.exhausted_at.take().is_some() {
-                entry.count += 1;
-            }
-        }
-        return;
-    }
-    // Position changed — only clear if agent genuinely arrived at a new place
-    // (transition from in-transit to settled, or was already settled).
-    if runtime.dirty.contains(DirtySet::POSITION) {
-        let arrived = runtime.last_in_transit && !currently_in_transit;
-        let was_settled = !runtime.last_in_transit;
-        if arrived || was_settled {
-            for entry in runtime.exhaustion_cache.values_mut() {
-                if entry.exhausted_at.take().is_some() {
-                    entry.count += 1;
-                }
-            }
-        }
-    }
-}
-
 fn record_exhausted_goals(
     runtime: &mut AgentDecisionRuntime,
+    view: &dyn GoalBeliefView,
+    agent: worldwake_core::EntityId,
+    recipe_registry: &RecipeRegistry,
     plans: &[(
         crate::GoalKey,
         PlanSearchResult,
@@ -365,15 +332,23 @@ fn record_exhausted_goals(
             crate::PlanSearchResult::BudgetExhausted { .. }
                 | crate::PlanSearchResult::FrontierExhausted { .. }
         ) {
+            let (invalidation_conditions, baseline) =
+                derive_invalidation_conditions(&key.kind, agent, view, recipe_registry);
             runtime
                 .exhaustion_cache
                 .entry(*key)
-                .and_modify(|entry| entry.exhausted_at = Some(tick))
+                .and_modify(|entry| {
+                    entry.exhausted_at = Some(tick);
+                    entry
+                        .invalidation_conditions
+                        .clone_from(&invalidation_conditions);
+                    entry.baseline.clone_from(&baseline);
+                })
                 .or_insert(ExhaustionEntry {
                     exhausted_at: Some(tick),
                     count: 0,
-                    invalidation_conditions: Vec::new(),
-                    baseline: crate::ExhaustionBaseline::default(),
+                    invalidation_conditions,
+                    baseline,
                 });
         } else {
             // Goal was searched and did NOT exhaust — clear both active skip
@@ -463,7 +438,14 @@ pub(super) fn plan_and_validate_next_step(
             return (Some(step), Some(true));
         }
 
-        reset_exhausted_goals_if_needed(runtime, view.in_transit_state(agent).is_some());
+        invalidate_exhausted_goals(
+            &mut runtime.exhaustion_cache,
+            &view,
+            agent,
+            view.in_transit_state(agent).is_some(),
+            runtime.dirty.contains(DirtySet::FACILITIES),
+            runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
+        );
 
         let plans = build_candidate_plans(
             world,
@@ -483,7 +465,7 @@ pub(super) fn plan_and_validate_next_step(
         );
 
         // Record newly exhausted goals for next tick.
-        record_exhausted_goals(runtime, &plans, tick);
+        record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick);
         // Clear exhaustion counts only for goals that actually found plans.
         // Previously, ANY successful plan cleared ALL counts, defeating the
         // exponential backoff for chronically unsolvable goals that share a
@@ -783,14 +765,16 @@ pub(super) fn plan_and_validate_next_step_traced(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        exhaustion_skip_active, record_exhausted_goals, reset_exhausted_goals_if_needed,
-    };
+    use super::{exhaustion_skip_active, record_exhausted_goals};
     use crate::{
-        AgentDecisionRuntime, ExhaustionEntry, GoalKey, GoalKind, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan,
+        AgentDecisionRuntime, ExhaustionEntry, ExhaustionInvalidationCondition, GoalKey,
+        GoalKind, PlanSearchResult, PlanTerminalKind, PlannedPlan,
     };
-    use worldwake_core::{CommodityKind, Tick};
+    use worldwake_core::{
+        build_prototype_world, CauseRef, CommodityKind, ControlSource, EventLog,
+        HomeostaticNeeds, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    };
+    use worldwake_sim::{PerAgentBeliefView, RecipeRegistry};
 
     fn consume_goal(commodity: CommodityKind) -> GoalKey {
         GoalKey::from(GoalKind::ConsumeOwnedCommodity { commodity })
@@ -798,6 +782,39 @@ mod tests {
 
     fn found_plan(goal: GoalKey) -> PlannedPlan {
         PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+    }
+
+    fn setup_agent_world() -> (World, worldwake_core::EntityId, worldwake_core::EntityId) {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Planner", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_homeostatic_needs(agent, HomeostaticNeeds::new_sated())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        (world, agent, place)
     }
 
     #[test]
@@ -822,45 +839,74 @@ mod tests {
             Vec::new(),
             Vec::new(),
         )];
-        record_exhausted_goals(&mut runtime, &plans, Tick(9));
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+        );
 
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.exhausted_at, Some(Tick(9)));
+        assert_eq!(entry.count, 2);
         assert_eq!(
-            runtime.exhaustion_cache.get(&goal),
-            Some(&ExhaustionEntry {
-                exhausted_at: Some(Tick(9)),
-                count: 2,
-                invalidation_conditions: Vec::new(),
-                baseline: crate::ExhaustionBaseline::default(),
-            })
+            entry.invalidation_conditions,
+            vec![ExhaustionInvalidationCondition::CommodityChanged(
+                CommodityKind::Bread
+            )]
         );
     }
 
     #[test]
-    fn reset_exhausted_goals_if_needed_clears_ttl_marker_and_preserves_backoff_history() {
+    fn record_exhausted_goals_derives_goal_aware_conditions_and_baseline() {
         let goal = consume_goal(CommodityKind::Bread);
         let mut runtime = AgentDecisionRuntime::default();
-        runtime.dirty.insert(crate::DirtySet::COMMODITY);
-        runtime.exhaustion_cache.insert(
+        let (mut world, agent, place) = setup_agent_world();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, agent).unwrap();
+            commit_txn(txn);
+        }
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        let plans = vec![(
             goal,
-            ExhaustionEntry {
-                exhausted_at: Some(Tick(4)),
-                count: 1,
-                invalidation_conditions: Vec::new(),
-                baseline: crate::ExhaustionBaseline::default(),
+            PlanSearchResult::BudgetExhausted {
+                expansions_used: 12,
             },
+            Vec::new(),
+            Vec::new(),
+        )];
+        record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
         );
 
-        reset_exhausted_goals_if_needed(&mut runtime, false);
-
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.exhausted_at, Some(Tick(9)));
+        assert_eq!(entry.count, 0);
         assert_eq!(
-            runtime.exhaustion_cache.get(&goal),
-            Some(&ExhaustionEntry {
-                exhausted_at: None,
-                count: 2,
-                invalidation_conditions: Vec::new(),
-                baseline: crate::ExhaustionBaseline::default(),
-            })
+            entry.invalidation_conditions,
+            vec![ExhaustionInvalidationCondition::CommodityChanged(
+                CommodityKind::Bread
+            )]
         );
+        assert_eq!(
+            entry.baseline.commodity_quantities,
+            vec![(CommodityKind::Bread, Quantity(2))]
+        );
+        assert_eq!(entry.baseline.position, Some(place));
     }
 
     #[test]
@@ -893,7 +939,17 @@ mod tests {
             Vec::new(),
             Vec::new(),
         )];
-        record_exhausted_goals(&mut runtime, &plans, Tick(10));
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(10),
+        );
 
         assert!(!runtime.exhaustion_cache.contains_key(&solved_goal));
         assert_eq!(

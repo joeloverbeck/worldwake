@@ -1,5 +1,6 @@
+use crate::{ExhaustionEntry, GoalKey};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
     Permille, Quantity, UniqueItemKind,
@@ -157,6 +158,33 @@ pub(crate) fn derive_invalidation_conditions(
     (conditions, baseline)
 }
 
+pub(crate) fn invalidate_exhausted_goals(
+    exhaustion_cache: &mut BTreeMap<GoalKey, ExhaustionEntry>,
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    currently_in_transit: bool,
+    facilities_changed: bool,
+    blocker_expired: bool,
+) {
+    exhaustion_cache.retain(|_, entry| {
+        if entry.invalidation_conditions.is_empty() {
+            return false;
+        }
+
+        !entry.invalidation_conditions.iter().any(|condition| {
+            condition_changed(
+                condition,
+                &entry.baseline,
+                view,
+                agent,
+                currently_in_transit,
+                facilities_changed,
+                blocker_expired,
+            )
+        })
+    });
+}
+
 #[allow(dead_code)]
 pub(crate) fn condition_changed(
     condition: &ExhaustionInvalidationCondition,
@@ -272,9 +300,11 @@ fn default_need_threshold_delta() -> Permille {
 mod tests {
     use super::{
         condition_changed, default_need_threshold_delta, derive_invalidation_conditions,
-        need_value,
+        invalidate_exhausted_goals, need_value,
         ExhaustionBaseline, ExhaustionInvalidationCondition,
     };
+    use crate::{ExhaustionEntry, GoalKey};
+    use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
         BeliefConfidencePolicy, BodyCostPerTick, BodyPart, CommodityConsumableProfile,
@@ -1305,5 +1335,91 @@ mod tests {
                 hostile_count: 2,
             }
         );
+    }
+
+    #[test]
+    fn invalidate_exhausted_goals_removes_only_entries_with_fired_conditions() {
+        let agent = entity(1);
+        let bread_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let sleep_goal = GoalKey::from(GoalKind::Sleep);
+        let legacy_goal = GoalKey::from(GoalKind::ReduceDanger);
+        let mut cache = BTreeMap::from([
+            (
+                bread_goal,
+                ExhaustionEntry {
+                    exhausted_at: Some(worldwake_core::Tick(4)),
+                    count: 2,
+                    invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
+                    baseline: ExhaustionBaseline {
+                        position: Some(entity(10)),
+                        ..ExhaustionBaseline::default()
+                    },
+                },
+            ),
+            (
+                sleep_goal,
+                ExhaustionEntry {
+                    exhausted_at: Some(worldwake_core::Tick(4)),
+                    count: 3,
+                    invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
+                    baseline: ExhaustionBaseline::default(),
+                },
+            ),
+            (
+                legacy_goal,
+                ExhaustionEntry {
+                    exhausted_at: Some(worldwake_core::Tick(4)),
+                    count: 4,
+                    invalidation_conditions: Vec::new(),
+                    baseline: ExhaustionBaseline::default(),
+                },
+            ),
+        ]);
+        let view = MockView {
+            effective_places: vec![(agent, entity(11))],
+            ..MockView::default()
+        };
+
+        invalidate_exhausted_goals(&mut cache, &view, agent, false, false, false);
+
+        assert!(!cache.contains_key(&bread_goal));
+        assert_eq!(
+            cache.get(&sleep_goal),
+            Some(&ExhaustionEntry {
+                exhausted_at: Some(worldwake_core::Tick(4)),
+                count: 3,
+                invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
+                baseline: ExhaustionBaseline::default(),
+            })
+        );
+        assert!(!cache.contains_key(&legacy_goal));
+    }
+
+    #[test]
+    fn invalidate_exhausted_goals_preserves_position_entries_while_still_in_transit() {
+        let agent = entity(1);
+        let goal = GoalKey::from(GoalKind::ReduceDanger);
+        let mut cache = BTreeMap::from([(
+            goal,
+            ExhaustionEntry {
+                exhausted_at: Some(worldwake_core::Tick(9)),
+                count: 1,
+                invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
+                baseline: ExhaustionBaseline {
+                    position: Some(entity(2)),
+                    ..ExhaustionBaseline::default()
+                },
+            },
+        )]);
+        let view = MockView {
+            effective_places: vec![(agent, entity(3))],
+            ..MockView::default()
+        };
+
+        invalidate_exhausted_goals(&mut cache, &view, agent, true, false, false);
+
+        assert!(cache.contains_key(&goal));
     }
 }
