@@ -19,6 +19,7 @@ When a goal exhausts the search budget, its `ExhaustionEntry` must now record th
 5. The `.and_modify()` path must update both `invalidation_conditions` and `baseline` on re-exhaustion (not just `exhausted_at`), because the world state may have changed since the last exhaustion.
 6. The `.or_insert()` path creates a new entry with `count: 0` and the derived conditions/baseline.
 7. Goals that did NOT exhaust still get `.remove()` — clearing both skip state and backoff count (existing behavior preserved).
+8. Reassessment after implementation of S31-002: this ticket should not assume `count` increments during `.and_modify()` on a repeated exhaustion record. The live semantics treat `count` as backoff history across invalidation cycles, not as "number of times `record_exhausted_goals` refreshed the same active skip window". Refreshing `exhausted_at` while a goal is still exhausted should preserve `count` unless a different architecture is chosen explicitly.
 
 ## Architecture Check
 
@@ -30,8 +31,9 @@ When a goal exhausts the search budget, its `ExhaustionEntry` must now record th
 1. Exhausted goals get conditions + baseline stored -> unit test
 2. Re-exhausted goals get updated conditions + baseline -> unit test
 3. Non-exhausted goals are removed from cache (existing behavior) -> unit test
-4. Call site compiles with new parameters -> compilation
-5. Existing golden tests pass -> `cargo test -p worldwake-ai`
+4. Re-recorded active exhaustion preserves `count` while refreshing `exhausted_at` -> unit test
+5. Call site compiles with new parameters -> compilation
+6. Existing golden tests pass -> `cargo test -p worldwake-ai`
 
 ## What to Change
 
@@ -82,7 +84,7 @@ Tests at `planning.rs:802+` call `record_exhausted_goals` directly. Update to pa
 1. Unit test: exhausted goal stores non-empty `invalidation_conditions` and populated `baseline`
 2. Unit test: re-exhausted goal updates `invalidation_conditions` and `baseline` (not just `exhausted_at`)
 3. Unit test: non-exhausted goal is removed from cache entirely
-4. Unit test: `count` increments on re-exhaustion via `.and_modify()`
+4. Unit test: `count` is preserved on re-exhaustion via `.and_modify()`
 5. Existing suite: `cargo test --workspace`
 
 ### Invariants
@@ -90,6 +92,7 @@ Tests at `planning.rs:802+` call `record_exhausted_goals` directly. Update to pa
 1. Every exhausted entry has non-empty `invalidation_conditions` (guaranteed by `derive_invalidation_conditions` Invariant 3 from S31-002)
 2. Baseline captures current agent state at exhaustion time
 3. Non-exhausted goals are fully removed from cache (existing behavior preserved)
+4. Refreshing an already-exhausted entry does not silently rewrite backoff semantics
 
 ## Test Plan
 

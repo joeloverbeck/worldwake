@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use worldwake_core::{
-    CommodityKind, EntityId, HomeostaticNeedId, HomeostaticNeeds, Permille, Quantity,
-    UniqueItemKind,
+    CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+    Permille, Quantity, UniqueItemKind,
 };
+use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
 /// Condition that would make a previously exhausted goal worth re-searching.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -32,9 +34,554 @@ pub struct ExhaustionBaseline {
     pub hostile_count: usize,
 }
 
+pub(crate) fn derive_invalidation_conditions(
+    goal: &GoalKind,
+    agent: EntityId,
+    view: &dyn GoalBeliefView,
+    recipe_registry: &RecipeRegistry,
+) -> (Vec<ExhaustionInvalidationCondition>, ExhaustionBaseline) {
+    let mut conditions = BTreeSet::new();
+
+    match *goal {
+        GoalKind::ConsumeOwnedCommodity { commodity } => {
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+        }
+        GoalKind::AcquireCommodity { commodity, purpose } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+            if matches!(purpose, CommodityPurpose::Restock) {
+                conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+                    CommodityKind::Coin,
+                ));
+            }
+        }
+        GoalKind::Sleep => {
+            conditions.insert(ExhaustionInvalidationCondition::NeedCrossedThreshold {
+                need: HomeostaticNeedId::Fatigue,
+                threshold_delta: default_need_threshold_delta(),
+            });
+            conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+        }
+        GoalKind::Relieve => {
+            conditions.insert(ExhaustionInvalidationCondition::NeedCrossedThreshold {
+                need: HomeostaticNeedId::Bladder,
+                threshold_delta: default_need_threshold_delta(),
+            });
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+        }
+        GoalKind::Wash => {
+            conditions.insert(ExhaustionInvalidationCondition::NeedCrossedThreshold {
+                need: HomeostaticNeedId::Dirtiness,
+                threshold_delta: default_need_threshold_delta(),
+            });
+            conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+        }
+        GoalKind::EngageHostile { target } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));
+        }
+        GoalKind::ReduceDanger => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
+            conditions.insert(ExhaustionInvalidationCondition::HostilesChanged);
+        }
+        GoalKind::TreatWounds { patient } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+                CommodityKind::Medicine,
+            ));
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(patient));
+        }
+        GoalKind::ProduceCommodity { recipe_id } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+            if let Some(recipe) = recipe_registry.get(recipe_id) {
+                for (commodity, _) in &recipe.inputs {
+                    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+                        *commodity,
+                    ));
+                }
+            }
+        }
+        GoalKind::SellCommodity { commodity } | GoalKind::MoveCargo { commodity, .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+        }
+        GoalKind::RestockCommodity { commodity } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+                CommodityKind::Coin,
+            ));
+        }
+        GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(corpse));
+        }
+        GoalKind::ShareBelief { listener, .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(listener));
+        }
+        GoalKind::ClaimOffice { .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
+        }
+        GoalKind::SupportCandidateForOffice { candidate, .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(candidate));
+        }
+        GoalKind::InvestigateViolation { .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+        }
+        GoalKind::StealItem { target_item } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(target_item));
+        }
+        GoalKind::Accuse { accused, .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(accused));
+        }
+        GoalKind::PunishAccused { accused, .. } => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+            conditions.insert(ExhaustionInvalidationCondition::TargetDead(accused));
+            conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
+        }
+    }
+
+    let conditions = conditions.into_iter().collect::<Vec<_>>();
+    let baseline = build_baseline(agent, view, &conditions);
+    (conditions, baseline)
+}
+
+pub(crate) fn need_value(needs: &HomeostaticNeeds, need: HomeostaticNeedId) -> Permille {
+    match need {
+        HomeostaticNeedId::Hunger => needs.hunger,
+        HomeostaticNeedId::Thirst => needs.thirst,
+        HomeostaticNeedId::Fatigue => needs.fatigue,
+        HomeostaticNeedId::Bladder => needs.bladder,
+        HomeostaticNeedId::Dirtiness => needs.dirtiness,
+    }
+}
+
+fn build_baseline(
+    agent: EntityId,
+    view: &dyn GoalBeliefView,
+    conditions: &[ExhaustionInvalidationCondition],
+) -> ExhaustionBaseline {
+    let commodity_kinds = conditions
+        .iter()
+        .filter_map(|condition| match condition {
+            ExhaustionInvalidationCondition::CommodityChanged(kind) => Some(*kind),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let unique_item_kinds = conditions
+        .iter()
+        .filter_map(|condition| match condition {
+            ExhaustionInvalidationCondition::UniqueItemChanged(kind) => Some(*kind),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+
+    ExhaustionBaseline {
+        position: view.effective_place(agent),
+        needs: view.homeostatic_needs(agent),
+        commodity_quantities: commodity_kinds
+            .into_iter()
+            .map(|kind| (kind, view.commodity_quantity(agent, kind)))
+            .collect(),
+        unique_item_counts: unique_item_kinds
+            .into_iter()
+            .map(|kind| (kind, view.unique_item_count(agent, kind)))
+            .collect(),
+        wound_count: view.wounds(agent).len(),
+        hostile_count: view.visible_hostiles_for(agent).len(),
+    }
+}
+
+fn default_need_threshold_delta() -> Permille {
+    Permille::new(100).expect("fixed need threshold delta must be valid")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ExhaustionBaseline;
+    use super::{
+        default_need_threshold_delta, derive_invalidation_conditions, need_value,
+        ExhaustionBaseline, ExhaustionInvalidationCondition,
+    };
+    use std::num::NonZeroU32;
+    use worldwake_core::{
+        BeliefConfidencePolicy, BodyCostPerTick, BodyPart, CommodityConsumableProfile,
+        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind,
+        HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, JusticeDispositionProfile,
+        LoadUnits, MerchandiseProfile, OfficeData, Permille, PunishmentKind, Quantity,
+        RecipientKnowledgeStatus, RecordEntryId, ResourceSource, TellMemoryKey, TellProfile,
+        TellTopic, TheftDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+        ViolationId, Wound, WoundCause, WoundId, WorkstationTag,
+    };
+    use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
+
+    #[derive(Default)]
+    struct MockView {
+        effective_places: Vec<(EntityId, EntityId)>,
+        commodity_quantities: Vec<((EntityId, CommodityKind), Quantity)>,
+        unique_item_counts: Vec<((EntityId, UniqueItemKind), u32)>,
+        needs: Vec<(EntityId, HomeostaticNeeds)>,
+        wounds: Vec<(EntityId, Vec<Wound>)>,
+        visible_hostiles: Vec<(EntityId, Vec<EntityId>)>,
+        dead: Vec<EntityId>,
+    }
+
+    impl GoalBeliefView for MockView {
+        fn is_alive(&self, entity: EntityId) -> bool {
+            !self.dead.contains(&entity)
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            self.dead.contains(&entity)
+        }
+
+        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
+            None
+        }
+
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, place)| *place)
+        }
+
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: worldwake_core::RecipeId) -> bool {
+            false
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<worldwake_core::RecipeId> {
+            Vec::new()
+        }
+
+        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+            self.unique_item_counts
+                .iter()
+                .find(|((entity, item_kind), _)| *entity == holder && *item_kind == kind)
+                .map_or(0, |(_, count)| *count)
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .iter()
+                .find(|((entity, commodity), _)| *entity == holder && *commodity == kind)
+                .map_or(Quantity(0), |(_, quantity)| *quantity)
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            !self.wounds(entity).is_empty()
+        }
+
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs
+                .iter()
+                .find(|(subject, _)| *subject == agent)
+                .map(|(_, needs)| *needs)
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
+            BeliefConfidencePolicy::default()
+        }
+
+        fn theft_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<TheftDispositionProfile> {
+            None
+        }
+
+        fn justice_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<JusticeDispositionProfile> {
+            None
+        }
+
+        fn tell_profile(&self, _agent: EntityId) -> Option<TellProfile> {
+            None
+        }
+
+        fn told_belief_memories(&self, _agent: EntityId) -> Vec<(TellMemoryKey, worldwake_core::ToldBeliefMemory)> {
+            Vec::new()
+        }
+
+        fn told_belief_memory(
+            &self,
+            _actor: EntityId,
+            _counterparty: EntityId,
+            _topic: &TellTopic,
+        ) -> Option<worldwake_core::ToldBeliefMemory> {
+            None
+        }
+
+        fn recipient_knowledge_status(
+            &self,
+            _actor: EntityId,
+            _counterparty: EntityId,
+            _topic: &TellTopic,
+        ) -> Option<RecipientKnowledgeStatus> {
+            None
+        }
+
+        fn courage(&self, _agent: EntityId) -> Option<Permille> {
+            None
+        }
+
+        fn violation_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<ViolationDispositionProfile> {
+            None
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds
+                .iter()
+                .find(|(subject, _)| *subject == agent)
+                .map_or_else(Vec::new, |(_, wounds)| wounds.clone())
+        }
+
+        fn hostile_targets_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.visible_hostiles
+                .iter()
+                .find(|(subject, _)| *subject == agent)
+                .map_or_else(Vec::new, |(_, hostiles)| hostiles.clone())
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn office_data(&self, _office: EntityId) -> Option<OfficeData> {
+            None
+        }
+
+        fn believed_office_holder(
+            &self,
+            _office: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            InstitutionalBeliefRead::Unknown
+        }
+
+        fn believed_force_controller(
+            &self,
+            _office: EntityId,
+        ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+            InstitutionalBeliefRead::Unknown
+        }
+
+        fn believed_membership(
+            &self,
+            _faction: EntityId,
+            _member: EntityId,
+        ) -> InstitutionalBeliefRead<bool> {
+            InstitutionalBeliefRead::Unknown
+        }
+
+        fn offices_contested_by(&self, _claimant: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn loyalty_to(&self, _subject: EntityId, _target: EntityId) -> Option<Permille> {
+            None
+        }
+
+        fn believed_support_declaration(
+            &self,
+            _office: EntityId,
+            _supporter: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            InstitutionalBeliefRead::Unknown
+        }
+
+        fn believed_support_declarations_for_office(
+            &self,
+            _office: EntityId,
+        ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+            Vec::new()
+        }
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn pm(value: u16) -> Permille {
+        Permille::new(value).unwrap()
+    }
+
+    fn wound(id: u64, attacker: EntityId) -> Wound {
+        Wound {
+            id: WoundId(id),
+            body_part: BodyPart::Torso,
+            cause: WoundCause::Combat {
+                attacker,
+                weapon: worldwake_core::CombatWeaponRef::Unarmed,
+            },
+            severity: pm(200),
+            inflicted_at: worldwake_core::Tick(1),
+            bleed_rate_per_tick: pm(10),
+        }
+    }
+
+    fn recipe_definition(name: &str) -> RecipeDefinition {
+        RecipeDefinition {
+            name: name.to_string(),
+            inputs: vec![
+                (CommodityKind::Grain, Quantity(2)),
+                (CommodityKind::Water, Quantity(1)),
+            ],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: vec![UniqueItemKind::SimpleTool],
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        }
+    }
+
+    fn assert_has_condition(
+        conditions: &[ExhaustionInvalidationCondition],
+        expected: ExhaustionInvalidationCondition,
+    ) {
+        assert!(
+            conditions.contains(&expected),
+            "missing condition {:?} from {:?}",
+            expected,
+            conditions
+        );
+    }
 
     #[test]
     fn exhaustion_baseline_default_is_zero_value() {
@@ -46,5 +593,326 @@ mod tests {
         assert!(baseline.unique_item_counts.is_empty());
         assert_eq!(baseline.wound_count, 0);
         assert_eq!(baseline.hostile_count, 0);
+    }
+
+    #[test]
+    fn need_value_reads_named_need_field() {
+        let needs = HomeostaticNeeds::new(pm(10), pm(20), pm(30), pm(40), pm(50));
+
+        assert_eq!(need_value(&needs, HomeostaticNeedId::Hunger), pm(10));
+        assert_eq!(need_value(&needs, HomeostaticNeedId::Thirst), pm(20));
+        assert_eq!(need_value(&needs, HomeostaticNeedId::Fatigue), pm(30));
+        assert_eq!(need_value(&needs, HomeostaticNeedId::Bladder), pm(40));
+        assert_eq!(need_value(&needs, HomeostaticNeedId::Dirtiness), pm(50));
+    }
+
+    #[test]
+    fn derive_invalidation_conditions_covers_every_live_goalkind_variant() {
+        let agent = entity(1);
+        let target = entity(2);
+        let office = entity(3);
+        let destination = entity(4);
+        let crime_register = entity(5);
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(recipe_definition("Bake Bread"));
+        let view = MockView::default();
+        let goals = vec![
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            },
+            GoalKind::Sleep,
+            GoalKind::Relieve,
+            GoalKind::Wash,
+            GoalKind::EngageHostile { target },
+            GoalKind::ReduceDanger,
+            GoalKind::TreatWounds { patient: target },
+            GoalKind::ProduceCommodity { recipe_id },
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            },
+            GoalKind::LootCorpse { corpse: target },
+            GoalKind::BuryCorpse {
+                corpse: target,
+                burial_site: destination,
+            },
+            GoalKind::ShareBelief {
+                listener: target,
+                topic: TellTopic::EntityBelief { subject: office },
+            },
+            GoalKind::ClaimOffice { office },
+            GoalKind::SupportCandidateForOffice {
+                office,
+                candidate: target,
+            },
+            GoalKind::InvestigateViolation {
+                violation_id: ViolationId(1),
+                place: destination,
+            },
+            GoalKind::StealItem { target_item: target },
+            GoalKind::Accuse {
+                crime_register,
+                accused: target,
+                violation_id: ViolationId(2),
+            },
+            GoalKind::PunishAccused {
+                office,
+                accused: target,
+                accusation_entry: RecordEntryId(3),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(5),
+                },
+            },
+        ];
+
+        assert_eq!(goals.len(), 21);
+        for goal in goals {
+            let (conditions, _) =
+                derive_invalidation_conditions(&goal, agent, &view, &recipes);
+            assert!(
+                !conditions.is_empty(),
+                "goal {:?} should derive at least one invalidation condition",
+                goal
+            );
+        }
+    }
+
+    #[test]
+    fn consume_owned_commodity_derives_only_matching_commodity_condition() {
+        let goal = GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        };
+
+        let (conditions, baseline) = derive_invalidation_conditions(
+            &goal,
+            entity(1),
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(
+            conditions,
+            vec![ExhaustionInvalidationCondition::CommodityChanged(
+                CommodityKind::Bread
+            )]
+        );
+        assert_eq!(
+            baseline.commodity_quantities,
+            vec![(CommodityKind::Bread, Quantity(0))]
+        );
+    }
+
+    #[test]
+    fn acquire_restock_includes_coin_but_self_consume_does_not() {
+        let agent = entity(1);
+        let view = MockView {
+            commodity_quantities: vec![
+                ((agent, CommodityKind::Apple), Quantity(2)),
+                ((agent, CommodityKind::Coin), Quantity(9)),
+            ],
+            ..MockView::default()
+        };
+        let restock = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: worldwake_core::CommodityPurpose::Restock,
+        };
+        let self_consume = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        };
+
+        let (restock_conditions, restock_baseline) =
+            derive_invalidation_conditions(&restock, agent, &view, &RecipeRegistry::new());
+        let (self_consume_conditions, self_consume_baseline) =
+            derive_invalidation_conditions(&self_consume, agent, &view, &RecipeRegistry::new());
+
+        assert_has_condition(
+            &restock_conditions,
+            ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin),
+        );
+        assert!(
+            !self_consume_conditions.contains(
+                &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin)
+            )
+        );
+        assert_eq!(
+            restock_baseline.commodity_quantities,
+            vec![
+                (CommodityKind::Apple, Quantity(2)),
+                (CommodityKind::Coin, Quantity(9)),
+            ]
+        );
+        assert_eq!(
+            self_consume_baseline.commodity_quantities,
+            vec![(CommodityKind::Apple, Quantity(2))]
+        );
+    }
+
+    #[test]
+    fn produce_commodity_derives_per_input_conditions_from_recipe_registry() {
+        let agent = entity(1);
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(recipe_definition("Bake Bread"));
+        let view = MockView {
+            commodity_quantities: vec![
+                ((agent, CommodityKind::Grain), Quantity(4)),
+                ((agent, CommodityKind::Water), Quantity(1)),
+            ],
+            ..MockView::default()
+        };
+
+        let (conditions, baseline) = derive_invalidation_conditions(
+            &GoalKind::ProduceCommodity { recipe_id },
+            agent,
+            &view,
+            &recipes,
+        );
+
+        assert_has_condition(
+            &conditions,
+            ExhaustionInvalidationCondition::PositionChanged,
+        );
+        assert_has_condition(
+            &conditions,
+            ExhaustionInvalidationCondition::FacilitiesChanged,
+        );
+        assert_has_condition(
+            &conditions,
+            ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Grain),
+        );
+        assert_has_condition(
+            &conditions,
+            ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Water),
+        );
+        assert_eq!(
+            baseline.commodity_quantities,
+            vec![
+                (CommodityKind::Grain, Quantity(4)),
+                (CommodityKind::Water, Quantity(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn produce_commodity_without_registered_recipe_keeps_non_recipe_conditions() {
+        let goal = GoalKind::ProduceCommodity {
+            recipe_id: worldwake_core::RecipeId(99),
+        };
+
+        let (conditions, baseline) = derive_invalidation_conditions(
+            &goal,
+            entity(1),
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(
+            conditions,
+            vec![
+                ExhaustionInvalidationCondition::PositionChanged,
+                ExhaustionInvalidationCondition::FacilitiesChanged,
+            ]
+        );
+        assert!(baseline.commodity_quantities.is_empty());
+    }
+
+    #[test]
+    fn sleep_and_wash_use_spec_threshold_delta() {
+        let sleep = GoalKind::Sleep;
+        let wash = GoalKind::Wash;
+
+        let (sleep_conditions, _) = derive_invalidation_conditions(
+            &sleep,
+            entity(1),
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+        let (wash_conditions, _) = derive_invalidation_conditions(
+            &wash,
+            entity(1),
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_has_condition(
+            &sleep_conditions,
+            ExhaustionInvalidationCondition::NeedCrossedThreshold {
+                need: HomeostaticNeedId::Fatigue,
+                threshold_delta: default_need_threshold_delta(),
+            },
+        );
+        assert_has_condition(
+            &wash_conditions,
+            ExhaustionInvalidationCondition::NeedCrossedThreshold {
+                need: HomeostaticNeedId::Dirtiness,
+                threshold_delta: default_need_threshold_delta(),
+            },
+        );
+    }
+
+    #[test]
+    fn engage_hostile_tracks_target_death() {
+        let target = entity(2);
+        let (conditions, _) = derive_invalidation_conditions(
+            &GoalKind::EngageHostile { target },
+            entity(1),
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_has_condition(
+            &conditions,
+            ExhaustionInvalidationCondition::TargetDead(target),
+        );
+    }
+
+    #[test]
+    fn derive_invalidation_conditions_snapshots_relevant_baseline_state_deterministically() {
+        let agent = entity(1);
+        let place = entity(9);
+        let attacker = entity(10);
+        let hostile_a = entity(11);
+        let hostile_b = entity(12);
+        let needs = HomeostaticNeeds::new(pm(100), pm(200), pm(300), pm(400), pm(500));
+        let view = MockView {
+            effective_places: vec![(agent, place)],
+            commodity_quantities: vec![((agent, CommodityKind::Medicine), Quantity(3))],
+            needs: vec![(agent, needs)],
+            wounds: vec![(agent, vec![wound(1, attacker), wound(2, attacker)])],
+            visible_hostiles: vec![(agent, vec![hostile_a, hostile_b])],
+            ..MockView::default()
+        };
+        let goal = GoalKind::TreatWounds {
+            patient: entity(20),
+        };
+
+        let first =
+            derive_invalidation_conditions(&goal, agent, &view, &RecipeRegistry::new());
+        let second =
+            derive_invalidation_conditions(&goal, agent, &view, &RecipeRegistry::new());
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first.1,
+            ExhaustionBaseline {
+                position: Some(place),
+                needs: Some(needs),
+                commodity_quantities: vec![(CommodityKind::Medicine, Quantity(3))],
+                unique_item_counts: Vec::new(),
+                wound_count: 2,
+                hostile_count: 2,
+            }
+        );
     }
 }

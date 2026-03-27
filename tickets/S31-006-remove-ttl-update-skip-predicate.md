@@ -19,11 +19,13 @@ With precise per-goal invalidation in place (S31-004) and conditions captured at
 5. `build_candidate_plans` no longer needs `current_tick` for the skip check (though it's still needed for snapshot construction).
 6. Tests at `planning.rs:897-912` test `exhaustion_skip_active` directly — these must be removed.
 7. The exponential backoff in `build_candidate_plans:214-223` (budget halving by `entry.count`) is preserved unchanged.
+8. This ticket only becomes architecturally sound once S31-004/S31-003 stop facility-tagged and blocker-tagged goals from being invalidated unconditionally. Removing TTL before that fix would make the remaining cache behavior misleading rather than precise.
 
 ## Architecture Check
 
 1. Pure removal of dead code + simplification. The TTL mechanism is superseded by condition-based invalidation.
 2. No backward-compatibility concerns — the TTL was an internal implementation detail.
+3. The clean end-state is "skip while exhausted entry exists; remove only on relevant condition change". That requires the condition-change layer to carry accurate runtime signals for facilities and blocker cleanup first.
 
 ## Verification Layers
 

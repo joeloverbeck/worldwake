@@ -18,18 +18,22 @@ The current `reset_exhausted_goals_if_needed` uses a coarse dirty-bit mask to cl
 4. When conditions fire and an entry is removed via `.retain()`, the `count` resets to 0 on next exhaustion — intentional per spec ("the world genuinely changed, so the goal deserves a full-budget re-search").
 5. The old function increments `entry.count` when clearing `exhausted_at`. The new function removes the entry entirely when conditions fire, which is a stronger reset (both `count` and `exhausted_at` gone). This matches spec Section 5 semantics.
 6. Entries with empty `invalidation_conditions` are always invalidated (conservative fallback for old save files).
+7. Reassessment after S31-002: `invalidate_exhausted_goals` cannot rely on `condition_changed` with facility/blocker "always true" semantics. This ticket must pass runtime-derived booleans for facility access changes and blocker cleanup so facility-tagged and blocker-tagged goals do not self-invalidate every tick.
 
 ## Architecture Check
 
 1. Direct replacement of one function with another. Same call site, slightly expanded parameters. Clean swap.
 2. No backward-compatibility shims — the old function is deleted, not wrapped.
+3. The clean boundary is: observation/runtime computes dirty domains once, then invalidation consumes those domains as facts. `invalidate_exhausted_goals` should not recompute facility signatures or blocker expiry internally.
 
 ## Verification Layers
 
 1. Per-goal invalidation (only entries with fired conditions removed) -> unit test with mixed cache
 2. Empty conditions = always invalidated (backward compat) -> unit test
 3. Transit filtering preserved (`PositionChanged` not fired mid-transit) -> unit test
-4. Integration: call site compiles with new parameters -> compilation
+4. Facility-tagged goals are retained when no facility dirty signal is present -> unit test
+5. Blocker-tagged goals are retained when no blocker-cleanup signal is present -> unit test
+6. Integration: call site compiles with new parameters -> compilation
 5. Existing golden tests pass -> `cargo test -p worldwake-ai`
 
 ## What to Change
@@ -42,6 +46,8 @@ pub(crate) fn invalidate_exhausted_goals(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     currently_in_transit: bool,
+    facilities_changed: bool,
+    blocker_expired: bool,
 )
 ```
 
@@ -60,6 +66,8 @@ invalidate_exhausted_goals(
     &view,
     agent,
     view.in_transit_state(agent).is_some(),
+    runtime.dirty.contains(DirtySet::FACILITIES),
+    runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
 );
 ```
 
@@ -92,6 +100,8 @@ The test `reset_exhausted_goals_if_needed_clears_ttl_marker_and_preserves_backof
 2. Unit test: entry with empty conditions is always removed
 3. Unit test: entry with unfired conditions is retained
 4. Unit test: `PositionChanged` condition not fired when `currently_in_transit == true`
+5. Unit test: `FacilitiesChanged` does not remove an entry when the runtime did not report facility dirtiness
+6. Unit test: `BlockerExpired` does not remove an entry when the runtime did not report blocker cleanup
 5. Existing suite: `cargo test --workspace`
 
 ### Invariants
@@ -99,7 +109,8 @@ The test `reset_exhausted_goals_if_needed_clears_ttl_marker_and_preserves_backof
 1. `reset_exhausted_goals_if_needed` no longer exists in the codebase
 2. Invalidation is per-goal, not per-dirty-bit-mask
 3. Empty-condition entries are always invalidated (backward compat, Invariant 5 from spec)
-4. No regression in existing golden tests
+4. Facility and blocker invalidation remain driven by observed runtime state, not unconditional fallbacks
+5. No regression in existing golden tests
 
 ## Test Plan
 
