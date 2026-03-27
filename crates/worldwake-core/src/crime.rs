@@ -1,6 +1,6 @@
 //! Crime-specific authoritative types shared across theft and justice systems.
 
-use crate::{CommodityKind, Component, EntityId, Permille, Quantity};
+use crate::{CommodityKind, Component, EntityId, Permille, Quantity, RecordEntryId};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -44,10 +44,40 @@ pub enum PunishmentKind {
     },
 }
 
+/// Shared concrete facts for a fine punishment branch under audit.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PunishmentFineTraceFacts {
+    pub office: EntityId,
+    pub accusation_entry: RecordEntryId,
+    pub accused: EntityId,
+    pub theft: TheftFacts,
+    pub actor_place: Option<EntityId>,
+    pub accused_place: Option<EntityId>,
+    pub required_amount: Quantity,
+}
+
+/// Planner-visible facts that caused `Fine` to be selected over `Exile`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PunishmentFineSelectionTrace {
+    pub facts: PunishmentFineTraceFacts,
+    pub locally_observed_quantity: Quantity,
+}
+
+/// Authoritative facts explaining why a `Fine` branch failed at runtime start.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PunishmentFineStartFailureTrace {
+    pub facts: PunishmentFineTraceFacts,
+    pub authoritative_accessible_quantity: Quantity,
+    pub authoritative_total_controlled_quantity: Quantity,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{JusticeDispositionProfile, PunishmentKind, TheftDispositionProfile, TheftFacts};
-    use crate::{traits::Component, CommodityKind, EntityId, Permille, Quantity};
+    use super::{
+        JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
+        PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
+    };
+    use crate::{traits::Component, CommodityKind, EntityId, Permille, Quantity, RecordEntryId};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
@@ -91,6 +121,18 @@ mod tests {
         }
     }
 
+    fn sample_fine_trace_facts() -> PunishmentFineTraceFacts {
+        PunishmentFineTraceFacts {
+            office: entity(12),
+            accusation_entry: RecordEntryId(4),
+            accused: entity(7),
+            theft: sample_theft_facts(),
+            actor_place: Some(entity(10)),
+            accused_place: Some(entity(10)),
+            required_amount: Quantity(2),
+        }
+    }
+
     fn assert_component_bounds<T: Component>() {}
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
@@ -108,6 +150,9 @@ mod tests {
         assert_value_bounds::<JusticeDispositionProfile>();
         assert_ordinal_value_bounds::<TheftFacts>();
         assert_ordinal_value_bounds::<PunishmentKind>();
+        assert_value_bounds::<PunishmentFineTraceFacts>();
+        assert_value_bounds::<PunishmentFineSelectionTrace>();
+        assert_value_bounds::<PunishmentFineStartFailureTrace>();
     }
 
     #[test]
@@ -197,5 +242,29 @@ mod tests {
         sorted_again.sort();
 
         assert_eq!(punishments, sorted_again);
+    }
+
+    #[test]
+    fn punishment_fine_trace_types_roundtrip_through_bincode() {
+        let facts = sample_fine_trace_facts();
+        let selection = PunishmentFineSelectionTrace {
+            facts,
+            locally_observed_quantity: Quantity(3),
+        };
+        let failure = PunishmentFineStartFailureTrace {
+            facts,
+            authoritative_accessible_quantity: Quantity(0),
+            authoritative_total_controlled_quantity: Quantity(3),
+        };
+
+        let selection_bytes = bincode::serialize(&selection).unwrap();
+        let selection_roundtrip: PunishmentFineSelectionTrace =
+            bincode::deserialize(&selection_bytes).unwrap();
+        assert_eq!(selection_roundtrip, selection);
+
+        let failure_bytes = bincode::serialize(&failure).unwrap();
+        let failure_roundtrip: PunishmentFineStartFailureTrace =
+            bincode::deserialize(&failure_bytes).unwrap();
+        assert_eq!(failure_roundtrip, failure);
     }
 }

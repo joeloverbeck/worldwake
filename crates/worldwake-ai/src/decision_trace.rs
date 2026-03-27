@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, PerceptionSource,
-    SuspensionReason, TellTopic, Tick,
+    PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
@@ -326,6 +326,15 @@ pub struct CandidateEvidenceTrace {
     /// Knowledge path: which beliefs motivated this candidate and where they came from.
     /// Empty when tracing is disabled.
     pub knowledge_path: KnowledgePath,
+    /// Bounded legality provenance for goal families that need more than generic
+    /// evidence / knowledge-path tracing.
+    pub legality: Option<CandidateLegalityTrace>,
+}
+
+/// Goal-family-specific legality provenance for one generated candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CandidateLegalityTrace {
+    PunishmentFineSelection(PunishmentFineSelectionTrace),
 }
 
 // ── Stage 2: Plan Search ────────────────────────────────────────
@@ -2591,6 +2600,7 @@ mod tests {
                 }],
                 institutional_beliefs: vec![],
             },
+            legality: None,
         };
 
         let trace = AgentDecisionTrace {

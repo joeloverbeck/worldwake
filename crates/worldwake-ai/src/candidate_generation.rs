@@ -1,7 +1,8 @@
 use crate::{
     decision_trace::{
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-        CandidateEvidenceKind, CandidateEvidenceTrace, PoliticalCandidateOmission,
+        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace,
+        PoliticalCandidateOmission,
         PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
     },
     derive_danger_pressure,
@@ -22,7 +23,8 @@ use worldwake_core::{
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, PerceptionSource,
     PunishmentKind, Quantity, RecordKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, ViolationId, ViolationKind, RecordData,
+    TheftFacts, Tick, ViolationId, ViolationKind, RecordData, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts,
     ViolationMemory,
 };
 use worldwake_sim::{
@@ -66,6 +68,7 @@ struct EvidenceTrace {
     contributors: BTreeSet<CandidateEvidenceContributor>,
     exclusions: BTreeSet<CandidateEvidenceExclusion>,
     knowledge_path: KnowledgePath,
+    legality: Option<CandidateLegalityTrace>,
 }
 
 impl EvidenceTrace {
@@ -116,6 +119,7 @@ impl EvidenceTrace {
             contributors: self.contributors.into_iter().collect(),
             exclusions: self.exclusions.into_iter().collect(),
             knowledge_path: self.knowledge_path,
+            legality: self.legality,
         }
     }
 }
@@ -464,12 +468,16 @@ fn emit_punishment_candidates(
             continue;
         }
 
-        let Some(punishment) = candidate_punishment_for_case(
+        let Some((punishment, legality_trace)) = candidate_punishment_for_case(
             ctx.view,
             ctx.agent,
-            accused,
-            &office_data,
-            theft,
+            &PunishmentCaseContext {
+                accused,
+                office,
+                office_data: &office_data,
+                accusation_entry: entry_id,
+                theft,
+            },
             fine_severity_permille,
         ) else {
             continue;
@@ -490,6 +498,11 @@ fn emit_punishment_candidates(
                     learned_tick: belief.learned_tick,
                     learned_at: belief.learned_at,
                 });
+            if let Some(legality_trace) = legality_trace {
+                trace.legality = Some(
+                    CandidateLegalityTrace::PunishmentFineSelection(legality_trace),
+                );
+            }
         }
 
         emit_candidate_with_trace(
@@ -509,30 +522,54 @@ fn emit_punishment_candidates(
     }
 }
 
+struct PunishmentCaseContext<'a> {
+    accused: EntityId,
+    office: EntityId,
+    office_data: &'a OfficeData,
+    accusation_entry: worldwake_core::RecordEntryId,
+    theft: TheftFacts,
+}
+
 fn candidate_punishment_for_case(
     view: &dyn GoalBeliefView,
     agent: EntityId,
-    accused: EntityId,
-    office_data: &OfficeData,
-    theft: TheftFacts,
+    case: &PunishmentCaseContext<'_>,
     fine_severity_permille: u16,
-) -> Option<PunishmentKind> {
+) -> Option<(PunishmentKind, Option<PunishmentFineSelectionTrace>)> {
     let fine_amount = Quantity(
-        (u64::from(theft.quantity.0) * u64::from(fine_severity_permille) / 1000) as u32,
+        (u64::from(case.theft.quantity.0) * u64::from(fine_severity_permille) / 1000) as u32,
     );
+    let actor_place = view.effective_place(agent);
+    let accused_place = view.effective_place(case.accused);
+    let locally_observed_quantity =
+        view.locally_observed_commodity_quantity(agent, case.accused, case.theft.commodity);
     if fine_amount > Quantity(0)
-        && view.effective_place(agent).is_some()
-        && view.effective_place(agent) == view.effective_place(accused)
-        && view.locally_observed_commodity_quantity(agent, accused, theft.commodity) >= fine_amount
+        && actor_place.is_some()
+        && actor_place == accused_place
+        && locally_observed_quantity >= fine_amount
     {
-        return Some(PunishmentKind::Fine {
-            commodity: theft.commodity,
-            amount: fine_amount,
-        });
+        return Some((
+            PunishmentKind::Fine {
+                commodity: case.theft.commodity,
+                amount: fine_amount,
+            },
+            Some(PunishmentFineSelectionTrace {
+                facts: PunishmentFineTraceFacts {
+                    office: case.office,
+                    accusation_entry: case.accusation_entry,
+                    accused: case.accused,
+                    theft: case.theft,
+                    actor_place,
+                    accused_place,
+                    required_amount: fine_amount,
+                },
+                locally_observed_quantity,
+            }),
+        ));
     }
 
-    office_governed_faction_for_accused(view, office_data, accused)
-        .map(|from_faction| PunishmentKind::Exile { from_faction })
+    office_governed_faction_for_accused(view, case.office_data, case.accused)
+        .map(|from_faction| (PunishmentKind::Exile { from_faction }, None))
 }
 
 fn office_governed_faction_for_accused(
@@ -2225,6 +2262,7 @@ fn emit_violation_goal(
             }],
             institutional_beliefs: Vec::new(),
         },
+        legality: None,
     };
 
     let evidence = Evidence {
@@ -2317,6 +2355,14 @@ fn merge_candidate_evidence_trace(
             .iter()
             .cloned(),
     );
+    if existing.legality.is_none() {
+        existing.legality.clone_from(&incoming.legality);
+    } else {
+        debug_assert!(
+            incoming.legality.is_none() || existing.legality == incoming.legality,
+            "candidate legality provenance diverged for one grounded goal"
+        );
+    }
 }
 
 fn acquisition_path_evidence(
@@ -2754,11 +2800,11 @@ mod tests {
         HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
         MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity,
-        RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
+        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, RecipeId,
+        RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
         SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile,
         TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause,
-        WoundId,
+        UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -5802,6 +5848,110 @@ mod tests {
                 },
             }
         ));
+    }
+
+    #[test]
+    fn justice_fine_candidate_trace_records_concrete_selection_provenance() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let place = entity(10);
+        let faction = entity(11);
+        let accusation_entry = RecordEntryId(17);
+        let violation_id = worldwake_core::ViolationId(5);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: place,
+            commodity: CommodityKind::Coin,
+            quantity: Quantity(8),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(accused, place);
+        view.justice_disposition_profiles
+            .insert(agent, default_justice_profile());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", place, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data
+            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+        view.locally_observed_commodity_quantities
+            .insert((agent, accused, CommodityKind::Coin), Quantity(10));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        let goal = GoalKey::from(GoalKind::PunishAccused {
+            office,
+            accused,
+            accusation_entry,
+            punishment: worldwake_core::PunishmentKind::Fine {
+                commodity: CommodityKind::Coin,
+                amount: Quantity(4),
+            },
+        });
+        let trace = result
+            .diagnostics
+            .evidence
+            .get(&goal)
+            .expect("fine punishment candidate should have trace evidence");
+        assert_eq!(
+            trace.legality,
+            Some(
+                crate::decision_trace::CandidateLegalityTrace::PunishmentFineSelection(
+                    PunishmentFineSelectionTrace {
+                        facts: PunishmentFineTraceFacts {
+                            office,
+                            accusation_entry,
+                            accused,
+                            theft,
+                            actor_place: Some(place),
+                            accused_place: Some(place),
+                            required_amount: Quantity(4),
+                        },
+                        locally_observed_quantity: Quantity(10),
+                    },
+                ),
+            ),
+            "fine punishment trace should record the concrete planner-visible read"
+        );
     }
 
     #[test]

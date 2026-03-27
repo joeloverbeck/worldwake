@@ -5,11 +5,14 @@
 //! `worldwake-ai`.
 
 use crate::{
-    ActionInstanceId, ActionPayload, CommitOutcome, CommitTraceData, ResolvedRequestTrace,
-    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
+    ActionDef, ActionError, ActionInstanceId, ActionPayload, CommitOutcome, CommitTraceData,
+    ResolvedRequestTrace, TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityId, TellTopic, Tick, ViolationId};
+use worldwake_core::{
+    ActionDefId, EntityId, InstitutionalClaim, PunishmentFineStartFailureTrace,
+    PunishmentFineTraceFacts, PunishmentKind, RecordKind, TellTopic, Tick, ViolationId, World,
+};
 
 /// A single action lifecycle event recorded during `step_tick()`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,7 +57,14 @@ pub enum ActionTraceKind {
     StartFailed {
         reason: String,
         request: ResolvedRequestTrace,
+        legality: Option<ActionStartLegalityTrace>,
     },
+}
+
+/// Structured legality provenance for runtime start failures.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ActionStartLegalityTrace {
+    PunishmentFineStartFailure(PunishmentFineStartFailureTrace),
 }
 
 impl ActionTraceEvent {
@@ -163,9 +173,16 @@ impl ActionTraceEvent {
                     detail_suffix
                 )
             }
-            ActionTraceKind::StartFailed { reason, request } => {
+            ActionTraceKind::StartFailed {
+                reason,
+                request,
+                legality,
+            } => {
+                let legality_suffix = legality.as_ref().map_or_else(String::new, |trace| {
+                    format!(" <{}>", trace.summary())
+                });
                 format!(
-                    "tick {} seq {}: {} failed to start '{}' (request#{}, {:?}, {:?}, reason: {}){}",
+                    "tick {} seq {}: {} failed to start '{}' (request#{}, {:?}, {:?}, reason: {}){}{}",
                     self.tick.0,
                     self.sequence_in_tick,
                     self.actor,
@@ -174,11 +191,124 @@ impl ActionTraceEvent {
                     request.attempt.provenance,
                     request.binding,
                     reason,
-                    detail_suffix
+                    detail_suffix,
+                    legality_suffix,
                 )
             }
         }
     }
+}
+
+impl ActionStartLegalityTrace {
+    #[must_use]
+    pub fn summary(&self) -> String {
+        match self {
+            Self::PunishmentFineStartFailure(trace) => format!(
+                "fine_start_failure office={} accusation_entry={} accused={} actor_place={:?} accused_place={:?} required={} accessible={} total={}",
+                trace.facts.office,
+                trace.facts.accusation_entry.0,
+                trace.facts.accused,
+                trace.facts.actor_place,
+                trace.facts.accused_place,
+                trace.facts.required_amount.0,
+                trace.authoritative_accessible_quantity.0,
+                trace.authoritative_total_controlled_quantity.0,
+            ),
+        }
+    }
+}
+
+#[must_use]
+pub fn derive_start_failure_legality_trace(
+    actor: EntityId,
+    targets: &[EntityId],
+    def: &ActionDef,
+    payload: &ActionPayload,
+    world: &World,
+    error: &ActionError,
+) -> Option<ActionStartLegalityTrace> {
+    let punish = payload.as_punish()?;
+    let PunishmentKind::Fine { commodity, amount } = punish.punishment else {
+        return None;
+    };
+    let ActionError::AbortRequested(
+        crate::ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+            holder,
+            commodity: failed_commodity,
+            quantity,
+        },
+    ) = error
+    else {
+        return None;
+    };
+    let accused = targets.first().copied()?;
+    if def.name != "fine"
+        || *holder != accused
+        || *failed_commodity != commodity
+        || *quantity != amount
+    {
+        return None;
+    }
+    let record = locate_crime_register(world, punish.office, world.effective_place(actor)?)?;
+    let accusation = active_accusation_for_entry(&record, punish.accusation_entry, accused)?;
+    let facts = PunishmentFineTraceFacts {
+        office: punish.office,
+        accusation_entry: punish.accusation_entry,
+        accused,
+        theft: accusation.theft,
+        actor_place: world.effective_place(actor),
+        accused_place: world.effective_place(accused),
+        required_amount: amount,
+    };
+    Some(ActionStartLegalityTrace::PunishmentFineStartFailure(
+        PunishmentFineStartFailureTrace {
+            facts,
+            authoritative_accessible_quantity: world.controlled_commodity_quantity_at_place(
+                accused,
+                record.home_place,
+                commodity,
+            ),
+            authoritative_total_controlled_quantity: world.controlled_commodity_quantity(
+                accused, commodity,
+            ),
+        },
+    ))
+}
+
+fn locate_crime_register(
+    world: &World,
+    office: EntityId,
+    place: EntityId,
+) -> Option<worldwake_core::RecordData> {
+    world
+        .query_record_data()
+        .find_map(|(_, record)| {
+            (record.record_kind == RecordKind::CrimeRegister
+                && record.issuer == office
+                && record.home_place == place)
+                .then_some(record.clone())
+        })
+}
+
+fn active_accusation_for_entry(
+    record: &worldwake_core::RecordData,
+    entry_id: worldwake_core::RecordEntryId,
+    accused: EntityId,
+) -> Option<ActiveAccusationFacts> {
+    record.active_entries().into_iter().find_map(|entry| match entry.claim {
+        InstitutionalClaim::Accusation {
+            accused: claim_accused,
+            theft,
+            ..
+        } if entry.entry_id == entry_id && claim_accused == accused => {
+            Some(ActiveAccusationFacts { theft })
+        }
+        _ => None,
+    })
+}
+
+struct ActiveAccusationFacts {
+    theft: worldwake_core::TheftFacts,
 }
 
 fn format_commit_trace(trace: &CommitTraceData) -> String {
@@ -338,8 +468,13 @@ impl Default for ActionTraceSink {
 mod tests {
     use super::*;
     use crate::{
-        RequestAttemptTrace, RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
-        TellActionPayload,
+        ActionAbortRequestReason, PunishActionPayload, RequestAttemptTrace, RequestBindingKind,
+        RequestProvenance, ResolvedRequestTrace, TellActionPayload,
+    };
+    use worldwake_core::{
+        build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, ControlSource,
+        EventLog, InstitutionalClaim, InstitutionalRecordEntry, PrototypePlace, PunishmentKind,
+        Quantity, RecordData, RecordEntryId, Tick, VisibilitySpec, WitnessData, WorldTxn,
     };
 
     const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
@@ -489,6 +624,7 @@ mod tests {
             ActionTraceKind::StartFailed {
                 reason: "precondition".to_string(),
                 request: sample_request(9),
+                legality: None,
             },
         );
         assert!(failed.summary().contains("failed to start"));
@@ -703,6 +839,7 @@ mod tests {
             ActionTraceKind::StartFailed {
                 reason: "missing tool".to_string(),
                 request: sample_request(11),
+                legality: None,
             },
         ));
 
@@ -712,5 +849,141 @@ mod tests {
         assert_eq!(tick_one[1].sequence_in_tick, 1);
         assert_eq!(tick_one[2].sequence_in_tick, 2);
         assert_eq!(sink.events_at(Tick(2))[0].sequence_in_tick, 0);
+    }
+
+    #[test]
+    fn derive_start_failure_legality_trace_records_punishment_quantity_contradiction() {
+        let place = prototype_place_entity(PrototypePlace::RulersHall);
+        let remote_place = prototype_place_entity(PrototypePlace::GeneralStore);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut event_log = EventLog::new();
+        let accusation_entry = RecordEntryId(7);
+        let (actor, accused, office) = {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::ExternalInput(0),
+                None,
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            let actor = txn.create_agent("Judge", ControlSource::Ai).unwrap();
+            let accused = txn.create_agent("Accused", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Magistrate").unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(accused, place).unwrap();
+            txn.set_component_office_data(
+                office,
+                worldwake_core::OfficeData {
+                    title: "Magistrate".to_string(),
+                    jurisdiction: place,
+                    succession_law: worldwake_core::SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            let record = txn
+                .create_record(RecordData {
+                    record_kind: worldwake_core::RecordKind::CrimeRegister,
+                    home_place: place,
+                    issuer: office,
+                    consultation_ticks: 1,
+                    max_entries_per_consult: 8,
+                    entries: vec![InstitutionalRecordEntry {
+                        entry_id: accusation_entry,
+                        claim: InstitutionalClaim::Accusation {
+                            accuser: actor,
+                            accused,
+                            violation_id: worldwake_core::ViolationId(2),
+                            theft: worldwake_core::TheftFacts {
+                                missing_entity: office,
+                                expected_place: place,
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(4),
+                            },
+                            effective_tick: Tick(1),
+                        },
+                        recorded_tick: Tick(1),
+                        supersedes: None,
+                    }],
+                    next_entry_id: accusation_entry.0 + 1,
+                })
+                .unwrap();
+            let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(4)).unwrap();
+            txn.set_ground_location(lot, remote_place).unwrap();
+            txn.set_owner(lot, accused).unwrap();
+            let _ = txn.commit(&mut event_log);
+            let _ = record;
+            (actor, accused, office)
+        };
+
+        let def = ActionDef {
+            id: ActionDefId(9),
+            name: "fine".to_string(),
+            domain: crate::ActionDomain::Generic,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: crate::DurationExpr::Fixed(std::num::NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            interruptibility: crate::Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: std::collections::BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: crate::ActionHandlerId(0),
+        };
+        let payload = ActionPayload::Punish(PunishActionPayload {
+            office,
+            accusation_entry,
+            punishment: PunishmentKind::Fine {
+                commodity: CommodityKind::Bread,
+                amount: Quantity(2),
+            },
+        });
+        let error = ActionError::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder: accused,
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(2),
+            },
+        );
+
+        let legality = derive_start_failure_legality_trace(
+            actor,
+            &[accused],
+            &def,
+            &payload,
+            &world,
+            &error,
+        );
+
+        assert_eq!(
+            legality,
+            Some(ActionStartLegalityTrace::PunishmentFineStartFailure(
+                PunishmentFineStartFailureTrace {
+                    facts: PunishmentFineTraceFacts {
+                        office,
+                        accusation_entry,
+                        accused,
+                        theft: worldwake_core::TheftFacts {
+                            missing_entity: office,
+                            expected_place: place,
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(4),
+                        },
+                        actor_place: Some(place),
+                        accused_place: Some(place),
+                        required_amount: Quantity(2),
+                    },
+                    authoritative_accessible_quantity: Quantity(0),
+                    authoritative_total_controlled_quantity: Quantity(0),
+                }
+            ))
+        );
     }
 }

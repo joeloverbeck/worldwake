@@ -11,22 +11,24 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    verify_live_lot_conservation, AgentData, BeliefConfidencePolicy, BelievedEntityState,
-    CombatProfile, CommodityKind, ComponentKind, ComponentValue, ControlSource, DeadAt,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKind,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind,
-    RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile,
-    TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
+    verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
+    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ComponentKind,
+    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
+    DriveThresholds, EventTag, EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+    JusticeDispositionProfile, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind, RelationValue,
+    ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
+    TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
     ViolationDispositionProfile,
     WorkstationTag,
 };
 use worldwake_sim::{
-    ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
+    ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionStartLegalityTrace,
+    ActionTraceDetail, ActionTraceKind, AutonomousController, AutonomousControllerContext,
     DeclareSupportActionPayload, InputKind, OfficeAvailabilityPhase, OfficeSuccessionOutcome,
     PressForceClaimActionPayload, RequestProvenance, RequestResolutionOutcome,
-    ResolvedRequestTrace,
+    ResolvedRequestTrace, TickStepServices, step_tick,
 };
 
 // ---------------------------------------------------------------------------
@@ -5767,6 +5769,295 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 39: Traceability Explains Stale Fine Branch
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Institutions, Justice, Action Trace
+// GoalKinds: PunishAccused
+// ActionDomains: Social
+// Places: RulersHall, GeneralStore
+// Principles: 3, 12, 24, 27
+//
+// Proves the mixed-layer debugging contract for justice punishment:
+// planner-side trace records why `Fine` was selected, then authoritative
+// start-failure trace records the concrete contradiction after the goods move
+// away before start. The mismatch is inspectable from traces alone.
+
+#[test]
+fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
+    let mut h = GoldenHarness::new(Seed([39; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let rulers_hall = prototype_place_entity(PrototypePlace::RulersHall);
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let authority = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        rulers_hall,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let accused = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Accused",
+        rulers_hall,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, accused, ControlSource::Human, 0);
+    set_justice_profile(
+        &mut h,
+        authority,
+        JusticeDispositionProfile {
+            accusation_motive_weight: pm(900),
+            fine_severity: pm(500),
+        },
+        0,
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        rulers_hall,
+        SuccessionLaw::Support,
+        8,
+        Vec::new(),
+    );
+    let accusation_entry = worldwake_core::RecordEntryId(0);
+    let theft = TheftFacts {
+        missing_entity: office,
+        expected_place: rulers_hall,
+        commodity: CommodityKind::Bread,
+        quantity: Quantity(4),
+    };
+    let (crime_register, bread) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.assign_office(office, authority).unwrap();
+        let record = txn
+            .create_record(RecordData {
+                record_kind: RecordKind::CrimeRegister,
+                home_place: rulers_hall,
+                issuer: office,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: accusation_entry,
+                    claim: InstitutionalClaim::Accusation {
+                        accuser: authority,
+                        accused,
+                        violation_id: worldwake_core::ViolationId(1),
+                        theft,
+                        effective_tick: Tick(0),
+                    },
+                    recorded_tick: Tick(0),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            })
+            .unwrap();
+        let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(4)).unwrap();
+        txn.set_ground_location(bread, rulers_hall).unwrap();
+        txn.set_owner(bread, accused).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (record, bread)
+    };
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        crime_register,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        office,
+        Some(authority),
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(rulers_hall),
+    );
+    {
+        let mut store = h
+            .world
+            .get_component_agent_belief_store(authority)
+            .cloned()
+            .unwrap_or_else(AgentBeliefStore::new);
+        let profile = h
+            .world
+            .get_component_perception_profile(authority)
+            .copied()
+            .unwrap_or_default();
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::CrimeCase {
+                accused,
+                violation_id: worldwake_core::ViolationId(1),
+            },
+            BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::Accusation {
+                    accuser: authority,
+                    accused,
+                    violation_id: worldwake_core::ViolationId(1),
+                    theft,
+                    effective_tick: Tick(0),
+                },
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: crime_register,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(0),
+                learned_at: Some(rulers_hall),
+            },
+            &profile,
+        );
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_belief_store(authority, store).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let current_tick = h.scheduler.current_tick();
+    h.driver
+        .produce_agent_input(
+            AutonomousControllerContext {
+                world: &mut h.world,
+                event_log: &mut h.event_log,
+                scheduler: &mut h.scheduler,
+                rng: &mut h.rng,
+                action_defs: &h.defs,
+                action_handlers: &h.handlers,
+                recipe_registry: &h.recipes,
+                tick: current_tick,
+            },
+            authority,
+            &[],
+            &[],
+        )
+        .expect("AI should be able to produce punishment input");
+
+    let punish_goal = GoalKind::PunishAccused {
+        office,
+        accused,
+        accusation_entry,
+        punishment: worldwake_core::PunishmentKind::Fine {
+            commodity: CommodityKind::Bread,
+            amount: Quantity(2),
+        },
+    };
+    let trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(authority, Tick(0))
+        .expect("authority should have a decision trace at tick 0");
+    let DecisionOutcome::Planning(planning) = &trace.outcome else {
+        panic!("authority should have a planning trace");
+    };
+    let evidence = planning
+        .candidates
+        .evidence
+        .iter()
+        .find(|e| e.goal.kind == punish_goal)
+        .unwrap_or_else(|| {
+            panic!(
+                "fine punishment branch should carry candidate evidence; generated={:?} evidence_goals={:?}",
+                planning.candidates.generated,
+                planning
+                    .candidates
+                    .evidence
+                    .iter()
+                    .map(|e| e.goal.kind)
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(
+        evidence.legality,
+        Some(
+            worldwake_ai::CandidateLegalityTrace::PunishmentFineSelection(
+                worldwake_core::PunishmentFineSelectionTrace {
+                    facts: worldwake_core::PunishmentFineTraceFacts {
+                        office,
+                        accusation_entry,
+                        accused,
+                        theft,
+                        actor_place: Some(rulers_hall),
+                        accused_place: Some(rulers_hall),
+                        required_amount: Quantity(2),
+                    },
+                    locally_observed_quantity: Quantity(4),
+                },
+            ),
+        ),
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_ground_location(bread, general_store).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let _ = step_tick(
+        &mut h.world,
+        &mut h.event_log,
+        &mut h.scheduler,
+        &mut h.controller,
+        &mut h.rng,
+        TickStepServices {
+            action_defs: &h.defs,
+            action_handlers: &h.handlers,
+            recipe_registry: &h.recipes,
+            systems: &worldwake_sim::SystemDispatchTable::canonical_noop(),
+            input_producer: None,
+            action_trace: h.action_trace.as_mut(),
+            request_resolution_trace: None,
+            politics_trace: None,
+            perception_trace: None,
+            institutional_knowledge_trace: None,
+        },
+    )
+    .expect("queued fine request should be processed");
+
+    let start_failed = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(authority)
+        .into_iter()
+        .find(|event| event.action_name == "fine")
+        .expect("authority should attempt the fine");
+    assert!(matches!(
+        &start_failed.kind,
+        ActionTraceKind::StartFailed {
+            legality: Some(ActionStartLegalityTrace::PunishmentFineStartFailure(trace)),
+            ..
+        } if trace.facts.office == office
+            && trace.facts.accusation_entry == accusation_entry
+            && trace.facts.accused == accused
+            && trace.facts.required_amount == Quantity(2)
+            && trace.authoritative_accessible_quantity == Quantity(0)
+            && trace.authoritative_total_controlled_quantity == Quantity(0)
+    ), "unexpected fine trace event: {:?}", start_failed);
 }
 
 #[test]

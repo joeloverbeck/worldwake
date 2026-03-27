@@ -1,12 +1,13 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
-    get_affordances, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
-    ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry,
-    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
-    RequestResolutionTraceEvent, RequestResolutionTraceSink, Scheduler, SystemDispatchTable,
-    SystemError, TickInputContext, TickInputError, TickInputProducer, TickOutcome,
+    derive_start_failure_legality_trace, get_affordances, ActionDefRegistry, ActionError,
+    ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionTraceDetail,
+    ActionTraceEvent, ActionTraceKind, ActionTraceSink, ControlError, ControllerState,
+    DeterministicRng, ExternalAbortReason, InputKind, InstitutionalKnowledgeTraceSink,
+    PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry, RequestBindingKind,
+    RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceEvent,
+    RequestResolutionTraceSink, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
+    TickInputError, TickInputProducer, TickOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -337,16 +338,32 @@ fn apply_input(
                         },
                     );
                     let action_name = lookup_action_name(services.action_defs, def_id);
-                    runtime.record_action_trace(ActionTraceEvent::new(
-                        tick,
-                        actor,
-                        def_id,
-                        action_name,
-                        ActionTraceKind::StartFailed {
-                            reason: failure_reason.debug_summary(),
-                            request: resolved_request,
-                        },
-                    ));
+                    let trace_detail =
+                        action_trace_detail_for_affordance(services.action_defs, &resolved.affordance);
+                    let legality = services.action_defs.get(def_id).and_then(|def| {
+                        derive_start_failure_legality_trace(
+                            actor,
+                            &resolved.affordance.bound_targets,
+                            def,
+                            resolved.affordance.effective_payload(def),
+                            runtime.world,
+                            &err,
+                        )
+                    });
+                    runtime.record_action_trace(
+                        ActionTraceEvent::new(
+                            tick,
+                            actor,
+                            def_id,
+                            action_name,
+                            ActionTraceKind::StartFailed {
+                                reason: failure_reason.debug_summary(),
+                                request: resolved_request,
+                                legality,
+                            },
+                        )
+                        .with_detail(trace_detail),
+                    );
                     return Ok(InputOutcome::default());
                 }
                 return Err(TickStepError::Action(err));

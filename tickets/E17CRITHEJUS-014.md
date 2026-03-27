@@ -24,6 +24,7 @@ After all E17 implementation tickets are complete, a final workspace-wide verifi
 10. N/A.
 11. Mismatch: a separate shared investigate/runtime contradiction remains outside E17-specific crime scope. `tickets/S27INVPROF-001.md` tracks the `ViolationDispositionProfile` requirement cleanup for profile-less investigate fallback/resolution behavior. This ticket should verify the E17 deliverables as implemented, not silently absorb that unrelated shared-runtime change.
 12. Follow-up architectural note: profile-driven crime/justice ranking is tracked in `E17CRITHEJUS-021`; final E17 workspace verification should not mark the epic complete while crime goals still rely on the placeholder constant-motive ranking path.
+13. Separate follow-up note: aggregate `controlled_*` helpers and `can_exercise_control()` are not fully aligned for lawful unpossessed owned/delegated stock. That contract repair is tracked in [`tickets/CTRLAGG-001-align-aggregate-control-helpers.md`](/home/joeloverbeck/projects/worldwake/tickets/CTRLAGG-001-align-aggregate-control-helpers.md) and should not be silently folded into this verification-only ticket.
 
 ## Architecture Check
 

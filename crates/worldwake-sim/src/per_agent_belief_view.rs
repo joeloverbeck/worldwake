@@ -347,17 +347,8 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             }
         }
 
-        self.authoritative_local_controlled_lots_for(holder, agent_place, kind)
-            .into_iter()
-            .filter_map(|entity| self.world.get_component_item_lot(entity))
-            .fold(Quantity(0), |total, lot| {
-                Quantity(
-                    total
-                        .0
-                        .checked_add(lot.quantity.0)
-                        .expect("local observed commodity quantity overflowed"),
-                )
-            })
+        self.world
+            .controlled_commodity_quantity_at_place(holder, agent_place, kind)
     }
 
     fn controlled_commodity_quantity_at_place(

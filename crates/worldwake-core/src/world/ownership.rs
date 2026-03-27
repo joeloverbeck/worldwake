@@ -67,6 +67,29 @@ impl World {
     }
 
     #[must_use]
+    pub fn controlled_commodity_quantity_at_place(
+        &self,
+        holder: EntityId,
+        place: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        self.query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == kind
+                    && self.effective_place(*entity) == Some(place)
+                    && self.can_exercise_control(holder, *entity).is_ok()
+            })
+            .fold(Quantity(0), |total, (_, lot)| {
+                Quantity(
+                    total
+                        .0
+                        .checked_add(lot.quantity.0)
+                        .expect("controlled commodity quantity at place overflowed"),
+                )
+            })
+    }
+
+    #[must_use]
     pub fn controlled_unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
         let mut total = 0u32;
         let mut frontier = vec![holder];
