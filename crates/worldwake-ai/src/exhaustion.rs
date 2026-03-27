@@ -34,6 +34,7 @@ pub struct ExhaustionBaseline {
     pub hostile_count: usize,
 }
 
+#[allow(dead_code)]
 pub(crate) fn derive_invalidation_conditions(
     goal: &GoalKind,
     agent: EntityId,
@@ -156,6 +157,65 @@ pub(crate) fn derive_invalidation_conditions(
     (conditions, baseline)
 }
 
+#[allow(dead_code)]
+pub(crate) fn condition_changed(
+    condition: &ExhaustionInvalidationCondition,
+    baseline: &ExhaustionBaseline,
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    currently_in_transit: bool,
+    facilities_changed: bool,
+    blocker_expired: bool,
+) -> bool {
+    match condition {
+        ExhaustionInvalidationCondition::PositionChanged => {
+            !currently_in_transit && view.effective_place(agent) != baseline.position
+        }
+        ExhaustionInvalidationCondition::CommodityChanged(kind) => {
+            let current = view.commodity_quantity(agent, *kind);
+            baseline
+                .commodity_quantities
+                .iter()
+                .find(|(baseline_kind, _)| baseline_kind == kind)
+                .map_or(current > Quantity(0), |(_, baseline_quantity)| {
+                    *baseline_quantity != current
+                })
+        }
+        ExhaustionInvalidationCondition::UniqueItemChanged(kind) => {
+            let current = view.unique_item_count(agent, *kind);
+            baseline
+                .unique_item_counts
+                .iter()
+                .find(|(baseline_kind, _)| baseline_kind == kind)
+                .map_or(current > 0, |(_, baseline_count)| *baseline_count != current)
+        }
+        ExhaustionInvalidationCondition::WoundsChanged => {
+            view.wounds(agent).len() != baseline.wound_count
+        }
+        ExhaustionInvalidationCondition::FacilitiesChanged => facilities_changed,
+        ExhaustionInvalidationCondition::BlockerExpired => blocker_expired,
+        ExhaustionInvalidationCondition::HostilesChanged => {
+            view.visible_hostiles_for(agent).len() != baseline.hostile_count
+        }
+        ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            need,
+            threshold_delta,
+        } => {
+            let Some(current_needs) = view.homeostatic_needs(agent) else {
+                return false;
+            };
+            let Some(baseline_needs) = baseline.needs else {
+                return true;
+            };
+            let current_value = need_value(&current_needs, *need).value();
+            let baseline_value = need_value(&baseline_needs, *need).value();
+            current_value.abs_diff(baseline_value) >= threshold_delta.value()
+        }
+        ExhaustionInvalidationCondition::TargetDead(target) => !view.is_alive(*target),
+    }
+}
+
+#[allow(dead_code)]
 pub(crate) fn need_value(needs: &HomeostaticNeeds, need: HomeostaticNeedId) -> Permille {
     match need {
         HomeostaticNeedId::Hunger => needs.hunger,
@@ -166,6 +226,7 @@ pub(crate) fn need_value(needs: &HomeostaticNeeds, need: HomeostaticNeedId) -> P
     }
 }
 
+#[allow(dead_code)]
 fn build_baseline(
     agent: EntityId,
     view: &dyn GoalBeliefView,
@@ -202,6 +263,7 @@ fn build_baseline(
     }
 }
 
+#[allow(dead_code)]
 fn default_need_threshold_delta() -> Permille {
     Permille::new(100).expect("fixed need threshold delta must be valid")
 }
@@ -209,7 +271,8 @@ fn default_need_threshold_delta() -> Permille {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_need_threshold_delta, derive_invalidation_conditions, need_value,
+        condition_changed, default_need_threshold_delta, derive_invalidation_conditions,
+        need_value,
         ExhaustionBaseline, ExhaustionInvalidationCondition,
     };
     use std::num::NonZeroU32;
@@ -583,6 +646,13 @@ mod tests {
         );
     }
 
+    fn baseline_with_position(position: EntityId) -> ExhaustionBaseline {
+        ExhaustionBaseline {
+            position: Some(position),
+            ..ExhaustionBaseline::default()
+        }
+    }
+
     #[test]
     fn exhaustion_baseline_default_is_zero_value() {
         let baseline = ExhaustionBaseline::default();
@@ -604,6 +674,327 @@ mod tests {
         assert_eq!(need_value(&needs, HomeostaticNeedId::Fatigue), pm(30));
         assert_eq!(need_value(&needs, HomeostaticNeedId::Bladder), pm(40));
         assert_eq!(need_value(&needs, HomeostaticNeedId::Dirtiness), pm(50));
+    }
+
+    #[test]
+    fn condition_changed_position_ignores_mid_transit_waypoints() {
+        let agent = entity(1);
+        let baseline_place = entity(2);
+        let moved_place = entity(3);
+        let view = MockView {
+            effective_places: vec![(agent, moved_place)],
+            ..MockView::default()
+        };
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::PositionChanged,
+            &baseline_with_position(baseline_place),
+            &view,
+            agent,
+            true,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_position_detects_settled_arrival_delta() {
+        let agent = entity(1);
+        let baseline_place = entity(2);
+        let moved_place = entity(3);
+        let view = MockView {
+            effective_places: vec![(agent, moved_place)],
+            ..MockView::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::PositionChanged,
+            &baseline_with_position(baseline_place),
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_position_false_when_settled_place_matches_baseline() {
+        let agent = entity(1);
+        let place = entity(2);
+        let view = MockView {
+            effective_places: vec![(agent, place)],
+            ..MockView::default()
+        };
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::PositionChanged,
+            &baseline_with_position(place),
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_commodity_detects_quantity_delta_and_absent_baseline_nonzero() {
+        let agent = entity(1);
+        let bread = CommodityKind::Bread;
+        let changed_view = MockView {
+            commodity_quantities: vec![((agent, bread), Quantity(3))],
+            ..MockView::default()
+        };
+        let baseline = ExhaustionBaseline {
+            commodity_quantities: vec![(bread, Quantity(1))],
+            ..ExhaustionBaseline::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::CommodityChanged(bread),
+            &baseline,
+            &changed_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Apple),
+            &ExhaustionBaseline::default(),
+            &MockView {
+                commodity_quantities: vec![((agent, CommodityKind::Apple), Quantity(1))],
+                ..MockView::default()
+            },
+            agent,
+            false,
+            false,
+            false,
+        ));
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::CommodityChanged(bread),
+            &ExhaustionBaseline {
+                commodity_quantities: vec![(bread, Quantity(3))],
+                ..ExhaustionBaseline::default()
+            },
+            &changed_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_unique_item_detects_count_delta() {
+        let agent = entity(1);
+        let item_kind = UniqueItemKind::SimpleTool;
+        let view = MockView {
+            unique_item_counts: vec![((agent, item_kind), 2)],
+            ..MockView::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::UniqueItemChanged(item_kind),
+            &ExhaustionBaseline {
+                unique_item_counts: vec![(item_kind, 1)],
+                ..ExhaustionBaseline::default()
+            },
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::UniqueItemChanged(item_kind),
+            &ExhaustionBaseline {
+                unique_item_counts: vec![(item_kind, 2)],
+                ..ExhaustionBaseline::default()
+            },
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_wounds_hostiles_and_target_death_use_current_counts() {
+        let agent = entity(1);
+        let attacker = entity(2);
+        let hostile = entity(3);
+        let dead_target = entity(4);
+        let view = MockView {
+            wounds: vec![(agent, vec![wound(1, attacker), wound(2, attacker)])],
+            visible_hostiles: vec![(agent, vec![hostile])],
+            dead: vec![dead_target],
+            ..MockView::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::WoundsChanged,
+            &ExhaustionBaseline {
+                wound_count: 1,
+                ..ExhaustionBaseline::default()
+            },
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::HostilesChanged,
+            &ExhaustionBaseline {
+                hostile_count: 2,
+                ..ExhaustionBaseline::default()
+            },
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::TargetDead(dead_target),
+            &ExhaustionBaseline::default(),
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_need_threshold_uses_absolute_delta() {
+        let agent = entity(1);
+        let baseline_needs = HomeostaticNeeds::new(pm(100), pm(100), pm(400), pm(100), pm(100));
+        let raised_view = MockView {
+            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(520), pm(100), pm(100)))],
+            ..MockView::default()
+        };
+        let lowered_view = MockView {
+            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(320), pm(100), pm(100)))],
+            ..MockView::default()
+        };
+        let condition = ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            need: HomeostaticNeedId::Fatigue,
+            threshold_delta: pm(100),
+        };
+        let baseline = ExhaustionBaseline {
+            needs: Some(baseline_needs),
+            ..ExhaustionBaseline::default()
+        };
+
+        assert!(condition_changed(
+            &condition,
+            &baseline,
+            &raised_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(!condition_changed(
+            &condition,
+            &baseline,
+            &lowered_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_need_threshold_is_conservative_when_baseline_missing_and_stable_when_current_missing() {
+        let agent = entity(1);
+        let condition = ExhaustionInvalidationCondition::NeedCrossedThreshold {
+            need: HomeostaticNeedId::Fatigue,
+            threshold_delta: pm(100),
+        };
+
+        assert!(condition_changed(
+            &condition,
+            &ExhaustionBaseline::default(),
+            &MockView {
+                needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(500), pm(100), pm(100)))],
+                ..MockView::default()
+            },
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(!condition_changed(
+            &condition,
+            &ExhaustionBaseline {
+                needs: Some(HomeostaticNeeds::new(
+                    pm(100),
+                    pm(100),
+                    pm(500),
+                    pm(100),
+                    pm(100),
+                )),
+                ..ExhaustionBaseline::default()
+            },
+            &MockView::default(),
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_facility_and_blocker_branches_forward_runtime_flags() {
+        let agent = entity(1);
+        let baseline = ExhaustionBaseline::default();
+        let view = MockView::default();
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::FacilitiesChanged,
+            &baseline,
+            &view,
+            agent,
+            false,
+            true,
+            false,
+        ));
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::FacilitiesChanged,
+            &baseline,
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::BlockerExpired,
+            &baseline,
+            &view,
+            agent,
+            false,
+            false,
+            true,
+        ));
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::BlockerExpired,
+            &baseline,
+            &view,
+            agent,
+            false,
+            false,
+            false,
+        ));
     }
 
     #[test]

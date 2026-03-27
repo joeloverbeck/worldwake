@@ -8,7 +8,7 @@
 
 ## Problem
 
-The S31 spec requires golden test proof that the new condition-based invalidation correctly avoids over-invalidation (irrelevant changes don't trigger re-search) and under-invalidation (relevant changes do trigger re-search). It also requires save/load parity proof (conditions survive round-trip) and backward compatibility proof (old saves without conditions load cleanly).
+The S31 spec requires golden test proof that the new condition-based invalidation correctly avoids over-invalidation (irrelevant changes don't trigger re-search) and under-invalidation (relevant changes do trigger re-search). It also requires save/load parity proof that the current S31 exhaustion runtime shape survives round-trip under the live save format.
 
 ## Assumption Reassessment (2026-03-27)
 
@@ -31,9 +31,8 @@ The S31 spec requires golden test proof that the new condition-based invalidatio
 1. No over-invalidation -> golden test with decision trace showing Apple cache retained after bread consumption
 2. No under-invalidation -> golden test with decision trace showing Wash cache cleared after dirtiness crosses threshold
 3. Save/load parity -> `golden_save_load_round_trip_under_ai` passes without driver reset
-4. Backward compat -> golden test loading old-format save file (empty conditions) behaves correctly
-5. Facility-tagged goals stay exhausted until an actual facility dirty event occurs -> golden or focused integration test
-6. Existing golden tests pass -> `cargo test -p worldwake-ai`
+4. Facility-tagged goals stay exhausted until an actual facility dirty event occurs -> golden or focused integration test
+5. Existing golden tests pass -> `cargo test -p worldwake-ai`
 
 ## What to Change
 
@@ -62,9 +61,9 @@ Assert: The goal remains exhausted and is not re-searched merely because it carr
 - `golden_three_way_need_competition` — the test that broke in exp-005
 - All other golden tests in `crates/worldwake-ai/tests/`
 
-### 4. Add backward compat save/load golden test
+### 4. Keep save/load proof aligned with the current format only
 
-Create a test that manually constructs an `ExhaustionEntry` without conditions (simulating old format), serializes it, deserializes it, and verifies the entry has empty conditions and is treated as always-invalidated.
+Do not add old-format or empty-condition compatibility tests here. S31 should validate the current exhaustion runtime contract after S31-005 removes the stale serde-default fallback, not preserve a superseded shape.
 
 ## Files to Touch
 
@@ -85,8 +84,7 @@ Create a test that manually constructs an `ExhaustionEntry` without conditions (
 3. `golden_save_load_round_trip_under_ai` — passes without driver reset (S30 parity preserved)
 4. `golden_wash_action` — passes (the test that broke in exp-005)
 5. `golden_three_way_need_competition` — passes (the test that broke in exp-005)
-6. Backward compat: old-format `ExhaustionEntry` deserializes with empty conditions and is always-invalidated
-7. Facility-tagged exhaustion is retained when no facility dirty event occurred
+6. Facility-tagged exhaustion is retained when no facility dirty event occurred
 7. Full suite: `cargo test --workspace`
 
 ### Invariants
@@ -104,7 +102,6 @@ Create a test that manually constructs an `ExhaustionEntry` without conditions (
 1. `crates/worldwake-ai/tests/golden_exhaustion.rs` — `golden_no_over_invalidation_commodity`
 2. `crates/worldwake-ai/tests/golden_exhaustion.rs` — `golden_no_under_invalidation_wash`
 3. `crates/worldwake-ai/tests/golden_exhaustion.rs` — facility-signal retention proof
-4. `crates/worldwake-ai/tests/golden_exhaustion.rs` — backward compat serde test
 
 ### Commands
 
