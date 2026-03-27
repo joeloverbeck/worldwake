@@ -22,9 +22,12 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 **S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
 
+**S32: Crime Emergence Golden Suites** (6 tests: 3 main + 3 replay companions) — covers three E17-crime mechanics with zero golden coverage: (1) Exile punishment fallback when Fine is infeasible (Scenario 41), (2) witness deterrence suppressing theft candidates via witness_risk_penalty (Scenario 42), (3) dual discovery convergence with duplicate accusation prevention (Scenario 43). See `specs/S32-crime-emergence-golden-suites.md`. Tickets: GOLDE2E-017, GOLDE2E-018, GOLDE2E-019, GOLDE2E-020.
+
 ### Recommended Implementation Order
 
-1. S02c multi-role emergent supply chain
+1. S32 crime emergence golden suites
+2. S02c multi-role emergent supply chain
 
 ---
 
