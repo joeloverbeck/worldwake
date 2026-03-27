@@ -43,8 +43,8 @@ use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
     DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, SaveableRuntime, Scheduler, SystemDispatchTable,
-    SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
+    RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler,
+    SystemDispatchTable, SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -230,6 +230,18 @@ fn saveable_runtime_roundtrip_restores_persisted_driver_state() {
     assert_eq!(restored_runtime.dirty, DirtySet::default());
     assert_eq!(restored_runtime.last_priority_class, None);
     assert_eq!(restored_runtime.last_frame_clear_reason, None);
+}
+
+#[test]
+fn restore_runtime_state_rejects_invalid_bytes() {
+    let mut driver = AgentTickDriver::new(PlanningBudget::default());
+
+    let error = driver.restore_runtime_state(&[]).unwrap_err();
+
+    assert!(matches!(
+        error,
+        SaveError::RuntimeDeserialization(_)
+    ));
 }
 
 #[test]
