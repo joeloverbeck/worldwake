@@ -17,8 +17,7 @@ use crate::{
     build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet,
     ExpectedMaterialization, FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass,
     HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlanningEntityRef, RankedGoal, RankedGoalProvenance,
-    SelectedPlanReplacementKind,
+    PlanningEntityRef, RankedGoal, RankedGoalProvenance, SelectedPlanReplacementKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -43,8 +42,8 @@ use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
     DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler,
-    SystemDispatchTable, SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
+    RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
+    SystemExecutionContext, SystemId, SystemManifest, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -233,15 +232,95 @@ fn saveable_runtime_roundtrip_restores_persisted_driver_state() {
 }
 
 #[test]
+fn from_saved_runtime_restores_and_validates_driver_state() {
+    let h = Harness::new(ControlSource::Ai);
+    let live_place = h.world.topology().place_ids().next().unwrap();
+    let dead_agent = entity(810);
+    let dead_entity = entity(811);
+    let mut driver = AgentTickDriver::new(PlanningBudget {
+        max_candidates_to_plan: 7,
+        ..PlanningBudget::default()
+    });
+    let mut runtime = AgentDecisionRuntime {
+        last_effective_place: Some(dead_entity),
+        last_facility_access_signature: vec![
+            (dead_entity, true, None),
+            (live_place, false, Some(ActionDefId(2))),
+        ],
+        last_priority_class: Some(GoalPriorityClass::High),
+        last_frame_clear_reason: Some(worldwake_core::FrameClearReason::PlanFailed),
+        ..AgentDecisionRuntime::default()
+    };
+    runtime
+        .materialization_bindings
+        .bind(HypotheticalEntityId(13), dead_entity);
+    runtime.exhaustion_cache.insert(
+        GoalKey::from(GoalKind::LootCorpse {
+            corpse: dead_entity,
+        }),
+        crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(4)),
+            count: 2,
+        },
+    );
+    runtime.exhaustion_cache.insert(
+        GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+        crate::ExhaustionEntry {
+            exhausted_at: Some(Tick(5)),
+            count: 1,
+        },
+    );
+    driver.runtime_by_agent.insert(h.actor, runtime);
+    driver
+        .runtime_by_agent
+        .insert(dead_agent, AgentDecisionRuntime::default());
+    driver.semantics_cache = Some((3, BTreeMap::new()));
+    driver.trace_sink = Some(crate::DecisionTraceSink::new());
+
+    let restored =
+        AgentTickDriver::from_saved_runtime(&driver.save_runtime_state().unwrap(), &h.world)
+            .unwrap();
+
+    assert_eq!(restored.budget.max_candidates_to_plan, 7);
+    assert!(!restored.runtime_by_agent.contains_key(&dead_agent));
+    assert!(restored.semantics_cache.is_none());
+    assert!(restored.trace_sink.is_none());
+
+    let runtime = restored.runtime_by_agent.get(&h.actor).unwrap();
+    assert_eq!(runtime.last_effective_place, None);
+    assert_eq!(
+        runtime.last_facility_access_signature,
+        vec![(live_place, false, Some(ActionDefId(2)))]
+    );
+    assert_eq!(
+        runtime
+            .materialization_bindings
+            .resolve(HypotheticalEntityId(13)),
+        None
+    );
+    assert!(!runtime
+        .exhaustion_cache
+        .contains_key(&GoalKey::from(GoalKind::LootCorpse {
+            corpse: dead_entity
+        })));
+    assert!(runtime
+        .exhaustion_cache
+        .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })));
+    assert_eq!(
+        runtime.dirty,
+        DirtySet::STRUCTURAL_MASK | DirtySet::SNAPSHOT_MASK | DirtySet::FRAME_MASK
+    );
+    assert_eq!(runtime.last_priority_class, None);
+    assert_eq!(runtime.last_frame_clear_reason, None);
+}
+
+#[test]
 fn restore_runtime_state_rejects_invalid_bytes() {
     let mut driver = AgentTickDriver::new(PlanningBudget::default());
 
     let error = driver.restore_runtime_state(&[]).unwrap_err();
 
-    assert!(matches!(
-        error,
-        SaveError::RuntimeDeserialization(_)
-    ));
+    assert!(matches!(error, SaveError::RuntimeDeserialization(_)));
 }
 
 #[test]
@@ -264,7 +343,9 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
         .materialization_bindings
         .bind(HypotheticalEntityId(12), dead_entity);
     runtime.exhaustion_cache.insert(
-        GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity }),
+        GoalKey::from(GoalKind::LootCorpse {
+            corpse: dead_entity,
+        }),
         crate::ExhaustionEntry {
             exhausted_at: Some(Tick(4)),
             count: 2,
@@ -302,7 +383,9 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
     );
     assert!(!runtime
         .exhaustion_cache
-        .contains_key(&GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity })));
+        .contains_key(&GoalKey::from(GoalKind::LootCorpse {
+            corpse: dead_entity
+        })));
     assert!(runtime
         .exhaustion_cache
         .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })));

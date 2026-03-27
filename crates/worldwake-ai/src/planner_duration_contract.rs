@@ -53,7 +53,9 @@ impl PlannerDurationDependency {
             DurationExpr::ActorMetabolism { .. } => Some(Self::ActorMetabolism),
             DurationExpr::ActorTradeDisposition => Some(Self::ActorTradeDisposition),
             DurationExpr::ActorTheftDisposition => Some(Self::ActorTheftDisposition),
-            DurationExpr::ActorInvestigationDisposition => Some(Self::ActorInvestigationDisposition),
+            DurationExpr::ActorInvestigationDisposition => {
+                Some(Self::ActorInvestigationDisposition)
+            }
             DurationExpr::ActorDefendStance => Some(Self::ActorDefendStance),
             DurationExpr::CombatWeapon => Some(Self::CombatWeapon),
             DurationExpr::TargetTreatment { .. } => Some(Self::TargetTreatment),

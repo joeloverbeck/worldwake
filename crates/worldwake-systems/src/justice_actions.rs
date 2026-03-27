@@ -8,14 +8,14 @@ use worldwake_core::{
     RecordEntryId, RecordKind, SocialObservation, SocialObservationDetail, TheftFacts, ViolationId,
     ViolationKind, VisibilitySpec, World, WorldTxn,
 };
-use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
-    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, AccuseActionPayload, CommitOutcome, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView, Precondition,
-    RuntimeBeliefView, TargetSpec,
-};
 use worldwake_sim::action_payload::PunishActionPayload;
+use worldwake_sim::{
+    AbortReason, AccuseActionPayload, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
+    ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
+    ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint, DeterministicRng,
+    DurationExpr, Interruptibility, PerAgentBeliefView, Precondition, RuntimeBeliefView,
+    TargetSpec,
+};
 
 pub fn register_accuse_action(
     defs: &mut ActionDefRegistry,
@@ -210,8 +210,9 @@ fn locate_unique_crime_register(world: &World, place: EntityId) -> Result<Entity
     let matching = world
         .query_record_data()
         .filter_map(|(record, data)| {
-            (data.record_kind == RecordKind::CrimeRegister && world.effective_place(record) == Some(place))
-                .then_some(record)
+            (data.record_kind == RecordKind::CrimeRegister
+                && world.effective_place(record) == Some(place))
+            .then_some(record)
         })
         .collect::<Vec<_>>();
 
@@ -366,7 +367,9 @@ fn enumerate_accuse_targets(
             continue;
         };
 
-        if let Some(accused) = suspect.filter(|accused| *accused != actor && view.is_alive(*accused)) {
+        if let Some(accused) =
+            suspect.filter(|accused| *accused != actor && view.is_alive(*accused))
+        {
             targets.insert(accused);
         }
 
@@ -385,11 +388,11 @@ fn enumerate_accuse_targets(
                     )
                 })
                 .map(|observation| match observation.detail {
-                        SocialObservationDetail::SuspectedTheft {
-                            suspect: Some(accused),
-                            ..
-                        } => accused,
-                        _ => unreachable!(),
+                    SocialObservationDetail::SuspectedTheft {
+                        suspect: Some(accused),
+                        ..
+                    } => accused,
+                    _ => unreachable!(),
                 }),
         );
     }
@@ -410,7 +413,8 @@ fn validate_accuse_payload_override(
     let Some(accused) = targets.first().copied() else {
         return false;
     };
-    accused != actor && actor_has_subjective_accusation_evidence(view, actor, accused, payload.violation_id)
+    accused != actor
+        && actor_has_subjective_accusation_evidence(view, actor, accused, payload.violation_id)
 }
 
 fn validate_accuse_payload_authoritatively(
@@ -446,9 +450,9 @@ fn start_accuse(
     let theft =
         subjective_theft_facts_for_accusation(&view, instance.actor, accused, violation_id)?;
     let record = locate_unique_crime_register(txn, actor_place)?;
-    let record_data = txn.get_component_record_data(record).ok_or_else(|| {
-        ActionError::InternalError(format!("record {record} lacks RecordData"))
-    })?;
+    let record_data = txn
+        .get_component_record_data(record)
+        .ok_or_else(|| ActionError::InternalError(format!("record {record} lacks RecordData")))?;
     if crime_case_already_recorded(record_data, accused, theft) {
         return Err(ActionError::PreconditionFailed(format!(
             "crime case ({accused}, {}) is already recorded",
@@ -482,9 +486,9 @@ fn commit_accuse(
     let theft =
         subjective_theft_facts_for_accusation(&view, instance.actor, accused, violation_id)?;
     let record = locate_unique_crime_register(txn, actor_place)?;
-    let record_data = txn.get_component_record_data(record).ok_or_else(|| {
-        ActionError::InternalError(format!("record {record} lacks RecordData"))
-    })?;
+    let record_data = txn
+        .get_component_record_data(record)
+        .ok_or_else(|| ActionError::InternalError(format!("record {record} lacks RecordData")))?;
     if crime_case_already_recorded(record_data, accused, theft) {
         return Err(ActionError::PreconditionFailed(format!(
             "crime case ({accused}, {}) is already recorded",
@@ -493,16 +497,16 @@ fn commit_accuse(
     }
     let entry_id = txn
         .append_record_entry(
-        record,
-        InstitutionalClaim::Accusation {
-            accuser: instance.actor,
-            accused,
-            violation_id,
-            theft,
-            effective_tick: txn.tick(),
-        },
-    )
-    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            record,
+            InstitutionalClaim::Accusation {
+                accuser: instance.actor,
+                accused,
+                violation_id,
+                theft,
+                effective_tick: txn.tick(),
+            },
+        )
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.replace_institutional_belief(
         instance.actor,
         InstitutionalBeliefKey::CrimeCase {
@@ -517,10 +521,7 @@ fn commit_accuse(
                 theft,
                 effective_tick: txn.tick(),
             },
-            source: InstitutionalKnowledgeSource::RecordConsultation {
-                record,
-                entry_id,
-            },
+            source: InstitutionalKnowledgeSource::RecordConsultation { record, entry_id },
             learned_tick: txn.tick(),
             learned_at: Some(actor_place),
         },
@@ -557,9 +558,11 @@ fn punish_payload<'a>(
 }
 
 fn punishment_actor_place(world: &World, actor: EntityId) -> Result<EntityId, ActionError> {
-    world.effective_place(actor).ok_or(ActionError::AbortRequested(
-        ActionAbortRequestReason::ActorNotPlaced { actor },
-    ))
+    world
+        .effective_place(actor)
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::ActorNotPlaced { actor },
+        ))
 }
 
 fn validate_same_place_target(
@@ -576,7 +579,10 @@ fn validate_same_place_target(
     let actor_place = punishment_actor_place(world, actor)?;
     if world.effective_place(accused) != Some(actor_place) {
         return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::TargetNotColocated { actor, target: accused },
+            ActionAbortRequestReason::TargetNotColocated {
+                actor,
+                target: accused,
+            },
         ));
     }
     Ok((accused, actor_place))
@@ -588,9 +594,9 @@ fn validate_office_authority_at_place(
     office: EntityId,
     place: EntityId,
 ) -> Result<(), ActionError> {
-    let office_data = world
-        .get_component_office_data(office)
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("office {office} lacks OfficeData")))?;
+    let office_data = world.get_component_office_data(office).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("office {office} lacks OfficeData"))
+    })?;
     if office_data.jurisdiction != place {
         return Err(ActionError::PreconditionFailed(format!(
             "office {office} lacks jurisdiction at place {place}"
@@ -608,19 +614,22 @@ fn active_accusation_case(
     record_data: &RecordData,
     accusation_entry: RecordEntryId,
 ) -> Option<ActiveAccusationCase> {
-    record_data.active_entries().into_iter().find_map(|entry| match entry.claim {
-        InstitutionalClaim::Accusation {
-            accused,
-            violation_id,
-            theft,
-            ..
-        } if entry.entry_id == accusation_entry => Some(ActiveAccusationCase {
-            accused,
-            violation_id,
-            theft,
-        }),
-        _ => None,
-    })
+    record_data
+        .active_entries()
+        .into_iter()
+        .find_map(|entry| match entry.claim {
+            InstitutionalClaim::Accusation {
+                accused,
+                violation_id,
+                theft,
+                ..
+            } if entry.entry_id == accusation_entry => Some(ActiveAccusationCase {
+                accused,
+                violation_id,
+                theft,
+            }),
+            _ => None,
+        })
 }
 
 fn punishment_profile(
@@ -750,7 +759,8 @@ fn transfer_controlled_commodity(
     place: EntityId,
 ) -> Result<(), ActionError> {
     ensure_accessible_quantity(txn, holder, commodity, quantity)?;
-    for (lot_id, moved_quantity) in resolve_controlled_lots(txn, holder, commodity, quantity, place)?
+    for (lot_id, moved_quantity) in
+        resolve_controlled_lots(txn, holder, commodity, quantity, place)?
     {
         transfer_lot_to_holder(txn, lot_id, new_holder, place, moved_quantity)?;
     }
@@ -766,9 +776,9 @@ fn validate_punishment_case(
     let (accused, place) = validate_same_place_target(world, actor, targets)?;
     validate_office_authority_at_place(world, actor, payload.office, place)?;
     let record = locate_unique_crime_register(world, place)?;
-    let record_data = world.get_component_record_data(record).ok_or_else(|| {
-        ActionError::InternalError(format!("record {record} lacks RecordData"))
-    })?;
+    let record_data = world
+        .get_component_record_data(record)
+        .ok_or_else(|| ActionError::InternalError(format!("record {record} lacks RecordData")))?;
     let accusation =
         active_accusation_case(record_data, payload.accusation_entry).ok_or_else(|| {
             ActionError::PreconditionFailed(format!(
@@ -796,7 +806,10 @@ fn validate_fine_payload_override(
         return false;
     };
     matches!(payload.punishment, PunishmentKind::Fine { .. })
-        && targets.first().copied().is_some_and(|accused| accused != actor)
+        && targets
+            .first()
+            .copied()
+            .is_some_and(|accused| accused != actor)
 }
 
 fn validate_fine_payload_authoritatively(
@@ -808,7 +821,8 @@ fn validate_fine_payload_authoritatively(
     world: &World,
 ) -> Result<(), ActionError> {
     let payload = punish_payload(def, payload)?;
-    let (_accused, _place, _record, accusation) = validate_punishment_case(world, actor, targets, payload)?;
+    let (_accused, _place, _record, accusation) =
+        validate_punishment_case(world, actor, targets, payload)?;
     let profile = punishment_profile(world, actor)?;
     let expected_amount = fine_amount(&profile, accusation.theft);
     if expected_amount == Quantity(0) {
@@ -827,7 +841,12 @@ fn validate_fine_payload_authoritatively(
             payload.punishment, expected
         )));
     }
-    ensure_accessible_quantity(world, accusation.accused, accusation.theft.commodity, expected_amount)
+    ensure_accessible_quantity(
+        world,
+        accusation.accused,
+        accusation.theft.commodity,
+        expected_amount,
+    )
 }
 
 fn validate_exile_payload_override(
@@ -841,7 +860,10 @@ fn validate_exile_payload_override(
         return false;
     };
     matches!(payload.punishment, PunishmentKind::Exile { .. })
-        && targets.first().copied().is_some_and(|accused| accused != actor)
+        && targets
+            .first()
+            .copied()
+            .is_some_and(|accused| accused != actor)
 }
 
 fn validate_exile_payload_authoritatively(
@@ -853,7 +875,8 @@ fn validate_exile_payload_authoritatively(
     world: &World,
 ) -> Result<(), ActionError> {
     let payload = punish_payload(def, payload)?;
-    let (accused, _place, _record, _accusation) = validate_punishment_case(world, actor, targets, payload)?;
+    let (accused, _place, _record, _accusation) =
+        validate_punishment_case(world, actor, targets, payload)?;
     let PunishmentKind::Exile { from_faction } = payload.punishment else {
         return Err(ActionError::PreconditionFailed(format!(
             "payload for exile action must be Exile, got {:?}",
@@ -862,12 +885,12 @@ fn validate_exile_payload_authoritatively(
     };
     let office_data = world
         .get_component_office_data(payload.office)
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office)))?;
-    if !office_data
-        .eligibility_rules
-        .iter()
-        .any(|rule| matches!(rule, EligibilityRule::FactionMember(faction) if *faction == from_faction))
-    {
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
+        })?;
+    if !office_data.eligibility_rules.iter().any(
+        |rule| matches!(rule, EligibilityRule::FactionMember(faction) if *faction == from_faction),
+    ) {
         return Err(ActionError::PreconditionFailed(format!(
             "office {} does not govern faction {from_faction}",
             payload.office
@@ -929,14 +952,14 @@ fn validate_exile_start(
             payload.punishment
         )));
     };
-    let office_data = txn.get_component_office_data(payload.office).ok_or_else(|| {
-        ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
-    })?;
-    if !office_data
-        .eligibility_rules
-        .iter()
-        .any(|rule| matches!(rule, EligibilityRule::FactionMember(faction) if *faction == from_faction))
-    {
+    let office_data = txn
+        .get_component_office_data(payload.office)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
+        })?;
+    if !office_data.eligibility_rules.iter().any(
+        |rule| matches!(rule, EligibilityRule::FactionMember(faction) if *faction == from_faction),
+    ) {
         return Err(ActionError::PreconditionFailed(format!(
             "office {} does not govern faction {from_faction}",
             payload.office
@@ -1046,12 +1069,12 @@ fn commit_exile(
     };
     let office_data = txn
         .get_component_office_data(payload.office)
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office)))?;
-    if !office_data
-        .eligibility_rules
-        .iter()
-        .any(|rule| matches!(rule, EligibilityRule::FactionMember(faction) if *faction == from_faction))
-    {
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
+        })?;
+    if !office_data.eligibility_rules.iter().any(
+        |rule| matches!(rule, EligibilityRule::FactionMember(faction) if *faction == from_faction),
+    ) {
         return Err(ActionError::PreconditionFailed(format!(
             "office {} does not govern faction {from_faction}",
             payload.office
@@ -1097,20 +1120,18 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-        BeliefConfidencePolicy,
-        BelievedEntityState, CauseRef, EntityId, EventLog, EventTag, EventView,
-        EligibilityRule, InstitutionalClaim, JusticeDispositionProfile, OfficeData,
+        BeliefConfidencePolicy, BelievedEntityState, CauseRef, EligibilityRule, EntityId, EventLog,
+        EventTag, EventView, InstitutionalClaim, JusticeDispositionProfile, OfficeData,
         PerceptionProfile, PerceptionSource, PrototypePlace, PunishmentKind, Quantity, RecordData,
         RecordEntryId, RecordKind, Seed, SocialObservation, SocialObservationDetail, SuccessionLaw,
-        TheftFacts, Tick, UtilityProfile,
-        ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationId, ViolationKind,
+        ViolationMemory, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        get_affordances, AbortReason, AccuseActionPayload, ActionDefRegistry,
-        ActionAbortRequestReason, ActionError, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionStatus, DeterministicRng, ExternalAbortReason,
-        PerAgentBeliefView, PunishActionPayload,
+        get_affordances, AbortReason, AccuseActionPayload, ActionAbortRequestReason,
+        ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionStatus, DeterministicRng, ExternalAbortReason, PerAgentBeliefView,
+        PunishActionPayload,
     };
 
     fn pm(value: u16) -> worldwake_core::Permille {
@@ -1152,8 +1173,7 @@ mod tests {
         (defs, handlers, id)
     }
 
-    fn setup_punishment_registries(
-    ) -> (
+    fn setup_punishment_registries() -> (
         ActionDefRegistry,
         ActionHandlerRegistry,
         ActionDefId,
@@ -1545,7 +1565,9 @@ mod tests {
 
         let payloads = get_affordances(&view, fx.accuser, &defs, &handlers)
             .into_iter()
-            .filter(|affordance| affordance.def_id == id && affordance.bound_targets == vec![fx.accused])
+            .filter(|affordance| {
+                affordance.def_id == id && affordance.bound_targets == vec![fx.accused]
+            })
             .filter_map(|affordance| affordance.payload_override)
             .collect::<Vec<_>>();
 
@@ -1570,7 +1592,9 @@ mod tests {
 
         let payloads = get_affordances(&view, fx.accuser, &defs, &handlers)
             .into_iter()
-            .filter(|affordance| affordance.def_id == id && affordance.bound_targets == vec![fx.accused])
+            .filter(|affordance| {
+                affordance.def_id == id && affordance.bound_targets == vec![fx.accused]
+            })
             .filter_map(|affordance| affordance.payload_override)
             .collect::<Vec<_>>();
 
@@ -1591,7 +1615,10 @@ mod tests {
         let instance = fx.instance(id, fx.accused);
 
         let log = commit_action(&mut fx.world, &defs, &handlers, id, &instance, 7, 3);
-        let record = fx.world.get_component_record_data(fx.crime_register).unwrap();
+        let record = fx
+            .world
+            .get_component_record_data(fx.crime_register)
+            .unwrap();
         let event = log
             .events_by_tag(EventTag::ActionCommitted)
             .iter()
@@ -1628,7 +1655,10 @@ mod tests {
         let instance = fx.instance(id, fx.accused);
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, id, &instance, 7, 3);
-        let record = fx.world.get_component_record_data(fx.crime_register).unwrap();
+        let record = fx
+            .world
+            .get_component_record_data(fx.crime_register)
+            .unwrap();
 
         assert!(record.entries.iter().any(|entry| {
             matches!(
@@ -1681,7 +1711,9 @@ mod tests {
 
         let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
 
-        assert!(matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded")));
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded"))
+        );
     }
 
     #[test]
@@ -1718,7 +1750,9 @@ mod tests {
 
         let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
 
-        assert!(matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded")));
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded"))
+        );
     }
 
     #[test]
@@ -1733,7 +1767,9 @@ mod tests {
 
         let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
 
-        assert!(matches!(err, ActionError::PreconditionFailed(message) if message.contains("lacks subjective theft evidence")));
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("lacks subjective theft evidence"))
+        );
     }
 
     #[test]
@@ -1757,7 +1793,10 @@ mod tests {
         let instance = fx.instance(id, wrong_accused);
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, id, &instance, 9, 3);
-        let record = fx.world.get_component_record_data(fx.crime_register).unwrap();
+        let record = fx
+            .world
+            .get_component_record_data(fx.crime_register)
+            .unwrap();
 
         assert!(record.entries.iter().any(|entry| {
             matches!(
@@ -1779,7 +1818,11 @@ mod tests {
         let def = defs.get(id).unwrap();
         let handler = handlers.get(def.handler).unwrap();
         let instance = fx.instance(id, fx.accused);
-        let before = fx.world.get_component_record_data(fx.crime_register).unwrap().clone();
+        let before = fx
+            .world
+            .get_component_record_data(fx.crime_register)
+            .unwrap()
+            .clone();
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(3);
 
@@ -1811,7 +1854,10 @@ mod tests {
         );
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, fine_id, &instance, 7, 3);
-        let record = fx.world.get_component_record_data(fx.crime_register).unwrap();
+        let record = fx
+            .world
+            .get_component_record_data(fx.crime_register)
+            .unwrap();
 
         assert_eq!(
             fx.world
@@ -1877,7 +1923,9 @@ mod tests {
 
         assert!(matches!(
             err,
-            ActionError::AbortRequested(ActionAbortRequestReason::HolderLacksAccessibleCommodity { .. })
+            ActionError::AbortRequested(
+                ActionAbortRequestReason::HolderLacksAccessibleCommodity { .. }
+            )
         ));
     }
 
@@ -1941,7 +1989,10 @@ mod tests {
         );
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, exile_id, &instance, 8, 3);
-        let record = fx.world.get_component_record_data(fx.crime_register).unwrap();
+        let record = fx
+            .world
+            .get_component_record_data(fx.crime_register)
+            .unwrap();
 
         assert!(!fx.world.factions_of(fx.accused).contains(&fx.faction));
         assert!(fx.world.hostile_towards(fx.accused).contains(&fx.faction));
@@ -1984,6 +2035,8 @@ mod tests {
 
         let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
 
-        assert!(matches!(err, ActionError::PreconditionFailed(message) if message.contains("does not hold office")));
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("does not hold office"))
+        );
     }
 }

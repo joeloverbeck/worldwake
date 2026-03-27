@@ -82,12 +82,12 @@ pub(super) fn build_successor_detailed<'snapshot>(
             &candidate.authoritative_targets,
             effective_payload,
         )
-        .ok_or_else(|| {
-            crate::decision_trace::RootCandidateSkipReason::DurationEstimateFailed {
+        .ok_or_else(
+            || crate::decision_trace::RootCandidateSkipReason::DurationEstimateFailed {
                 dependency: PlannerDurationDependency::from_duration_expr(def.duration)
                     .expect("planner search should not use fixed-duration failure diagnostics"),
-            }
-        })?;
+            },
+        )?;
     let estimated_ticks = duration.ticks();
 
     let transition = apply_hypothetical_transition(

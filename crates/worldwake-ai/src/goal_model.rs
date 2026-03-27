@@ -16,10 +16,9 @@ use worldwake_core::{
     Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
 };
 use worldwake_sim::{
-    AccuseActionPayload, ActionDef, ActionPayload, CombatActionPayload,
-    ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
-    LootActionPayload, PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition,
-    RecipeRegistry,
+    AccuseActionPayload, ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
+    DeclareSupportActionPayload, InvestigateActionPayload, LootActionPayload,
+    PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition, RecipeRegistry,
     RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
@@ -1028,12 +1027,10 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
-            GoalKind::Accuse { crime_register, .. } => {
-                state
-                    .record_data(*crime_register)
-                    .map(|record| vec![record.home_place])
-                    .unwrap_or_default()
-            }
+            GoalKind::Accuse { crime_register, .. } => state
+                .record_data(*crime_register)
+                .map(|record| vec![record.home_place])
+                .unwrap_or_default(),
             GoalKind::PunishAccused { accused, .. } => {
                 state.effective_place(*accused).into_iter().collect()
             }
@@ -1650,7 +1647,10 @@ impl GroundedGoal {
             },
             PlannerOpKind::Investigate => match &self.key.kind {
                 GoalKind::InvestigateViolation { place, .. }
-                    if matches!(def.targets.as_slice(), [worldwake_sim::TargetSpec::ActorPlace]) =>
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::ActorPlace]
+                    ) =>
                 {
                     RootCandidateSynthesis::Targets(vec![*place])
                 }
@@ -1728,9 +1728,9 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
-        ResourceSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
+        SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        ViolationId, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -3143,7 +3143,9 @@ mod tests {
             office,
             accused,
             accusation_entry: RecordEntryId(11),
-            punishment: PunishmentKind::Exile { from_faction: faction },
+            punishment: PunishmentKind::Exile {
+                from_faction: faction,
+            },
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -3179,7 +3181,9 @@ mod tests {
             Some(ActionPayload::Punish(PunishActionPayload {
                 office,
                 accusation_entry: RecordEntryId(11),
-                punishment: PunishmentKind::Exile { from_faction: faction },
+                punishment: PunishmentKind::Exile {
+                    from_faction: faction
+                },
             }))
         );
     }

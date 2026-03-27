@@ -13,22 +13,21 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
     verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
     BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ComponentKind,
-    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-    DriveThresholds, EventTag, EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
+    EventTag, EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
     JusticeDispositionProfile, KnownRecipes, MetabolismProfile, PerceptionProfile,
     PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind, RelationValue,
     ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
     TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
-    ViolationDispositionProfile,
-    WorkstationTag,
+    ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
-    ActionPayload, ActionRequestMode, ActionStartFailureReason,
-    ActionTraceDetail, ActionTraceKind, AutonomousController, AutonomousControllerContext,
+    step_tick, ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail,
+    ActionTraceKind, AutonomousController, AutonomousControllerContext,
     DeclareSupportActionPayload, InputKind, OfficeAvailabilityPhase, OfficeSuccessionOutcome,
     PressForceClaimActionPayload, RequestProvenance, RequestResolutionOutcome,
-    ResolvedRequestTrace, TickStepServices, step_tick,
+    ResolvedRequestTrace, TickStepServices,
 };
 
 // ---------------------------------------------------------------------------
@@ -4853,9 +4852,7 @@ fn golden_entity_missing_triggers_investigation_replays_deterministically() {
 // the owner's discovery into typed SuspectedTheft evidence.
 
 #[allow(clippy::too_many_lines)]
-fn run_theft_leads_owner_to_local_suspected_theft_discovery(
-    seed: Seed,
-) -> (StateHash, StateHash) {
+fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
     h.enable_action_tracing();
     h.driver.enable_tracing();
@@ -4916,7 +4913,9 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(
 
     let stolen_lot = {
         let mut txn = new_txn(&mut h.world, 0);
-        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(2))
+            .unwrap();
         txn.set_ground_location(lot, VILLAGE_SQUARE).unwrap();
         txn.set_owner(lot, owner).unwrap();
         commit_txn(txn, &mut h.event_log);
@@ -5140,9 +5139,10 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(
             .any(|event| {
                 event.action_name == "investigate"
                     && matches!(event.kind, ActionTraceKind::Committed { .. })
-                    && event.detail == Some(ActionTraceDetail::Investigate {
-                        violation_id: generated_violation_id,
-                    })
+                    && event.detail
+                        == Some(ActionTraceDetail::Investigate {
+                            violation_id: generated_violation_id,
+                        })
             });
         if investigate_committed {
             break;
@@ -5369,7 +5369,9 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
                 next_entry_id: 0,
             })
             .unwrap();
-        let stolen_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        let stolen_lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(2))
+            .unwrap();
         txn.set_ground_location(stolen_lot, VILLAGE_SQUARE).unwrap();
         txn.set_owner(stolen_lot, victim).unwrap();
         commit_txn(txn, &mut h.event_log);
@@ -5452,8 +5454,7 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
             break;
         }
     }
-    let steal_commit_tick =
-        steal_commit_tick.expect("thief should commit the witnessed theft");
+    let steal_commit_tick = steal_commit_tick.expect("thief should commit the witnessed theft");
     set_control_source(&mut h, thief, ControlSource::Human, steal_commit_tick.0);
 
     assert!(
@@ -5613,7 +5614,9 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
         .expect("decision tracing should be enabled")
         .goal_history_for(authority, &accuse_goal);
     assert!(
-        accuse_history.iter().any(|entry| entry.status.is_generated()),
+        accuse_history
+            .iter()
+            .any(|entry| entry.status.is_generated()),
         "authority should generate the office-filed accusation goal after Tell"
     );
 
@@ -5880,7 +5883,9 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
                 next_entry_id: 1,
             })
             .unwrap();
-        let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(4)).unwrap();
+        let bread = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(4))
+            .unwrap();
         txn.set_ground_location(bread, rulers_hall).unwrap();
         txn.set_owner(bread, accused).unwrap();
         commit_txn(txn, &mut h.event_log);
@@ -5946,7 +5951,8 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
             &profile,
         );
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_agent_belief_store(authority, store).unwrap();
+        txn.set_component_agent_belief_store(authority, store)
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -6064,15 +6070,18 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
             .any(|event| matches!(event.kind, ActionTraceKind::Started { .. })),
         "authority should start the fine once global lawful control still exists: {fine_events:?}"
     );
-    assert!(matches!(
-        fine_events.iter().find(|event| matches!(event.kind, ActionTraceKind::Aborted { .. })),
-        Some(event)
-            if matches!(
-                &event.kind,
-                ActionTraceKind::Aborted { reason, .. }
-                    if reason.contains("HolderLacksAccessibleCommodity")
-            )
-    ), "unexpected fine trace events: {fine_events:?}");
+    assert!(
+        matches!(
+            fine_events.iter().find(|event| matches!(event.kind, ActionTraceKind::Aborted { .. })),
+            Some(event)
+                if matches!(
+                    &event.kind,
+                    ActionTraceKind::Aborted { reason, .. }
+                        if reason.contains("HolderLacksAccessibleCommodity")
+                )
+        ),
+        "unexpected fine trace events: {fine_events:?}"
+    );
     assert!(
         fine_events
             .iter()
@@ -6475,7 +6484,9 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
     );
     let theft_target = {
         let mut txn = new_txn(&mut h.world, 0);
-        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(2))
+            .unwrap();
         txn.set_ground_location(lot, VILLAGE_SQUARE).unwrap();
         txn.set_owner(lot, owner).unwrap();
         commit_txn(txn, &mut h.event_log);
@@ -6543,7 +6554,10 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
         }
     }
 
-    assert!(saw_planning_tick, "scenario should produce at least one planning tick");
+    assert!(
+        saw_planning_tick,
+        "scenario should produce at least one planning tick"
+    );
     assert!(
         saw_self_care_selection,
         "thief should select ConsumeOwnedCommodity(Apple) after theft is deterred"
@@ -6625,9 +6639,7 @@ fn golden_witness_deterrence_suppresses_theft_candidate_replays_deterministicall
 // collectible from the accused at punishment-selection time.
 
 #[allow(clippy::too_many_lines)]
-fn run_exile_punishment_when_fine_is_not_locally_collectible(
-    seed: Seed,
-) -> (StateHash, StateHash) {
+fn run_exile_punishment_when_fine_is_not_locally_collectible(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
@@ -6767,7 +6779,9 @@ fn run_exile_punishment_when_fine_is_not_locally_collectible(
                 next_entry_id: 0,
             })
             .unwrap();
-        let stolen_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        let stolen_lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(2))
+            .unwrap();
         txn.set_ground_location(stolen_lot, VILLAGE_SQUARE).unwrap();
         txn.set_owner(stolen_lot, victim).unwrap();
         commit_txn(txn, &mut h.event_log);
@@ -6852,8 +6866,7 @@ fn run_exile_punishment_when_fine_is_not_locally_collectible(
             break;
         }
     }
-    let steal_commit_tick =
-        steal_commit_tick.expect("thief should commit the witnessed theft");
+    let steal_commit_tick = steal_commit_tick.expect("thief should commit the witnessed theft");
     set_control_source(&mut h, thief, ControlSource::Human, steal_commit_tick.0);
 
     assert!(
@@ -7184,9 +7197,7 @@ fn golden_exile_punishment_when_fine_is_not_locally_collectible_replays_determin
 // recorded theft case prevents a second accusation for the same theft.
 
 #[allow(clippy::too_many_lines)]
-fn run_dual_discovery_converges_without_double_accusation(
-    seed: Seed,
-) -> (StateHash, StateHash) {
+fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
@@ -7325,7 +7336,9 @@ fn run_dual_discovery_converges_without_double_accusation(
                 next_entry_id: 0,
             })
             .unwrap();
-        let stolen_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        let stolen_lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(2))
+            .unwrap();
         txn.set_ground_location(stolen_lot, VILLAGE_SQUARE).unwrap();
         txn.set_owner(stolen_lot, victim).unwrap();
         commit_txn(txn, &mut h.event_log);
@@ -7571,8 +7584,8 @@ fn run_dual_discovery_converges_without_double_accusation(
             break;
         }
     }
-    let first_accuse_order =
-        first_accuse_order.expect("authority should file the first accusation from witness evidence");
+    let first_accuse_order = first_accuse_order
+        .expect("authority should file the first accusation from witness evidence");
 
     assert!(
         h.driver
@@ -7666,9 +7679,10 @@ fn run_dual_discovery_converges_without_double_accusation(
             .any(|event| {
                 event.action_name == "investigate"
                     && matches!(event.kind, ActionTraceKind::Committed { .. })
-                    && event.detail == Some(ActionTraceDetail::Investigate {
-                        violation_id: victim_violation_id,
-                    })
+                    && event.detail
+                        == Some(ActionTraceDetail::Investigate {
+                            violation_id: victim_violation_id,
+                        })
             });
         if investigate_committed {
             break;
@@ -7769,8 +7783,8 @@ fn run_dual_discovery_converges_without_double_accusation(
             }
         }
     }
-    let victim_tell_tick =
-        victim_tell_tick.expect("victim should later tell the authority about the investigated theft");
+    let victim_tell_tick = victim_tell_tick
+        .expect("victim should later tell the authority about the investigated theft");
 
     let authority_memory_after_both = h
         .world
@@ -7819,8 +7833,7 @@ fn run_dual_discovery_converges_without_double_accusation(
         .events_for(authority)
         .iter()
         .filter(|event| {
-            event.action_name == "accuse"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            event.action_name == "accuse" && matches!(event.kind, ActionTraceKind::Committed { .. })
         })
         .count();
     assert_eq!(

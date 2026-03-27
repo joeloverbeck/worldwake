@@ -3717,7 +3717,12 @@ mod tests {
             .unwrap();
 
         world.add_member(member, faction).unwrap();
-        for entity in [accessible_bread, blocked_bread, accessible_tool, blocked_tool] {
+        for entity in [
+            accessible_bread,
+            blocked_bread,
+            accessible_tool,
+            blocked_tool,
+        ] {
             world.set_owner(entity, faction).unwrap();
         }
         world.set_possessor(blocked_bread, possessor).unwrap();

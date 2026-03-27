@@ -178,9 +178,9 @@ impl ActionTraceEvent {
                 request,
                 legality,
             } => {
-                let legality_suffix = legality.as_ref().map_or_else(String::new, |trace| {
-                    format!(" <{}>", trace.summary())
-                });
+                let legality_suffix = legality
+                    .as_ref()
+                    .map_or_else(String::new, |trace| format!(" <{}>", trace.summary()));
                 format!(
                     "tick {} seq {}: {} failed to start '{}' (request#{}, {:?}, {:?}, reason: {}){}{}",
                     self.tick.0,
@@ -268,9 +268,8 @@ pub fn derive_start_failure_legality_trace(
                 record.home_place,
                 commodity,
             ),
-            authoritative_total_controlled_quantity: world.controlled_commodity_quantity(
-                accused, commodity,
-            ),
+            authoritative_total_controlled_quantity: world
+                .controlled_commodity_quantity(accused, commodity),
         },
     ))
 }
@@ -280,14 +279,12 @@ fn locate_crime_register(
     office: EntityId,
     place: EntityId,
 ) -> Option<worldwake_core::RecordData> {
-    world
-        .query_record_data()
-        .find_map(|(_, record)| {
-            (record.record_kind == RecordKind::CrimeRegister
-                && record.issuer == office
-                && record.home_place == place)
-                .then_some(record.clone())
-        })
+    world.query_record_data().find_map(|(_, record)| {
+        (record.record_kind == RecordKind::CrimeRegister
+            && record.issuer == office
+            && record.home_place == place)
+            .then_some(record.clone())
+    })
 }
 
 fn active_accusation_for_entry(
@@ -295,16 +292,19 @@ fn active_accusation_for_entry(
     entry_id: worldwake_core::RecordEntryId,
     accused: EntityId,
 ) -> Option<ActiveAccusationFacts> {
-    record.active_entries().into_iter().find_map(|entry| match entry.claim {
-        InstitutionalClaim::Accusation {
-            accused: claim_accused,
-            theft,
-            ..
-        } if entry.entry_id == entry_id && claim_accused == accused => {
-            Some(ActiveAccusationFacts { theft })
-        }
-        _ => None,
-    })
+    record
+        .active_entries()
+        .into_iter()
+        .find_map(|entry| match entry.claim {
+            InstitutionalClaim::Accusation {
+                accused: claim_accused,
+                theft,
+                ..
+            } if entry.entry_id == entry_id && claim_accused == accused => {
+                Some(ActiveAccusationFacts { theft })
+            }
+            _ => None,
+        })
 }
 
 struct ActiveAccusationFacts {
@@ -912,7 +912,9 @@ mod tests {
                     next_entry_id: accusation_entry.0 + 1,
                 })
                 .unwrap();
-            let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(4)).unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(4))
+                .unwrap();
             txn.set_ground_location(lot, remote_place).unwrap();
             txn.set_owner(lot, accused).unwrap();
             let _ = txn.commit(&mut event_log);
@@ -945,22 +947,15 @@ mod tests {
                 amount: Quantity(2),
             },
         });
-        let error = ActionError::AbortRequested(
-            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+        let error =
+            ActionError::AbortRequested(ActionAbortRequestReason::HolderLacksAccessibleCommodity {
                 holder: accused,
                 commodity: CommodityKind::Bread,
                 quantity: Quantity(2),
-            },
-        );
+            });
 
-        let legality = derive_start_failure_legality_trace(
-            actor,
-            &[accused],
-            &def,
-            &payload,
-            &world,
-            &error,
-        );
+        let legality =
+            derive_start_failure_legality_trace(actor, &[accused], &def, &payload, &world, &error);
 
         assert_eq!(
             legality,

@@ -1,5 +1,5 @@
-use crate::shared_collections::{SharedMap, SharedSet};
 use crate::planning_snapshot::PlanningSnapshot;
+use crate::shared_collections::{SharedMap, SharedSet};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
@@ -7,10 +7,10 @@ use worldwake_core::{
     BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource,
+    SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+    TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -49,10 +49,7 @@ pub struct PlanningState<'snapshot> {
     needs_overrides: SharedMap<EntityId, HomeostaticNeeds>,
     pain_overrides: SharedMap<EntityId, Permille>,
     support_declaration_overrides: SharedMap<(EntityId, EntityId), Option<EntityId>>,
-    office_holder_belief_overrides: SharedMap<
-        EntityId,
-        InstitutionalBeliefRead<Option<EntityId>>,
-    >,
+    office_holder_belief_overrides: SharedMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
     force_controller_belief_overrides:
         SharedMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
     support_declaration_belief_overrides:
@@ -200,7 +197,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             .map(|(supporter, read)| (*supporter, read.clone()))
             .collect();
 
-        for (&(override_office, supporter), read) in self.support_declaration_belief_overrides.iter()
+        for (&(override_office, supporter), read) in
+            self.support_declaration_belief_overrides.iter()
         {
             if override_office == office {
                 combined.insert(supporter, read.clone());
@@ -1733,9 +1731,9 @@ mod tests {
     use worldwake_sim::{
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
         ActionDomain, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, Constraint,
-        CombatActionPayload, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
-        Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
+        Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
+        ReservationReq, RuntimeBeliefView, TargetSpec,
     };
     use worldwake_systems::register_office_actions;
 
@@ -2869,7 +2867,10 @@ mod tests {
             .mark_removed(bread);
 
         assert_eq!(RuntimeBeliefView::effective_place(&base, actor), Some(town));
-        assert_eq!(RuntimeBeliefView::effective_place(&branched, actor), Some(field));
+        assert_eq!(
+            RuntimeBeliefView::effective_place(&branched, actor),
+            Some(field)
+        );
         assert!(!base.reservation_conflicts(bread, range));
         assert!(branched.reservation_conflicts(bread, range));
         assert!(RuntimeBeliefView::is_alive(&base, bread));
@@ -3573,7 +3574,8 @@ mod tests {
             .insert(town, vec![(market, NonZeroU32::new(3).unwrap())]);
         view.adjacent
             .insert(market, vec![(town, NonZeroU32::new(3).unwrap())]);
-        view.item_lot_commodities.insert(bread, CommodityKind::Bread);
+        view.item_lot_commodities
+            .insert(bread, CommodityKind::Bread);
         view.consumable_profiles.insert(
             bread,
             CommodityKind::Bread.spec().consumable_profile.unwrap(),

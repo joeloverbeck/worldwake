@@ -231,7 +231,10 @@ mod tests {
         let mut cloned = original.clone();
         assert!(Rc::ptr_eq(&original.0, &cloned.0));
         assert_eq!(original.as_slice(), &["first", "second"]);
-        assert_eq!(original.iter().copied().collect::<Vec<_>>(), vec!["first", "second"]);
+        assert_eq!(
+            original.iter().copied().collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
         assert_eq!(original.len(), 2);
 
         cloned.push("third");

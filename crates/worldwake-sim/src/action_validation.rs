@@ -29,11 +29,11 @@ pub(crate) fn evaluate_constraint_authoritatively(
         Constraint::ActorHasCommodity { kind, min_qty } => {
             world.controlled_commodity_quantity(actor, *kind) >= *min_qty
         }
-        Constraint::ActorHasCommodityAtActorPlace { kind, min_qty } => world
-            .effective_place(actor)
-            .is_some_and(|place| {
+        Constraint::ActorHasCommodityAtActorPlace { kind, min_qty } => {
+            world.effective_place(actor).is_some_and(|place| {
                 world.controlled_commodity_quantity_at_place(actor, place, *kind) >= *min_qty
-            }),
+            })
+        }
         Constraint::ActorKind(kind) => world.entity_kind(actor) == Some(*kind),
     }
 }
@@ -287,7 +287,9 @@ mod tests {
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let faction = txn.create_faction("River Pact").unwrap();
             let office = txn.create_office("Mayor").unwrap();
-            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             let tool = txn
                 .create_unique_item(
                     UniqueItemKind::SimpleTool,

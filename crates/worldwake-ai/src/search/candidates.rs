@@ -131,13 +131,7 @@ pub(super) fn search_candidates(
         relevant_defs,
         &candidates,
     ));
-    record_root_operator_omissions(
-        goal,
-        registry,
-        semantics_table,
-        &candidates,
-        root_omissions,
-    );
+    record_root_operator_omissions(goal, registry, semantics_table, &candidates, root_omissions);
     let mut root_candidates = root_candidates;
     let mut binding_rejections = binding_rejections;
     let mut filtered = Vec::with_capacity(candidates.len());
@@ -230,7 +224,11 @@ fn goal_synthesized_candidates(
 ) -> Vec<SearchCandidate> {
     relevant_defs
         .iter()
-        .filter(|def_id| !existing_candidates.iter().any(|candidate| candidate.def_id == **def_id))
+        .filter(|def_id| {
+            !existing_candidates
+                .iter()
+                .any(|candidate| candidate.def_id == **def_id)
+        })
         .filter_map(|def_id| {
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
@@ -266,7 +264,11 @@ fn record_root_operator_omissions(
     };
     let candidate_ops = candidates
         .iter()
-        .filter_map(|candidate| semantics_table.get(&candidate.def_id).map(|sem| sem.op_kind))
+        .filter_map(|candidate| {
+            semantics_table
+                .get(&candidate.def_id)
+                .map(|sem| sem.op_kind)
+        })
         .collect::<BTreeSet<_>>();
 
     for op_kind in goal.key.kind.relevant_op_kinds() {

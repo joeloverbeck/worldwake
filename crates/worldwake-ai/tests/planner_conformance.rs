@@ -1151,11 +1151,10 @@ fn conformance_tell() {
     let tell_payload = ActionPayload::Tell(TellActionPayload { listener, topic });
     ch.run_action_to_completion(speaker, "tell", vec![listener], Some(tell_payload), 10);
 
-    let listener_store = ch
-        .h
-        .world
-        .get_component_agent_belief_store(listener)
-        .expect("listener should have AgentBeliefStore");
+    let listener_store =
+        ch.h.world
+            .get_component_agent_belief_store(listener)
+            .expect("listener should have AgentBeliefStore");
     assert!(
         listener_store.known_entities.contains_key(&subject),
         "handler should transfer the subject belief to the listener"
@@ -1233,10 +1232,14 @@ fn conformance_investigate() {
         None,
     )
     .expect("investigate transition should produce Some");
-    assert_planner_noop("investigate", &initial_state, &transition.state, investigator);
+    assert_planner_noop(
+        "investigate",
+        &initial_state,
+        &transition.state,
+        investigator,
+    );
 
-    let investigate_payload =
-        ActionPayload::Investigate(InvestigateActionPayload { violation_id });
+    let investigate_payload = ActionPayload::Investigate(InvestigateActionPayload { violation_id });
     ch.run_action_to_completion(
         investigator,
         "investigate",
@@ -1245,19 +1248,22 @@ fn conformance_investigate() {
         10,
     );
 
-    let store = ch
-        .h
-        .world
-        .get_component_agent_belief_store(investigator)
-        .expect("investigator should have AgentBeliefStore");
+    let store =
+        ch.h.world
+            .get_component_agent_belief_store(investigator)
+            .expect("investigator should have AgentBeliefStore");
     assert!(
-        store.social_observations.iter().copied().any(|observation| {
-            observation.detail
-                == worldwake_core::SocialObservationDetail::WitnessedAbsence {
-                    missing_entity: source,
-                    expected_place: VILLAGE_SQUARE,
-                }
-        }),
+        store
+            .social_observations
+            .iter()
+            .copied()
+            .any(|observation| {
+                observation.detail
+                    == worldwake_core::SocialObservationDetail::WitnessedAbsence {
+                        missing_entity: source,
+                        expected_place: VILLAGE_SQUARE,
+                    }
+            }),
         "handler should record the witnessed absence observation"
     );
 }
@@ -1321,16 +1327,17 @@ fn conformance_accuse() {
         );
         let mut txn = new_txn(&mut ch.h.world, 0);
         txn.set_component_violation_memory(accuser, memory).unwrap();
-        let record = txn.create_record(RecordData {
-            record_kind: RecordKind::CrimeRegister,
-            home_place: VILLAGE_SQUARE,
-            issuer: VILLAGE_SQUARE,
-            consultation_ticks: 1,
-            max_entries_per_consult: 8,
-            entries: Vec::new(),
-            next_entry_id: 0,
-        })
-        .unwrap();
+        let record = txn
+            .create_record(RecordData {
+                record_kind: RecordKind::CrimeRegister,
+                home_place: VILLAGE_SQUARE,
+                issuer: VILLAGE_SQUARE,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
         commit_txn(txn, &mut ch.h.event_log);
         (violation_id, record)
     };
@@ -1365,12 +1372,11 @@ fn conformance_accuse() {
     let accuse_payload = ActionPayload::Accuse(AccuseActionPayload { violation_id });
     ch.run_action_to_completion(accuser, "accuse", vec![suspect], Some(accuse_payload), 10);
 
-    let record_data = ch
-        .h
-        .world
-        .query_record_data()
-        .find_map(|(_, data)| (data.record_kind == RecordKind::CrimeRegister).then_some(data))
-        .expect("crime register should exist");
+    let record_data =
+        ch.h.world
+            .query_record_data()
+            .find_map(|(_, data)| (data.record_kind == RecordKind::CrimeRegister).then_some(data))
+            .expect("crime register should exist");
     assert!(
         record_data.active_entries().into_iter().any(|entry| {
             matches!(

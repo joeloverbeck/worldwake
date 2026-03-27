@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use worldwake_ai::{AgentTickDriver, PlanningBudget};
-use worldwake_sim::{SaveableRuntime, SimulationState};
+use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandOutcome, CommandResult};
 use crate::repl::ReplState;
@@ -41,14 +41,17 @@ pub fn handle_load(
         Ok((loaded, runtime_bytes)) => {
             let tick = loaded.scheduler().current_tick();
             *sim = loaded;
-            *driver = AgentTickDriver::new(PlanningBudget::default());
-            if let Some(bytes) = runtime_bytes {
-                if let Err(err) = driver.restore_runtime_state(&bytes) {
-                    println!("Load failed: {err}");
-                    return Ok(CommandOutcome::Continue);
+            *driver = if let Some(bytes) = runtime_bytes.as_deref() {
+                match AgentTickDriver::from_saved_runtime(bytes, sim.world()) {
+                    Ok(driver) => driver,
+                    Err(err) => {
+                        println!("Load failed: {err}");
+                        return Ok(CommandOutcome::Continue);
+                    }
                 }
-                driver.post_load_validate(sim.world());
-            }
+            } else {
+                AgentTickDriver::new(PlanningBudget::default())
+            };
             repl_state.last_affordances.clear();
             println!("Loaded from {path} — tick {}", tick.0);
             Ok(CommandOutcome::Continue)
@@ -68,6 +71,7 @@ mod tests {
         build_prototype_world, CauseRef, ControlSource, EventLog, Seed, StateHash, Tick,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
+    use worldwake_sim::SaveableRuntime;
     use worldwake_sim::{
         ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
         Scheduler, SimulationState, SystemManifest,
@@ -137,6 +141,7 @@ mod tests {
             max_candidates_to_plan: 9,
             ..PlanningBudget::default()
         });
+        let expected_driver_bytes = saving_driver.save_runtime_state().unwrap();
         handle_save(&sim, &saving_driver, path_str).unwrap();
 
         let mut loaded_sim = build_test_sim(); // different instance
@@ -154,6 +159,11 @@ mod tests {
             loaded_sim.world().entity_count(),
             original_entity_count,
             "entity count should match after roundtrip"
+        );
+        assert_eq!(
+            driver.save_runtime_state().unwrap(),
+            expected_driver_bytes,
+            "driver runtime bytes should match the saved driver payload after load"
         );
     }
 

@@ -2359,7 +2359,10 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
     .expect("steal successor should estimate duration from the preserved theft profile");
 
     assert_eq!(successor.steps.len(), 1);
-    assert_eq!(successor.steps.as_slice()[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(
+        successor.steps.as_slice()[0].op_kind,
+        PlannerOpKind::MoveCargo
+    );
     assert_eq!(successor.steps.as_slice()[0].estimated_ticks, 2);
     assert_eq!(successor.total_estimated_ticks, 2);
 }
@@ -4205,11 +4208,9 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
 
     let punish_defs = relevant_action_defs(&punish_goal, &semantics);
     assert!(
-        punish_defs.iter().any(|def_id| {
-            registry
-                .get(*def_id)
-                .is_some_and(|def| def.name == "exile")
-        }),
+        punish_defs
+            .iter()
+            .any(|def_id| { registry.get(*def_id).is_some_and(|def| def.name == "exile") }),
         "PunishAccused goals should expose the exile operator once the action exists"
     );
 

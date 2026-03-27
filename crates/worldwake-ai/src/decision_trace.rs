@@ -21,8 +21,8 @@ use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
     SelfKnowledgeProvenance,
 };
-use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::planner_duration_contract::PlannerDurationDependency;
+use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::ranking::RankedGoalComparison;
 // ── Frame Transition Trace ──────────────────────────────────────
 

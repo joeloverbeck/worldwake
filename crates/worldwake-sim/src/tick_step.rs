@@ -338,8 +338,10 @@ fn apply_input(
                         },
                     );
                     let action_name = lookup_action_name(services.action_defs, def_id);
-                    let trace_detail =
-                        action_trace_detail_for_affordance(services.action_defs, &resolved.affordance);
+                    let trace_detail = action_trace_detail_for_affordance(
+                        services.action_defs,
+                        &resolved.affordance,
+                    );
                     let legality = services.action_defs.get(def_id).and_then(|def| {
                         derive_start_failure_legality_trace(
                             actor,

@@ -1,10 +1,11 @@
 use crate::{
     assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
-    evaluate_suppression, DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
-    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
-    RankedGoalProvenance, RankedPriorityAdjustment,
+    evaluate_suppression,
     theft::assess_theft_deterrence,
+    DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
+    RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
+    RankedPriorityAdjustment,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
@@ -595,7 +596,9 @@ fn justice_motive(context: &RankingContext<'_>) -> u32 {
     context
         .view
         .justice_disposition_profile(context.agent)
-        .map_or(0, |profile| u32::from(profile.accusation_motive_weight.value()))
+        .map_or(0, |profile| {
+            u32::from(profile.accusation_motive_weight.value())
+        })
 }
 
 fn belief_pressure_from_state(
@@ -1351,7 +1354,7 @@ mod tests {
         let outcome = rank(
             &[
                 goal(GoalKind::StealItem {
-                target_item: entity(2),
+                    target_item: entity(2),
                 }),
                 goal(GoalKind::Accuse {
                     crime_register: entity(7),

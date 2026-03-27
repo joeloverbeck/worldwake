@@ -106,11 +106,11 @@ fn run_save_load_roundtrip_scenario(seed: Seed) -> GoldenHarness {
 
     assert_eq!(
         resumed.scheduler, uninterrupted.scheduler,
-        "Scheduler state should match after resuming with a fresh AI runtime"
+        "Scheduler state should match after resuming with restored AI runtime"
     );
     assert_eq!(
         resumed.controller, uninterrupted.controller,
-        "Controller state should match after resuming with a fresh AI runtime"
+        "Controller state should match after resuming with restored AI runtime"
     );
     assert_eq!(
         resumed.rng, uninterrupted.rng,

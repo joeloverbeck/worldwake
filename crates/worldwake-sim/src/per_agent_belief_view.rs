@@ -2196,7 +2196,9 @@ mod tests {
             txn.set_ground_location(observer, local_place).unwrap();
             txn.set_ground_location(holder, local_place).unwrap();
             txn.set_ground_location(victim, remote_place).unwrap();
-            let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             txn.set_ground_location(lot, local_place).unwrap();
             txn.set_owner(lot, victim).unwrap();
             txn.set_possessor(lot, holder).unwrap();

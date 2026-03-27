@@ -196,15 +196,15 @@ mod tests {
         FramePlanRelation, MaterializationBindings,
     };
     use crate::{
-        CommodityPurpose, GoalKey, HypotheticalEntityId, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef, DirtySet, GoalPriorityClass,
+        CommodityPurpose, DirtySet, GoalKey, GoalPriorityClass, HypotheticalEntityId,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         BodyPart, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-        IntentionDomain, IntentionFrame, Quantity, Tick, UniqueItemKind, Wound, WoundId,
-        WoundCause,
+        IntentionDomain, IntentionFrame, Quantity, Tick, UniqueItemKind, Wound, WoundCause,
+        WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -310,8 +310,8 @@ mod tests {
 
         let encoded =
             bincode::serialize(&bindings).expect("materialization bindings should serialize");
-        let decoded: MaterializationBindings = bincode::deserialize(&encoded)
-            .expect("materialization bindings should deserialize");
+        let decoded: MaterializationBindings =
+            bincode::deserialize(&encoded).expect("materialization bindings should deserialize");
 
         assert_eq!(decoded, bindings);
     }

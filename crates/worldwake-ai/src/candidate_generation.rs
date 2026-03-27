@@ -2,8 +2,8 @@ use crate::{
     decision_trace::{
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
         CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace,
-        PoliticalCandidateOmission,
-        PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
+        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        SocialCandidateOmission,
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
@@ -23,10 +23,9 @@ use worldwake_core::{
     CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, PerceptionSource,
-    PunishmentKind, Quantity, RecordKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, ViolationId, ViolationKind, RecordData, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts,
-    ViolationMemory,
+    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
+    RecordKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -317,12 +316,7 @@ fn emit_justice_candidates(
     let current_crime_case_claims =
         current_institutional_belief_topics(ctx.view.known_institutional_beliefs(ctx.agent));
 
-    emit_accusation_candidates(
-        candidates,
-        diagnostics,
-        ctx,
-        &known_social_observations,
-    );
+    emit_accusation_candidates(candidates, diagnostics, ctx, &known_social_observations);
     emit_punishment_candidates(
         candidates,
         diagnostics,
@@ -392,9 +386,7 @@ fn emit_accusation_candidates(
     }
 }
 
-fn known_authority_crime_registers(
-    ctx: &GenerationContext<'_>,
-) -> Vec<(EntityId, RecordData)> {
+fn known_authority_crime_registers(ctx: &GenerationContext<'_>) -> Vec<(EntityId, RecordData)> {
     ctx.view
         .known_entity_beliefs(ctx.agent)
         .into_iter()
@@ -485,9 +477,9 @@ fn emit_punishment_candidates(
                     learned_at: belief.learned_at,
                 });
             if let Some(legality_trace) = legality_trace {
-                trace.legality = Some(
-                    CandidateLegalityTrace::PunishmentFineSelection(legality_trace),
-                );
+                trace.legality = Some(CandidateLegalityTrace::PunishmentFineSelection(
+                    legality_trace,
+                ));
             }
         }
 
@@ -2776,8 +2768,8 @@ mod tests {
         DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
         HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille, Quantity,
-        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, RecipeId,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionSource, Permille,
+        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity, RecipeId,
         RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
         SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile,
         TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
@@ -2845,8 +2837,7 @@ mod tests {
         violation_disposition_profiles:
             BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
         theft_disposition_profiles: BTreeMap<EntityId, worldwake_core::TheftDispositionProfile>,
-        justice_disposition_profiles:
-            BTreeMap<EntityId, worldwake_core::JusticeDispositionProfile>,
+        justice_disposition_profiles: BTreeMap<EntityId, worldwake_core::JusticeDispositionProfile>,
         reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
         in_transit: BTreeSet<EntityId>,
         believed_owners: BTreeMap<EntityId, EntityId>,
@@ -5564,15 +5555,14 @@ mod tests {
             .get(&goal)
             .expect("theft candidate should have evidence trace");
         assert!(
-            trace
-                .knowledge_path
-                .entity_beliefs
-                .contains(&crate::knowledge_path::BeliefProvenance {
+            trace.knowledge_path.entity_beliefs.contains(
+                &crate::knowledge_path::BeliefProvenance {
                     subject: item,
                     aspect: BeliefAspect::LocationAt { place },
                     source: PerceptionSource::DirectObservation,
                     observed_tick: Tick(5),
-                }),
+                }
+            ),
             "theft candidate should record direct local observation provenance, got {:?}",
             trace.knowledge_path.entity_beliefs
         );
@@ -5595,15 +5585,23 @@ mod tests {
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, accused]);
         view.entity_kinds.insert(crime_register, EntityKind::Record);
-        view.record_data
-            .insert(crime_register, crime_register_record(office, place, RecordEntryId(0), InstitutionalClaim::OfficeHolder {
+        view.record_data.insert(
+            crime_register,
+            crime_register_record(
                 office,
-                holder: Some(agent),
-                effective_tick: Tick(3),
-            }));
+                place,
+                RecordEntryId(0),
+                InstitutionalClaim::OfficeHolder {
+                    office,
+                    holder: Some(agent),
+                    effective_tick: Tick(3),
+                },
+            ),
+        );
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.beliefs.insert(agent, vec![known_entity(crime_register, place)]);
+        view.beliefs
+            .insert(agent, vec![known_entity(crime_register, place)]);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.social_observations.insert(
@@ -5673,17 +5671,23 @@ mod tests {
         view.entity_kinds.insert(crime_register, EntityKind::Record);
         view.record_data.insert(
             crime_register,
-            crime_register_record(office, place, RecordEntryId(0), InstitutionalClaim::Accusation {
-                accuser: entity(9),
-                accused,
-                violation_id,
-                theft,
-                effective_tick: Tick(4),
-            }),
+            crime_register_record(
+                office,
+                place,
+                RecordEntryId(0),
+                InstitutionalClaim::Accusation {
+                    accuser: entity(9),
+                    accused,
+                    violation_id,
+                    theft,
+                    effective_tick: Tick(4),
+                },
+            ),
         );
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.beliefs.insert(agent, vec![known_entity(crime_register, place)]);
+        view.beliefs
+            .insert(agent, vec![known_entity(crime_register, place)]);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.institutional_claims.insert(
@@ -5782,7 +5786,8 @@ mod tests {
         );
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.beliefs.insert(agent, vec![known_entity(crime_register, place)]);
+        view.beliefs
+            .insert(agent, vec![known_entity(crime_register, place)]);
         view.justice_disposition_profiles
             .insert(agent, default_justice_profile());
         view.social_observations.insert(
@@ -5873,8 +5878,10 @@ mod tests {
             .insert(office, vacant_office("Magistrate", place, faction));
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.record_data
-            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, place, accusation_entry, claim),
+        );
         view.institutional_claims.insert(
             (
                 agent,
@@ -5955,8 +5962,10 @@ mod tests {
             .insert(office, vacant_office("Magistrate", place, faction));
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.record_data
-            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, place, accusation_entry, claim),
+        );
         view.institutional_claims.insert(
             (
                 agent,
@@ -6059,8 +6068,10 @@ mod tests {
             .insert(office, vacant_office("Magistrate", place, faction));
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.record_data
-            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, place, accusation_entry, claim),
+        );
         view.institutional_claims.insert(
             (
                 agent,
@@ -6100,7 +6111,9 @@ mod tests {
                 office,
                 accused,
                 accusation_entry,
-                punishment: worldwake_core::PunishmentKind::Exile { from_faction: faction },
+                punishment: worldwake_core::PunishmentKind::Exile {
+                    from_faction: faction
+                },
             }
         ));
     }
@@ -6140,8 +6153,10 @@ mod tests {
             .insert(office, vacant_office("Magistrate", place, faction));
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.record_data
-            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, place, accusation_entry, claim),
+        );
         view.institutional_claims.insert(
             (
                 agent,
@@ -6181,7 +6196,9 @@ mod tests {
                 office,
                 accused,
                 accusation_entry,
-                punishment: worldwake_core::PunishmentKind::Exile { from_faction: faction },
+                punishment: worldwake_core::PunishmentKind::Exile {
+                    from_faction: faction
+                },
             }
         ));
         assert!(
@@ -6311,8 +6328,10 @@ mod tests {
             .insert(office, vacant_office("Magistrate", place, faction));
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
-        view.record_data
-            .insert(record, crime_register_record(office, place, accusation_entry, claim));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, place, accusation_entry, claim),
+        );
         view.institutional_claims.insert(
             (
                 agent,

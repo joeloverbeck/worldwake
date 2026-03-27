@@ -29,8 +29,7 @@ pub fn get_affordances(
             continue;
         }
 
-        let mut def_affordances =
-            enumerate_affordances_for_def(def, handler, actor, view);
+        let mut def_affordances = enumerate_affordances_for_def(def, handler, actor, view);
         def_affordances.retain(|affordance| {
             def.preconditions.iter().all(|precondition| {
                 evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
@@ -74,8 +73,7 @@ pub fn get_affordances_for_defs(
             continue;
         }
 
-        let mut def_affordances =
-            enumerate_affordances_for_def(def, handler, actor, view);
+        let mut def_affordances = enumerate_affordances_for_def(def, handler, actor, view);
         def_affordances.retain(|affordance| {
             def.preconditions.iter().all(|precondition| {
                 evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
@@ -192,11 +190,11 @@ pub fn evaluate_constraint(
         Constraint::ActorHasCommodity { kind, min_qty } => {
             view.commodity_quantity(actor, *kind) >= *min_qty
         }
-        Constraint::ActorHasCommodityAtActorPlace { kind, min_qty } => view
-            .effective_place(actor)
-            .is_some_and(|place| {
+        Constraint::ActorHasCommodityAtActorPlace { kind, min_qty } => {
+            view.effective_place(actor).is_some_and(|place| {
                 view.controlled_commodity_quantity_at_place(actor, place, *kind) >= *min_qty
-            }),
+            })
+        }
         Constraint::ActorKind(kind) => view.entity_kind(actor) == Some(*kind),
     }
 }

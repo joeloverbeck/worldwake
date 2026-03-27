@@ -76,6 +76,16 @@ impl AgentTickDriver {
         }
     }
 
+    pub fn from_saved_runtime(
+        bytes: &[u8],
+        world: &worldwake_core::World,
+    ) -> Result<Self, SaveError> {
+        let mut driver = Self::new(PlanningBudget::default());
+        driver.restore_runtime_state(bytes)?;
+        driver.post_load_validate(world);
+        Ok(driver)
+    }
+
     /// Enable decision tracing. Must be called before stepping.
     pub fn enable_tracing(&mut self) {
         self.trace_sink = Some(DecisionTraceSink::new());
@@ -131,7 +141,8 @@ impl AgentTickDriver {
     }
 
     pub fn post_load_validate(&mut self, world: &worldwake_core::World) {
-        self.runtime_by_agent.retain(|agent, _| world.is_alive(*agent));
+        self.runtime_by_agent
+            .retain(|agent, _| world.is_alive(*agent));
 
         for runtime in self.runtime_by_agent.values_mut() {
             runtime.exhaustion_cache.retain(|key, _| {
@@ -151,8 +162,9 @@ impl AgentTickDriver {
             runtime
                 .last_facility_access_signature
                 .retain(|(entity, _, _)| world.is_alive(*entity));
-            runtime.dirty =
-                crate::DirtySet::STRUCTURAL_MASK | crate::DirtySet::SNAPSHOT_MASK | crate::DirtySet::FRAME_MASK;
+            runtime.dirty = crate::DirtySet::STRUCTURAL_MASK
+                | crate::DirtySet::SNAPSHOT_MASK
+                | crate::DirtySet::FRAME_MASK;
             runtime.last_priority_class = None;
             runtime.last_frame_clear_reason = None;
         }

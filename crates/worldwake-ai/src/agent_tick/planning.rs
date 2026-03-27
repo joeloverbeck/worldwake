@@ -805,7 +805,14 @@ mod tests {
             },
         );
 
-        let plans = vec![(goal, PlanSearchResult::BudgetExhausted { expansions_used: 12 }, Vec::new(), Vec::new())];
+        let plans = vec![(
+            goal,
+            PlanSearchResult::BudgetExhausted {
+                expansions_used: 12,
+            },
+            Vec::new(),
+            Vec::new(),
+        )];
         record_exhausted_goals(&mut runtime, &plans, Tick(9));
 
         assert_eq!(
@@ -861,7 +868,12 @@ mod tests {
             },
         );
 
-        let plans = vec![(solved_goal, PlanSearchResult::Found(found_plan(solved_goal)), Vec::new(), Vec::new())];
+        let plans = vec![(
+            solved_goal,
+            PlanSearchResult::Found(found_plan(solved_goal)),
+            Vec::new(),
+            Vec::new(),
+        )];
         record_exhausted_goals(&mut runtime, &plans, Tick(10));
 
         assert!(!runtime.exhaustion_cache.contains_key(&solved_goal));

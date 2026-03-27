@@ -4,9 +4,9 @@ mod heuristic;
 mod transition;
 
 use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
-    shared_collections::SharedVec,
+    shared_collections::SharedVec, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
+    PlannedStep, PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot,
+    PlanningState,
 };
 use candidates::{
     root_candidate_payload_status, search_candidates, unsupported_goal, SearchCandidate,
@@ -182,14 +182,14 @@ pub fn search_plan(
             };
             if let Some(trace_index) = candidate.trace_index {
                 if let Some(trace) = root_candidates.get_mut(trace_index) {
-                            trace.payload_status = root_candidate_payload_status(
-                                candidate.payload_override.as_ref(),
-                                successor
-                                    .steps
-                                    .as_slice()
-                                    .last()
-                                    .and_then(|step| step.payload_override.as_ref()),
-                            );
+                    trace.payload_status = root_candidate_payload_status(
+                        candidate.payload_override.as_ref(),
+                        successor
+                            .steps
+                            .as_slice()
+                            .last()
+                            .and_then(|step| step.payload_override.as_ref()),
+                    );
                 }
             }
             if let Some(terminal_kind) = terminal {
@@ -243,12 +243,11 @@ pub fn search_plan(
                     // for a GoalSatisfied plan across deeper expansion levels.
                     PlanTerminalKind::ProgressBarrier => {
                         if best_barrier.is_none() {
-                        best_barrier =
-                                Some(PlannedPlan::new(
-                                    goal.key,
-                                    successor.steps.into_vec(),
-                                    terminal_kind,
-                                ));
+                            best_barrier = Some(PlannedPlan::new(
+                                goal.key,
+                                successor.steps.into_vec(),
+                                terminal_kind,
+                            ));
                         }
                     }
                 }

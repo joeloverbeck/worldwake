@@ -562,7 +562,9 @@ mod tests {
         let Some(accused) = targets.first().copied() else {
             return false;
         };
-        actor != accused && view.is_alive(accused) && payload.violation_id == worldwake_core::ViolationId(7)
+        actor != accused
+            && view.is_alive(accused)
+            && payload.violation_id == worldwake_core::ViolationId(7)
     }
 
     fn build_specific_entity_payload_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {

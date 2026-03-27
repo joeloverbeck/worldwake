@@ -488,7 +488,9 @@ fn social_observations_for_event(
     else {
         return Vec::new();
     };
-    if let Some(observation) = suspected_theft_observation_for_event(world, record, tick, actor, place) {
+    if let Some(observation) =
+        suspected_theft_observation_for_event(world, record, tick, actor, place)
+    {
         return vec![observation];
     }
     let targets = record
@@ -551,7 +553,8 @@ fn suspected_theft_observation_for_event(
     }
 
     let stolen_lot = record.target_ids().iter().copied().find(|target| {
-        world.entity_kind(*target) == Some(EntityKind::ItemLot) && world.possessor_of(*target) == Some(actor)
+        world.entity_kind(*target) == Some(EntityKind::ItemLot)
+            && world.possessor_of(*target) == Some(actor)
     })?;
     world.owner_of(stolen_lot).filter(|owner| *owner != actor)?;
     let lot = world.get_component_item_lot(stolen_lot)?;

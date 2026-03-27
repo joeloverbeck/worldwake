@@ -517,7 +517,9 @@ mod tests {
         owner: Option<EntityId>,
     ) -> EntityId {
         let mut txn = new_txn(world, 1);
-        let lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(1))
+            .unwrap();
         txn.set_ground_location(lot, place).unwrap();
         if let Some(owner) = owner {
             txn.set_owner(lot, owner).unwrap();
@@ -1379,9 +1381,10 @@ mod tests {
                     }
                 && record.resolved_tick == Some(Tick(4))
         }));
-        assert!(!memory.violations.iter().any(|record| {
-            matches!(record.kind, ViolationKind::SuspectedTheft { .. })
-        }));
+        assert!(!memory
+            .violations
+            .iter()
+            .any(|record| { matches!(record.kind, ViolationKind::SuspectedTheft { .. }) }));
     }
 
     #[test]

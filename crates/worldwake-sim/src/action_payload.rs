@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, RecordEntryId,
-    TellTopic, UniqueItemKind, ViolationId, WorkstationTag, PunishmentKind,
+    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, PunishmentKind, Quantity, RecipeId,
+    RecordEntryId, TellTopic, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -546,15 +546,15 @@ mod tests {
     use super::{
         AccuseActionPayload, ActionPayload, BribeActionPayload, CombatActionPayload,
         ConsultRecordActionPayload, CraftActionPayload, DeclareSupportActionPayload,
-        HarvestActionPayload, InvestigateActionPayload, LootActionPayload, PunishActionPayload,
-        PressForceClaimActionPayload, QueueForFacilityUsePayload, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
+        PressForceClaimActionPayload, PunishActionPayload, QueueForFacilityUsePayload,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
         YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
-        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, Quantity, RecipeId, RecordEntryId,
-        TellTopic, UniqueItemKind, ViolationId, WorkstationTag, PunishmentKind,
+        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, PunishmentKind, Quantity, RecipeId,
+        RecordEntryId, TellTopic, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

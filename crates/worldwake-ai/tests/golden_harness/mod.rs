@@ -1163,18 +1163,23 @@ impl GoldenHarness {
                 .expect("golden harness simulation state should serialize"),
         )
         .expect("golden harness simulation state should deserialize");
-        let mut restored = Self::from_simulation_state(&state);
-        if let Some(bytes) = runtime_bytes {
-            restored
-                .driver
-                .restore_runtime_state(&bytes)
-                .expect("golden harness runtime should deserialize");
-            restored.driver.post_load_validate(&restored.world);
-        }
-        restored
+        let driver = runtime_bytes
+            .as_deref()
+            .map(|bytes| AgentTickDriver::from_saved_runtime(bytes, state.world()))
+            .transpose()
+            .expect("golden harness runtime should deserialize")
+            .unwrap_or_else(|| AgentTickDriver::new(PlanningBudget::default()));
+        Self::from_simulation_state_with_driver(&state, driver)
     }
 
     pub fn from_simulation_state(state: &SimulationState) -> Self {
+        Self::from_simulation_state_with_driver(
+            state,
+            AgentTickDriver::new(PlanningBudget::default()),
+        )
+    }
+
+    fn from_simulation_state_with_driver(state: &SimulationState, driver: AgentTickDriver) -> Self {
         let recipes = state.recipe_registry().clone();
         let (defs, handlers) = build_full_registries(&recipes);
 
@@ -1187,7 +1192,7 @@ impl GoldenHarness {
             defs,
             handlers,
             recipes,
-            driver: AgentTickDriver::new(PlanningBudget::default()),
+            driver,
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
@@ -1340,7 +1345,9 @@ mod tests {
             .materialization_bindings
             .bind(HypotheticalEntityId(7), dead_entity);
         runtime.exhaustion_cache.insert(
-            GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity }),
+            GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity,
+            }),
             ExhaustionEntry {
                 exhausted_at: Some(Tick(3)),
                 count: 2,
@@ -1365,7 +1372,8 @@ mod tests {
 
         let restored = h.save_load_roundtrip();
         let restored_runtime_bytes = restored.driver.save_runtime_state().unwrap();
-        let restored_state: DriverStateMirror = bincode::deserialize(&restored_runtime_bytes).unwrap();
+        let restored_state: DriverStateMirror =
+            bincode::deserialize(&restored_runtime_bytes).unwrap();
 
         assert!(!restored_state.runtime_by_agent.contains_key(&dead_agent));
 
@@ -1383,7 +1391,9 @@ mod tests {
         );
         assert!(!runtime
             .exhaustion_cache
-            .contains_key(&GoalKey::from(GoalKind::LootCorpse { corpse: dead_entity })));
+            .contains_key(&GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity
+            })));
         assert!(runtime
             .exhaustion_cache
             .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: actor })));
