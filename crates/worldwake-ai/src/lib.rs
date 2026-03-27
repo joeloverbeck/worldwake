@@ -29,6 +29,7 @@ pub mod planning_state;
 pub mod pressure;
 pub mod ranking;
 pub mod search;
+mod theft;
 
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use budget::PlanningBudget;

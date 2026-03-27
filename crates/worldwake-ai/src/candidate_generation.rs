@@ -12,6 +12,7 @@ use crate::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
         SelfKnowledgeProvenance,
     },
+    theft::assess_theft_deterrence,
     GroundedGoal,
 };
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
@@ -1928,23 +1929,14 @@ fn emit_theft_candidates(
     let Some(place) = ctx.place else {
         return;
     };
-    let Some(profile) = ctx.view.theft_disposition_profile(ctx.agent) else {
+    let Some(deterrence) = assess_theft_deterrence(ctx.view, ctx.agent) else {
         return;
     };
-
-    let locally_observed = ctx.view.locally_observed_entities_at(ctx.agent, place);
-    let witness_count = locally_observed
-        .iter()
-        .copied()
-        .filter(|entity| *entity != ctx.agent)
-        .filter(|entity| ctx.view.entity_kind(*entity) == Some(EntityKind::Agent))
-        .filter(|entity| ctx.view.is_alive(*entity))
-        .count() as u32;
-    let witness_penalty =
-        u32::from(profile.witness_risk_penalty.value()).saturating_mul(witness_count);
-    if u32::from(profile.theft_motive_weight.value()) <= witness_penalty {
+    if deterrence.effective_motive == 0 {
         return;
     }
+
+    let locally_observed = ctx.view.locally_observed_entities_at(ctx.agent, place);
 
     let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else {
         return;

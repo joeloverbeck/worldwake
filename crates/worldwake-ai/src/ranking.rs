@@ -4,12 +4,13 @@ use crate::{
     evaluate_suppression, DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
     RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
     RankedGoalProvenance, RankedPriorityAdjustment,
+    theft::assess_theft_deterrence,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, PerceptionSource, Permille,
-    TellTopic, ThresholdBand, Tick, UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, PerceptionSource, Permille, TellTopic,
+    ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -586,25 +587,8 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
 }
 
 fn theft_motive(context: &RankingContext<'_>) -> u32 {
-    let Some(profile) = context.view.theft_disposition_profile(context.agent) else {
-        return 0;
-    };
-    let Some(place) = context.view.effective_place(context.agent) else {
-        return 0;
-    };
-
-    let witness_count = context
-        .view
-        .locally_observed_entities_at(context.agent, place)
-        .into_iter()
-        .filter(|entity| *entity != context.agent)
-        .filter(|entity| context.view.entity_kind(*entity) == Some(EntityKind::Agent))
-        .filter(|entity| context.view.is_alive(*entity))
-        .count() as u32;
-
-    let witness_penalty =
-        u32::from(profile.witness_risk_penalty.value()).saturating_mul(witness_count);
-    u32::from(profile.theft_motive_weight.value()).saturating_sub(witness_penalty)
+    assess_theft_deterrence(context.view, context.agent)
+        .map_or(0, |deterrence| deterrence.effective_motive)
 }
 
 fn justice_motive(context: &RankingContext<'_>) -> u32 {
