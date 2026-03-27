@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S32: Crime Emergence Golden E2E Suites
 
@@ -216,7 +216,7 @@ No positive-feedback loops require additional dampening beyond existing systems.
 
 | File | Role |
 |------|------|
-| `specs/S32-crime-emergence-golden-suites.md` | This spec |
+| `archive/specs/S32-crime-emergence-golden-suites.md` | This spec |
 | `crates/worldwake-ai/tests/golden_emergent.rs` | Add 3 new suites (~6 tests + replay companions) |
 | `crates/worldwake-ai/tests/golden_harness/mod.rs` | May need new crime/justice setup helpers |
 | `docs/golden-e2e-coverage.md` | Update backlog |
@@ -237,3 +237,18 @@ After all tickets:
 ## Implementation Order
 
 GOLDE2E-017 -> GOLDE2E-018 -> GOLDE2E-019 -> GOLDE2E-020
+
+## Outcome
+
+- **Completion date**: 2026-03-27
+- **What actually changed**: Shipped all three planned crime-emergence scenarios in `crates/worldwake-ai/tests/golden_emergent.rs` with replay companions:
+  - Scenario 41: `golden_exile_punishment_when_fine_is_not_locally_collectible`
+  - Scenario 42: `golden_witness_deterrence_suppresses_theft_candidate`
+  - Scenario 43: `golden_dual_discovery_converges_without_double_accusation`
+  The source annotations now generate scenario-map, inventory, and coverage-matrix entries for the S32 scenarios.
+- **Deviations from original plan**: The final closeout used the repository's canonical source-annotation -> generated-doc pipeline rather than keeping S32 in a hand-maintained pending backlog. `GOLDE2E-020`'s pre-implementation wording about "adding S32 to the pending backlog" became stale once the scenarios shipped; the completed end-state is removal from pending backlog, regenerated artifacts, and archival.
+- **Verification results**:
+  - `python3 scripts/golden_inventory.py --write --check-docs` ✅
+  - `cargo test -p worldwake-ai golden_ -- --nocapture` ✅
+  - `cargo test --workspace` ✅
+  - `cargo clippy --workspace --all-targets -- -D warnings` ✅

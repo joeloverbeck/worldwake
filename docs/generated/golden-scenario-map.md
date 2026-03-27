@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 53
+- Scenario blocks with explicit metadata: 56
 - Files contributing scenario metadata: 10
-- `golden_*` tests associated with scenario blocks: 135
+- `golden_*` tests associated with scenario blocks: 141
 
 ## Scenario Inventory
 
@@ -44,8 +44,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4605` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
 | `37` | Theft Leads Owner To Local Suspected Theft Discovery | `golden_emergent.rs:4841` | `golden_theft_leads_owner_to_local_suspected_theft_discovery` | `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically` |
 | `38` | Witnessed Theft Enables Accusation Chain | `golden_emergent.rs:5217` | `golden_witnessed_theft_accusation_chain` | `golden_witnessed_theft_accusation_chain_replays_deterministically` |
-| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5793` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
-| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:6093` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
+| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5787` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
+| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:6085` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
+| `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6367` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
+| `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6612` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
+| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7172` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -534,7 +537,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5793`
+- Source: `golden_emergent.rs:5787`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -546,7 +549,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:6093`
+- Source: `golden_emergent.rs:6085`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -555,6 +558,42 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Primary tests: `golden_supply_depletion_enables_share_belief`
 - Replay tests: `golden_supply_depletion_enables_share_belief_replays_deterministically`
 - All tests: `golden_supply_depletion_enables_share_belief`, `golden_supply_depletion_enables_share_belief_replays_deterministically`
+
+### Scenario 42: Witness Deterrence Suppresses Theft Candidate
+
+- Source: `golden_emergent.rs:6367`
+- Systems: AI, Perception, Needs
+- GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
+- ActionDomains: Needs
+- Places: VillageSquare, GeneralStore
+- Principles: 1, 10, 24
+- Primary tests: `golden_witness_deterrence_suppresses_theft_candidate`
+- Replay tests: `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically`
+- All tests: `golden_witness_deterrence_suppresses_theft_candidate`, `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically`
+
+### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
+
+- Source: `golden_emergent.rs:6612`
+- Systems: Transport, Perception, Social Tell, AI, Institutions
+- GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
+- ActionDomains: Transport, Social, Travel
+- Places: VillageSquare, GeneralStore, RulersHall
+- Principles: 1, 7, 21, 22, 23, 24
+- Primary tests: `golden_exile_punishment_when_fine_is_not_locally_collectible`
+- Replay tests: `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
+- All tests: `golden_exile_punishment_when_fine_is_not_locally_collectible`, `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
+
+### Scenario 43: Dual Discovery Converges Without Double Accusation
+
+- Source: `golden_emergent.rs:7172`
+- Systems: Transport, Perception, Social Tell, AI, Institutions
+- GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
+- ActionDomains: Transport, Social, Travel
+- Places: VillageSquare, GeneralStore, RulersHall, CommonHouse
+- Principles: 1, 7, 13, 16, 24
+- Primary tests: `golden_dual_discovery_converges_without_double_accusation`
+- Replay tests: `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
+- All tests: `golden_dual_discovery_converges_without_double_accusation`, `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 

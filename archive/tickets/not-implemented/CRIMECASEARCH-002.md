@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: `archive/tickets/not-implemented/CRIMECASEARCH-001.md`, `archive/tickets/completed/S32CRIMEMEGOLSUI-001.md`, `archive/tickets/completed/S32CRIMEMEGOLSUI-002.md`, `archive/tickets/completed/S32CRIMEMEGOLSUI-003.md`, E16c (institutional beliefs), E17 (crime/theft/justice), `docs/FOUNDATIONS.md`, `docs/planner-contracts.md`, `specs/S32-crime-emergence-golden-suites.md`
+**Deps**: `archive/tickets/not-implemented/CRIMECASEARCH-001.md`, `archive/tickets/completed/S32CRIMEMEGOLSUI-001.md`, `archive/tickets/completed/S32CRIMEMEGOLSUI-002.md`, `archive/tickets/completed/S32CRIMEMEGOLSUI-003.md`, E16c (institutional beliefs), E17 (crime/theft/justice), `docs/FOUNDATIONS.md`, `docs/planner-contracts.md`, `archive/specs/S32-crime-emergence-golden-suites.md`
 
 ## Problem
 
@@ -42,7 +42,7 @@ That assumption must be corrected before any implementation work. The live crime
    - `golden_dual_discovery_converges_without_double_accusation`
    - `golden_exile_punishment_when_fine_is_not_locally_collectible`
    - `golden_witness_deterrence_suppresses_theft_candidate`
-9. `specs/S32-crime-emergence-golden-suites.md` is now reference material, not missing implementation scope. The S32 crime goldens it describes already exist in [golden_emergent.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs) and their delivery tickets are already archived.
+9. `archive/specs/S32-crime-emergence-golden-suites.md` is now reference material, not missing implementation scope. The S32 crime goldens it describes already exist in [golden_emergent.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs) and their delivery tickets are already archived.
 10. Adjacent contradiction exposed during reassessment: residual institutional `violation_id` grouping is real, but solving it cleanly requires first defining a true record-lineage grouping abstraction. That is future cleanup, not a justified in-scope refactor today.
 11. Mismatch + correction: this ticket should not proceed with production changes. The correct outcome is to retire the cleanup until the codebase has a real record-lineage key that is stronger than `(accused, violation_id)` and does not create a second institutional identity lane.
 

@@ -74,6 +74,9 @@ Established the missing Phase 3 golden proof for craft-restock and stale prerequ
 ### S19: Institutional Record Consultation Golden E2E Suites — COMPLETED
 Established the delivered office-record golden coverage and closed the documentation/archive loop around the live source-declared scenarios: Scenario 33 now proves remote record travel plus consultation plus political follow-through, Scenario 34 proves knowledge-asymmetry-driven office races, and the hand-maintained golden docs were aligned to the shipped scenario inventory instead of the older planned Scenario 32 narrative.
 
+### S32: Crime Emergence Golden E2E Suites — COMPLETED
+Established the delivered E17 crime/justice emergence coverage and closed the remaining documentation/archive loop around the live source-declared scenarios: Scenario 41 proves Fine infeasibility falls through to lawful exile based on local collectibility plus governed faction membership, Scenario 42 proves witness-count deterrence suppresses theft before action start, and Scenario 43 proves owner-local discovery and witness-report discovery converge on one accusation rather than duplicating institutional case state.
+
 ### E16b: Force Legitimacy & Jurisdiction Control — COMPLETED
 Replaced the thin E16 force-succession shortcut with explicit jurisdiction-control state: public claims, contested control, uncontested hold periods, and eventual installation into office. Force succession now arises from concrete local state (claims, contests, hold durations) rather than a hidden timing heuristic, with proper information paths for coups and recognition.
 
@@ -207,6 +210,8 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
   - craft-restock and stale prerequisite-belief recovery goldens are shipped, and the stale planner-surface narrative was corrected to the live `RestockCommodity` contract before archival
 - **S19**: Institutional Record Consultation Golden E2E Suites — ✅ COMPLETED
   - shipped office-record golden proof for the live Scenario 33 remote-record route and Scenario 34 knowledge-asymmetry race, then aligned the human-maintained golden docs to the generated/source-declared inventory instead of the older planned Scenario 32 draft narrative
+- **S32**: Crime Emergence Golden E2E Suites — ✅ COMPLETED
+  - shipped Scenario 41 exile fallback, Scenario 42 witness deterrence, and Scenario 43 dual-discovery convergence in `golden_emergent.rs`, then aligned the dashboard/generated inventory/archive trail to the live source-declared scenarios
 
 **Step 12**:
 - **E16c**: Institutional Beliefs & Record Consultation
@@ -387,7 +392,7 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete; `S13` plus gate items `T10`/`T11`/`T25` remain open) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; `S13` plus gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | IN PROGRESS (S20–S28 complete; S29, S30, S31 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — golden test only
-**Deps**: E17 (crime/theft/justice), E16c (institutional beliefs), E16d (political planning), E14 (perception), E15 (social Tell), S27 (expectation-violation goals), `specs/S32-crime-emergence-golden-suites.md`, `docs/golden-e2e-testing.md`
+**Deps**: E17 (crime/theft/justice), E16c (institutional beliefs), E16d (political planning), E14 (perception), E15 (social Tell), S27 (expectation-violation goals), `archive/specs/S32-crime-emergence-golden-suites.md`, `docs/golden-e2e-testing.md`
 
 ## Problem
 
@@ -36,7 +36,7 @@ The live code has focused coverage for exile punishment selection and exile acti
 9. The draft's hostility wording was imprecise. `commit_exile()` calls `txn.add_hostility(from_faction, accused)`, and the established assertion surface is `world.hostile_towards(accused).contains(&from_faction)`. The ticket is corrected to that exact authoritative query.
 10. The draft verification command naming was approximate. Current real test names were confirmed via `cargo test -p worldwake-ai --test golden_emergent -- --list`.
 11. The live architecture remains cleaner than adding any special-case "poor thief => exile" rule. The durable branch boundary is local collectibility of the fined commodity, which composes with belief-local planning and avoids introducing wealth aliases or omniscient punishment heuristics.
-12. Adjacent contradiction exposed during reassessment: `specs/S32-crime-emergence-golden-suites.md` still narrates Scenario 41 as "zero commodities" and should be corrected in a separate doc/spec cleanup ticket if that narrative is intended to stay authoritative. This implementation ticket corrects only its own scope.
+12. Adjacent contradiction exposed during reassessment: `archive/specs/S32-crime-emergence-golden-suites.md` still narrates Scenario 41 as "zero commodities" and should be corrected in a separate doc/spec cleanup ticket if that narrative is intended to stay authoritative. This implementation ticket corrects only its own scope.
 
 ## Architecture Check
 
@@ -95,7 +95,7 @@ Do not modify production AI or justice code unless the new golden exposes a real
 
 - Changes to `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-systems/src/justice_actions.rs`, or other production crates unless the new golden proves a real contradiction
 - Rewriting Scenario 38 into an exile-specific test
-- Updating `specs/S32-crime-emergence-golden-suites.md`
+- Updating `archive/specs/S32-crime-emergence-golden-suites.md`
 - Scenario 42 and Scenario 43
 - Golden docs inventory refresh tickets beyond the source metadata added with the new scenario
 

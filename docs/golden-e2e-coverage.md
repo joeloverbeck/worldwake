@@ -22,12 +22,9 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 **S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
 
-**S32: Crime Emergence Golden Suites** (6 tests: 3 main + 3 replay companions) — covers three E17-crime mechanics with zero golden coverage: (1) Exile punishment fallback when Fine is infeasible (Scenario 41), (2) witness deterrence suppressing theft candidates via witness_risk_penalty (Scenario 42), (3) dual discovery convergence with duplicate accusation prevention (Scenario 43). See `specs/S32-crime-emergence-golden-suites.md`. Tickets: GOLDE2E-017, GOLDE2E-018, GOLDE2E-019, GOLDE2E-020.
-
 ### Recommended Implementation Order
 
-1. S32 crime emergence golden suites
-2. S02c multi-role emergent supply chain
+1. S02c multi-role emergent supply chain
 
 ---
 
@@ -58,6 +55,8 @@ Items removed from the golden backlog with rationale (prevents duplicate coverag
 - **E17CRITHEJUS-018 / E17CRITHEJUS-022 stale-fine traceability closeout** (removed 2026-03-27) — Implemented as Scenario 39 in `golden_emergent.rs` (`golden_traceability_explains_stale_fine_branch_without_source_diving`). The suite now covers the mixed-layer debugging contract for justice punishment: decision traces record why `Fine` was selected from the recorded accusation, then action traces show the later concrete accessibility contradiction without collapsing the proof into a generic downstream failure.
 
 - **S27-006 Supply depletion enables ShareBelief** (removed 2026-03-25) — Implemented as Scenario 40 in `golden_emergent.rs`. The suite now covers the local depletion-reporting chain end to end: refreshed `resource_source.available_quantity` belief on the speaker -> same-tick `ShareBelief { listener, subject: source }` plus `InvestigateViolation { violation_id, place }` candidate coexistence -> committed `tell` -> listener learns the depleted source through report rather than direct perception.
+
+- **S32: Crime Emergence Golden Suites** (removed 2026-03-27) — Implemented as Scenarios 41-43 in `golden_emergent.rs`: `golden_witness_deterrence_suppresses_theft_candidate`, `golden_exile_punishment_when_fine_is_not_locally_collectible`, and `golden_dual_discovery_converges_without_double_accusation`, each with deterministic replay companions. The suite now proves three previously unclosed E17 crime/justice emergence paths at their live ownership boundaries: witness-count deterrence suppresses `StealItem` candidate emission before any theft starts, Fine-infeasibility falls through to lawful `PunishAccused(Exile)` based on local collectibility plus governed faction membership, and dual discovery paths converge on one institutional accusation rather than duplicating case state.
 
 - **S27-005 Entity missing triggers investigation** (removed 2026-03-25) — Implemented as Scenario 36 in `golden_emergent.rs`. The suite now covers the baseline single-incident expectation-violation path: local stale belief mismatch -> `InvestigateViolation { violation_id, place }` candidate -> `investigate` commit -> `WitnessedAbsence` aftermath -> exact `ViolationMemory` resolution. The harder same-place sibling-isolation case remains covered separately by Scenario 35.
 

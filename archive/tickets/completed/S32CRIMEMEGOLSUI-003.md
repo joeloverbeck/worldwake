@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — accusation duplicate suppression in AI + justice case validation, plus golden coverage
-**Deps**: E17 (crime/theft/justice), E16c (institutional beliefs), E14 (perception), E15 (social Tell), S27 (expectation-violation goals), `specs/S32-crime-emergence-golden-suites.md`, `docs/golden-e2e-testing.md`
+**Deps**: E17 (crime/theft/justice), E16c (institutional beliefs), E14 (perception), E15 (social Tell), S27 (expectation-violation goals), `archive/specs/S32-crime-emergence-golden-suites.md`, `docs/golden-e2e-testing.md`
 
 ## Problem
 
