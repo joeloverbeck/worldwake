@@ -46,5 +46,5 @@ pub(super) fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>
         .cmp(&right_f)
         .then_with(|| left.total_estimated_ticks.cmp(&right.total_estimated_ticks))
         .then_with(|| left.steps.len().cmp(&right.steps.len()))
-        .then_with(|| left.steps.cmp(&right.steps))
+        .then_with(|| left.steps.as_slice().cmp(right.steps.as_slice()))
 }

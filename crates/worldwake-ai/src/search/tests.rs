@@ -6,6 +6,7 @@ use super::{
 };
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
+use crate::shared_collections::SharedVec;
 use crate::{
     build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
     build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult,
@@ -496,10 +497,18 @@ fn frontier_test_node(
 ) -> SearchNode<'_> {
     SearchNode {
         state: PlanningState::new(snapshot),
-        steps,
+        steps: shared_steps(steps),
         total_estimated_ticks,
         heuristic_ticks: 0,
     }
+}
+
+fn shared_steps(steps: Vec<PlannedStep>) -> SharedVec<PlannedStep> {
+    let mut shared = SharedVec::new();
+    for step in steps {
+        shared.push(step);
+    }
+    shared
 }
 
 fn pickup_node(
@@ -550,7 +559,7 @@ fn pickup_node(
     (
         SearchNode {
             state: PlanningState::new(snapshot),
-            steps: Vec::new(),
+            steps: SharedVec::new(),
             total_estimated_ticks: 0,
             heuristic_ticks: 0,
         },
@@ -649,7 +658,7 @@ fn search_frontier_heap_preserves_priority_tiebreaks() {
     )));
 
     let popped = std::iter::from_fn(|| frontier.pop().map(FrontierEntry::into_node))
-        .map(|node| node.steps)
+        .map(|node| node.steps.into_vec())
         .collect::<Vec<_>>();
 
     assert_eq!(
@@ -1947,7 +1956,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
     );
     let node = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 0,
         heuristic_ticks: 0,
     };
@@ -1986,10 +1995,12 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
     .unwrap();
     assert_eq!(terminal, None);
     assert_eq!(
-        after_pick_up.steps[0].targets,
+        after_pick_up.steps.as_slice()[0].targets,
         vec![PlanningEntityRef::Authoritative(bread)]
     );
-    assert!(!after_pick_up.steps[0].expected_materializations.is_empty());
+    assert!(!after_pick_up.steps.as_slice()[0]
+        .expected_materializations
+        .is_empty());
 
     let follow_up_candidates = search_candidates(
         &goal,
@@ -2174,7 +2185,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
     );
     let node = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 0,
         heuristic_ticks: 0,
     };
@@ -2199,9 +2210,76 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
     .unwrap();
 
     assert_eq!(successor.steps.len(), 1);
-    assert_eq!(successor.steps[0].op_kind, PlannerOpKind::Defend);
-    assert_eq!(successor.steps[0].estimated_ticks, 10);
+    assert_eq!(successor.steps.as_slice()[0].op_kind, PlannerOpKind::Defend);
+    assert_eq!(successor.steps.as_slice()[0].estimated_ticks, 10);
     assert_eq!(successor.total_estimated_ticks, 10);
+}
+
+#[test]
+fn build_successor_preserves_parent_steps_when_appending_child_step() {
+    let actor = entity(1);
+    let attacker = entity(2);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, attacker, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(attacker, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(attacker, town);
+    view.entities_at.insert(town, vec![actor, attacker]);
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.hostiles.insert(actor, vec![attacker]);
+    view.attackers.insert(actor, vec![attacker]);
+
+    let goal = GroundedGoal {
+        key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
+        evidence_entities: BTreeSet::from([attacker]),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        0,
+    );
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let defend = registry.iter().find(|def| def.name == "defend").unwrap();
+    let parent_step = sample_step(99, PlannerOpKind::Travel, 2, vec![town]);
+    let node = SearchNode {
+        state: PlanningState::new(&snapshot),
+        steps: shared_steps(vec![parent_step.clone()]),
+        total_estimated_ticks: 2,
+        heuristic_ticks: 0,
+    };
+    let candidate = SearchCandidate {
+        def_id: defend.id,
+        authoritative_targets: Vec::new(),
+        planning_targets: Vec::new(),
+        payload_override: None,
+        planner_only: true,
+        trace_index: None,
+    };
+
+    let (terminal, successor) = build_successor(
+        &goal,
+        &semantics_table,
+        &registry,
+        &node,
+        &candidate,
+        &RecipeRegistry::new(),
+        &PlanningBudget::default(),
+    )
+    .expect("defend successor should append a child step without mutating the parent");
+
+    assert_eq!(terminal, Some(PlanTerminalKind::CombatCommitment));
+    assert_eq!(node.steps.as_slice(), &[parent_step]);
+    assert_eq!(successor.steps.len(), 2);
+    assert_eq!(successor.steps.as_slice()[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(successor.steps.as_slice()[1].op_kind, PlannerOpKind::Defend);
 }
 
 #[test]
@@ -2256,7 +2334,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
     );
     let node = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 0,
         heuristic_ticks: 0,
     };
@@ -2281,8 +2359,8 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
     .expect("steal successor should estimate duration from the preserved theft profile");
 
     assert_eq!(successor.steps.len(), 1);
-    assert_eq!(successor.steps[0].op_kind, PlannerOpKind::MoveCargo);
-    assert_eq!(successor.steps[0].estimated_ticks, 2);
+    assert_eq!(successor.steps.as_slice()[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(successor.steps.as_slice()[0].estimated_ticks, 2);
     assert_eq!(successor.total_estimated_ticks, 2);
 }
 
@@ -2313,7 +2391,7 @@ fn build_successor_uses_transition_metadata_for_partial_pickup() {
     )
     .unwrap();
 
-    let step = &successor.steps[0];
+    let step = &successor.steps.as_slice()[0];
     assert_eq!(step.targets, vec![PlanningEntityRef::Authoritative(lot)]);
     assert_eq!(step.expected_materializations.len(), 1);
     assert_eq!(
@@ -3319,13 +3397,13 @@ fn compare_search_nodes_orders_by_f_cost() {
     // Node with lower f = g + h should come first.
     let low_f = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 2,
         heuristic_ticks: 1, // f = 3
     };
     let high_f = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 3,
         heuristic_ticks: 2, // f = 5
     };
@@ -3346,13 +3424,13 @@ fn compare_search_nodes_equal_f_prefers_lower_g() {
     // Both f = 5, but different g. Prefer lower g (less committed cost).
     let low_g = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 2,
         heuristic_ticks: 3, // f = 5, g = 2
     };
     let high_g = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 3,
         heuristic_ticks: 2, // f = 5, g = 3
     };
@@ -3373,13 +3451,13 @@ fn search_with_empty_goal_places_degrades_to_uniform_cost() {
     );
     let node_a = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 5,
         heuristic_ticks: 0,
     };
     let node_b = SearchNode {
         state: PlanningState::new(&snapshot),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 3,
         heuristic_ticks: 0,
     };
@@ -3824,7 +3902,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
     };
     let node = SearchNode {
         state: PlanningState::new(&snapshot).move_actor_to(medicine_place),
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 0,
         heuristic_ticks: 0,
     };

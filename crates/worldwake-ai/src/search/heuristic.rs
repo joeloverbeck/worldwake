@@ -1,6 +1,7 @@
 use crate::{
     goal_model::trace_prerequisite_guidance, GoalKindPlannerExt, GroundedGoal, PlannerOpKind,
     PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    shared_collections::SharedVec,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId};
@@ -68,7 +69,7 @@ pub(super) fn root_node<'snapshot>(
     let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places.places);
     SearchNode {
         state,
-        steps: Vec::new(),
+        steps: SharedVec::new(),
         total_estimated_ticks: 0,
         heuristic_ticks,
     }

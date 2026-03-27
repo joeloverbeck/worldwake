@@ -6,6 +6,7 @@ mod transition;
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
     PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    shared_collections::SharedVec,
 };
 use candidates::{
     root_candidate_payload_status, search_candidates, unsupported_goal, SearchCandidate,
@@ -26,7 +27,7 @@ use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry};
 #[derive(Clone)]
 struct SearchNode<'snapshot> {
     state: PlanningState<'snapshot>,
-    steps: Vec<PlannedStep>,
+    steps: SharedVec<PlannedStep>,
     total_estimated_ticks: u32,
     /// A* heuristic: minimum travel ticks from the actor's current simulated
     /// position to the nearest goal-relevant place.  Zero when already at a
@@ -100,7 +101,7 @@ pub fn search_plan(
         if goal.key.kind.is_satisfied(&node.state) {
             return PlanSearchResult::Found(PlannedPlan::new(
                 goal.key,
-                node.steps,
+                node.steps.into_vec(),
                 PlanTerminalKind::GoalSatisfied,
             ));
         }
@@ -181,13 +182,14 @@ pub fn search_plan(
             };
             if let Some(trace_index) = candidate.trace_index {
                 if let Some(trace) = root_candidates.get_mut(trace_index) {
-                    trace.payload_status = root_candidate_payload_status(
-                        candidate.payload_override.as_ref(),
-                        successor
-                            .steps
-                            .last()
-                            .and_then(|step| step.payload_override.as_ref()),
-                    );
+                            trace.payload_status = root_candidate_payload_status(
+                                candidate.payload_override.as_ref(),
+                                successor
+                                    .steps
+                                    .as_slice()
+                                    .last()
+                                    .and_then(|step| step.payload_override.as_ref()),
+                            );
                 }
             }
             if let Some(terminal_kind) = terminal {
@@ -233,7 +235,7 @@ pub fn search_plan(
                         }
                         return PlanSearchResult::Found(PlannedPlan::new(
                             goal.key,
-                            successor.steps,
+                            successor.steps.into_vec(),
                             terminal_kind,
                         ));
                     }
@@ -241,8 +243,12 @@ pub fn search_plan(
                     // for a GoalSatisfied plan across deeper expansion levels.
                     PlanTerminalKind::ProgressBarrier => {
                         if best_barrier.is_none() {
-                            best_barrier =
-                                Some(PlannedPlan::new(goal.key, successor.steps, terminal_kind));
+                        best_barrier =
+                                Some(PlannedPlan::new(
+                                    goal.key,
+                                    successor.steps.into_vec(),
+                                    terminal_kind,
+                                ));
                         }
                     }
                 }
@@ -276,7 +282,7 @@ pub fn search_plan(
             if let Some(terminal_kind) = terminal {
                 return PlanSearchResult::Found(PlannedPlan::new(
                     goal.key,
-                    successor.steps,
+                    successor.steps.into_vec(),
                     terminal_kind,
                 ));
             }

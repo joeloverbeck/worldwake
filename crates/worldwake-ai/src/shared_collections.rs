@@ -86,11 +86,9 @@ impl<K: Ord + Clone> Default for SharedSet<K> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SharedVec<T>(Rc<Vec<T>>);
 
-#[allow(dead_code)]
 impl<T: Clone> SharedVec<T> {
     pub(crate) fn new() -> Self {
         Self(Rc::new(Vec::new()))
@@ -108,10 +106,12 @@ impl<T: Clone> SharedVec<T> {
         self.0.len()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn iter(&self) -> std::slice::Iter<'_, T> {
         self.0.iter()
     }
