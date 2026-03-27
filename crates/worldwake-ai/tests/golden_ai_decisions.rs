@@ -2,17 +2,22 @@
 
 mod golden_harness;
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
+use worldwake_ai::{
+    AgentDecisionRuntime, CommodityPurpose, DecisionOutcome, ExhaustionBaseline,
+    ExhaustionEntry, ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
+    PlannerOpKind, SelectedPlanSource,
+};
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
     FrameState, HomeostaticNeeds, IntentionDispositionProfile, MetabolismProfile,
     PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, UtilityProfile,
     WorkstationTag,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceKind, SaveableRuntime};
 
 // ---------------------------------------------------------------------------
 // Scenario 1: Goal Invalidation by Another Agent
@@ -112,6 +117,193 @@ fn golden_goal_invalidation_by_another_agent() {
         h.agent_commodity_qty(agent_b, CommodityKind::Bread),
         Quantity(0),
         "Agent B should not have acquired bread"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 1b: Unrelated Commodity Change Preserves Frontier Exhaustion
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Production
+// GoalKinds: AcquireCommodity(SelfConsume)
+// ActionDomains: Needs, Production, Travel
+// Places: VillageSquare, OrchardFarm
+// Principles: 3, 19, 25
+//
+// Setup: Alice and Bob are critically hungry at Village Square. Alice has
+//   bread. Bob's runtime is seeded with a frontier-exhausted
+//   AcquireCommodity(Apple, SelfConsume) entry whose invalidation conditions
+//   are position change and apple-quantity change. Orchard Farm still has
+//   apples, and Bob knows about the world.
+//
+// Proves: Alice consuming bread does not clear Bob's unrelated frontier-
+//   exhausted apple-acquisition entry. Bob therefore never starts a travel or
+//   harvest action merely because another agent consumed bread nearby.
+//
+// Chain: unrelated bread consumption -> runtime dirty observation ->
+//   goal-aware invalidation check -> frontier exhaustion preserved.
+
+#[derive(Debug, Eq, PartialEq)]
+struct FrontierExhaustionIsolationObservation {
+    alice_ate: bool,
+    bob_started_action: bool,
+    bob_exhaustion_retained: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DriverStateMirror {
+    runtime_by_agent: std::collections::BTreeMap<worldwake_core::EntityId, AgentDecisionRuntime>,
+    budget: worldwake_ai::PlanningBudget,
+}
+
+fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
+    seed: Seed,
+) -> FrontierExhaustionIsolationObservation {
+    let mut h = GoldenHarness::new(seed);
+
+    let alice = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Alice",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let bob = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bob",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        bob,
+        PerceptionProfile {
+            memory_capacity: 64,
+            memory_retention_ticks: 240,
+            observation_fidelity: pm(875),
+            confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
+        },
+    );
+
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        alice,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        bob,
+        worldwake_core::Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let mut runtime = AgentDecisionRuntime::default();
+    runtime.exhaustion_cache.insert(
+        apple_goal,
+        ExhaustionEntry {
+            retry_state: ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: vec![
+                ExhaustionInvalidationCondition::PositionChanged,
+                ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Apple),
+            ],
+            baseline: ExhaustionBaseline {
+                position: Some(VILLAGE_SQUARE),
+                commodity_quantities: vec![(CommodityKind::Apple, Quantity(0))],
+                ..ExhaustionBaseline::default()
+            },
+        },
+    );
+    let runtime_bytes = bincode::serialize(&DriverStateMirror {
+        runtime_by_agent: std::collections::BTreeMap::from([(bob, runtime)]),
+        budget: worldwake_ai::PlanningBudget::default(),
+    })
+    .expect("golden scenario should serialize seeded runtime");
+    h.driver = worldwake_ai::AgentTickDriver::from_saved_runtime(&runtime_bytes, &h.world)
+        .expect("golden scenario should restore seeded runtime");
+
+    let mut alice_ate = false;
+    let mut bob_started_action = false;
+    for _ in 0..20 {
+        h.step_once();
+        alice_ate |= h.agent_commodity_qty(alice, CommodityKind::Bread) == Quantity(0);
+        bob_started_action |= h.agent_has_active_action(bob);
+    }
+
+    let restored_runtime: DriverStateMirror =
+        bincode::deserialize(&h.driver.save_runtime_state().expect("runtime should serialize"))
+            .expect("runtime mirror should deserialize");
+    let bob_exhaustion_retained = restored_runtime
+        .runtime_by_agent
+        .get(&bob)
+        .is_some_and(|runtime| runtime.exhaustion_cache.contains_key(&apple_goal));
+
+    FrontierExhaustionIsolationObservation {
+        alice_ate,
+        bob_started_action,
+        bob_exhaustion_retained,
+    }
+}
+
+#[test]
+fn golden_unrelated_commodity_change_preserves_frontier_exhaustion() {
+    let observation =
+        run_unrelated_commodity_change_preserves_frontier_exhaustion(Seed([201; 32]));
+
+    assert!(
+        observation.alice_ate,
+        "Alice should consume her local bread so the scenario exercises an unrelated commodity change"
+    );
+    assert!(
+        observation.bob_exhaustion_retained,
+        "Bob's frontier-exhausted apple acquisition entry should remain cached after Alice consumes bread"
+    );
+    assert!(
+        !observation.bob_started_action,
+        "Bob should not start travel or harvest solely because another agent consumed bread"
+    );
+}
+
+#[test]
+fn golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deterministically() {
+    let first = run_unrelated_commodity_change_preserves_frontier_exhaustion(Seed([201; 32]));
+    let second = run_unrelated_commodity_change_preserves_frontier_exhaustion(Seed([201; 32]));
+    assert_eq!(
+        first, second,
+        "The unrelated commodity change frontier-exhaustion scenario should replay deterministically"
     );
 }
 

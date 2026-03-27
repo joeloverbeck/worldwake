@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S31: Goal-Aware Exhaustion Invalidation
 
@@ -463,3 +463,29 @@ Together, these mechanisms ensure that the system is no more expensive than the 
 - `crates/worldwake-ai/src/goal_model.rs` — `GoalKind` and `GoalKindPlannerExt`
 - `crates/worldwake-core/src/needs.rs` — `HomeostaticNeedId`
 - `docs/FOUNDATIONS.md` Principles 2, 3, 10, 11, 12, 13, 18, 19, 24, 25
+
+## Outcome
+
+- Completion date: 2026-03-27
+- What actually changed:
+  - The live implementation landed across [`S31-008`](/home/joeloverbeck/projects/worldwake/archive/tickets/S31-008-complete-exhaustion-invalidation-for-needs-driven-goals.md) and [`S31-009`](/home/joeloverbeck/projects/worldwake/archive/tickets/S31-009-separate-budget-exhaustion-retry-from-invalidation.md).
+  - `ExhaustionEntry` now persists `retry_state`, `invalidation_conditions`, and `baseline`.
+  - Needs-driven invalidation uses threshold-band crossings via `NeedChangedBands`.
+  - Planner retry meaning is split explicitly between `FrontierExhausted` suppression and `BudgetRetryPending` same-world retry.
+  - The old TTL retry authority was removed, and the live save format advanced to version 9.
+  - Final integrated validation was closed by [`S31-007`](/home/joeloverbeck/projects/worldwake/archive/tickets/S31-007-golden-tests-validation.md), including the new frontier-exhaustion over-invalidation golden.
+- Deviations from original plan:
+  - The final architecture did not keep the draft's `count`/`exhausted_at` backoff contract.
+  - Needs-driven invalidation ended up aligned to threshold bands rather than a fixed delta heuristic.
+  - Budget exhaustion required an explicit retry-state split instead of pure condition-driven invalidation alone.
+- Verification results:
+  - `cargo test -p worldwake-ai --test golden_ai_decisions golden_unrelated_commodity_change_preserves_frontier_exhaustion -- --exact`
+  - `cargo test -p worldwake-ai --test golden_ai_decisions golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deterministically -- --exact`
+  - `cargo test -p worldwake-ai --test golden_ai_decisions golden_goal_invalidation_by_another_agent -- --exact`
+  - `cargo test -p worldwake-ai --test golden_ai_decisions golden_wash_action -- --exact`
+  - `cargo test -p worldwake-ai --test golden_ai_decisions golden_three_way_need_competition -- --exact`
+  - `cargo test -p worldwake-ai --test golden_ai_decisions golden_utility_weight_diversity_in_need_selection -- --exact`
+  - `cargo test -p worldwake-ai --test golden_determinism golden_save_load_round_trip_under_ai -- --exact`
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `cargo test --workspace`

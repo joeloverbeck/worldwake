@@ -113,6 +113,9 @@ Extended decision traces with belief provenance: `HomeostaticNeedId` in core, `i
 ### S27: Expectation-Violation Goals — COMPLETED
 Established belief-vs-observation violation detection, per-agent violation memory/disposition components, exact-id `GoalKind::InvestigateViolation { violation_id, place }`, authoritative investigate execution with `WitnessedAbsence` aftermath, explicit unresolved/resolved incident lifecycle, and golden coverage for single-incident investigation, local depletion-to-`ShareBelief`, and same-place concurrent-violation identity.
 
+### S31: Goal-Aware Exhaustion Invalidation — COMPLETED
+Replaced coarse exhaustion invalidation with goal-aware conditions plus baseline snapshots, removed the `EXHAUSTION_SKIP_TTL` retry gate in favor of condition-based cache clearing, separated budget-exhaustion retry from invalidation semantics, and closed the loop with golden validation for needs-driven recovery, unrelated commodity non-invalidation, and deterministic save/load persistence of the exhaustion runtime state. The completed spec is archived at `archive/specs/S31-goal-aware-exhaustion-invalidation.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -282,7 +285,7 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
   - shipped exact-id `InvestigateViolation` goals plus unresolved/resolved incident lifecycle
   - golden coverage proves single-incident investigation, local depletion reporting, and same-place sibling isolation
 
-**Step 13.5 Wave 4** (parallel, golden-perf-derived):
+**Step 13.5 Wave 4** (parallel, golden-perf-derived) — ✅ COMPLETED:
 - **S29**: Planning State Structural Sharing — ✅ COMPLETED
   - replaced clone-per-expansion `PlanningState` / step history with `SharedMap` / `SharedSet` / `SharedVec` copy-on-write sharing
   - benchmark closeout confirmed a strong default-budget gain, with mixed higher-budget end-to-end results depending on scenario shape
@@ -291,15 +294,15 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
   - persisted AI runtime state now survives save/load without breaking determinism coverage
   - the delivered architecture keeps `worldwake-sim` save-only and makes validated restore an AI-owned boundary
   - archived spec: `archive/specs/S30-ai-runtime-save-load-parity.md`
-- **S31**: Goal-Aware Exhaustion Invalidation — PENDING
-  - per-goal invalidation conditions replace coarse dirty-bit mask
-  - eliminates over-invalidation (irrelevant commodity changes) and under-invalidation (needs-driven goals)
-  - removes EXHAUSTION_SKIP_TTL in favor of condition-based cache management
-  - depends on: S30 (invalidation conditions must survive save/load)
+- **S31**: Goal-Aware Exhaustion Invalidation — ✅ COMPLETED
+  - per-goal invalidation conditions and baseline snapshots now replace the coarse dirty-bit reset path
+  - eliminates unrelated commodity over-invalidation while restoring needs-driven goal re-entry when the relevant baseline changes
+  - removes `EXHAUSTION_SKIP_TTL` in favor of condition-based invalidation, while preserving explicit budget-exhaustion retry semantics
+  - archived spec: `archive/specs/S31-goal-aware-exhaustion-invalidation.md`
 
 Dependency graph:
 ```
-S31 ──→ S30
+S30 ✅ ──→ S31 ✅
 ```
 
 ---
@@ -359,7 +362,6 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S29-planning-state-structural-sharing.md`~~ | 3+ | 13.5 W4 | ✅ COMPLETED |
-| `S31-goal-aware-exhaustion-invalidation.md` | 3+ | 13.5 W4 | S30 |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
@@ -389,6 +391,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; `S13` plus gate items `T10`/`T11`/`T25` remain open) |
-| 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | IN PROGRESS (S20–S30 complete; S31 pending) |
+| 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
