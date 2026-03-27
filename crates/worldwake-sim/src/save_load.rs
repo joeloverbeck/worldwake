@@ -535,11 +535,6 @@ mod tests {
         fn save_runtime_state(&self) -> Result<Vec<u8>, SaveError> {
             Ok(self.bytes.clone())
         }
-
-        fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveError> {
-            self.bytes = bytes.to_vec();
-            Ok(())
-        }
     }
 
     #[test]

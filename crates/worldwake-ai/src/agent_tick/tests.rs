@@ -160,7 +160,7 @@ impl Harness {
 }
 
 #[test]
-fn saveable_runtime_roundtrip_restores_persisted_driver_state() {
+fn save_runtime_state_serializes_persisted_driver_state() {
     let agent = entity(700);
     let place = entity(701);
     let facility = entity(702);
@@ -195,12 +195,9 @@ fn saveable_runtime_roundtrip_restores_persisted_driver_state() {
     driver.trace_sink = Some(crate::DecisionTraceSink::new());
 
     let bytes = driver.save_runtime_state().unwrap();
-    let mut restored = AgentTickDriver::new(PlanningBudget::default());
-    restored.restore_runtime_state(&bytes).unwrap();
+    let restored: super::AgentTickDriverState = bincode::deserialize(&bytes).unwrap();
 
     assert_eq!(restored.budget.max_candidates_to_plan, 7);
-    assert!(restored.semantics_cache.is_none());
-    assert!(restored.trace_sink.is_none());
 
     let restored_runtime = restored.runtime_by_agent.get(&agent).unwrap();
     assert_eq!(restored_runtime.current_step_index, 2);
@@ -315,10 +312,12 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
 }
 
 #[test]
-fn restore_runtime_state_rejects_invalid_bytes() {
-    let mut driver = AgentTickDriver::new(PlanningBudget::default());
+fn from_saved_runtime_rejects_invalid_bytes() {
+    let h = Harness::new(ControlSource::Ai);
 
-    let error = driver.restore_runtime_state(&[]).unwrap_err();
+    let error = AgentTickDriver::from_saved_runtime(&[], &h.world)
+        .err()
+        .expect("invalid bytes should fail restore");
 
     assert!(matches!(error, SaveError::RuntimeDeserialization(_)));
 }

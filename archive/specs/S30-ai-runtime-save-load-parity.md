@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S30: AI Runtime Save/Load Parity
 
@@ -41,7 +41,7 @@ Phase 3+: AI Architecture Overhaul
 4. **No new components**: Runtime fields are serialized as part of the `AgentTickDriver` state, not as per-agent ECS components. The runtime is AI-layer state, not world state (Principle 24).
 5. **Forward migration**: Old saves without runtime data load cleanly (empty/default runtime, convergent within a few ticks).
 6. **Crate boundary respect**: `worldwake-sim` cannot depend on `worldwake-ai`. The serialization boundary uses opaque bytes and a trait abstraction.
-7. **Post-load integrity**: After restoring runtime state, validate that entity references are still live and initialize derived fields.
+7. **Post-load integrity**: The public AI restore boundary must return already-validated runtime state with dead references pruned and derived fields reinitialized.
 
 ## Deliverables
 
@@ -80,23 +80,20 @@ Phase 3+: AI Architecture Overhaul
 
 `SimulationState` lives in `worldwake-sim`. `AgentTickDriver` lives in `worldwake-ai`. The crate dependency graph (`sim → core` only, `ai → core + sim + systems`) means `worldwake-sim` cannot reference AI types directly.
 
-#### Solution: Opaque bytes with `SaveableRuntime` trait
+#### Solution: Opaque bytes transport plus AI-owned validated restore
 
 Add a `SaveableRuntime` trait to `worldwake-sim`:
 
 ```rust
-/// Trait for autonomous controllers that support state persistence
-/// across save/load boundaries. The state is serialized as opaque bytes
-/// to preserve the crate dependency boundary (sim cannot depend on ai).
+/// Optional save surface for autonomous controller runtimes.
+/// The state is serialized as opaque bytes to preserve the crate
+/// dependency boundary (sim cannot depend on ai).
 pub trait SaveableRuntime {
-    /// Serialize internal runtime state to opaque bytes (bincode format).
     fn save_runtime_state(&self) -> Result<Vec<u8>, SaveLoadError>;
-
-    /// Restore internal runtime state from opaque bytes.
-    /// Caller MUST call post_load_validate() afterward.
-    fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveLoadError>;
 }
 ```
+
+`worldwake-sim` only owns byte transport. It saves opaque runtime bytes and returns them on load. The AI crate owns restore semantics through `AgentTickDriver::from_saved_runtime(bytes, world)`, which deserializes and validates the runtime before returning it. The generic sim trait should not expose a public raw restore path that can bypass AI validation.
 
 #### Save format extension
 
@@ -162,19 +159,22 @@ All call sites that previously read/wrote `search_exhausted_goals` or `exhaustio
 - `DirtySet` does NOT need serde derives (it is skipped and reconstructed).
 - `PlannedPlan`, `PlannedStep`, `GoalKey`, `PlanningBudget`, and all nested types already have serde derives — no changes needed.
 
-### 5. Post-load validation
+### 5. Validated restore at the AI boundary
 
-After deserializing AI runtime state, validate entity references against the loaded world:
+After deserializing AI runtime state, the AI restore boundary validates entity references against the loaded world:
 
 ```rust
 impl AgentTickDriver {
-    /// Prune stale entity references and initialize derived state after load.
-    pub fn post_load_validate(&mut self, world: &World) {
+    /// Restore persisted state and return a post-load-valid driver.
+    pub fn from_saved_runtime(bytes: &[u8], world: &World) -> Result<Self, SaveError> {
+        let mut driver = Self::new(PlanningBudget::default());
+        driver.restore_runtime_state(bytes)?;
+
         // 1. Remove runtimes for agents that no longer exist in the world.
-        self.runtime_by_agent.retain(|agent, _| world.is_alive(*agent));
+        driver.runtime_by_agent.retain(|agent, _| world.is_alive(*agent));
 
         // 2. For each surviving runtime:
-        for runtime in self.runtime_by_agent.values_mut() {
+        for runtime in driver.runtime_by_agent.values_mut() {
             // a. Prune exhaustion_cache entries whose GoalKey references dead entities.
             runtime.exhaustion_cache.retain(|key, _| {
                 key.entity.map_or(true, |e| world.is_alive(e))
@@ -191,7 +191,8 @@ impl AgentTickDriver {
         }
 
         // 3. Clear semantics_cache (will be rebuilt from ActionDefRegistry).
-        self.semantics_cache = None;
+        driver.semantics_cache = None;
+        Ok(driver)
     }
 }
 ```
@@ -218,7 +219,7 @@ No new ECS components. The AI runtime state is serialized as opaque bytes append
 
 ### `worldwake-sim`
 
-- Add `SaveableRuntime` trait to `autonomous_controller.rs` (or a new `saveable_runtime.rs` module).
+- Add `SaveableRuntime` trait to `autonomous_controller.rs` (or a new `saveable_runtime.rs` module) as a save-only opaque-byte transport surface.
 - Extend `save_to_bytes()` to accept `Option<&dyn SaveableRuntime>` and append AI payload.
 - Extend `load_from_bytes()` to return `(SimulationState, Option<Vec<u8>>)` with the AI payload.
 - Bump `SAVE_FORMAT_VERSION` from 5 to 6.
@@ -227,8 +228,8 @@ No new ECS components. The AI runtime state is serialized as opaque bytes append
 
 - Add `Serialize`/`Deserialize` to `AgentDecisionRuntime` and `MaterializationBindings`.
 - Introduce `ExhaustionEntry` struct and refactor `exhaustion_cache` field.
-- Implement `SaveableRuntime` for `AgentTickDriver`.
-- Add `AgentTickDriver::post_load_validate()` method.
+- Implement `SaveableRuntime` for `AgentTickDriver` for saving.
+- Add `AgentTickDriver::from_saved_runtime(...)` as the validated restore entry point.
 - Update all call sites for the exhaustion cache unification.
 
 ## Cross-System Interactions (Principle 12)
@@ -264,8 +265,8 @@ All stored fields are either commitments (plan state), observation anchors (snap
 2. Old saves without AI runtime payload load successfully with empty runtimes (backward compatibility).
 3. `AgentDecisionRuntime` serialization is deterministic (BTreeMap ordering preserved, no floats).
 4. The runtime serialization does NOT include any reference to world state (`&World`, `&EventLog`) — it is self-contained.
-5. After `post_load_validate()`, all entity references in the runtime are guaranteed live.
-6. After `post_load_validate()`, `dirty` is `DirtySet::all()` — the first tick always re-evaluates.
+5. After `from_saved_runtime(...)`, all entity references in the runtime are guaranteed live.
+6. After `from_saved_runtime(...)`, `dirty` is reset to the full required re-evaluation mask for the first tick after load.
 
 ## Tests
 
@@ -286,7 +287,7 @@ All stored fields are either commitments (plan state), observation anchors (snap
 3. All workspace tests pass.
 4. Save format backward compatibility: old saves (v5) load without error.
 5. Profiling shows no regression from serialization overhead (the fields are small).
-6. `post_load_validate()` is called after every `restore_runtime_state()` — no code path skips it.
+6. No public restore path bypasses AI-side validation.
 7. `ExhaustionEntry` unification does not change any observable behavior (pure refactoring).
 
 ## References
@@ -300,3 +301,19 @@ All stored fields are either commitments (plan state), observation anchors (snap
 - `crates/worldwake-ai/tests/golden_determinism.rs` — `golden_save_load_round_trip_under_ai`
 - `docs/FOUNDATIONS.md` Principle 11 (boundaries don't change world meaning), Principle 24 (systems interact through state), Principle 25 (derived summaries are caches), Principle 28 item 11 (declare what survives save/load)
 - S31 (goal-aware exhaustion invalidation) — depends on this spec; will extend `ExhaustionEntry`
+
+## Outcome
+
+- Completion date: 2026-03-27
+- What actually changed:
+  - AI runtime save/load parity was implemented, including persisted `AgentTickDriver` runtime state, validated restore, golden save/load parity coverage, and the exhaustion-cache/runtime state work described by the spec.
+  - The public restore boundary shipped as `AgentTickDriver::from_saved_runtime(...)` in `worldwake-ai`, which deserializes and validates against the loaded `World`.
+  - `worldwake-sim` remained responsible only for opaque runtime byte transport and save payload layout.
+- Deviations from original plan:
+  - The final architecture did not keep a public `SaveableRuntime::restore_runtime_state()` contract with caller-side validation, and it also did not widen that trait to accept `World`.
+  - Instead, the generic sim trait is save-only, and validated restore is owned by the AI layer. This is a cleaner crate boundary than the original draft.
+  - The spec’s TTL optimization note remains future-facing; this archival update covers the completed save/load parity and boundary-hardening work, not additional TTL tuning beyond delivered ticket scope.
+- Verification results:
+  - `cargo test -p worldwake-ai golden_save_load -- --nocapture`
+  - `cargo clippy --workspace`
+  - `cargo test --workspace`

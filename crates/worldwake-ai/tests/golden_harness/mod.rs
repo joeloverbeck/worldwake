@@ -1368,7 +1368,7 @@ mod tests {
             budget: PlanningBudget::default(),
         })
         .unwrap();
-        h.driver.restore_runtime_state(&runtime_bytes).unwrap();
+        h.driver = AgentTickDriver::from_saved_runtime(&runtime_bytes, &h.world).unwrap();
 
         let restored = h.save_load_roundtrip();
         let restored_runtime_bytes = restored.driver.save_runtime_state().unwrap();

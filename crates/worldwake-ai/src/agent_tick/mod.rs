@@ -140,7 +140,7 @@ impl AgentTickDriver {
         })
     }
 
-    pub fn post_load_validate(&mut self, world: &worldwake_core::World) {
+    fn post_load_validate(&mut self, world: &worldwake_core::World) {
         self.runtime_by_agent
             .retain(|agent, _| world.is_alive(*agent));
 
@@ -171,16 +171,6 @@ impl AgentTickDriver {
 
         self.semantics_cache = None;
     }
-}
-
-impl SaveableRuntime for AgentTickDriver {
-    fn save_runtime_state(&self) -> Result<Vec<u8>, SaveError> {
-        bincode::serialize(&AgentTickDriverState {
-            runtime_by_agent: self.runtime_by_agent.clone(),
-            budget: self.budget.clone(),
-        })
-        .map_err(|error| SaveError::RuntimeSerialization(error.to_string()))
-    }
 
     fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveError> {
         let state: AgentTickDriverState = bincode::deserialize(bytes)
@@ -190,6 +180,16 @@ impl SaveableRuntime for AgentTickDriver {
         self.semantics_cache = None;
         self.trace_sink = None;
         Ok(())
+    }
+}
+
+impl SaveableRuntime for AgentTickDriver {
+    fn save_runtime_state(&self) -> Result<Vec<u8>, SaveError> {
+        bincode::serialize(&AgentTickDriverState {
+            runtime_by_agent: self.runtime_by_agent.clone(),
+            budget: self.budget.clone(),
+        })
+        .map_err(|error| SaveError::RuntimeSerialization(error.to_string()))
     }
 }
 

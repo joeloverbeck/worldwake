@@ -287,11 +287,10 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
   - replaced clone-per-expansion `PlanningState` / step history with `SharedMap` / `SharedSet` / `SharedVec` copy-on-write sharing
   - benchmark closeout confirmed a strong default-budget gain, with mixed higher-budget end-to-end results depending on scenario shape
   - pure Principle 11 optimization; behavioral verification stayed green
-- **S30**: AI Runtime Save/Load Parity — PENDING
-  - promote AgentDecisionRuntime caches to serializable state
-  - fixes save/load boundary violating Principle 11 (boundary changes world meaning)
-  - enables higher EXHAUSTION_SKIP_TTL without breaking determinism tests
-  - depends on: none (standalone, but synergizes with S29)
+- **S30**: AI Runtime Save/Load Parity — ✅ COMPLETED
+  - persisted AI runtime state now survives save/load without breaking determinism coverage
+  - the delivered architecture keeps `worldwake-sim` save-only and makes validated restore an AI-owned boundary
+  - archived spec: `archive/specs/S30-ai-runtime-save-load-parity.md`
 - **S31**: Goal-Aware Exhaustion Invalidation — PENDING
   - per-goal invalidation conditions replace coarse dirty-bit mask
   - eliminates over-invalidation (irrelevant commodity changes) and under-invalidation (needs-driven goals)
@@ -300,8 +299,6 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
 
 Dependency graph:
 ```
-S29 (independent)
-S30 (independent)
 S31 ──→ S30
 ```
 
@@ -362,7 +359,6 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S29-planning-state-structural-sharing.md`~~ | 3+ | 13.5 W4 | ✅ COMPLETED |
-| `S30-ai-runtime-save-load-parity.md` | 3+ | 13.5 W4 | none |
 | `S31-goal-aware-exhaustion-invalidation.md` | 3+ | 13.5 W4 | S30 |
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
@@ -393,6 +389,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; `S13` plus gate items `T10`/`T11`/`T25` remain open) |
-| 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | IN PROGRESS (S20–S29 complete; S30 and S31 pending) |
+| 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | IN PROGRESS (S20–S30 complete; S31 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
