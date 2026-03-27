@@ -4,7 +4,7 @@
 
 ## Summary
 
-Add 3 cross-system emergence golden tests to `golden_emergent.rs` that prove the crime/justice system (E17) participates in emergent multi-system chains. Currently the 3 existing crime golden tests (Scenarios 37-39) cover owner-local discovery, the witness-to-Fine punishment chain, and stale-Fine traceability. These new scenarios prove that three implemented-but-untested mechanics produce emergent outcomes through system interaction (Principle 24) without scripted orchestration (Principle 1): the Exile punishment fallback, witness-based theft deterrence, and dual-discovery convergence.
+Add 3 cross-system emergence golden tests to `golden_emergent.rs` that prove the crime/justice system (E17) participates in emergent multi-system chains. Currently the 3 existing crime golden tests (Scenarios 37-39) cover owner-local discovery, the witnessed-theft accusation chain, and stale-Fine traceability. These new scenarios prove that three implemented-but-untested mechanics produce emergent outcomes through system interaction (Principle 24) without scripted orchestration (Principle 1): the Exile punishment fallback, witness-based theft deterrence, and dual-discovery convergence.
 
 ## Phase
 
@@ -25,35 +25,36 @@ Phase 3: Information & Politics (post-E17)
 
 ## Scenarios
 
-### Scenario 41: Exile Punishment When Fine Infeasible
+### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
 **File**: `golden_emergent.rs`
 **Systems exercised**: Transport (Steal action, Hidden visibility), Perception (witness perceives Hidden event), Social (Tell with SuspectedTheft evidence, Accuse, Exile), AI (candidate generation: emit_theft_candidates, emit_justice_candidates with Fine-to-Exile fallback), Institutions (CrimeRegister, Accusation entry, Verdict entry with PunishmentKind::Exile)
 **Principles proven**: P1 (maximal emergence -- justice adapts punishment to material reality without scripted branching), P7 (locality -- evidence travels via witness Tell at finite speed), P21 (institutional authority -- only office holder can punish), P22 (ownership/custody/membership distinctions -- exile revokes faction membership, a relation distinct from ownership or possession), P23 (social artifacts first-class -- Verdict with PunishmentKind::Exile is a durable institutional record), P24 (systems interact through state -- no crime-justice coupling)
 
 **Setup**:
-- Thief at VillageSquare: has TheftDispositionProfile (steal_duration_ticks=2, theft_motive_weight=pm(700), witness_risk_penalty=pm(100)), **zero commodities** (empty inventory, no way to pay a fine), PerceptionProfile, member_of Faction
+- Thief at VillageSquare: has TheftDispositionProfile (steal_duration_ticks=2, theft_motive_weight=pm(700), witness_risk_penalty=pm(100)), PerceptionProfile, member_of Faction
 - Victim: owns an item lot (e.g. Quantity(4) Grain) at VillageSquare, placed elsewhere initially (e.g. GeneralStore) so theft is unwitnessed by victim
 - Witness at VillageSquare: PerceptionProfile with sufficient perception to detect Hidden theft, social Tell profile (social_weight=pm(600)), sated needs (so social goals are not suppressed)
 - Magistrate at RulersHall: office holder of Office with JusticeDispositionProfile (accusation_motive_weight=pm(700), fine_severity=pm(500)), PerceptionProfile, sated needs
 - Office has EligibilityRule::FactionMember(Faction) -- required for Exile to be viable
 - CrimeRegister record entity at RulersHall, issued by Office
 - Faction entity; Thief is member_of Faction
-- Topology: VillageSquare <-> RulersHall (travel edge, 1 tick)
+- Topology: VillageSquare <-> RulersHall (travel edge, 1 tick), VillageSquare <-> GeneralStore (travel edge, 1 tick)
+- Isolation step: after the accusation is filed and before punishment selection, the stolen commodity is moved out of local collectible reach while the accused is brought to `RulersHall`, so the authority can still punish the accused but can no longer lawfully generate `Fine` from local observation alone
 
 **Emergent behavior proven**:
-The justice system adapts punishment to the accused's material circumstances without any designer-authored branching. `candidate_punishment_for_case()` attempts Fine first: it checks whether the accused has locally-observed commodities >= fine_amount. With zero commodities on the Thief, Fine fails the precondition check. The function falls through to `office_governed_faction_for_accused()`, finds the Thief is member_of a governed Faction, and emits PunishAccused(Exile). The Exile action then removes faction membership and creates hostile_to(Thief, Faction). The entire chain -- from theft through witness perception, social Tell, evidence accumulation, institutional accusation, Fine-precondition failure, and Exile fallback -- emerges from system interaction through state without orchestration.
+The justice system adapts punishment to the accused's locally observable material circumstances without any designer-authored branching. `candidate_punishment_for_case()` attempts Fine first: it checks whether the authority and accused are co-located and whether `locally_observed_commodity_quantity()` for the accused is at least the fine amount. When the stolen commodity is no longer locally collectible from the accused at punishment-selection time, Fine is not emitted. The function falls through to `office_governed_faction_for_accused()`, finds the Thief is member_of a governed Faction, and emits `PunishAccused(Exile)`. The Exile action then removes faction membership and adds hostility from the faction toward the accused. The entire chain -- from theft through witness perception, social Tell, evidence accumulation, institutional accusation, local Fine infeasibility, and Exile fallback -- emerges from system interaction through state without orchestration.
 
 **Why this is distinct from Scenario 38** (witnessed theft accusation chain):
 - Scenario 38 tests the Fine path: the accused has commodities, Fine succeeds.
-- Scenario 41 tests the **Exile fallback**: the accused has nothing to confiscate, so the system naturally adapts to a different punishment. The branching is driven by material world state (empty inventory), not by a designer "if poor then exile" rule. Additionally, Scenario 41 proves P22 (membership as a distinct revocable relation) and P23 (Verdict with Exile as durable social artifact), which Scenario 38 does not exercise.
+- Scenario 41 tests the **Exile fallback**: the authority can no longer locally collect the fine from the accused, so the system naturally adapts to a different punishment. The branching is driven by material world state and locality of observation, not by a designer "if poor then exile" rule. Additionally, Scenario 41 proves P22 (membership as a distinct revocable relation) and P23 (Verdict with Exile as durable social artifact), which Scenario 38 does not exercise.
 
 **Assertion surface**:
 1. Authoritative state: Thief is NOT member_of Faction (faction membership removed)
-2. Authoritative state: hostile_to(Thief, Faction) relation exists
+2. Authoritative state: `hostile_towards(Thief)` includes Faction
 3. Authoritative state: CrimeRegister has exactly 1 active Verdict entry with PunishmentKind::Exile { from_faction: Faction }
 4. Action trace: Exile action committed by Magistrate (not Fine)
-5. Decision trace: PunishAccused goal with PunishmentKind::Exile was the selected goal for Magistrate
+5. Decision trace: PunishAccused goal with PunishmentKind::Exile is generated after the local-collectibility change, and PunishAccused(Fine) is not
 6. Conservation: total commodity quantities unchanged (no Fine transfer occurred)
 7. Determinism: replay companion
 
@@ -128,7 +129,7 @@ Both paths produce SuspectedTheft evidence that reaches the Magistrate. The dupl
 |-------------|--------|----------------|----------|
 | Theft evidence (witness firsthand) | Hidden theft event at co-location | Witness PerceptionProfile evaluates Hidden event -> SuspectedTheft social observation -> Tell to Magistrate -> Magistrate ViolationMemory | 41, 43 |
 | Theft evidence (owner-local discovery) | Stale belief vs observed reality | Victim returns to expected location -> EntityMissing violation -> InvestigateViolation -> SuspectedTheft with suspect:None | 43 |
-| Accused material state (for punishment) | Magistrate co-location observation | Magistrate locally_observed_commodity_quantity() reads accused's inventory -> Fine feasibility check | 41 |
+| Accused material state (for punishment) | Magistrate co-location observation | Magistrate locally_observed_commodity_quantity() reads accused's locally collectible inventory at the punishment place -> Fine feasibility check | 41 |
 | Faction membership (for Exile) | Office eligibility rules + membership relation | office_governed_faction_for_accused() reads EligibilityRule::FactionMember -> believed_membership() | 41 |
 | Witness count (for deterrence) | Co-location observation | emit_theft_candidates() counts locally_observed living agents at same place | 42 |
 | Existing accusation (for duplicate check) | CrimeRegister institutional beliefs | emit_accusation_candidates() reads known institutional beliefs for matching Accusation/Verdict | 43 |
@@ -146,7 +147,7 @@ No positive-feedback loops require additional dampening beyond existing systems.
 ### H.3 Concrete Dampeners
 
 - Witness_risk_penalty * witness_count >= theft_motive_weight: physical presence of observers deters theft (Scenario 42)
-- Fine precondition: accused must possess sufficient commodity; if not, Fine is naturally blocked (Scenario 41)
+- Fine precondition: authority must locally observe sufficient collectible commodity on the accused at punishment-selection time; otherwise Fine is naturally blocked (Scenario 41)
 - Exile precondition: accused must be faction member; one-time action per faction membership (Scenario 41)
 - Steal action duration and Hidden visibility: theft is not instant, giving witnesses time to perceive (Scenarios 41, 43)
 - Tell action duration and co-location: evidence transfer requires physical travel and time (Scenarios 41, 43)
@@ -161,19 +162,19 @@ No positive-feedback loops require additional dampening beyond existing systems.
 
 ## Tickets
 
-### GOLDE2E-017: Scenario 41 -- Exile Punishment When Fine Infeasible
+### GOLDE2E-017: Scenario 41 -- Exile Punishment When Fine Is Not Locally Collectible
 
-**Deliverable**: `golden_exile_punishment_when_fine_infeasible` + `golden_exile_punishment_when_fine_infeasible_replays_deterministically` in `golden_emergent.rs`
+**Deliverable**: `golden_exile_punishment_when_fine_is_not_locally_collectible` + `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` in `golden_emergent.rs`
 
 **Assertion surface**:
-- Authoritative: Thief not member_of Faction; hostile_to(Thief, Faction) exists
+- Authoritative: Thief not member_of Faction; `hostile_towards(Thief)` includes Faction
 - Authoritative: CrimeRegister Verdict with PunishmentKind::Exile
 - Action trace: Exile committed by Magistrate (no Fine action)
-- Decision trace: PunishAccused(Exile) selected
+- Decision trace: PunishAccused(Exile) generated after the local-collectibility change, with PunishAccused(Fine) absent
 - Conservation: commodity totals unchanged
 - Determinism: replay companion
 
-**Verification**: `cargo test -p worldwake-ai --test golden_emergent golden_exile_punishment_when_fine_infeasible`, then `cargo test --workspace`, then `cargo clippy --workspace`
+**Verification**: `cargo test -p worldwake-ai --test golden_emergent golden_exile_punishment_when_fine_is_not_locally_collectible`, then `cargo test --workspace`, then `cargo clippy --workspace`
 
 ---
 

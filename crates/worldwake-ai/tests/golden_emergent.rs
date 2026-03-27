@@ -5586,12 +5586,6 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
         .map(|record| record.id)
         .expect("authority should record a local suspected-theft case");
 
-    let accuse_goal = GoalKind::Accuse {
-        crime_register,
-        accused: thief,
-        violation_id: authority_violation_id,
-    };
-
     let mut accuse_commit_order = None;
     for _ in 0..20 {
         h.step_once();
@@ -6366,5 +6360,565 @@ fn golden_supply_depletion_enables_share_belief_replays_deterministically() {
     assert_eq!(
         first, second,
         "supply-depletion social emergence scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
+// ---------------------------------------------------------------------------
+//
+// Systems: Transport, Perception, Social Tell, AI, Institutions
+// GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
+// ActionDomains: Transport, Social, Travel
+// Places: VillageSquare, GeneralStore, RulersHall
+// Principles: 1, 7, 21, 22, 23, 24
+//
+// Proves the dedicated exile branch for the live justice architecture:
+// witnessed theft becomes relayable social evidence, Tell creates a concrete
+// case for the authority, accusation is filed at the CrimeRegister, and the
+// authority selects Exile once the fined commodity is no longer locally
+// collectible from the accused at punishment-selection time.
+
+#[allow(clippy::too_many_lines)]
+fn run_exile_punishment_when_fine_is_not_locally_collectible(
+    seed: Seed,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let rulers_hall = prototype_place_entity(PrototypePlace::RulersHall);
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+
+    let thief = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Thief",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(900),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let victim = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Victim",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let authority = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        rulers_hall,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_control_source(&mut h, victim, ControlSource::Human, 0);
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        PerceptionProfile {
+            observation_fidelity: pm(1000),
+            ..default_perception_profile()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        default_perception_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        broad_accepting_tell_profile(),
+    );
+    set_violation_profile(
+        &mut h,
+        authority,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(1),
+            violation_memory_retention_ticks: 80,
+            investigation_motive_weight: pm(600),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+    set_theft_profile(
+        &mut h,
+        thief,
+        TheftDispositionProfile {
+            steal_duration_ticks: nz(2),
+            theft_motive_weight: pm(1000),
+            witness_risk_penalty: pm(0),
+        },
+        0,
+    );
+    set_justice_profile(
+        &mut h,
+        authority,
+        JusticeDispositionProfile {
+            accusation_motive_weight: pm(900),
+            fine_severity: pm(500),
+        },
+        0,
+    );
+
+    let faction = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let faction = txn.create_faction("Town Ward").unwrap();
+        commit_txn(txn, &mut h.event_log);
+        faction
+    };
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        rulers_hall,
+        SuccessionLaw::Support,
+        8,
+        vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+    );
+    let (crime_register, stolen_lot) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.assign_office(office, authority).unwrap();
+        txn.add_member(thief, faction).unwrap();
+        let crime_register = txn
+            .create_record(RecordData {
+                record_kind: RecordKind::CrimeRegister,
+                home_place: rulers_hall,
+                issuer: office,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
+        let stolen_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+        txn.set_ground_location(stolen_lot, VILLAGE_SQUARE).unwrap();
+        txn.set_owner(stolen_lot, victim).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (crime_register, stolen_lot)
+    };
+
+    let initial_bread_total = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        &[authority],
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        thief,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        crime_register,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        office,
+        Some(authority),
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(rulers_hall),
+    );
+    seed_faction_membership_belief(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        faction,
+        thief,
+        true,
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(rulers_hall),
+    );
+
+    let theft_facts = TheftFacts {
+        missing_entity: stolen_lot,
+        expected_place: VILLAGE_SQUARE,
+        commodity: CommodityKind::Bread,
+        quantity: Quantity(2),
+    };
+
+    let mut steal_commit_tick = None;
+    for _ in 0..12 {
+        h.step_once();
+        if h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(thief)
+            .iter()
+            .any(|event| {
+                event.action_name == "steal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            })
+        {
+            steal_commit_tick = Some(h.scheduler.current_tick());
+            break;
+        }
+    }
+    let steal_commit_tick =
+        steal_commit_tick.expect("thief should commit the witnessed theft");
+    set_control_source(&mut h, thief, ControlSource::Human, steal_commit_tick.0);
+
+    assert!(
+        h.world
+            .get_component_agent_belief_store(witness)
+            .expect("witness should keep a belief store")
+            .social_observations
+            .iter()
+            .any(|observation| {
+                observation.detail
+                    == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                        theft: theft_facts,
+                        suspect: Some(thief),
+                    }
+            }),
+        "witness should record direct suspected-theft evidence with the thief identity"
+    );
+
+    {
+        let relocate_tick = h.scheduler.current_tick();
+        let mut txn = new_txn(&mut h.world, relocate_tick.0);
+        txn.set_ground_location(witness, rulers_hall).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        h.scheduler.current_tick(),
+        PerceptionSource::DirectObservation,
+    );
+
+    let accuse_goal = GoalKind::Accuse {
+        crime_register,
+        accused: thief,
+        violation_id: worldwake_core::ViolationId(0),
+    };
+    let pre_tell_tick = h.scheduler.current_tick();
+    let generated_before_tell = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .goal_history_for(authority, &accuse_goal)
+        .into_iter()
+        .filter(|entry| entry.tick <= pre_tell_tick)
+        .any(|entry| entry.status.is_generated());
+    assert!(
+        !generated_before_tell,
+        "authority should not generate an accusation goal before receiving the witness report"
+    );
+
+    let mut tell_commit_order = None;
+    for _ in 0..80 {
+        h.step_once();
+        let store = h
+            .world
+            .get_component_agent_belief_store(authority)
+            .expect("authority should keep a belief store");
+        if store.social_observations.iter().any(|observation| {
+            observation.detail
+                == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: Some(thief),
+                }
+                && matches!(
+                    observation.source,
+                    PerceptionSource::Report { from, chain_len: 1 } if from == witness
+                )
+        }) {
+            let tell_event = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled")
+                .events_for(witness)
+                .iter()
+                .find_map(|event| {
+                    (event.action_name == "tell"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                        && matches!(
+                            event.detail,
+                            Some(ActionTraceDetail::Tell {
+                                listener,
+                                topic: TellTopic::SocialObservation { observation },
+                            }) if listener == authority
+                                && observation.detail
+                                    == worldwake_core::SocialObservationDetail::SuspectedTheft {
+                                        theft: theft_facts,
+                                        suspect: Some(thief),
+                                    }
+                        ))
+                    .then_some((event.tick, event.sequence_in_tick))
+                })
+                .expect("witness should commit Tell for the theft observation");
+            tell_commit_order = Some(tell_event);
+            break;
+        }
+    }
+    let tell_commit_order =
+        tell_commit_order.expect("authority should learn the theft through Tell");
+
+    let authority_memory = h
+        .world
+        .get_component_violation_memory(authority)
+        .expect("authority should receive violation memory from the told theft evidence");
+    let authority_violation_id = authority_memory
+        .violations
+        .iter()
+        .find(|record| {
+            record.kind
+                == worldwake_core::ViolationKind::SuspectedTheft {
+                    theft: theft_facts,
+                    suspect: Some(thief),
+                }
+        })
+        .map(|record| record.id)
+        .expect("authority should record a local suspected-theft case");
+
+    let mut accuse_commit_order = None;
+    for _ in 0..20 {
+        h.step_once();
+        let event = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(authority)
+            .iter()
+            .find_map(|event| {
+                (event.action_name == "accuse"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some((event.tick, event.sequence_in_tick))
+            });
+        if event.is_some() {
+            accuse_commit_order = event;
+            break;
+        }
+    }
+    let accuse_commit_order =
+        accuse_commit_order.expect("authority should accuse after hearing the witness report");
+
+    let record_after_accuse = h
+        .world
+        .get_component_record_data(crime_register)
+        .expect("crime register should exist after accusation");
+    let accusation_entry = record_after_accuse
+        .active_entries()
+        .into_iter()
+        .find(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::Accusation {
+                    accuser,
+                    accused,
+                    violation_id,
+                    theft,
+                    ..
+                } if accuser == authority
+                    && accused == thief
+                    && violation_id == authority_violation_id
+                    && theft == theft_facts
+            )
+        })
+        .expect("crime register should contain the accusation filed by the authority");
+    let accusation_entry_id = accusation_entry.entry_id;
+
+    {
+        let relocate_tick = h.scheduler.current_tick();
+        let mut txn = new_txn(&mut h.world, relocate_tick.0);
+        txn.set_ground_location(stolen_lot, general_store).unwrap();
+        txn.set_ground_location(thief, rulers_hall).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        h.scheduler.current_tick(),
+        PerceptionSource::DirectObservation,
+    );
+
+    let exile_goal = GoalKind::PunishAccused {
+        office,
+        accused: thief,
+        accusation_entry: accusation_entry_id,
+        punishment: worldwake_core::PunishmentKind::Exile {
+            from_faction: faction,
+        },
+    };
+    let fine_goal = GoalKind::PunishAccused {
+        office,
+        accused: thief,
+        accusation_entry: accusation_entry_id,
+        punishment: worldwake_core::PunishmentKind::Fine {
+            commodity: CommodityKind::Bread,
+            amount: Quantity(1),
+        },
+    };
+    let punishment_setup_tick = h.scheduler.current_tick();
+
+    let mut exile_commit_order = None;
+    for _ in 0..20 {
+        h.step_once();
+        let event = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(authority)
+            .iter()
+            .find_map(|event| {
+                (event.action_name == "exile"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some((event.tick, event.sequence_in_tick))
+            });
+        if event.is_some() {
+            exile_commit_order = event;
+            break;
+        }
+    }
+    let exile_commit_order =
+        exile_commit_order.expect("authority should commit exile after filing the case");
+
+    let authority_goal_history = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    assert!(
+        authority_goal_history
+            .goal_history_for(authority, &exile_goal)
+            .iter()
+            .any(|entry| entry.tick >= punishment_setup_tick && entry.status.is_generated()),
+        "authority should generate PunishAccused(Exile) once the fine is not locally collectible"
+    );
+    assert!(
+        !authority_goal_history
+            .goal_history_for(authority, &fine_goal)
+            .iter()
+            .any(|entry| entry.tick >= punishment_setup_tick && entry.status.is_generated()),
+        "authority should not generate PunishAccused(Fine) after the fined commodity leaves local reach"
+    );
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(authority)
+            .iter()
+            .all(|event| {
+                !(event.action_name == "fine"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            }),
+        "the exile-specific scenario should commit no fine action"
+    );
+
+    assert!(
+        tell_commit_order < exile_commit_order,
+        "witness tell must precede final exile in the action trace"
+    );
+    assert!(
+        accuse_commit_order < exile_commit_order,
+        "accusation should commit before exile in the action trace"
+    );
+
+    assert!(
+        !h.world.factions_of(thief).contains(&faction),
+        "exile should remove the thief from the governed faction"
+    );
+    assert!(
+        h.world.hostile_towards(thief).contains(&faction),
+        "exile should create hostility from the faction toward the thief"
+    );
+
+    let final_record = h
+        .world
+        .get_component_record_data(crime_register)
+        .expect("crime register should persist after punishment");
+    let exile_verdicts = final_record
+        .active_entries()
+        .into_iter()
+        .filter(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::Verdict {
+                    accused,
+                    violation_id,
+                    punishment: worldwake_core::PunishmentKind::Exile { from_faction },
+                    ..
+                } if accused == thief
+                    && violation_id == authority_violation_id
+                    && from_faction == faction
+            ) && entry.supersedes == Some(accusation_entry_id)
+        })
+        .count();
+    assert_eq!(
+        exile_verdicts, 1,
+        "crime register should contain exactly one exile verdict for the accusation"
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Bread, initial_bread_total).unwrap();
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_exile_punishment_when_fine_is_not_locally_collectible() {
+    let _ = run_exile_punishment_when_fine_is_not_locally_collectible(Seed([65; 32]));
+}
+
+#[test]
+fn golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically() {
+    let first = run_exile_punishment_when_fine_is_not_locally_collectible(Seed([66; 32]));
+    let second = run_exile_punishment_when_fine_is_not_locally_collectible(Seed([66; 32]));
+    assert_eq!(
+        first, second,
+        "exile punishment fallback scenario should replay deterministically"
     );
 }
