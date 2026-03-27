@@ -37,7 +37,7 @@ pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
     classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
-    has_active_frame_travel, has_frame, AgentDecisionRuntime, FramePlanRelation,
+    has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry, FramePlanRelation,
     FrameRuntimeSnapshot, MaterializationBindings,
 };
 pub use decision_trace::{

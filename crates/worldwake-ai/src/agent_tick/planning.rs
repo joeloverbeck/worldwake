@@ -7,8 +7,8 @@ use crate::decision_trace::{
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningBudget, RankedGoal,
+    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry, PlannedPlan,
+    PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
@@ -154,8 +154,7 @@ pub(super) fn build_candidate_plans(
     recipe_registry: &RecipeRegistry,
     collect_rejections: bool,
     collect_expansion_summaries: bool,
-    skip_exhausted: &std::collections::BTreeMap<crate::GoalKey, Tick>,
-    exhaustion_counts: &std::collections::BTreeMap<crate::GoalKey, u8>,
+    exhaustion_cache: &std::collections::BTreeMap<crate::GoalKey, ExhaustionEntry>,
 ) -> Vec<(
     crate::GoalKey,
     PlanSearchResult,
@@ -168,9 +167,10 @@ pub(super) fn build_candidate_plans(
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
-            skip_exhausted
+            exhaustion_cache
                 .get(&c.grounded.key)
-                .is_none_or(|&exhausted_at| {
+                .and_then(|entry| entry.exhausted_at)
+                .is_none_or(|exhausted_at| {
                     current_tick.0.saturating_sub(exhausted_at.0) >= EXHAUSTION_SKIP_TTL
                 })
         })
@@ -208,11 +208,11 @@ pub(super) fn build_candidate_plans(
         // Use a reduced node expansion budget for goals that previously
         // exhausted the search budget. This avoids wasting the full budget
         // on goals that are likely to exhaust again.
-        let effective_budget = if let Some(&count) = exhaustion_counts.get(&ranked.grounded.key) {
+        let effective_budget = if let Some(entry) = exhaustion_cache.get(&ranked.grounded.key) {
             let mut reduced = budget.clone();
             // Exponential backoff: halve the budget for each prior
             // exhaustion, floored at 64 expansions.
-            let shift = count.min(3); // cap at 3 halvings (512→64)
+            let shift = entry.count.min(3); // cap at 3 halvings (512→64)
             reduced.max_node_expansions = (budget.max_node_expansions >> shift).max(64);
             reduced
         } else {
@@ -322,10 +322,11 @@ fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently
         | DirtySet::REPLAN_SIGNAL
         | DirtySet::BLOCKER_CLEANUP;
     if runtime.dirty.contains_any(non_position_mask) {
-        for goal in runtime.search_exhausted_goals.keys() {
-            *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
+        for entry in runtime.exhaustion_cache.values_mut() {
+            if entry.exhausted_at.take().is_some() {
+                entry.count += 1;
+            }
         }
-        runtime.search_exhausted_goals.clear();
         return;
     }
     // Position changed — only clear if agent genuinely arrived at a new place
@@ -334,10 +335,11 @@ fn reset_exhausted_goals_if_needed(runtime: &mut AgentDecisionRuntime, currently
         let arrived = runtime.last_in_transit && !currently_in_transit;
         let was_settled = !runtime.last_in_transit;
         if arrived || was_settled {
-            for goal in runtime.search_exhausted_goals.keys() {
-                *runtime.exhaustion_counts.entry(*goal).or_insert(0) += 1;
+            for entry in runtime.exhaustion_cache.values_mut() {
+                if entry.exhausted_at.take().is_some() {
+                    entry.count += 1;
+                }
             }
-            runtime.search_exhausted_goals.clear();
         }
     }
 }
@@ -360,10 +362,18 @@ fn record_exhausted_goals(
             crate::PlanSearchResult::BudgetExhausted { .. }
                 | crate::PlanSearchResult::FrontierExhausted { .. }
         ) {
-            runtime.search_exhausted_goals.insert(*key, tick);
+            runtime
+                .exhaustion_cache
+                .entry(*key)
+                .and_modify(|entry| entry.exhausted_at = Some(tick))
+                .or_insert(ExhaustionEntry {
+                    exhausted_at: Some(tick),
+                    count: 0,
+                });
         } else {
-            // Goal was searched and did NOT exhaust — remove from skip map.
-            runtime.search_exhausted_goals.remove(key);
+            // Goal was searched and did NOT exhaust — clear both active skip
+            // state and cumulative backoff for that exact goal.
+            runtime.exhaustion_cache.remove(key);
         }
     }
 }
@@ -464,8 +474,7 @@ pub(super) fn plan_and_validate_next_step(
             recipe_registry,
             false,
             false,
-            &runtime.search_exhausted_goals,
-            &runtime.exhaustion_counts,
+            &runtime.exhaustion_cache,
         );
 
         // Record newly exhausted goals for next tick.
@@ -476,7 +485,7 @@ pub(super) fn plan_and_validate_next_step(
         // tick with solvable ones.
         for (key, result, _, _) in &plans {
             if result.is_found() {
-                runtime.exhaustion_counts.remove(key);
+                runtime.exhaustion_cache.remove(key);
             }
         }
         let plans_options = plans_as_options(&plans);
@@ -644,7 +653,6 @@ pub(super) fn plan_and_validate_next_step_traced(
             true,
             true,
             &no_skip,
-            &std::collections::BTreeMap::new(),
         );
 
         for (goal_key, result, rejections, expansions) in &plans {
@@ -766,6 +774,105 @@ pub(super) fn plan_and_validate_next_step_traced(
         Some(plan_search_trace),
         Some(selection_trace),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{record_exhausted_goals, reset_exhausted_goals_if_needed};
+    use crate::{
+        AgentDecisionRuntime, ExhaustionEntry, GoalKey, GoalKind, PlanSearchResult,
+        PlanTerminalKind, PlannedPlan,
+    };
+    use worldwake_core::{CommodityKind, Tick};
+
+    fn consume_goal(commodity: CommodityKind) -> GoalKey {
+        GoalKey::from(GoalKind::ConsumeOwnedCommodity { commodity })
+    }
+
+    fn found_plan(goal: GoalKey) -> PlannedPlan {
+        PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
+    }
+
+    #[test]
+    fn record_exhausted_goals_refreshes_tick_without_resetting_count() {
+        let goal = consume_goal(CommodityKind::Bread);
+        let mut runtime = AgentDecisionRuntime::default();
+        runtime.exhaustion_cache.insert(
+            goal,
+            ExhaustionEntry {
+                exhausted_at: Some(Tick(3)),
+                count: 2,
+            },
+        );
+
+        let plans = vec![(goal, PlanSearchResult::BudgetExhausted { expansions_used: 12 }, Vec::new(), Vec::new())];
+        record_exhausted_goals(&mut runtime, &plans, Tick(9));
+
+        assert_eq!(
+            runtime.exhaustion_cache.get(&goal),
+            Some(&ExhaustionEntry {
+                exhausted_at: Some(Tick(9)),
+                count: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn reset_exhausted_goals_if_needed_clears_ttl_marker_and_preserves_backoff_history() {
+        let goal = consume_goal(CommodityKind::Bread);
+        let mut runtime = AgentDecisionRuntime::default();
+        runtime.dirty.insert(crate::DirtySet::COMMODITY);
+        runtime.exhaustion_cache.insert(
+            goal,
+            ExhaustionEntry {
+                exhausted_at: Some(Tick(4)),
+                count: 1,
+            },
+        );
+
+        reset_exhausted_goals_if_needed(&mut runtime, false);
+
+        assert_eq!(
+            runtime.exhaustion_cache.get(&goal),
+            Some(&ExhaustionEntry {
+                exhausted_at: None,
+                count: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn record_exhausted_goals_removes_only_successful_goal_entry() {
+        let solved_goal = consume_goal(CommodityKind::Bread);
+        let retained_goal = consume_goal(CommodityKind::Water);
+        let mut runtime = AgentDecisionRuntime::default();
+        runtime.exhaustion_cache.insert(
+            solved_goal,
+            ExhaustionEntry {
+                exhausted_at: Some(Tick(2)),
+                count: 3,
+            },
+        );
+        runtime.exhaustion_cache.insert(
+            retained_goal,
+            ExhaustionEntry {
+                exhausted_at: None,
+                count: 4,
+            },
+        );
+
+        let plans = vec![(solved_goal, PlanSearchResult::Found(found_plan(solved_goal)), Vec::new(), Vec::new())];
+        record_exhausted_goals(&mut runtime, &plans, Tick(10));
+
+        assert!(!runtime.exhaustion_cache.contains_key(&solved_goal));
+        assert_eq!(
+            runtime.exhaustion_cache.get(&retained_goal),
+            Some(&ExhaustionEntry {
+                exhausted_at: None,
+                count: 4,
+            })
+        );
+    }
 }
 
 /// Convert a `PlanSearchResult` into a `PlanAttemptTrace` for the trace model.

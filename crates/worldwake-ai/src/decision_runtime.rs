@@ -51,6 +51,12 @@ impl MaterializationBindings {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ExhaustionEntry {
+    pub exhausted_at: Option<Tick>,
+    pub count: u8,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AgentDecisionRuntime {
     pub current_plan: Option<PlannedPlan>,
@@ -68,15 +74,10 @@ pub struct AgentDecisionRuntime {
     /// Whether the agent was in transit on the last observed tick.
     pub last_in_transit: bool,
     pub materialization_bindings: MaterializationBindings,
-    /// Goals whose plan search exhausted the budget, mapped to the tick when
-    /// they were last marked exhausted.  Skipped for a short TTL window (see
-    /// `EXHAUSTION_SKIP_TTL`) then re-searched.  Reset when significant world
-    /// changes occur (position, commodity, wounds, or facility changes).
-    pub search_exhausted_goals: std::collections::BTreeMap<GoalKey, Tick>,
-    /// Goals that have repeatedly exhausted the search budget.  Maps each
-    /// goal key to a cumulative exhaust count.  The search budget is halved
-    /// for each count (exponential backoff), floored at 64 expansions.
-    pub exhaustion_counts: std::collections::BTreeMap<GoalKey, u8>,
+    /// Goals that have repeatedly exhausted search. `exhausted_at` is present
+    /// while the goal is inside the active TTL skip window; `count` persists
+    /// after that window is cleared so exponential backoff can still apply.
+    pub exhaustion_cache: std::collections::BTreeMap<GoalKey, ExhaustionEntry>,
 }
 
 impl AgentDecisionRuntime {
