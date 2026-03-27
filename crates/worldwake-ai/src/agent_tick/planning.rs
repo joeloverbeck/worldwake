@@ -18,6 +18,8 @@ use worldwake_sim::{ActionHandlerRegistry, RecipeRegistry, RuntimeBeliefView, Sc
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 
+const EXHAUSTION_SKIP_TTL: u64 = 20;
+
 /// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
 pub(super) fn summarize_step(
     step: &PlannedStep,
@@ -139,6 +141,12 @@ pub(super) fn determine_selected_plan_source(
     }
 }
 
+fn exhaustion_skip_active(entry: &ExhaustionEntry, current_tick: Tick) -> bool {
+    entry.exhausted_at.is_some_and(|exhausted_at| {
+        current_tick.0.saturating_sub(exhausted_at.0) < EXHAUSTION_SKIP_TTL
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_candidate_plans(
     world: &worldwake_core::World,
@@ -161,18 +169,13 @@ pub(super) fn build_candidate_plans(
     Vec<BindingRejection>,
     Vec<crate::decision_trace::SearchExpansionSummary>,
 )> {
-    // Skip goals whose search exhausted the budget within the TTL window.
-    const EXHAUSTION_SKIP_TTL: u64 = 16;
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
-            exhaustion_cache
+            !exhaustion_cache
                 .get(&c.grounded.key)
-                .and_then(|entry| entry.exhausted_at)
-                .is_none_or(|exhausted_at| {
-                    current_tick.0.saturating_sub(exhausted_at.0) >= EXHAUSTION_SKIP_TTL
-                })
+                .is_some_and(|entry| exhaustion_skip_active(entry, current_tick))
         })
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
@@ -778,7 +781,9 @@ pub(super) fn plan_and_validate_next_step_traced(
 
 #[cfg(test)]
 mod tests {
-    use super::{record_exhausted_goals, reset_exhausted_goals_if_needed};
+    use super::{
+        exhaustion_skip_active, record_exhausted_goals, reset_exhausted_goals_if_needed,
+    };
     use crate::{
         AgentDecisionRuntime, ExhaustionEntry, GoalKey, GoalKind, PlanSearchResult,
         PlanTerminalKind, PlannedPlan,
@@ -884,6 +889,27 @@ mod tests {
                 count: 4,
             })
         );
+    }
+
+    #[test]
+    fn exhausted_goal_skip_window_remains_active_until_20_tick_boundary() {
+        let entry = ExhaustionEntry {
+            exhausted_at: Some(Tick(5)),
+            count: 2,
+        };
+
+        assert!(exhaustion_skip_active(&entry, Tick(24)));
+        assert!(!exhaustion_skip_active(&entry, Tick(25)));
+    }
+
+    #[test]
+    fn exhausted_goal_without_ttl_marker_is_not_skipped() {
+        let entry = ExhaustionEntry {
+            exhausted_at: None,
+            count: 5,
+        };
+
+        assert!(!exhaustion_skip_active(&entry, Tick(200)));
     }
 }
 

@@ -10,11 +10,18 @@ Replace the coarse dirty-bit mask for exhaustion cache invalidation with per-goa
 
 The golden-perf campaign identified two manifestations of the coarse invalidation problem:
 
-1. **Over-invalidation (COMMODITY)**: Agent eats bread -> COMMODITY dirty bit fires -> ALL exhausted goals cleared, including `AcquireCommodity(Apple)` which has nothing to do with bread. This caused 52 redundant full-budget re-searches per 200-tick scenario (3s of wasted computation at budget=256). The TTL-based skip (EXHAUSTION_SKIP_TTL=16) mitigates this but does not eliminate it.
+1. **Over-invalidation (COMMODITY)**: Agent eats bread -> COMMODITY dirty bit fires -> ALL exhausted goals cleared, including `AcquireCommodity(Apple)` which has nothing to do with bread. This caused 52 redundant full-budget re-searches per 200-tick scenario (3s of wasted computation at budget=256). The TTL-based skip mitigates this but does not eliminate it. The live code no longer uses `16`; [archive/tickets/S30-007-increase-exhaustion-ttl.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S30-007-increase-exhaustion-ttl.md) raised `EXHAUSTION_SKIP_TTL` to `20`, which is the highest value currently proven safe by `golden_save_load_round_trip_under_ai`.
 
 2. **Under-invalidation (NEEDS)**: NEEDS is excluded from the invalidation mask ("needs-only changes rarely alter search space"). But for goals like `Wash` (dirtiness-driven), the search space changes when dirtiness crosses a threshold. exp-005 showed that indefinitely caching exhausted goals caused 4 golden test failures because agents never re-evaluated goals that became solvable as needs changed.
 
 The current TTL-based skip is a compromise: it periodically re-searches everything, wasting time on genuinely unsolvable goals while also delaying detection of newly solvable ones. Goal-aware invalidation solves both problems by clearing only when relevant conditions change.
+
+## Assumption Reassessment (2026-03-27)
+
+1. The live exhaustion runtime shape no longer matches the older draft narrative in this spec. `AgentDecisionRuntime` already stores a unified [`ExhaustionEntry { exhausted_at: Option<Tick>, count: u8 }`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_runtime.rs) rather than separate `search_exhausted_goals` and `exhaustion_counts` maps.
+2. The live planner currently uses `EXHAUSTION_SKIP_TTL = 20` in [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs), not `16`.
+3. Live verification during S30-007 established a stronger constraint than this spec previously recorded: `golden_save_load_round_trip_under_ai` still fails at `EXHAUSTION_SKIP_TTL >= 21`, so the present TTL architecture has a demonstrated ceiling even after S30 runtime save/load parity landed.
+4. That ceiling strengthens, rather than weakens, the need for S31. Goal-aware invalidation is not only about planner efficiency; it is also the clean path to removing the now-demonstrated determinism ceiling imposed by the coarse time-based heuristic.
 
 ## Phase
 
@@ -82,13 +89,15 @@ pub enum NeedKind {
 
 ### 2. `ExhaustionEntry` struct
 
-Replace `BTreeMap<GoalKey, Tick>` with `BTreeMap<GoalKey, ExhaustionEntry>`:
+Extend the live `ExhaustionEntry` shape rather than reconstructing the pre-S30 model. Today the runtime already stores `exhausted_at` and `count`; S31 should preserve that backoff state and add invalidation metadata:
 
 ```rust
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExhaustionEntry {
-    /// Tick when the goal was marked exhausted.
-    pub exhausted_at: Tick,
+    /// Tick when the goal last entered the active skip window, if any.
+    pub exhausted_at: Option<Tick>,
+    /// Consecutive exhaustion count used for exponential backoff.
+    pub count: u8,
     /// Conditions that would warrant re-searching this goal.
     pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
     /// Snapshot of relevant state at exhaustion time (for delta detection).
@@ -165,7 +174,7 @@ If S30 (save/load parity) is implemented, `ExhaustionEntry` must be serializable
 ### `worldwake-ai`
 
 - Replace `reset_exhausted_goals_if_needed` in `planning.rs` with `invalidate_exhausted_goals`.
-- Replace `BTreeMap<GoalKey, Tick>` in `AgentDecisionRuntime` with `BTreeMap<GoalKey, ExhaustionEntry>`.
+- Extend the existing `BTreeMap<GoalKey, ExhaustionEntry>` in `AgentDecisionRuntime` with invalidation metadata; do not reintroduce split maps or regress the live `count` backoff state.
 - Add `derive_invalidation_conditions` in a new `exhaustion.rs` module or within `goal_model.rs`.
 - Remove `EXHAUSTION_SKIP_TTL` constant from `planning.rs`.
 - Remove the tick-based filtering logic in `build_candidate_plans`.
