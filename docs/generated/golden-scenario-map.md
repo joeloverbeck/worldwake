@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 51
+- Scenario blocks with explicit metadata: 53
 - Files contributing scenario metadata: 10
-- `golden_*` tests associated with scenario blocks: 132
+- `golden_*` tests associated with scenario blocks: 135
 
 ## Scenario Inventory
 
@@ -40,10 +40,12 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:202` | `golden_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
 | `S21-005` | Save/Load Preserves Promoted Commitments | `golden_determinism.rs:533` | `golden_save_load_preserves_promoted_commitments` | `golden_save_load_preserves_promoted_commitments_replays_deterministically` |
 | `S22-007` | Save/load verification for IntentionFrame and | `golden_determinism.rs:749` | `golden_save_load_preserves_suspended_intention_frame`<br>`golden_save_load_preserves_intention_disposition_profile`<br>`golden_save_load_preserves_frame_assumptions` | — |
-| `35` | Same-Place Concurrent Violations Stay Distinct | `golden_emergent.rs:4208` | `golden_same_place_concurrent_violations_stay_distinct` | `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically` |
-| `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4590` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
-| `37` | Theft Leads Owner To Local Suspected Theft Discovery | `golden_emergent.rs:4826` | `golden_theft_leads_owner_to_local_suspected_theft_discovery` | `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically` |
-| `38` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:5202` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
+| `35` | Same-Place Concurrent Violations Stay Distinct | `golden_emergent.rs:4223` | `golden_same_place_concurrent_violations_stay_distinct` | `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically` |
+| `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4605` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
+| `37` | Theft Leads Owner To Local Suspected Theft Discovery | `golden_emergent.rs:4841` | `golden_theft_leads_owner_to_local_suspected_theft_discovery` | `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically` |
+| `38` | Witnessed Theft Enables Accusation Chain | `golden_emergent.rs:5217` | `golden_witnessed_theft_accusation_chain` | `golden_witnessed_theft_accusation_chain_replays_deterministically` |
+| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5793` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
+| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:6093` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -63,7 +65,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `6b` | Multi-Recipe Craft Path | `golden_production.rs:2602` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically` |
 | `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:2759` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
-| `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1572` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically` |
+| `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1580` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically` |
 | `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:881` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
 | `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:916` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
 | `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:951` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
@@ -484,7 +486,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 35: Same-Place Concurrent Violations Stay Distinct
 
-- Source: `golden_emergent.rs:4208`
+- Source: `golden_emergent.rs:4223`
 - Systems: Perception, AI, Generic Actions
 - GoalKinds: InvestigateViolation
 - ActionDomains: Generic
@@ -496,7 +498,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 36: Entity Missing Triggers Investigation
 
-- Source: `golden_emergent.rs:4590`
+- Source: `golden_emergent.rs:4605`
 - Systems: Perception, AI, Generic Actions
 - GoalKinds: InvestigateViolation
 - ActionDomains: Generic
@@ -508,7 +510,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 37: Theft Leads Owner To Local Suspected Theft Discovery
 
-- Source: `golden_emergent.rs:4826`
+- Source: `golden_emergent.rs:4841`
 - Systems: Transport, Perception, AI, Generic Actions
 - GoalKinds: StealItem, InvestigateViolation
 - ActionDomains: Transport, Generic, Travel
@@ -518,9 +520,33 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Replay tests: `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically`
 - All tests: `golden_theft_leads_owner_to_local_suspected_theft_discovery`, `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically`
 
-### Scenario 38: Supply Depletion Enables ShareBelief
+### Scenario 38: Witnessed Theft Enables Accusation Chain
 
-- Source: `golden_emergent.rs:5202`
+- Source: `golden_emergent.rs:5217`
+- Systems: Transport, Perception, Social Tell, AI, Institutions
+- GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
+- ActionDomains: Transport, Social, Travel
+- Places: VillageSquare, RulersHall
+- Principles: 1, 7, 13, 16, 21, 23
+- Primary tests: `golden_witnessed_theft_accusation_chain`
+- Replay tests: `golden_witnessed_theft_accusation_chain_replays_deterministically`
+- All tests: `golden_witnessed_theft_accusation_chain`, `golden_witnessed_theft_accusation_chain_replays_deterministically`
+
+### Scenario 39: Traceability Explains Stale Fine Branch
+
+- Source: `golden_emergent.rs:5793`
+- Systems: AI, Institutions, Justice, Action Trace
+- GoalKinds: PunishAccused
+- ActionDomains: Social
+- Places: RulersHall, GeneralStore
+- Principles: 3, 12, 24, 27
+- Primary tests: `golden_traceability_explains_stale_fine_branch_without_source_diving`
+- Replay tests: None
+- All tests: `golden_traceability_explains_stale_fine_branch_without_source_diving`
+
+### Scenario 40: Supply Depletion Enables ShareBelief
+
+- Source: `golden_emergent.rs:6093`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -867,7 +893,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2d-craft: Merchant Restock via Prerequisite-Aware Craft
 
-- Source: `golden_supply_chain.rs:1572`
+- Source: `golden_supply_chain.rs:1580`
 - Systems: Enterprise, Travel, Production, AI, Conservation
 - GoalKinds: RestockCommodity
 - ActionDomains: Production, Travel, Transport

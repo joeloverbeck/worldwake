@@ -311,6 +311,7 @@ impl CombatHarness {
         self.replay_state.record_input(input).unwrap();
     }
 
+    #[allow(clippy::result_large_err)]
     fn step_once(&mut self) -> Result<TickStepResult, TickStepError> {
         let services = TickStepServices {
             action_defs: &self.defs,

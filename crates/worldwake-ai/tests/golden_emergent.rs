@@ -5774,6 +5774,21 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+#[test]
+fn golden_witnessed_theft_accusation_chain() {
+    let _ = run_witnessed_theft_accusation_chain(Seed([63; 32]));
+}
+
+#[test]
+fn golden_witnessed_theft_accusation_chain_replays_deterministically() {
+    let first = run_witnessed_theft_accusation_chain(Seed([64; 32]));
+    let second = run_witnessed_theft_accusation_chain(Seed([64; 32]));
+    assert_eq!(
+        first, second,
+        "witnessed-theft accusation chain should replay deterministically"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 39: Traceability Explains Stale Fine Branch
 // ---------------------------------------------------------------------------
@@ -6053,8 +6068,7 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
         fine_events
             .iter()
             .any(|event| matches!(event.kind, ActionTraceKind::Started { .. })),
-        "authority should start the fine once global lawful control still exists: {:?}",
-        fine_events
+        "authority should start the fine once global lawful control still exists: {fine_events:?}"
     );
     assert!(matches!(
         fine_events.iter().find(|event| matches!(event.kind, ActionTraceKind::Aborted { .. })),
@@ -6064,33 +6078,17 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
                 ActionTraceKind::Aborted { reason, .. }
                     if reason.contains("HolderLacksAccessibleCommodity")
             )
-    ), "unexpected fine trace events: {:?}", fine_events);
+    ), "unexpected fine trace events: {fine_events:?}");
     assert!(
         fine_events
             .iter()
             .all(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. })),
-        "fine should no longer fail at authoritative start once remote stock is still lawfully controlled: {:?}",
-        fine_events
-    );
-}
-
-#[test]
-fn golden_witnessed_theft_accusation_chain() {
-    let _ = run_witnessed_theft_accusation_chain(Seed([63; 32]));
-}
-
-#[test]
-fn golden_witnessed_theft_accusation_chain_replays_deterministically() {
-    let first = run_witnessed_theft_accusation_chain(Seed([64; 32]));
-    let second = run_witnessed_theft_accusation_chain(Seed([64; 32]));
-    assert_eq!(
-        first, second,
-        "witnessed-theft accusation chain should replay deterministically"
+        "fine should no longer fail at authoritative start once remote stock is still lawfully controlled: {fine_events:?}"
     );
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 39: Supply Depletion Enables ShareBelief
+// Scenario 40: Supply Depletion Enables ShareBelief
 // ---------------------------------------------------------------------------
 //
 // Systems: Perception, AI, Generic Actions, Social Tell

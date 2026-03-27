@@ -221,6 +221,7 @@ impl Harness {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn step_once(&mut self) -> Result<TickStepResult, TickStepError> {
         self.refresh_actor_beliefs();
         step_tick(

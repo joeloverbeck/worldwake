@@ -70,6 +70,7 @@ impl Harness {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn step_once(&mut self) -> Result<worldwake_sim::TickStepResult, TickStepError> {
         step_tick(
             &mut self.world,

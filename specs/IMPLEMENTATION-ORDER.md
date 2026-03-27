@@ -80,6 +80,9 @@ Replaced the thin E16 force-succession shortcut with explicit jurisdiction-contr
 ### S16b (golden): Force-Legitimacy Emergence Golden E2E Suites — COMPLETED
 3 cross-system golden tests in `golden_emergent.rs` proving E16b's force-legitimacy mechanisms participate in emergent multi-system chains: Suite 10 (controller departure enables rival claim), Suite 11 (force claim creates hostility witnessed and propagated), Suite 12 (contested force state propagates through belief system). All 6 tests (3 main + 3 replay) pass with deterministic replay.
 
+### E17: Crime, Theft & Justice — COMPLETED
+Established theft as an explicit ownership-bypassing action, typed suspected-theft evidence, accusation and verdict record entries in `CrimeRegister`, fine/exile punishment actions, crime/justice AI candidate generation and profile-driven ranking, and emergent golden proof for owner-local discovery, witnessed accusation chains, punishment traceability, and ownership-gated non-theft paths. The completed spec is archived at `archive/specs/E17-crime-theft-justice.md`.
+
 ### S20: AI Pipeline Structural Cleanup — COMPLETED
 Split `agent_tick.rs` (~6124 lines) into `agent_tick/` directory with 7 sub-modules (mod, observation, candidates, active_action, planning, execution, journey) plus dedicated test module. Split `search.rs` (~5880 lines) into `search/` directory with 5 sub-modules (mod, frontier, heuristic, transition, candidates) plus dedicated test module. Pure refactoring with zero behavioral change — all 304 golden tests passed unchanged.
 
@@ -132,16 +135,16 @@ S01 ──→ ✅ COMPLETED (production output ownership claims)
 S02 ──→ ✅ COMPLETED (goal decision policy unification)
 E16 ──→ E16c (institutional beliefs need offices/factions/support substrate)
 E16c ──→ E16b ✅ (force legitimacy needs institutional records and belief propagation)
-E16c ──→ E17 (justice records and institutional knowledge should reuse one record/belief architecture)
+E16c ✅ ──→ E17 ✅ (justice records and institutional knowledge now reuse the same record/belief architecture)
 E16 ──→ E16b ✅ (explicit force legitimacy needs offices, factions, and succession substrate)
-E15, S03 ✅ ──→ E17 (crime needs discovery + ownership claims + planner binding)
+E15 ✅, S03 ✅ ──→ E17 ✅ (crime closeout shipped on top of discovery, ownership claims, and planner binding)
 E16 ──→ E18 (bandits need faction system)
 E16 ──→ E19 (guards need public order)
 E16b ✅ ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
-S01 ✅, S03 ✅, E16c ──→ E17 (crime needs discovery + ownership claims + planner binding + record architecture)
-S27 ✅ ──→ E17 (crime discovery builds on expectation-violation goals for theft detection)
-E17 ──→ E19 (guard crime response needs theft actions, CrimeRegister, JusticeDispositionProfile)
+S01 ✅, S03 ✅, E16c ✅ ──→ E17 ✅ (crime closeout shipped with ownership claims, planner binding, and record architecture)
+S27 ✅ ──→ E17 ✅ (crime discovery now builds on the delivered expectation-violation theft-detection path)
+E17 ✅ ──→ E19 (guard crime response depends on the shipped theft/justice substrate)
 S02 ✅, E16 ──→ E18, E20
 S02 ✅, E16, E16b ✅, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
@@ -213,8 +216,8 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
 **Step 13**:
 - **E16b**: Force Legitimacy & Jurisdiction Control — ✅ COMPLETED
   - replaced thin force-succession shortcut with explicit jurisdiction-control state (claims, contests, hold durations, installation)
-- **E17**: Crime, Theft & Justice
-  - needs E15, S01, S03, E16c, S27
+- **E17**: Crime, Theft & Justice — ✅ COMPLETED
+  - explicit theft, crime evidence, accusation/punishment records, and E17 golden closeout are shipped; archived spec: `archive/specs/E17-crime-theft-justice.md`; Phase 3 itself remains open for non-E17 items such as `S13`, `T10`, `T11`, and `T25`
 - **S13**: Political Emergence Golden E2E Suites
   - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
   - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
@@ -340,10 +343,11 @@ S31 ──→ S30
 
 All specs in `specs/` must appear exactly once in this order. Completed/archived specs live in `archive/specs/`.
 
+E17 is intentionally absent from the table below because its completed spec now lives in `archive/specs/E17-crime-theft-justice.md`.
+
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
 | `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
-| `E17-crime-theft-justice.md` | 3 | 13 | E15, ~~S01~~, ~~S03~~, E16c, ~~S27~~ |
 | ~~`S20-structural-cleanup.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | ~~`S26-planner-conformance-tests.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | ~~`S21-promote-causal-runtime-state.md`~~ | 3+ | 13.5 W1 | ✅ COMPLETED |
@@ -383,7 +387,7 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S16b-golden complete; `S13` plus gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | IN PROGRESS (S20–S28 complete; S29, S30, S31 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |

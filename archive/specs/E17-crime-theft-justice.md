@@ -1,5 +1,7 @@
 # E17: Crime, Theft & Justice
 
+**Status**: COMPLETED
+
 ## Summary
 
 Implement theft as an explicit action, crime evidence as concrete world state, an accusation system backed by institutional records, and Fine/Exile punishment actions. Crime discovery builds on S27's expectation-violation pipeline: when an owner visits the place where they believed their item was, `EntityMissing` fires, investigation confirms suspected theft, and the existing `ShareBelief`/Tell pipeline propagates the suspicion to authorities. This is the final epic before the Phase 3 gate.
@@ -690,3 +692,20 @@ After E17, verify:
 - Section 8 (no global omniscience for NPCs)
 - Section 9.17 (traceable discovery)
 - FOUNDATIONS Principles 1-4, 7-10, 12-17, 20-24, 27-28
+
+## Outcome
+
+- Completed: 2026-03-27
+- What actually changed:
+  - Shipped explicit theft as a transport-domain action that transfers possession without transferring ownership.
+  - Added typed crime/justice substrate including `TheftDispositionProfile`, `JusticeDispositionProfile`, `PunishmentKind`, `CrimeRegister`, typed `InstitutionalClaim::{Accusation, Verdict}`, and crime-specific `GoalKind` variants.
+  - Extended investigation/perception/social-record flows so crime evidence can arise from owner-local absence discovery, witnessed theft relayed through Tell, and record-backed justice follow-through.
+  - Landed accusation and punishment actions plus AI candidate/ranking/search support, with golden proof for owner-local theft discovery, witnessed accusation chains, stale-fine traceability, and ownership-gated non-theft paths.
+- Deviations from original plan:
+  - Phase 3 itself is not closed by this archival. `S13` and gate items such as `T10`, `T11`, and `T25` remain open in `IMPLEMENTATION-ORDER.md`.
+  - The closeout included documentation/golden-inventory reconciliation and test-only lint cleanup in adjacent verification harnesses, not additional theft/justice runtime features.
+- Verification results:
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo build --workspace`
