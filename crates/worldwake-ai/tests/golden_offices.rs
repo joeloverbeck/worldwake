@@ -607,6 +607,27 @@ fn golden_bribe_support_coalition() {
     );
 }
 
+#[test]
+#[ignore = "manual benchmark"]
+fn bench_branchy_office_coalition() {
+    use std::time::Instant;
+
+    const RUNS: usize = 3;
+    let mut elapsed = Vec::with_capacity(RUNS);
+
+    for _ in 0..RUNS {
+        let start = Instant::now();
+        golden_bribe_support_coalition();
+        elapsed.push(start.elapsed());
+    }
+
+    let total = elapsed.iter().copied().sum::<std::time::Duration>();
+    let average = total / RUNS as u32;
+    eprintln!(
+        "bench_branchy_office_coalition: runs={RUNS} total={total:?} avg={average:?} samples={elapsed:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 14: Threaten with Courage Diversity (Principle 20)
 // ---------------------------------------------------------------------------

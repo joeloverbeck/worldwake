@@ -529,6 +529,28 @@ fn golden_world_runs_without_observers_replays_deterministically() {
     );
 }
 
+#[test]
+#[ignore = "manual benchmark"]
+fn bench_world_runs_without_observers() {
+    use std::time::Instant;
+
+    const RUNS: usize = 3;
+    let mut elapsed = Vec::with_capacity(RUNS);
+
+    for run in 0..RUNS {
+        let seed_byte = 210 + u8::try_from(run).expect("benchmark run index should fit into u8");
+        let start = Instant::now();
+        let _ = run_world_runs_without_observers(Seed([seed_byte; 32]));
+        elapsed.push(start.elapsed());
+    }
+
+    let total = elapsed.iter().copied().sum::<std::time::Duration>();
+    let average = total / RUNS as u32;
+    eprintln!(
+        "bench_world_runs_without_observers: runs={RUNS} total={total:?} avg={average:?} samples={elapsed:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Scenario S21-005: Save/Load Preserves Promoted Commitments
 // ---------------------------------------------------------------------------

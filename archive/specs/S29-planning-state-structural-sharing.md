@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: COMPLETED
 
 # S29: Planning State Structural Sharing
 
@@ -257,3 +257,10 @@ N/A — no feedback loops.
 - `crates/worldwake-ai/src/search/transition.rs` — state clone (line 96), steps clone (line 124)
 - `crates/worldwake-ai/src/planner_ops.rs` — `apply_hypothetical_transition` (lines 419-453)
 - `crates/worldwake-ai/src/budget.rs` — PlanningBudget defaults (beam_width=8, max_expansions=256)
+
+## Outcome
+
+- Completed: 2026-03-27
+- What changed: `SharedMap`, `SharedSet`, and `SharedVec` shipped in `worldwake-ai`; `PlanningState` and `SearchNode` now use copy-on-write structural sharing; ignored benchmark wrappers were added to the existing golden determinism, supply-chain, and offices suites for manual perf checks.
+- Deviations from original plan: the implementation landed across `S29-001` through `S29-003` before this closeout ticket. Benchmark proof was also more nuanced than the original plan predicted: `golden_world_runs_without_observers` improved from `3.188s` average on pre-S29 `1791bf0` to `1.908s` average on current `main` (about 40% faster), `bench_high_budget_prerequisite_replan` was effectively flat (`425.9ms` -> `419.5ms` average), and the branch-heavy office coalition benchmark regressed modestly (`160.0ms` -> `187.0ms` average). The optimization is therefore a clear architectural/asymptotic improvement with workload-dependent end-to-end payoff, not a universal speedup across every golden.
+- Verification results: `cargo test -p worldwake-ai --test golden_determinism bench_world_runs_without_observers -- --ignored --nocapture`, `cargo test -p worldwake-ai --test golden_supply_chain bench_high_budget_prerequisite_replan -- --ignored --nocapture`, `cargo test -p worldwake-ai --test golden_offices bench_branchy_office_coalition -- --ignored --nocapture`, `cargo test --workspace`, and `cargo clippy --workspace` all passed on the completed implementation.

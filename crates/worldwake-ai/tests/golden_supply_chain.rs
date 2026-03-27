@@ -1630,6 +1630,28 @@ fn golden_stale_prerequisite_belief_discovery_replan_replays_deterministically()
 }
 
 #[test]
+#[ignore = "manual benchmark"]
+fn bench_high_budget_prerequisite_replan() {
+    use std::time::Instant;
+
+    const RUNS: usize = 3;
+    let mut elapsed = Vec::with_capacity(RUNS);
+
+    for run in 0..RUNS {
+        let seed_byte = 194 + u8::try_from(run).expect("benchmark run index should fit into u8");
+        let start = Instant::now();
+        let _ = run_stale_prerequisite_belief_discovery_replan(Seed([seed_byte; 32]));
+        elapsed.push(start.elapsed());
+    }
+
+    let total = elapsed.iter().copied().sum::<std::time::Duration>();
+    let average = total / RUNS as u32;
+    eprintln!(
+        "bench_high_budget_prerequisite_replan: runs={RUNS} total={total:?} avg={average:?} samples={elapsed:?}"
+    );
+}
+
+#[test]
 fn test_consumer_trade_with_traces() {
     let _ = run_consumer_trade_with_traces(Seed([102; 32]));
 }
