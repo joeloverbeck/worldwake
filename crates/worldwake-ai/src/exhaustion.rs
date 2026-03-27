@@ -325,7 +325,7 @@ mod tests {
         invalidate_exhausted_goals, need_threshold_band, need_value,
         ExhaustionBaseline, ExhaustionInvalidationCondition,
     };
-    use crate::{ExhaustionEntry, GoalKey};
+    use crate::{ExhaustionEntry, ExhaustionRetryState, GoalKey};
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1429,8 +1429,7 @@ mod tests {
             (
                 bread_goal,
                 ExhaustionEntry {
-                    exhausted_at: Some(worldwake_core::Tick(4)),
-                    count: 2,
+                    retry_state: ExhaustionRetryState::FrontierExhausted,
                     invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
                     baseline: ExhaustionBaseline {
                         position: Some(entity(10)),
@@ -1441,8 +1440,7 @@ mod tests {
             (
                 sleep_goal,
                 ExhaustionEntry {
-                    exhausted_at: Some(worldwake_core::Tick(4)),
-                    count: 3,
+                    retry_state: ExhaustionRetryState::FrontierExhausted,
                     invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
                     baseline: ExhaustionBaseline::default(),
                 },
@@ -1450,8 +1448,7 @@ mod tests {
             (
                 legacy_goal,
                 ExhaustionEntry {
-                    exhausted_at: Some(worldwake_core::Tick(4)),
-                    count: 4,
+                    retry_state: ExhaustionRetryState::FrontierExhausted,
                     invalidation_conditions: Vec::new(),
                     baseline: ExhaustionBaseline::default(),
                 },
@@ -1468,8 +1465,7 @@ mod tests {
         assert_eq!(
             cache.get(&sleep_goal),
             Some(&ExhaustionEntry {
-                exhausted_at: Some(worldwake_core::Tick(4)),
-                count: 3,
+                retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
                 baseline: ExhaustionBaseline::default(),
             })
@@ -1484,8 +1480,7 @@ mod tests {
         let mut cache = BTreeMap::from([(
             goal,
             ExhaustionEntry {
-                exhausted_at: Some(worldwake_core::Tick(9)),
-                count: 1,
+                retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
                 baseline: ExhaustionBaseline {
                     position: Some(entity(2)),

@@ -56,11 +56,52 @@ impl MaterializationBindings {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum ExhaustionRetryState {
+    FrontierExhausted,
+    BudgetRetryPending,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ExhaustionEntry {
-    pub exhausted_at: Option<Tick>,
-    pub count: u8,
+    pub retry_state: ExhaustionRetryState,
     pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
     pub baseline: ExhaustionBaseline,
+}
+
+impl ExhaustionEntry {
+    #[must_use]
+    pub fn frontier_exhausted(
+        invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
+        baseline: ExhaustionBaseline,
+    ) -> Self {
+        Self {
+            retry_state: ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions,
+            baseline,
+        }
+    }
+
+    #[must_use]
+    pub fn budget_retry_pending(
+        invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
+        baseline: ExhaustionBaseline,
+    ) -> Self {
+        Self {
+            retry_state: ExhaustionRetryState::BudgetRetryPending,
+            invalidation_conditions,
+            baseline,
+        }
+    }
+
+    #[must_use]
+    pub fn suppresses_planning(&self) -> bool {
+        matches!(self.retry_state, ExhaustionRetryState::FrontierExhausted)
+    }
+
+    #[must_use]
+    pub fn is_budget_retry_pending(&self) -> bool {
+        matches!(self.retry_state, ExhaustionRetryState::BudgetRetryPending)
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -83,9 +124,10 @@ pub struct AgentDecisionRuntime {
     /// Whether the agent was in transit on the last observed tick.
     pub last_in_transit: bool,
     pub materialization_bindings: MaterializationBindings,
-    /// Goals that have repeatedly exhausted search. `exhausted_at` is present
-    /// while the goal is inside the active TTL skip window; `count` persists
-    /// after that window is cleared so exponential backoff can still apply.
+    /// Planner retry state keyed by grounded goal.
+    /// `FrontierExhausted` entries suppress planning until invalidated by
+    /// concrete local fact changes; `BudgetRetryPending` entries keep the goal
+    /// eligible for the next compatible planning pass.
     pub exhaustion_cache: std::collections::BTreeMap<GoalKey, ExhaustionEntry>,
 }
 
@@ -198,7 +240,7 @@ mod tests {
     use super::{
         classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
         has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry,
-        FramePlanRelation, MaterializationBindings,
+        ExhaustionRetryState, FramePlanRelation, MaterializationBindings,
     };
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
@@ -370,8 +412,7 @@ mod tests {
                     purpose: CommodityPurpose::SelfConsume,
                 }),
                 ExhaustionEntry {
-                    exhausted_at: Some(Tick(13)),
-                    count: 2,
+                    retry_state: ExhaustionRetryState::BudgetRetryPending,
                     invalidation_conditions: vec![
                         ExhaustionInvalidationCondition::PositionChanged,
                         ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Water),

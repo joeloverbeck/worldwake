@@ -187,8 +187,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
     runtime.exhaustion_cache.insert(
         GoalKey::from(GoalKind::TreatWounds { patient: agent }),
         crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(9)),
-            count: 3,
+            retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
                 ExhaustionInvalidationCondition::WoundsChanged,
                 ExhaustionInvalidationCondition::TargetDead(agent),
@@ -238,8 +237,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
             .exhaustion_cache
             .get(&GoalKey::from(GoalKind::TreatWounds { patient: agent })),
         Some(&crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(9)),
-            count: 3,
+            retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
                 ExhaustionInvalidationCondition::WoundsChanged,
                 ExhaustionInvalidationCondition::TargetDead(agent),
@@ -293,8 +291,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
             corpse: dead_entity,
         }),
         crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(4)),
-            count: 2,
+            retry_state: crate::ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: vec![ExhaustionInvalidationCondition::TargetDead(dead_entity)],
             baseline: ExhaustionBaseline {
                 position: Some(dead_entity),
@@ -309,8 +306,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
     runtime.exhaustion_cache.insert(
         GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
         crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(5)),
-            count: 1,
+            retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
                 ExhaustionInvalidationCondition::WoundsChanged,
                 ExhaustionInvalidationCondition::TargetDead(h.actor),
@@ -369,8 +365,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
             .exhaustion_cache
             .get(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })),
         Some(&crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(5)),
-            count: 1,
+            retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
                 ExhaustionInvalidationCondition::WoundsChanged,
                 ExhaustionInvalidationCondition::TargetDead(h.actor),
@@ -434,8 +429,7 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
             corpse: dead_entity,
         }),
         crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(4)),
-            count: 2,
+            retry_state: crate::ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
         },
@@ -443,8 +437,7 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
     runtime.exhaustion_cache.insert(
         GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
         crate::ExhaustionEntry {
-            exhausted_at: Some(Tick(5)),
-            count: 1,
+            retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
         },

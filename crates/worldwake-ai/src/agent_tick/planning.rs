@@ -21,8 +21,6 @@ use worldwake_sim::{
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 
-const EXHAUSTION_SKIP_TTL: u64 = 20;
-
 /// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
 pub(super) fn summarize_step(
     step: &PlannedStep,
@@ -172,7 +170,7 @@ pub(super) fn build_candidate_plans(
         .filter(|c| {
             !exhaustion_cache
                 .get(&c.grounded.key)
-                .is_some_and(|entry| exhaustion_skip_active(entry, current_tick))
+                .is_some_and(ExhaustionEntry::suppresses_planning)
         })
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
@@ -205,26 +203,13 @@ pub(super) fn build_candidate_plans(
     for ranked in candidates_to_plan {
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
-        // Use a reduced node expansion budget for goals that previously
-        // exhausted the search budget. This avoids wasting the full budget
-        // on goals that are likely to exhaust again.
-        let effective_budget = if let Some(entry) = exhaustion_cache.get(&ranked.grounded.key) {
-            let mut reduced = budget.clone();
-            // Exponential backoff: halve the budget for each prior
-            // exhaustion, floored at 64 expansions.
-            let shift = entry.count.min(3); // cap at 3 halvings (512→64)
-            reduced.max_node_expansions = (budget.max_node_expansions >> shift).max(64);
-            reduced
-        } else {
-            budget.clone()
-        };
         let result = search_plan(
             &snapshot,
             &ranked.grounded,
             semantics_table,
             action_defs,
             action_handlers,
-            &effective_budget,
+            budget,
             recipe_registry,
             blocked_memory,
             current_tick,
@@ -250,12 +235,6 @@ pub(super) fn build_candidate_plans(
         }
     }
     results
-}
-
-fn exhaustion_skip_active(entry: &ExhaustionEntry, current_tick: Tick) -> bool {
-    entry.exhausted_at.is_some_and(|exhausted_at| {
-        current_tick.0.saturating_sub(exhausted_at.0) < EXHAUSTION_SKIP_TTL
-    })
 }
 
 /// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
@@ -322,40 +301,39 @@ fn record_exhausted_goals(
         Vec<BindingRejection>,
         Vec<crate::decision_trace::SearchExpansionSummary>,
     )],
-    tick: Tick,
+    _tick: Tick,
 ) {
-    // Update exhaustion timestamps for searched goals. Goals not in `plans`
-    // (skipped by TTL) retain their existing timestamp until it expires.
     for (key, result, _, _) in plans {
-        if matches!(
-            result,
+        match result {
             crate::PlanSearchResult::BudgetExhausted { .. }
-                | crate::PlanSearchResult::FrontierExhausted { .. }
-        ) {
-            let (invalidation_conditions, baseline) =
-                derive_invalidation_conditions(&key.kind, agent, view, recipe_registry);
-            runtime
-                .exhaustion_cache
-                .entry(*key)
-                .and_modify(|entry| {
-                    entry.exhausted_at = Some(tick);
-                    entry
-                        .invalidation_conditions
-                        .clone_from(&invalidation_conditions);
-                    entry.baseline.clone_from(&baseline);
-                })
-                .or_insert(ExhaustionEntry {
-                    exhausted_at: Some(tick),
-                    count: 0,
-                    invalidation_conditions,
-                    baseline,
-                });
-        } else {
-            // Goal was searched and did NOT exhaust — clear both active skip
-            // state and cumulative backoff for that exact goal.
-            runtime.exhaustion_cache.remove(key);
+            | crate::PlanSearchResult::FrontierExhausted { .. } => {
+                let (invalidation_conditions, baseline) =
+                    derive_invalidation_conditions(&key.kind, agent, view, recipe_registry);
+                let entry = match result {
+                    crate::PlanSearchResult::BudgetExhausted { .. } => {
+                        ExhaustionEntry::budget_retry_pending(invalidation_conditions, baseline)
+                    }
+                    crate::PlanSearchResult::FrontierExhausted { .. } => {
+                        ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
+                    }
+                    crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => {
+                        unreachable!("match guard excludes non-exhaustion results")
+                    }
+                };
+                runtime.exhaustion_cache.insert(*key, entry);
+            }
+            crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => {
+                runtime.exhaustion_cache.remove(key);
+            }
         }
     }
+}
+
+fn has_pending_budget_retry(runtime: &AgentDecisionRuntime) -> bool {
+    runtime
+        .exhaustion_cache
+        .values()
+        .any(ExhaustionEntry::is_budget_retry_pending)
 }
 
 fn adopt_selected_plan(
@@ -425,7 +403,8 @@ pub(super) fn plan_and_validate_next_step(
     // A second read view covers plan selection and step validation after the active-action fork.
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    if !runtime.dirty.is_empty() {
+    let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime);
+    if should_plan {
         if let Some(step) = try_continue_snapshot_plan(
             &view,
             runtime,
@@ -466,10 +445,6 @@ pub(super) fn plan_and_validate_next_step(
 
         // Record newly exhausted goals for next tick.
         record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick);
-        // Clear exhaustion counts only for goals that actually found plans.
-        // Previously, ANY successful plan cleared ALL counts, defeating the
-        // exponential backoff for chronically unsolvable goals that share a
-        // tick with solvable ones.
         for (key, result, _, _) in &plans {
             if result.is_found() {
                 runtime.exhaustion_cache.remove(key);
@@ -582,7 +557,8 @@ pub(super) fn plan_and_validate_next_step_traced(
     };
     let mut plan_continued = false;
 
-    if !runtime.dirty.is_empty() {
+    let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime);
+    if should_plan {
         if runtime.dirty.is_snapshot_only() && runtime.current_plan.is_some() {
             let current_goal_still_top = ranked_candidates
                 .first()
@@ -623,8 +599,15 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
         }
 
-        // Traced path does not skip exhausted goals — tracing needs full visibility.
-        let no_skip = std::collections::BTreeMap::new();
+        invalidate_exhausted_goals(
+            &mut runtime.exhaustion_cache,
+            &view,
+            agent,
+            view.in_transit_state(agent).is_some(),
+            runtime.dirty.contains(DirtySet::FACILITIES),
+            runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
+        );
+
         let plans = build_candidate_plans(
             world,
             scheduler,
@@ -639,8 +622,15 @@ pub(super) fn plan_and_validate_next_step_traced(
             recipe_registry,
             true,
             true,
-            &no_skip,
+            &runtime.exhaustion_cache,
         );
+
+        record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick);
+        for (key, result, _, _) in &plans {
+            if result.is_found() {
+                runtime.exhaustion_cache.remove(key);
+            }
+        }
 
         for (goal_key, result, rejections, expansions) in &plans {
             plan_search_trace.attempts.push(plan_search_result_to_trace(
@@ -802,10 +792,10 @@ pub(super) fn plan_search_result_to_trace(
 
 #[cfg(test)]
 mod tests {
-    use super::{exhaustion_skip_active, record_exhausted_goals};
+    use super::{has_pending_budget_retry, record_exhausted_goals};
     use crate::{
-        AgentDecisionRuntime, ExhaustionEntry, ExhaustionInvalidationCondition, GoalKey,
-        GoalKind, PlanSearchResult, PlanTerminalKind, PlannedPlan,
+        AgentDecisionRuntime, ExhaustionEntry, ExhaustionInvalidationCondition,
+        ExhaustionRetryState, GoalKey, GoalKind, PlanSearchResult, PlanTerminalKind, PlannedPlan,
     };
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, EventLog,
@@ -855,14 +845,13 @@ mod tests {
     }
 
     #[test]
-    fn record_exhausted_goals_refreshes_tick_without_resetting_count() {
+    fn record_exhausted_goals_replaces_frontier_suppression_with_budget_retry_state() {
         let goal = consume_goal(CommodityKind::Bread);
         let mut runtime = AgentDecisionRuntime::default();
         runtime.exhaustion_cache.insert(
             goal,
             ExhaustionEntry {
-                exhausted_at: Some(Tick(3)),
-                count: 2,
+                retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
             },
@@ -888,8 +877,7 @@ mod tests {
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
-        assert_eq!(entry.exhausted_at, Some(Tick(9)));
-        assert_eq!(entry.count, 2);
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
         assert_eq!(
             entry.invalidation_conditions,
             vec![ExhaustionInvalidationCondition::CommodityChanged(
@@ -931,8 +919,7 @@ mod tests {
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
-        assert_eq!(entry.exhausted_at, Some(Tick(9)));
-        assert_eq!(entry.count, 0);
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
         assert_eq!(
             entry.invalidation_conditions,
             vec![ExhaustionInvalidationCondition::CommodityChanged(
@@ -954,8 +941,7 @@ mod tests {
         runtime.exhaustion_cache.insert(
             solved_goal,
             ExhaustionEntry {
-                exhausted_at: Some(Tick(2)),
-                count: 3,
+                retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
             },
@@ -963,8 +949,7 @@ mod tests {
         runtime.exhaustion_cache.insert(
             retained_goal,
             ExhaustionEntry {
-                exhausted_at: None,
-                count: 4,
+                retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
             },
@@ -992,8 +977,7 @@ mod tests {
         assert_eq!(
             runtime.exhaustion_cache.get(&retained_goal),
             Some(&ExhaustionEntry {
-                exhausted_at: None,
-                count: 4,
+                retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
             })
@@ -1001,27 +985,84 @@ mod tests {
     }
 
     #[test]
-    fn exhausted_goal_skip_window_remains_active_until_20_tick_boundary() {
-        let entry = ExhaustionEntry {
-            exhausted_at: Some(Tick(5)),
-            count: 2,
-            invalidation_conditions: Vec::new(),
-            baseline: crate::ExhaustionBaseline::default(),
-        };
+    fn record_exhausted_goals_records_frontier_exhaustion_as_suppressing_retry_state() {
+        let goal = consume_goal(CommodityKind::Bread);
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![(
+            goal,
+            PlanSearchResult::FrontierExhausted { expansions_used: 12 },
+            Vec::new(),
+            Vec::new(),
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
 
-        assert!(exhaustion_skip_active(&entry, Tick(24)));
-        assert!(!exhaustion_skip_active(&entry, Tick(25)));
+        record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+        );
+
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::FrontierExhausted);
+        assert!(entry.suppresses_planning());
     }
 
     #[test]
-    fn exhausted_goal_without_ttl_marker_is_not_skipped() {
+    fn frontier_exhaustion_suppresses_planning_but_budget_retry_does_not() {
+        let frontier_entry = ExhaustionEntry {
+            retry_state: ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
+        };
         let entry = ExhaustionEntry {
-            exhausted_at: None,
-            count: 5,
+            retry_state: ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
         };
 
-        assert!(!exhaustion_skip_active(&entry, Tick(200)));
+        assert!(frontier_entry.suppresses_planning());
+        assert!(!entry.suppresses_planning());
+        assert!(entry.is_budget_retry_pending());
+    }
+
+    #[test]
+    fn has_pending_budget_retry_detects_retryable_budget_entries() {
+        let mut runtime = AgentDecisionRuntime::default();
+        runtime.exhaustion_cache.insert(
+            consume_goal(CommodityKind::Bread),
+            ExhaustionEntry {
+                retry_state: ExhaustionRetryState::BudgetRetryPending,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
+            },
+        );
+        runtime.exhaustion_cache.insert(
+            consume_goal(CommodityKind::Water),
+            ExhaustionEntry {
+                retry_state: ExhaustionRetryState::FrontierExhausted,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
+            },
+        );
+
+        assert!(has_pending_budget_retry(&runtime));
+
+        runtime.exhaustion_cache.insert(
+            consume_goal(CommodityKind::Apple),
+            ExhaustionEntry {
+                retry_state: ExhaustionRetryState::FrontierExhausted,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
+            },
+        );
+        runtime
+            .exhaustion_cache
+            .retain(|_, entry| !entry.is_budget_retry_pending());
+
+        assert!(!has_pending_budget_retry(&runtime));
     }
 }

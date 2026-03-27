@@ -1276,7 +1276,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_ai::{
         AgentDecisionRuntime, ExhaustionBaseline, ExhaustionEntry, GoalKey, GoalKind,
-        GoalPriorityClass, HypotheticalEntityId, PlanningBudget,
+        GoalPriorityClass, HypotheticalEntityId, PlanningBudget, ExhaustionRetryState,
     };
     use worldwake_core::{ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
@@ -1349,8 +1349,7 @@ mod tests {
                 corpse: dead_entity,
             }),
             ExhaustionEntry {
-                exhausted_at: Some(Tick(3)),
-                count: 2,
+                retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: ExhaustionBaseline::default(),
             },
@@ -1358,8 +1357,7 @@ mod tests {
         runtime.exhaustion_cache.insert(
             GoalKey::from(GoalKind::TreatWounds { patient: actor }),
             ExhaustionEntry {
-                exhausted_at: Some(Tick(4)),
-                count: 1,
+                retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: ExhaustionBaseline::default(),
             },
