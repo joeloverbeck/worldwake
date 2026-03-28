@@ -1,5 +1,7 @@
 # S34: General Epistemic Actions
 
+**Status**: ✅ COMPLETED
+
 ## Summary
 
 Extend the action framework with social epistemic actions and grounded-goal stale-evidence barriers. Currently investigation is narrowly scoped to S27 violation response. Agents can already refresh many stale facts through lawful arrival perception, but they still need explicit social querying and a clean planner contract that treats arrival-observable stale facts as travel-side progress barriers rather than as forced post-arrival inspection steps. `ask_witness` is the only live explicit epistemic action in that canonical path. If future fact classes require a distinct inspection-only action, that must be introduced by a new ticket rather than preserved as dormant substrate.
@@ -258,3 +260,17 @@ Epistemic actions do not introduce new scarce capacities, exclusive affordances,
 8. Agents without `EpistemicDispositionProfile` do not derive deliberate verification barriers (P20 diversity).
 9. Canonical Scenario D can emerge through lawful arrival refresh without any duplicate post-arrival verification step.
 10. All new types are serde-compatible and survive save/load/replay without changing world meaning (P11).
+
+## Outcome
+
+- Completion date: 2026-03-28
+- What actually changed:
+  - delivered the grounded-goal epistemic barrier architecture described here, with `ask_witness` as the live explicit epistemic action and travel-side arrival refresh for arrival-observable facts
+  - removed the old standalone verification-goal path and the duplicate arrival-observable `VerifyBelief` planner path through the completed S34 ticket sequence
+  - finished the remaining end-to-end coverage by adding a deterministic `AskWitness` golden chain in [crates/worldwake-ai/tests/golden_supply_chain.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs)
+- Deviations from original plan:
+  - no surviving inspection-only `VerifyBelief` fact class was justified in the live architecture, so the final implementation kept `ask_witness` as the only canonical explicit epistemic action in this spec's path
+  - the final golden completion work narrowed to the missing `AskWitness` branch because arrival-observable refresh and stale-source replan coverage already existed
+- Verification results:
+  - `cargo test -p worldwake-ai` passed
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed

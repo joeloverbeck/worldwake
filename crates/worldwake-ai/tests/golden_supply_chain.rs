@@ -26,14 +26,16 @@ use worldwake_ai::{
     PlannerOpKind, PlanningBudget, SelectedPlanReplacementKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
-    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
+    total_authoritative_commodity_quantity, total_live_lot_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation, BeliefConfidencePolicy,
+    BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds,
+    KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
+    UtilityProfile, WorkstationTag,
 };
-use worldwake_sim::{ActionTraceKind, RecipeDefinition, RecipeRegistry};
+use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
 fn default_trade_disposition() -> TradeDispositionProfile {
     TradeDispositionProfile {
@@ -48,6 +50,14 @@ fn enterprise_trade_disposition() -> TradeDispositionProfile {
     TradeDispositionProfile {
         demand_memory_retention_ticks: 240,
         ..default_trade_disposition()
+    }
+}
+
+fn default_epistemic_profile() -> EpistemicDispositionProfile {
+    EpistemicDispositionProfile {
+        stale_evidence_barrier_threshold: pm(400),
+        witness_query_duration_ticks: nz(1),
+        ask_memory_retention_ticks: 24,
     }
 }
 
@@ -1134,6 +1144,344 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
 }
 
 #[allow(clippy::too_many_lines)]
+fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash) {
+    let home_market = prototype_place_entity(PrototypePlace::VillageSquare);
+    let believed_stale_place = prototype_place_entity(PrototypePlace::BanditCamp);
+    let mut h = GoldenHarness::new(seed);
+    h.driver = AgentTickDriver::new(PlanningBudget {
+        max_plan_depth: 10,
+        max_node_expansions: 1024,
+        ..PlanningBudget::default()
+    });
+
+    let orchard_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(2),
+            max_quantity: Quantity(2),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    let merchant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        home_market,
+        HomeostaticNeeds::default(),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        UtilityProfile {
+            enterprise_weight: pm(900),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Scout",
+        home_market,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(
+            merchant,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 240,
+                observation_fidelity: pm(875),
+                confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
+            },
+        )
+        .unwrap();
+        txn.set_component_epistemic_disposition_profile(merchant, default_epistemic_profile())
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            merchant,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+                home_market: Some(home_market),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition())
+            .unwrap();
+        txn.set_component_demand_memory(
+            merchant,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(2),
+                    place: home_market,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        txn.set_component_perception_profile(
+            witness,
+            PerceptionProfile {
+                memory_capacity: 64,
+                memory_retention_ticks: 240,
+                observation_fidelity: pm(0),
+                confidence_policy: BeliefConfidencePolicy::default(),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: pm(500),
+                contradiction_tolerance: pm(300),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut stale_source_belief = build_believed_entity_state(
+        &h.world,
+        orchard_source,
+        Tick(0),
+        PerceptionSource::Inference,
+    )
+    .expect("merchant should be able to seed a stale belief about the orchard source");
+    stale_source_belief.last_known_place = Some(believed_stale_place);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        orchard_source,
+        stale_source_belief,
+    );
+
+    let witness_source_belief = build_believed_entity_state(
+        &h.world,
+        orchard_source,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("witness should be able to hold a belief about the orchard source");
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        orchard_source,
+        witness_source_belief,
+    );
+
+    h.scheduler = worldwake_sim::Scheduler::new_with_tick(
+        Tick(50),
+        worldwake_sim::SystemManifest::canonical(),
+    );
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let mut ask_committed = false;
+    let mut report_received = false;
+    let mut visited_orchard = false;
+    let mut visited_bandit = false;
+    let mut acquired_apples = false;
+
+    for _ in 0..180 {
+        h.step_once();
+
+        let merchant_events = h
+            .action_trace_sink()
+            .expect("action tracing should remain enabled for ask_witness recovery")
+            .events_for(merchant);
+        ask_committed |= merchant_events.iter().any(|event| {
+            event.action_name == "ask_witness"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.detail
+                    == Some(ActionTraceDetail::AskWitness {
+                        target: witness,
+                        topic_entity: Some(orchard_source),
+                        topic_commodity: Some(CommodityKind::Apple),
+                    })
+        });
+
+        if let Some(belief) = agent_belief_about(&h.world, merchant, orchard_source) {
+            report_received |= belief.last_known_place == Some(ORCHARD_FARM)
+                && belief.source
+                    == PerceptionSource::Report {
+                        from: witness,
+                        chain_len: 1,
+                    };
+        }
+
+        visited_orchard |= h.world.effective_place(merchant) == Some(ORCHARD_FARM);
+        visited_bandit |= h.world.effective_place(merchant) == Some(believed_stale_place);
+        acquired_apples |= h.agent_commodity_qty(merchant, CommodityKind::Apple) > Quantity(0);
+
+        let apple_authority = total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        let live_apples = total_live_lot_quantity(&h.world, CommodityKind::Apple);
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, apple_authority).unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Apple, live_apples).unwrap();
+
+        if ask_committed && report_received && visited_orchard && acquired_apples {
+            break;
+        }
+    }
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled for ask_witness recovery");
+    let restock_apple_goal = GoalKey::from(GoalKind::RestockCommodity {
+        commodity: CommodityKind::Apple,
+    });
+    let tick_zero_trace = trace_sink
+        .trace_at(merchant, Tick(50))
+        .expect("merchant should have a tick 50 trace")
+        .clone();
+    let tick_zero_planning = match &tick_zero_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+    let selected_tick_zero_plan = tick_zero_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("ask_witness scenario should select a plan at tick 0");
+    let tick_zero_attempt = tick_zero_planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| matches!(
+            attempt.goal.kind,
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple
+            }
+        ))
+        .expect("ask_witness scenario should record the selected restock search attempt");
+    let tick_zero_root = tick_zero_attempt
+        .expansion_summaries
+        .first()
+        .expect("tick 50 planning should record a root expansion summary");
+    assert_eq!(
+        tick_zero_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "ask_witness scenario should start from a fresh search result"
+    );
+    assert!(tick_zero_planning
+        .selection
+        .selected_goal_is(restock_apple_goal));
+    assert_eq!(
+        selected_tick_zero_plan
+            .next_step
+            .as_ref()
+            .expect("selected plan should expose a first step")
+            .op_kind,
+        PlannerOpKind::AskWitness,
+        "colocated witness knowledge should become the first epistemic barrier step; root_candidates={:?} root_omissions={:?}",
+        tick_zero_root.root_candidates,
+        tick_zero_root.root_omissions
+    );
+    assert!(
+        selected_tick_zero_plan.steps.iter().any(|step| {
+            step.op_kind == PlannerOpKind::AskWitness
+                && step.targets == vec![witness]
+        }),
+        "tick 50 plan should select ask_witness against the matching witness target"
+    );
+
+    let post_query_travel_trace = trace_sink
+        .traces_for(merchant)
+        .into_iter()
+        .find(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => {
+                trace.tick > Tick(50)
+                    && planning.selection.selected_plan_source
+                        == Some(SelectedPlanSource::SearchSelection)
+                    && planning.selection.selected_goal_is(restock_apple_goal)
+                    && planning
+                        .selection
+                        .selected_plan
+                        .as_ref()
+                        .is_some_and(|plan| {
+                            plan.steps.iter().any(|step| {
+                                step.op_kind == PlannerOpKind::Travel
+                                    && step.targets == vec![ORCHARD_FARM]
+                            })
+                        })
+            }
+            _ => false,
+        })
+        .expect("report-sourced correction should trigger a fresh replan toward Orchard Farm");
+    let post_query_planning = match &post_query_travel_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected a post-query planning trace, got {other:?}"),
+    };
+    let post_query_plan = post_query_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("post-query replan should select a travel plan");
+    assert!(
+        post_query_plan.steps.iter().any(|step| {
+            step.op_kind == PlannerOpKind::Travel && step.targets == vec![ORCHARD_FARM]
+        }),
+        "post-query plan should route to the witness-reported source location"
+    );
+
+    assert!(
+        ask_committed,
+        "merchant should commit ask_witness before continuing"
+    );
+    assert!(
+        report_received,
+        "merchant should receive a report-sourced belief about the correct orchard source location"
+    );
+    assert!(
+        visited_orchard,
+        "merchant should travel to the witness-reported Orchard Farm source"
+    );
+    assert!(
+        !visited_bandit,
+        "merchant should not waste a trip to the stale Bandit Camp location once ask_witness corrects the belief"
+    );
+    assert!(
+        acquired_apples,
+        "merchant should acquire apples after the corrected witness report"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[allow(clippy::too_many_lines)]
 fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
     use worldwake_sim::RecipeRegistry;
 
@@ -1628,6 +1976,22 @@ fn golden_stale_prerequisite_belief_discovery_replan_replays_deterministically()
     assert_eq!(
         first, second,
         "stale-belief prerequisite recovery scenario should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_stale_prerequisite_ask_witness_chain() {
+    let _ = run_stale_prerequisite_ask_witness_chain(Seed([110; 32]));
+}
+
+#[test]
+fn golden_stale_prerequisite_ask_witness_chain_replays_deterministically() {
+    let first = run_stale_prerequisite_ask_witness_chain(Seed([111; 32]));
+    let second = run_stale_prerequisite_ask_witness_chain(Seed([111; 32]));
+
+    assert_eq!(
+        first, second,
+        "ask_witness prerequisite recovery scenario should replay deterministically"
     );
 }
 
