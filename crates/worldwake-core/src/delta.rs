@@ -4,15 +4,14 @@ use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-    VerificationDispositionProfile,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
     FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
     IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile,
     Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity, RecordData,
     ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UniqueItem, UtilityProfile, ViolationDispositionProfile,
-    ViolationMemory, WorkstationMarker, WoundList,
+    TradeDispositionProfile, UniqueItem, UtilityProfile, VerificationDispositionProfile,
+    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
 

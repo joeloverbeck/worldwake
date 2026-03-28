@@ -210,7 +210,9 @@ pub(super) fn handle_facility_queue_transitions(
                                     crate::PlannerOpKind::QueueForFacilityUse => step
                                         .payload_override
                                         .as_ref()
-                                        .and_then(worldwake_sim::ActionPayload::as_queue_for_facility_use)
+                                        .and_then(
+                                            worldwake_sim::ActionPayload::as_queue_for_facility_use,
+                                        )
                                         .map(|payload| payload.intended_action),
                                     crate::PlannerOpKind::Harvest | crate::PlannerOpKind::Craft => {
                                         Some(step.def_id)

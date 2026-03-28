@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, InstitutionalBeliefRead,
-    Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw,
-    VerificationSubject, WorkstationTag,
+    Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw, VerificationSubject,
+    WorkstationTag,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
@@ -1827,7 +1827,7 @@ mod tests {
     fn ranked_goal_roundtrips_through_bincode() {
         let goal = RankedGoal {
             grounded: GroundedGoal {
-            anchor: worldwake_core::OpportunityAnchor::None,
+                anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(GoalKind::TreatWounds {
                     patient: entity_id(7, 1),
                 }),

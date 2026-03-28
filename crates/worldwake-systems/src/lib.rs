@@ -6,6 +6,7 @@
 pub mod action_registry;
 pub mod combat;
 pub mod consult_record_actions;
+pub mod epistemic_actions;
 pub mod facility_queue;
 pub mod facility_queue_actions;
 mod inventory;
@@ -30,6 +31,7 @@ pub use combat::{
     register_heal_action, register_loot_action,
 };
 pub use consult_record_actions::register_consult_record_action;
+pub use epistemic_actions::register_verify_belief_action;
 pub use facility_queue::facility_queue_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use investigate_actions::register_investigate_action;

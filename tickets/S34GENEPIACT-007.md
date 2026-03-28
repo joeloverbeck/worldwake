@@ -4,43 +4,38 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — worldwake-ai: ranking additions for VerifyBelief goal family
-**Deps**: S34GENEPIACT-005 (GoalKindTag::VerifyBelief), S34GENEPIACT-006 (candidates emitted)
+**Deps**: S34GENEPIACT-006 (candidates emitted), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
 
 ## Problem
 
-`VerifyBelief` candidates exist but have no ranking logic. Without a `GoalFamilyPolicy` entry, priority class assignment, and motive scoring function, verification goals cannot be ranked against other goals and will either fail ranking or receive zero motive scores.
+`VerifyBelief` still has an incomplete ranking surface. The family already has policy and low-priority-class wiring, but `motive_score()` still hardcodes `GoalKind::VerifyBelief` to `0`. Once ticket 006 starts emitting candidates, they will be filtered out by the zero-motive path instead of participating in ranking through `VerificationDispositionProfile`.
 
 ## Assumption Reassessment (2026-03-28)
 
 1. `ranking.rs` at `crates/worldwake-ai/src/ranking.rs` (~3205 lines) contains `rank_candidates()`, `goal_ranking_provenance()`, and motive scoring functions. The `InvestigateViolation` ranking at `goal_ranking_provenance()` returns provenance, and `investigation_motive()` computes motive from `ViolationDispositionProfile::investigation_motive_weight`. This is the exact pattern for `verification_motive()`.
-2. The spec says `GoalPriorityClass::Low` for `VerifyBelief` — same as `InvestigateViolation`. This is fixed to prevent priority inversion.
+2. The spec says `GoalPriorityClass::Low` for `VerifyBelief` — same as `InvestigateViolation`. That policy is already live in both `goal_policy.rs` and `ranking.rs`, so this ticket must not re-add it.
 3. The spec says motive score comes from `VerificationDispositionProfile::verification_motive_weight`. Per-agent variation in this weight creates diversity (P20).
-4. `GoalFamilyPolicy` is in `crates/worldwake-ai/src/goal_policy.rs` (from S02). Each goal family has a policy entry controlling suppression and priority class. `VerifyBelief` needs an entry.
-5. `goal_ranking_provenance()` pattern-matches on `candidate.key.kind` to determine motive driver. `VerifyBelief` should return an appropriate provenance variant.
-6. The zero-motive filter in `rank_candidates()` will filter out `VerifyBelief` if `verification_motive_weight` is zero or the agent lacks the profile. This is correct behavior (agent without profile never verifies — P20 diversity).
+4. `GoalFamilyPolicy` in `crates/worldwake-ai/src/goal_policy.rs` already includes `GoalKind::VerifyBelief { .. }` under the low-priority suppressed-under-stress family. The architectural gap is motive/provenance, not family registration.
+5. `goal_ranking_provenance()` and `motive_score()` in `crates/worldwake-ai/src/ranking.rs` still leave `VerifyBelief` effectively inert: the goal is classified as `Low`, but `motive_score()` returns `0`, and there is no dedicated verification provenance path.
+6. The zero-motive filter in `rank_candidates()` is still the right contract. After this ticket, `VerifyBelief` should participate only when the agent’s `VerificationDispositionProfile` supplies positive motive weight; lack of profile or zero weight should continue to suppress the goal, preserving P20 diversity in [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md).
+7. Mismatch + correction: the original ticket claimed it needed to add a `GoalFamilyPolicy` entry and priority-class assignment. Those are already delivered. The remaining work is motive scoring, provenance, and focused coverage proving that emitted `VerifyBelief` candidates are not silently zeroed out.
 
 ## Architecture Check
 
-1. Following the `InvestigateViolation` pattern exactly — `GoalPriorityClass::Low`, profile-driven motive weight, new `verification_motive()` function. Minimal, clean addition.
-2. No backward-compatibility shims. Extends existing ranking dispatch.
+1. The clean fix is to complete the existing ranking path rather than bolting on special exceptions in candidate generation or planner search. `VerifyBelief` should rank the same way other goal families do: policy class from family policy, motive from concrete per-agent profile state, and provenance from explicit ranking inputs.
+2. No backwards-compatibility shims. This ticket extends existing ranking dispatch instead of adding a “verification goals bypass zero-motive filter” special case.
 
 ## Verification Layers
 
-1. VerifyBelief gets GoalPriorityClass::Low -> focused ranking test
-2. verification_motive() returns profile's verification_motive_weight -> focused ranking test
-3. Zero-motive filter suppresses VerifyBelief when agent lacks profile -> focused ranking test
-4. VerifyBelief never preempts Critical survival goals -> focused ranking test (priority class comparison)
-5. Single-layer ticket (ranking only). No cross-layer mapping needed beyond ranking assertions.
+1. `VerifyBelief` receives non-zero motive from `VerificationDispositionProfile` instead of the current hardcoded zero -> focused ranking test
+2. Zero-motive filter still suppresses `VerifyBelief` when profile weight is zero or absent -> focused ranking test
+3. `VerifyBelief` remains `GoalPriorityClass::Low` and never preempts higher-priority survival families -> focused ranking test
+4. Ranking provenance for `VerifyBelief` is explicit and profile-driven rather than falling through a generic or empty path -> focused ranking test
+5. Single-layer ranking ticket. Planner closure belongs to ticket 005 and candidate emission belongs to ticket 006.
 
 ## What to Change
 
-### 1. Add GoalFamilyPolicy entry for VerifyBelief
-
-In `crates/worldwake-ai/src/goal_policy.rs`, add the `VerifyBelief` family entry:
-- Priority class: `GoalPriorityClass::Low` (fixed, per spec)
-- Suppression: Standard Low-priority suppression rules (suppressed when higher-priority goals are active)
-
-### 2. Add verification_motive() function
+### 1. Add verification motive scoring
 
 In `crates/worldwake-ai/src/ranking.rs`, add:
 
@@ -53,22 +48,26 @@ fn verification_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -
 }
 ```
 
-### 3. Wire into goal_ranking_provenance()
+### 2. Wire into goal_ranking_provenance()
 
 Add `GoalKind::VerifyBelief { .. }` arm in `goal_ranking_provenance()` to return appropriate provenance and wire to `verification_motive()`.
 
-### 4. Wire into motive_score()
+### 3. Wire into motive_score()
 
 Add the `VerifyBelief` dispatch in `motive_score()` to call `verification_motive()`.
 
-### 5. Update GoalFamilyPolicy exhaustiveness
+### 4. Add focused coverage for the already-live policy contract
 
-Ensure `GoalKindTag::VerifyBelief` is covered in all policy dispatch sites.
+Do not change `GoalFamilyPolicy` unless reassessment finds a real bug. Instead, add focused tests proving that:
+
+- `VerifyBelief` remains `GoalPriorityClass::Low`
+- non-zero verification motive survives the ranking path
+- zero or missing motive still suppresses the goal
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/goal_policy.rs` (modify — add VerifyBelief family entry)
-- `crates/worldwake-ai/src/ranking.rs` (modify — add verification_motive(), wire into provenance and motive dispatch)
+- `crates/worldwake-ai/src/ranking.rs` (modify — add verification motive/provenance, tests)
+- `crates/worldwake-ai/src/goal_policy.rs` (modify only if reassessment finds a real policy bug; otherwise test-only or no change)
 
 ## Out of Scope
 
@@ -76,38 +75,37 @@ Ensure `GoalKindTag::VerifyBelief` is covered in all policy dispatch sites.
 - Planner ops and goal model — ticket 005
 - Action handlers — tickets 003/004
 - Golden E2E tests — ticket 008
-- Changes to `GoalPriorityClass` enum
-- Interrupt/goal-switching logic for VerifyBelief (Low priority class means it follows standard Low interruption rules — no special logic needed)
-- Feasibility sketching dispatch for VerifyBelief (S25's per-GoalKind dispatch table needs a `VerifyBelief` arm — add it here if the compiler requires it, otherwise defer)
+- Changes to `GoalPriorityClass` enum or `GoalFamilyPolicy` unless reassessment finds a live contradiction
+- Interrupt/goal-switching logic for VerifyBelief (the low-priority family contract is already live)
+- Feasibility sketching dispatch for VerifyBelief (already exists in `feasibility.rs`)
 
 ## Acceptance Criteria
 
 ### Tests That Must Pass
 
-1. `VerifyBelief` candidates receive `GoalPriorityClass::Low`
-2. `verification_motive()` returns `verification_motive_weight` value from agent's `VerificationDispositionProfile`
-3. `verification_motive()` returns 0 when agent lacks `VerificationDispositionProfile`
-4. `VerifyBelief` is suppressed by zero-motive filter when motive is 0
-5. `VerifyBelief` never receives priority class above Low (no priority inversion)
-6. Two `VerifyBelief` candidates with different motive weights rank correctly relative to each other
-7. Existing suite: `cargo test -p worldwake-ai`
+1. `verification_motive()` returns `verification_motive_weight` from the agent’s `VerificationDispositionProfile`
+2. `verification_motive()` returns `0` when the profile is absent or weight is zero
+3. `VerifyBelief` is suppressed by the zero-motive filter when motive is `0`
+4. `VerifyBelief` remains `GoalPriorityClass::Low`
+5. Two `VerifyBelief` candidates with different motive weights rank correctly relative to each other
+6. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 
-1. `GoalPriorityClass::Low` is fixed for VerifyBelief — cannot be promoted to Medium/High/Critical
-2. Ranking reads belief state only (P12)
-3. `GoalFamilyPolicy` exhaustiveness — all match arms cover VerifyBelief (compiler-enforced)
-4. Zero-motive filter applies to VerifyBelief (prevents agents without profiles from ranking verification goals)
+1. `GoalPriorityClass::Low` remains fixed for `VerifyBelief`
+2. Ranking reads belief/profile state only
+3. Zero-motive filter still applies to `VerifyBelief`
+4. No candidate-generation or planner special case is needed to make verification goals rank
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/ranking.rs` (in-module tests) — 4 focused ranking tests: priority class, motive scoring, zero-motive filter, relative ordering
-2. `crates/worldwake-ai/src/goal_policy.rs` (in-module tests if applicable) — policy entry existence
+1. `crates/worldwake-ai/src/ranking.rs` — focused tests for verification motive, zero-motive suppression, low priority class, and relative ordering
+2. `crates/worldwake-ai/src/goal_policy.rs` — no change unless reassessment finds a live policy mismatch
 
 ### Commands
 
 1. `cargo test -p worldwake-ai`
-2. `cargo clippy -p worldwake-ai`
+2. `cargo clippy -p worldwake-ai --all-targets -- -D warnings`
 3. `cargo build --workspace`

@@ -917,11 +917,9 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         Some(SelectedPlanSource::SearchSelection),
         "stale-belief scenario should start from a fresh search result"
     );
-    assert!(
-        tick_zero_planning
-            .selection
-            .selected_goal_is(restock_bread_goal)
-    );
+    assert!(tick_zero_planning
+        .selection
+        .selected_goal_is(restock_bread_goal));
     assert_eq!(
         selected_tick_zero_plan
             .next_step
@@ -989,7 +987,9 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .selected_plan
         .as_ref()
         .expect("fallback planning should select a bandit-camp plan");
-    assert!(replan_planning.selection.selected_goal_is(restock_bread_goal));
+    assert!(replan_planning
+        .selection
+        .selected_goal_is(restock_bread_goal));
     let replacement = replan_planning
         .selection
         .plan_replacement

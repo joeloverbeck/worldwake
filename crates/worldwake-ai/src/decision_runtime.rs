@@ -260,8 +260,7 @@ mod tests {
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-        PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, PlanningEntityRef,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;

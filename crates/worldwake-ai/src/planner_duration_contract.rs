@@ -56,12 +56,12 @@ impl PlannerDurationDependency {
             DurationExpr::ActorInvestigationDisposition => {
                 Some(Self::ActorInvestigationDisposition)
             }
+            DurationExpr::ActorVerificationDisposition | DurationExpr::Fixed(_) => None,
             DurationExpr::ActorDefendStance => Some(Self::ActorDefendStance),
             DurationExpr::CombatWeapon => Some(Self::CombatWeapon),
             DurationExpr::TargetTreatment { .. } => Some(Self::TargetTreatment),
             DurationExpr::ConsultRecord { .. } => Some(Self::ConsultRecord),
             DurationExpr::TravelToTarget { .. } => Some(Self::TravelToTarget),
-            DurationExpr::Fixed(_) => None,
         }
     }
 }

@@ -6534,11 +6534,11 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
                     .collect::<Vec<_>>()
             );
 
-            saw_self_care_selection |= planning.selection.selected_goal_is(
-                GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+            saw_self_care_selection |= planning.selection.selected_goal_is(GoalKey::from(
+                GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Apple,
-                }),
-            );
+                },
+            ));
         }
 
         hunger_decreased |= h.agent_hunger(thief) < initial_hunger;

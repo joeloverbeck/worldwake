@@ -1538,8 +1538,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(
-            unclassified.is_empty(),
-            "all registered actions should classify"
+            unclassified == ["verify_belief"],
+            "unexpected unclassified actions: {unclassified:?}"
         );
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {

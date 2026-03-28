@@ -1377,7 +1377,9 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
                 trace.tick > Tick(1)
                     && planning.selection.selected_plan_source
                         == Some(SelectedPlanSource::SearchSelection)
-                    && planning.selection.selected_opportunity_is(remote_opportunity)
+                    && planning
+                        .selection
+                        .selected_opportunity_is(remote_opportunity)
                     && planning.planning.attempts.iter().any(|attempt| {
                         attempt.goal == acquire_apple_goal
                             && attempt.opportunity_anchor == OpportunityAnchor::Place(ORCHARD_FARM)

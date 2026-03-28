@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-ai: new candidate generation function in candidate_generation.rs
-**Deps**: S34GENEPIACT-001 (core types), S34GENEPIACT-005 (GoalKindTag::VerifyBelief and planner ops exist)
+**Deps**: S34GENEPIACT-005 (planner surface for `VerifyBelief` is live), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
 
 ## Problem
 
@@ -12,13 +12,14 @@ Agents never generate `VerifyBelief` goal candidates. Without `emit_verify_belie
 
 ## Assumption Reassessment (2026-03-28)
 
-1. `candidate_generation.rs` is in `crates/worldwake-ai/src/candidate_generation.rs` (~10176 lines). The `emit_recorded_violation_candidates()` function (lines 2103-2123) is the structural pattern — it guards on a disposition profile, iterates relevant state, and calls `emit_candidate()`.
+1. `candidate_generation.rs` is in `crates/worldwake-ai/src/candidate_generation.rs`. The closest structural patterns are the focused `emit_*` helpers that guard on profile/state, derive a concrete goal, and call `emit_candidate()` or `emit_candidate_with_trace()`.
 2. The spec says `emit_verify_belief_goals()` runs AFTER all other `emit_*` functions. It scans already-emitted `GroundedGoal` candidates for low-confidence belief dependencies. This is a second-pass scan, not a direct belief-store scan.
 3. The confidence check uses `belief_confidence(source, staleness_ticks, policy) < profile.belief_verification_threshold`. The `belief_confidence()` function exists in E14's belief infrastructure.
 4. Deduplication: skip emission if a `VerifyBelief` candidate with the same `VerificationSubject` (ignoring `generation_tick`) already exists in the candidate list.
 5. Conversation memory suppression: when generating candidates, check `HeardBeliefMemory` entries to suppress `AskWitness` as a planner option for recently-asked topics. This is done via the affordance system — the `ask_witness` affordance payload enumerator (ticket 004) skips recently-asked targets. The candidate generation side does NOT filter `AskWitness` — it generates `VerifyBelief` candidates and lets the planner/affordance system handle witness suppression.
 6. `emit_candidate()` / `emit_candidate_with_trace()` is the standard emission API. It takes `GoalKind`, `OpportunityAnchor`, and evidence.
-7. This ticket does NOT add `GoalFamilyPolicy` — that is ticket 007 (ranking).
+7. `GoalKindTag::VerifyBelief`, `goal_family_policy()` coverage, and low-priority-class wiring already exist in `worldwake-ai`; this ticket must not recreate them. The remaining candidate-generation gap is emission, deduplication, and belief-dependency selection.
+8. This ticket still depends on ticket 005 because emitting `VerifyBelief` before the planner has lawful terminal ops would create dead-end candidates that violate P18’s “resource-bounded practical reasoning” standard in [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md).
 
 ## Architecture Check
 
@@ -75,11 +76,10 @@ Implement helper(s) to extract `evidence_entities` and `evidence_places` from ex
 
 - `ask_witness` affordance enumeration conversation memory suppression — already in ticket 004
 - Ranking and motive scoring — ticket 007
-- `GoalFamilyPolicy` for VerifyBelief — ticket 007
 - Golden E2E tests — ticket 008
 - Changes to `GoalBeliefView` trait (should already expose `verification_disposition_profile()` via component access — if not, add the accessor in this ticket)
 - Changes to belief confidence computation
-- Planner search (ticket 005)
+- Planner search / planner-op closure (ticket 005)
 
 ## Acceptance Criteria
 

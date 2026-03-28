@@ -2401,7 +2401,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
     );
     let snapshot_state = PlanningState::new(&snapshot);
     let claim_goal = GroundedGoal {
-            anchor: worldwake_core::OpportunityAnchor::None,
+        anchor: worldwake_core::OpportunityAnchor::None,
         key: worldwake_ai::GoalKey::from(GoalKind::ClaimOffice { office }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),

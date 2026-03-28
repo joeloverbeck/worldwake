@@ -642,7 +642,8 @@ pub struct SelectionTrace {
 impl SelectionTrace {
     #[must_use]
     pub fn selected_goal(&self) -> Option<GoalKey> {
-        self.selected_opportunity.map(|opportunity| opportunity.goal_key)
+        self.selected_opportunity
+            .map(|opportunity| opportunity.goal_key)
     }
 
     #[must_use]
@@ -2398,7 +2399,9 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::ReduceDanger))),
+                selected_opportunity: Some(default_opportunity(GoalKey::new(
+                    GoalKind::ReduceDanger,
+                ))),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -2429,15 +2432,19 @@ mod tests {
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
-                generated: vec![default_opportunity(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
-                    commodity: worldwake_core::CommodityKind::Bread,
-                }))],
+                generated: vec![default_opportunity(GoalKey::new(
+                    GoalKind::ConsumeOwnedCommodity {
+                        commodity: worldwake_core::CommodityKind::Bread,
+                    },
+                ))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
-                    opportunity: default_opportunity(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
-                        commodity: worldwake_core::CommodityKind::Bread,
-                    })),
+                    opportunity: default_opportunity(GoalKey::new(
+                        GoalKind::ConsumeOwnedCommodity {
+                            commodity: worldwake_core::CommodityKind::Bread,
+                        },
+                    )),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 380_000,
                     provenance: Some(RankedGoalProvenance::Drive(

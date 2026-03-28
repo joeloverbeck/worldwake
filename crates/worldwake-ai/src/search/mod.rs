@@ -103,12 +103,15 @@ pub fn search_plan(
 
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
         if goal.key.kind.is_satisfied(&node.state) {
-            return PlanSearchResult::Found(PlannedPlan::new(
-                opportunity,
-                goal.key,
-                node.steps.into_vec(),
-                PlanTerminalKind::GoalSatisfied,
-            ).into());
+            return PlanSearchResult::Found(
+                PlannedPlan::new(
+                    opportunity,
+                    goal.key,
+                    node.steps.into_vec(),
+                    PlanTerminalKind::GoalSatisfied,
+                )
+                .into(),
+            );
         }
         if node.steps.len() >= usize::from(budget.max_plan_depth) {
             continue;
@@ -238,12 +241,15 @@ pub fn search_plan(
                                 root_omissions: root_omissions.clone(),
                             });
                         }
-                        return PlanSearchResult::Found(PlannedPlan::new(
-                            opportunity,
-                            goal.key,
-                            successor.steps.into_vec(),
-                            terminal_kind,
-                        ).into());
+                        return PlanSearchResult::Found(
+                            PlannedPlan::new(
+                                opportunity,
+                                goal.key,
+                                successor.steps.into_vec(),
+                                terminal_kind,
+                            )
+                            .into(),
+                        );
                     }
                     // ProgressBarrier is stored as a fallback — keep searching
                     // for a GoalSatisfied plan across deeper expansion levels.
@@ -286,12 +292,15 @@ pub fn search_plan(
 
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
-                return PlanSearchResult::Found(PlannedPlan::new(
-                    opportunity,
-                    goal.key,
-                    successor.steps.into_vec(),
-                    terminal_kind,
-                ).into());
+                return PlanSearchResult::Found(
+                    PlannedPlan::new(
+                        opportunity,
+                        goal.key,
+                        successor.steps.into_vec(),
+                        terminal_kind,
+                    )
+                    .into(),
+                );
             }
             frontier.push(FrontierEntry::new(successor));
         }

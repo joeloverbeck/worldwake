@@ -8,8 +8,8 @@ use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goa
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-    OpportunityKey, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
+    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry, OpportunityKey,
+    PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -320,16 +320,22 @@ fn record_exhausted_goals(
         match result {
             crate::PlanSearchResult::BudgetExhausted { .. }
             | crate::PlanSearchResult::FrontierExhausted { .. } => {
-                let (invalidation_conditions, baseline) =
-                    derive_invalidation_conditions(&key.goal_key.kind, agent, view, recipe_registry);
+                let (invalidation_conditions, baseline) = derive_invalidation_conditions(
+                    &key.goal_key.kind,
+                    agent,
+                    view,
+                    recipe_registry,
+                );
                 let prev_count = runtime
                     .exhaustion_cache
                     .get(key)
                     .map_or(0, |e| e.consecutive_budget_exhaustions);
                 let entry = match result {
                     crate::PlanSearchResult::BudgetExhausted { .. } => {
-                        let mut e =
-                            ExhaustionEntry::budget_retry_pending(invalidation_conditions, baseline);
+                        let mut e = ExhaustionEntry::budget_retry_pending(
+                            invalidation_conditions,
+                            baseline,
+                        );
                         e.consecutive_budget_exhaustions = prev_count.saturating_add(1);
                         e
                     }
@@ -830,7 +836,7 @@ mod tests {
         TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        ActionHandlerRegistry, ActionDefRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
+        ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
         SystemManifest,
     };
     use worldwake_systems::build_full_action_registries;
@@ -1212,10 +1218,7 @@ mod tests {
         };
         let exhaustion_cache = BTreeMap::from([(
             exhausted,
-            ExhaustionEntry::frontier_exhausted(
-                Vec::new(),
-                crate::ExhaustionBaseline::default(),
-            ),
+            ExhaustionEntry::frontier_exhausted(Vec::new(), crate::ExhaustionBaseline::default()),
         )]);
 
         let plans = super::build_candidate_plans(
@@ -1328,8 +1331,14 @@ mod tests {
             .expect("traced planning should record attempt order")
             .attempts;
         assert_eq!(attempts.len(), 2);
-        assert_eq!(attempts[0].opportunity_anchor, OpportunityAnchor::Place(market));
-        assert_eq!(attempts[1].opportunity_anchor, OpportunityAnchor::Place(origin));
+        assert_eq!(
+            attempts[0].opportunity_anchor,
+            OpportunityAnchor::Place(market)
+        );
+        assert_eq!(
+            attempts[1].opportunity_anchor,
+            OpportunityAnchor::Place(origin)
+        );
         assert!(
             !matches!(
                 attempts[0].outcome,
@@ -1396,7 +1405,9 @@ mod tests {
         let (mut world, agent, place) = setup_agent_world();
         {
             let mut txn = new_txn(&mut world, 2);
-            let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
             txn.set_ground_location(agent, place).unwrap();
             txn.set_ground_location(bread, place).unwrap();
             txn.set_possessor(bread, agent).unwrap();
@@ -1438,10 +1449,14 @@ mod tests {
 
     #[test]
     fn record_exhausted_goals_removes_only_successful_opportunity_entry() {
-        let solved_goal =
-            consume_opportunity(CommodityKind::Bread, OpportunityAnchor::Place(place_entity(1)));
-        let retained_goal =
-            consume_opportunity(CommodityKind::Bread, OpportunityAnchor::Place(place_entity(2)));
+        let solved_goal = consume_opportunity(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(1)),
+        );
+        let retained_goal = consume_opportunity(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(2)),
+        );
         let mut runtime = AgentDecisionRuntime::default();
         runtime.exhaustion_cache.insert(
             solved_goal,
@@ -1498,7 +1513,9 @@ mod tests {
         let mut runtime = AgentDecisionRuntime::default();
         let plans = vec![(
             goal,
-            PlanSearchResult::FrontierExhausted { expansions_used: 12 },
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
             Vec::new(),
             Vec::new(),
         )];
@@ -1543,7 +1560,10 @@ mod tests {
     fn has_pending_budget_retry_detects_retryable_budget_entries() {
         let mut runtime = AgentDecisionRuntime::default();
         runtime.exhaustion_cache.insert(
-            consume_opportunity(CommodityKind::Bread, OpportunityAnchor::Place(place_entity(1))),
+            consume_opportunity(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(place_entity(1)),
+            ),
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
@@ -1552,7 +1572,10 @@ mod tests {
             },
         );
         runtime.exhaustion_cache.insert(
-            consume_opportunity(CommodityKind::Water, OpportunityAnchor::Place(place_entity(2))),
+            consume_opportunity(
+                CommodityKind::Water,
+                OpportunityAnchor::Place(place_entity(2)),
+            ),
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
@@ -1564,7 +1587,10 @@ mod tests {
         assert!(has_pending_budget_retry(&runtime));
 
         runtime.exhaustion_cache.insert(
-            consume_opportunity(CommodityKind::Apple, OpportunityAnchor::Place(place_entity(3))),
+            consume_opportunity(
+                CommodityKind::Apple,
+                OpportunityAnchor::Place(place_entity(3)),
+            ),
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),

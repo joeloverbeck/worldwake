@@ -338,6 +338,13 @@ pub trait RuntimeBeliefView {
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
+    fn verification_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+        let _ = agent;
+        None
+    }
     fn theft_disposition_profile(
         &self,
         agent: EntityId,
@@ -1008,6 +1015,9 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorInvestigationDisposition => view
             .violation_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.investigation_duration_ticks.get())),
+        DurationExpr::ActorVerificationDisposition => view
+            .verification_disposition_profile(actor)
+            .map(|profile| ActionDuration::new(profile.verify_belief_duration_ticks.get())),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
             .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),

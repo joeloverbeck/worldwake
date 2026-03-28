@@ -9,8 +9,8 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
 pub mod dirty_set;
-pub mod exhaustion;
 mod enterprise;
+pub mod exhaustion;
 pub mod failure_handling;
 pub mod feasibility;
 mod frame_switch_policy;
@@ -47,11 +47,11 @@ pub use decision_trace::{
     CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace, DecisionOutcome,
     DecisionTraceSink, DesireFullyBlocked, ExecutionFailureReason, ExecutionTrace,
     GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace,
-    PayloadOverrideFailureReason, PlanAttemptTrace,
-    PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace,
-    PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-    PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
-    RankedGoalSummary, RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
+    PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
+    PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
+    PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
+    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
+    RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
     RootCandidateSkipReason, RootCandidateTrace, RootOperatorOmissionReason,
     RootOperatorOmissionTrace, SelectedPlanReplacementKind, SelectedPlanReplacementTrace,
     SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,

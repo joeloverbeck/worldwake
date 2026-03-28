@@ -116,6 +116,7 @@ pub enum DurationExpr {
     ActorTradeDisposition,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
+    ActorVerificationDisposition,
     ActorDefendStance,
     CombatWeapon,
     TargetTreatment {
@@ -136,6 +137,7 @@ impl DurationExpr {
             | Self::ActorTradeDisposition
             | Self::ActorTheftDisposition
             | Self::ActorInvestigationDisposition
+            | Self::ActorVerificationDisposition
             | Self::ActorDefendStance
             | Self::CombatWeapon
             | Self::TargetTreatment { .. } => None,
@@ -205,6 +207,10 @@ impl DurationExpr {
                 .get_component_violation_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.investigation_duration_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks violation disposition profile")),
+            Self::ActorVerificationDisposition => world
+                .get_component_verification_disposition_profile(actor)
+                .map(|profile| ActionDuration::new(profile.verify_belief_duration_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks verification disposition profile")),
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
                 .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
@@ -406,7 +412,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 12] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 13] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -418,6 +424,7 @@ mod tests {
         DurationExpr::ActorTradeDisposition,
         DurationExpr::ActorTheftDisposition,
         DurationExpr::ActorInvestigationDisposition,
+        DurationExpr::ActorVerificationDisposition,
         DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
         DurationExpr::TargetTreatment {
@@ -479,6 +486,10 @@ mod tests {
         assert_eq!(DurationExpr::ActorTheftDisposition.fixed_ticks(), None);
         assert_eq!(
             DurationExpr::ActorInvestigationDisposition.fixed_ticks(),
+            None
+        );
+        assert_eq!(
+            DurationExpr::ActorVerificationDisposition.fixed_ticks(),
             None
         );
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
@@ -742,6 +753,17 @@ mod tests {
                 },
             )
             .unwrap();
+            txn.set_component_verification_disposition_profile(
+                actor,
+                worldwake_core::VerificationDispositionProfile {
+                    belief_verification_threshold: Permille::new(400).unwrap(),
+                    verify_belief_duration_ticks: nz(8),
+                    witness_query_duration_ticks: nz(5),
+                    verification_motive_weight: pm(200),
+                    ask_memory_retention_ticks: 10,
+                },
+            )
+            .unwrap();
             txn.set_component_combat_profile(
                 actor,
                 CombatProfile::new(
@@ -780,6 +802,12 @@ mod tests {
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
             ActionDuration::new(3)
+        );
+        assert_eq!(
+            DurationExpr::ActorVerificationDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(8)
         );
         assert_eq!(
             DurationExpr::ActorDefendStance
@@ -839,6 +867,12 @@ mod tests {
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap_err(),
             format!("actor {actor} lacks violation disposition profile")
+        );
+        assert_eq!(
+            DurationExpr::ActorVerificationDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap_err(),
+            format!("actor {actor} lacks verification disposition profile")
         );
         assert_eq!(
             DurationExpr::ActorDefendStance

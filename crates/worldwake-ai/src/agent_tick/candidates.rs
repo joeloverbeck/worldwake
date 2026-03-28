@@ -1,6 +1,6 @@
 use worldwake_core::{
-    BlockedIntent, BlockingFact, BlockerKey, CauseRef, EntityId, Tick, VisibilitySpec,
-    WitnessData, WorldTxn,
+    BlockedIntent, BlockerKey, BlockingFact, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData,
+    WorldTxn,
 };
 use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView, TickInputError};
 

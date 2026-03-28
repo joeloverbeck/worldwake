@@ -1,9 +1,9 @@
 use crate::{
     decision_trace::{
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace,
-        DesireFullyBlocked, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
-        PoliticalGoalFamily, SocialCandidateOmission,
+        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
+        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        SocialCandidateOmission,
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
@@ -22,11 +22,10 @@ use worldwake_core::{
     BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CommodityKind,
     CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, PerceptionSource,
-    OpportunityAnchor, OpportunityKey, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-    PunishmentKind, Quantity, RecordData, RecordKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, ViolationId, ViolationKind,
-    ViolationMemory,
+    InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+    PunishmentKind, Quantity, RecordData, RecordKind, SocialObservation, SocialObservationDetail,
+    TellTopic, TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -315,7 +314,8 @@ fn candidate_matches_blocker(
     }
 
     if let Some(place) = blocker.place {
-        let anchor_matches = matches!(candidate.anchor, OpportunityAnchor::Place(anchor) if anchor == place);
+        let anchor_matches =
+            matches!(candidate.anchor, OpportunityAnchor::Place(anchor) if anchor == place);
         if !anchor_matches && !candidate.evidence_places.contains(&place) {
             return false;
         }
@@ -2579,7 +2579,8 @@ fn acquisition_path_evidence_at_place(
             place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
         }
     }
-    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity) {
+    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity)
+    {
         for lot in &local_lots.entities {
             place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
         }
@@ -2592,7 +2593,11 @@ fn acquisition_path_evidence_at_place(
         {
             place_evidence.places.insert(candidate_place);
             place_evidence.entities.insert(source);
-            place_trace.contributor(CandidateEvidenceKind::ResourceSource, candidate_place, source);
+            place_trace.contributor(
+                CandidateEvidenceKind::ResourceSource,
+                candidate_place,
+                source,
+            );
         } else {
             place_trace.exclusion(
                 CandidateEvidenceKind::ResourceSource,
@@ -2614,7 +2619,11 @@ fn acquisition_path_evidence_at_place(
             let Some(recipe) = recipes.get(recipe_id) else {
                 continue;
             };
-            if !recipe.outputs.iter().any(|(output, _)| *output == commodity) {
+            if !recipe
+                .outputs
+                .iter()
+                .any(|(output, _)| *output == commodity)
+            {
                 continue;
             }
             if let Some((recipe_evidence, recipe_trace)) = recipe_path_evidence_at_place(
@@ -2884,11 +2893,7 @@ fn available_recipe_workstation_evidence_at_place(
     evidence.places.insert(place);
     for workstation in available_workstations {
         evidence.entities.insert(workstation);
-        trace.contributor(
-            CandidateEvidenceKind::RecipeWorkstation,
-            place,
-            workstation,
-        );
+        trace.contributor(CandidateEvidenceKind::RecipeWorkstation, place, workstation);
     }
     Some((evidence, trace))
 }
@@ -4143,7 +4148,10 @@ mod tests {
             })
             .expect("reachable remote harvest source should emit produce goal");
 
-        assert_eq!(goal.anchor, worldwake_core::OpportunityAnchor::Place(orchard));
+        assert_eq!(
+            goal.anchor,
+            worldwake_core::OpportunityAnchor::Place(orchard)
+        );
         assert!(goal.evidence_entities.contains(&workstation));
         assert!(!contains_goal(
             &candidates.candidates,
@@ -4213,7 +4221,8 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers.insert((orchard, CommodityKind::Bread), vec![seller]);
+        view.sellers
+            .insert((orchard, CommodityKind::Bread), vec![seller]);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
 
         let result = generate_candidates_with_travel_horizon(
@@ -4254,7 +4263,10 @@ mod tests {
                 anchor: orchard_goal.anchor,
             })
             .expect("orchard opportunity should keep a distinct evidence trace");
-        assert_eq!(orchard_trace.opportunity.anchor, worldwake_core::OpportunityAnchor::Place(orchard));
+        assert_eq!(
+            orchard_trace.opportunity.anchor,
+            worldwake_core::OpportunityAnchor::Place(orchard)
+        );
         assert_eq!(orchard_trace.contributors.len(), 1);
         assert_eq!(orchard_trace.contributors[0].entity, seller);
 
@@ -4266,7 +4278,10 @@ mod tests {
                 anchor: market_goal.anchor,
             })
             .expect("market opportunity should keep a distinct evidence trace");
-        assert_eq!(market_trace.opportunity.anchor, worldwake_core::OpportunityAnchor::Place(market));
+        assert_eq!(
+            market_trace.opportunity.anchor,
+            worldwake_core::OpportunityAnchor::Place(market)
+        );
         assert_eq!(market_trace.contributors.len(), 1);
         assert_eq!(market_trace.contributors[0].entity, bread_lot);
     }
@@ -4294,8 +4309,10 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers.insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
-        view.sellers.insert((market, CommodityKind::Bread), vec![market_seller]);
+        view.sellers
+            .insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
+        view.sellers
+            .insert((market, CommodityKind::Bread), vec![market_seller]);
 
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
@@ -4352,8 +4369,10 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers.insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
-        view.sellers.insert((market, CommodityKind::Bread), vec![market_seller]);
+        view.sellers
+            .insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
+        view.sellers
+            .insert((market, CommodityKind::Bread), vec![market_seller]);
 
         let mut blocked = BlockedIntentMemory::default();
         for place in [orchard, market] {
@@ -4428,8 +4447,10 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers.insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
-        view.sellers.insert((market, CommodityKind::Bread), vec![market_seller]);
+        view.sellers
+            .insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
+        view.sellers
+            .insert((market, CommodityKind::Bread), vec![market_seller]);
 
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {

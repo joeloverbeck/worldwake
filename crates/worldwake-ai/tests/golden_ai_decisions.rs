@@ -7,9 +7,9 @@ use std::collections::BTreeSet;
 
 use golden_harness::*;
 use worldwake_ai::{
-    AgentDecisionRuntime, CommodityPurpose, DecisionOutcome, ExhaustionBaseline,
-    ExhaustionEntry, ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
-    OpportunityAnchor, OpportunityKey, PlannerOpKind, SelectedPlanSource,
+    AgentDecisionRuntime, CommodityPurpose, DecisionOutcome, ExhaustionBaseline, ExhaustionEntry,
+    ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, OpportunityAnchor,
+    OpportunityKey, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
@@ -268,9 +268,12 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
         bob_started_action |= h.agent_has_active_action(bob);
     }
 
-    let restored_runtime: DriverStateMirror =
-        bincode::deserialize(&h.driver.save_runtime_state().expect("runtime should serialize"))
-            .expect("runtime mirror should deserialize");
+    let restored_runtime: DriverStateMirror = bincode::deserialize(
+        &h.driver
+            .save_runtime_state()
+            .expect("runtime should serialize"),
+    )
+    .expect("runtime mirror should deserialize");
     let bob_exhaustion_retained = restored_runtime
         .runtime_by_agent
         .get(&bob)
@@ -285,8 +288,7 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
 
 #[test]
 fn golden_unrelated_commodity_change_preserves_frontier_exhaustion() {
-    let observation =
-        run_unrelated_commodity_change_preserves_frontier_exhaustion(Seed([201; 32]));
+    let observation = run_unrelated_commodity_change_preserves_frontier_exhaustion(Seed([201; 32]));
 
     assert!(
         observation.alice_ate,
@@ -386,9 +388,13 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
         },
     );
     let mut txn = new_txn(&mut h.world, 0);
-    let local_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+    let local_lot = txn
+        .create_item_lot(CommodityKind::Bread, Quantity(1))
+        .unwrap();
     txn.set_ground_location(local_lot, VILLAGE_SQUARE).unwrap();
-    let remote_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+    let remote_lot = txn
+        .create_item_lot(CommodityKind::Bread, Quantity(1))
+        .unwrap();
     txn.set_ground_location(remote_lot, remote_place).unwrap();
     commit_txn(txn, &mut h.event_log);
 
@@ -455,7 +461,9 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
         "seeded exhaustion should still yield a fresh remote search selection"
     );
     assert!(
-        planning_tick_0.selection.selected_opportunity_is(remote_opportunity),
+        planning_tick_0
+            .selection
+            .selected_opportunity_is(remote_opportunity),
         "the non-exhausted remote sibling should be selected at tick 0"
     );
 

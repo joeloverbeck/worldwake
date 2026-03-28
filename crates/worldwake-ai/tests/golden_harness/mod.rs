@@ -1431,35 +1431,27 @@ mod tests {
                 .resolve(HypotheticalEntityId(7)),
             None
         );
-        assert!(!runtime
-            .exhaustion_cache
-            .contains_key(&OpportunityKey {
-                goal_key: GoalKey::from(GoalKind::LootCorpse {
-                    corpse: dead_entity
-                }),
-                anchor: OpportunityAnchor::Entity(dead_entity),
-            }));
-        assert!(!runtime
-            .exhaustion_cache
-            .contains_key(&OpportunityKey {
-                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Bread,
-                    purpose: CommodityPurpose::SelfConsume,
-                }),
-                anchor: OpportunityAnchor::Place(dead_place),
-            }));
-        assert!(runtime
-            .exhaustion_cache
-            .contains_key(&OpportunityKey {
-                goal_key: GoalKey::from(GoalKind::TreatWounds { patient: actor }),
-                anchor: OpportunityAnchor::Entity(actor),
-            }));
-        assert!(runtime
-            .exhaustion_cache
-            .contains_key(&OpportunityKey {
-                goal_key: GoalKey::from(GoalKind::Sleep),
-                anchor: OpportunityAnchor::None,
-            }));
+        assert!(!runtime.exhaustion_cache.contains_key(&OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity
+            }),
+            anchor: OpportunityAnchor::Entity(dead_entity),
+        }));
+        assert!(!runtime.exhaustion_cache.contains_key(&OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            anchor: OpportunityAnchor::Place(dead_place),
+        }));
+        assert!(runtime.exhaustion_cache.contains_key(&OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::TreatWounds { patient: actor }),
+            anchor: OpportunityAnchor::Entity(actor),
+        }));
+        assert!(runtime.exhaustion_cache.contains_key(&OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::None,
+        }));
     }
 
     #[test]

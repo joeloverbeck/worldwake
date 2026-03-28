@@ -14,12 +14,11 @@ use super::{
 };
 use crate::PlanningBudget;
 use crate::{
-    build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet,
-    ExpectedMaterialization, ExhaustionBaseline, ExhaustionInvalidationCondition,
-    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
-    OpportunityAnchor, OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
-    SelectedPlanReplacementKind,
+    build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
+    ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
+    GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
+    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
+    RankedGoalProvenance, SelectedPlanReplacementKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -279,12 +278,10 @@ fn save_runtime_state_serializes_persisted_driver_state() {
         Some(authoritative)
     );
     assert_eq!(
-        restored_runtime
-            .exhaustion_cache
-            .get(&exhaustion_key(
-                GoalKey::from(GoalKind::TreatWounds { patient: agent }),
-                OpportunityAnchor::Entity(agent),
-            )),
+        restored_runtime.exhaustion_cache.get(&exhaustion_key(
+            GoalKey::from(GoalKind::TreatWounds { patient: agent }),
+            OpportunityAnchor::Entity(agent),
+        )),
         Some(&crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
@@ -452,30 +449,24 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
             .resolve(HypotheticalEntityId(13)),
         None
     );
-    assert!(!runtime
-        .exhaustion_cache
-        .contains_key(&exhaustion_key(
-            GoalKey::from(GoalKind::LootCorpse {
-                corpse: dead_entity
-            }),
-            OpportunityAnchor::Entity(dead_entity),
-        )));
-    assert!(!runtime
-        .exhaustion_cache
-        .contains_key(&exhaustion_key(
-            GoalKey::from(GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Bread,
-                purpose: CommodityPurpose::SelfConsume,
-            }),
-            OpportunityAnchor::Place(dead_place),
-        )));
+    assert!(!runtime.exhaustion_cache.contains_key(&exhaustion_key(
+        GoalKey::from(GoalKind::LootCorpse {
+            corpse: dead_entity
+        }),
+        OpportunityAnchor::Entity(dead_entity),
+    )));
+    assert!(!runtime.exhaustion_cache.contains_key(&exhaustion_key(
+        GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        OpportunityAnchor::Place(dead_place),
+    )));
     assert_eq!(
-        runtime
-            .exhaustion_cache
-            .get(&exhaustion_key(
-                GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
-                OpportunityAnchor::Entity(h.actor),
-            )),
+        runtime.exhaustion_cache.get(&exhaustion_key(
+            GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+            OpportunityAnchor::Entity(h.actor),
+        )),
         Some(&crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
@@ -500,12 +491,10 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         })
     );
     assert_eq!(
-        runtime
-            .exhaustion_cache
-            .get(&exhaustion_key(
-                GoalKey::from(GoalKind::Sleep),
-                OpportunityAnchor::None,
-            )),
+        runtime.exhaustion_cache.get(&exhaustion_key(
+            GoalKey::from(GoalKind::Sleep),
+            OpportunityAnchor::None,
+        )),
         Some(&crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
@@ -632,35 +621,27 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
             .resolve(HypotheticalEntityId(12)),
         None
     );
-    assert!(!runtime
-        .exhaustion_cache
-        .contains_key(&exhaustion_key(
-            GoalKey::from(GoalKind::LootCorpse {
-                corpse: dead_entity
-            }),
-            OpportunityAnchor::Entity(dead_entity),
-        )));
-    assert!(!runtime
-        .exhaustion_cache
-        .contains_key(&exhaustion_key(
-            GoalKey::from(GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Bread,
-                purpose: CommodityPurpose::SelfConsume,
-            }),
-            OpportunityAnchor::Place(dead_place),
-        )));
-    assert!(runtime
-        .exhaustion_cache
-        .contains_key(&exhaustion_key(
-            GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
-            OpportunityAnchor::Entity(h.actor),
-        )));
-    assert!(runtime
-        .exhaustion_cache
-        .contains_key(&exhaustion_key(
-            GoalKey::from(GoalKind::Sleep),
-            OpportunityAnchor::None,
-        )));
+    assert!(!runtime.exhaustion_cache.contains_key(&exhaustion_key(
+        GoalKey::from(GoalKind::LootCorpse {
+            corpse: dead_entity
+        }),
+        OpportunityAnchor::Entity(dead_entity),
+    )));
+    assert!(!runtime.exhaustion_cache.contains_key(&exhaustion_key(
+        GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        OpportunityAnchor::Place(dead_place),
+    )));
+    assert!(runtime.exhaustion_cache.contains_key(&exhaustion_key(
+        GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+        OpportunityAnchor::Entity(h.actor),
+    )));
+    assert!(runtime.exhaustion_cache.contains_key(&exhaustion_key(
+        GoalKey::from(GoalKind::Sleep),
+        OpportunityAnchor::None,
+    )));
     assert_eq!(
         runtime.dirty,
         DirtySet::STRUCTURAL_MASK | DirtySet::SNAPSHOT_MASK | DirtySet::FRAME_MASK
@@ -1801,12 +1782,10 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     );
     assert_eq!(intent.blocker_key.target, Some(facility));
     assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
-    assert!(
-        harness
-            .world
-            .get_component_facility_queue_intents(harness.actor)
-            .is_none_or(|intents| intents.intents.is_empty())
-    );
+    assert!(harness
+        .world
+        .get_component_facility_queue_intents(harness.actor)
+        .is_none_or(|intents| intents.intents.is_empty()));
 }
 
 #[test]

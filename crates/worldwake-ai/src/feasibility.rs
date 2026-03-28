@@ -449,7 +449,7 @@ mod tests {
     fn ranked_goal(kind: GoalKind) -> RankedGoal {
         RankedGoal {
             grounded: GroundedGoal {
-            anchor: worldwake_core::OpportunityAnchor::None,
+                anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(kind),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),

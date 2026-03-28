@@ -1,44 +1,46 @@
-# S34GENEPIACT-005: Planner ops — PlannerOpKind::VerifyBelief, PlannerOpKind::AskWitness, goal model integration
+# S34GENEPIACT-005: Planner ops — classify epistemic actions and expose terminal planner operators
 
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — worldwake-ai: new planner op kinds, goal model extensions, planner transition logic
-**Deps**: S34GENEPIACT-001 (GoalKind::VerifyBelief), S34GENEPIACT-003 (verify_belief action def exists), S34GENEPIACT-004 (ask_witness action def exists)
+**Engine Changes**: Yes — worldwake-ai: new planner op kinds, planner semantics classification, goal-model operator surface, payload override wiring, barrier behavior
+**Deps**: S34GENEPIACT-003 (verify_belief action def exists), S34GENEPIACT-004 (ask_witness action def exists), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
 
 ## Problem
 
-The GOAP planner cannot construct plans involving epistemic actions. Without `PlannerOpKind::VerifyBelief` and `PlannerOpKind::AskWitness`, the planner cannot find paths from a `VerifyBelief` goal to terminal actions. Without `GoalKindTag::VerifyBelief` and the `GoalKindPlannerExt` implementation, the planner has no dispatch logic for the new goal kind.
+The GOAP planner still cannot construct deliberate epistemic plans even after ticket 003 added the live `verify_belief` action. The goal family already exists in the planner surface, but it bottoms out in an empty operator set: `GoalKind::VerifyBelief` is tagged and partially modeled, yet `VERIFY_BELIEF_OPS` is empty and `build_semantics_table()` intentionally leaves `verify_belief` unclassified. If ticket 006 starts emitting `VerifyBelief` candidates before this is fixed, the AI will create a lawful goal family with no terminal planner operator path.
 
 ## Assumption Reassessment (2026-03-28)
 
-1. `PlannerOpKind` is defined in `crates/worldwake-ai/src/planner_ops.rs:12-39` with ~26 variants. The `Investigate` variant (from S27) is the closest precedent — it is terminal for `InvestigateViolation` goals and is a progress barrier.
-2. `PlannerOpSemantics` at `planner_ops.rs:42-48` defines per-op properties: `may_appear_mid_plan`, `is_materialization_barrier`, `transition_kind`, `relevant_goal_kinds`. Both new ops should have `may_appear_mid_plan = false` and `transition_kind = GoalModelFallback` per the spec.
-3. `GoalKindTag` is defined in `crates/worldwake-ai/src/goal_model.rs:25-47` with 20 variants matching `GoalKind`. A `VerifyBelief` tag must be added.
-4. `GoalKindPlannerExt` trait at `goal_model.rs:49-96` with implementation at `goal_model.rs:387-676` provides `goal_kind_tag()`, `relevant_op_kinds()`, `build_payload_override()`, `apply_planner_step()`, `is_satisfied()`, `matches_binding()`. All must be extended for `VerifyBelief`.
-5. `relevant_op_kinds` constants are defined at `goal_model.rs:98-172`. The spec defines `VERIFY_BELIEF_OPS: &[PlannerOpKind] = &[Travel, VerifyBelief, AskWitness]`.
-6. `is_satisfied()` for `VerifyBelief` checks `believed_entity_state(subject_entity).observed_tick >= generation_tick`. This is a belief-view read.
-7. `is_progress_barrier` for both ops should return true for `VerifyBelief` goals — observation/witness results are unknown to the planner, so it cannot plan past verification.
-8. The `matches_binding()` implementation needs to handle `VerifyBelief` goals. Since verification targets are embedded in the `VerificationSubject`, binding should check that the affordance payload matches the goal's subject.
+1. The shared abstraction boundary under audit is the planner-facing epistemic contract across `crates/worldwake-ai/src/planner_ops.rs` and `crates/worldwake-ai/src/goal_model.rs`: action-def classification, `PlannerOpKind`, `PlannerOpSemantics`, `GoalKind::VerifyBelief` operator exposure, payload override synthesis, and progress-barrier behavior.
+2. `PlannerOpKind` in `crates/worldwake-ai/src/planner_ops.rs` still lacks `VerifyBelief` and `AskWitness`. `build_semantics_table_classifies_registered_planner_action_defs()` currently allows `["verify_belief"]` as the only intentionally unclassified action. That explicit escape hatch was added in ticket 003 to keep the live registry honest until this ticket lands.
+3. `GoalKindTag::VerifyBelief` already exists in `crates/worldwake-ai/src/goal_model.rs`, and `GoalKindPlannerExt` already has partial `VerifyBelief` support for `goal_kind_tag()`, `relevant_observed_commodities()`, `goal_relevant_places()`, `is_satisfied()`, and `matches_binding()`. This ticket must not recreate that delivered architecture.
+4. The remaining live gap in `goal_model.rs` is operator exposure, not goal-family creation: `VERIFY_BELIEF_OPS` is currently `&[]`, so `GoalKind::VerifyBelief` has no planner-relevant operators even though the rest of the goal model knows the family exists.
+5. `GoalKind::VerifyBelief::is_satisfied()` already uses belief-only reads keyed by `generation_tick`, which aligns with P13/P14/P18 in [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md). This ticket should preserve that architecture and add terminal ops around it rather than bypassing the goal through authoritative checks.
+6. `is_progress_barrier()` currently treats `Tell`, `Investigate`, `Accuse`, punishment, and selected political ops as terminal barriers, but not epistemic verification. `VerifyBelief` and `AskWitness` should become explicit barriers for `GoalKind::VerifyBelief`, because the planner cannot lawfully predict what observation or witness testimony will reveal.
+7. `build_payload_override()` already has the right structural hook. It can reuse affordance payloads when present, and the `VerifyBelief` goal already carries canonical `VerificationSubject` identity. The missing work is adding epistemic planner-op variants and the exact payload synthesis paths for those ops, not inventing a new side channel.
+8. `matches_binding()` already treats `GoalKind::VerifyBelief` as place-bound through the canonical `VerificationSubject`. This ticket should keep that contract rather than adding action-specific alias binding state.
+9. `AskWitness` is not yet implemented in systems (ticket 004), so this ticket must treat `VerifyBelief` as the minimum required closure and add `AskWitness` only when the live action definition exists. The architecture should support both terminal ops, but the verification surface must stay honest if only one is live during implementation.
+10. Mismatch + correction: the original ticket claimed it needed to add `GoalKindTag::VerifyBelief` and broad `GoalKindPlannerExt` support. Those already exist. The actual remaining work is classifying epistemic action defs into planner ops and filling the currently empty operator/payload/barrier surface for the existing goal family.
 
 ## Architecture Check
 
-1. Two new `PlannerOpKind` variants follow the exact pattern established by `Investigate`. Both are terminal barriers for `VerifyBelief` goals with `GoalModelFallback` transition. This is the minimal, clean addition.
-2. `AskWitness` as a terminal op for `VerifyBelief` goals means the planner can choose between traveling to the target place (Travel + VerifyBelief) or asking a co-located witness (AskWitness). This is correct — both paths satisfy the goal.
-3. No backward-compatibility shims.
+1. The clean architecture is to make epistemic actions first-class planner ops instead of leaving them as registered runtime actions with planner-side special cases or test-only exemptions. That restores a single canonical mapping from live action definitions to planner semantics.
+2. `VerifyBelief` and `AskWitness` should mirror `Investigate`: terminal, belief-driven barriers with `GoalModelFallback` transitions. This keeps deliberate information-seeking lawful under P7, P8, P13, P14, and P18 rather than letting the planner peek through unknown outcomes.
+3. No backwards-compatibility shims, no alias planner op, and no permanent “unclassified action” exception for epistemic handlers.
 
 ## Verification Layers
 
-1. Planner constructs Travel -> VerifyBelief plan for remote VerifyBelief goal -> focused planner test with decision trace
-2. Planner constructs AskWitness plan for VerifyBelief goal with co-located witness -> focused planner test with decision trace
-3. VerifyBelief satisfaction: goal satisfied when `observed_tick >= generation_tick` -> focused unit test on `is_satisfied()`
-4. VerifyBelief satisfaction: goal NOT satisfied when belief is stale -> focused unit test on `is_satisfied()`
-5. Both ops are progress barriers for VerifyBelief goals -> focused unit test on `is_progress_barrier()`
-6. `relevant_op_kinds` returns correct set for VerifyBelief -> focused unit test
+1. Registered epistemic action defs classify into planner semantics instead of remaining in the unclassified escape hatch -> focused `planner_ops` unit tests
+2. `GoalKind::VerifyBelief` exposes the correct terminal op set and barrier contract -> focused `goal_model` unit tests
+3. Planner constructs `Travel -> VerifyBelief` for remote verification -> focused planner/search test
+4. Planner constructs `AskWitness` for co-located verification only when the live `ask_witness` def exists -> focused planner/search test
+5. `VerifyBelief` satisfaction remains belief-only and generation-tick based -> focused `goal_model` unit tests
+6. Single-layer planner contract ticket. Downstream authoritative mutation belongs to tickets 003/004; this ticket proves planner closure, not runtime handler semantics.
 
 ## What to Change
 
-### 1. Add PlannerOpKind variants
+### 1. Classify live epistemic action defs into planner ops
 
 In `crates/worldwake-ai/src/planner_ops.rs`, add:
 ```rust
@@ -46,88 +48,83 @@ VerifyBelief,
 AskWitness,
 ```
 
-Add `PlannerOpSemantics` entries for both:
+Add `PlannerOpSemantics` entries for both live epistemic terminals:
 - `VerifyBelief`: `may_appear_mid_plan = false`, `is_materialization_barrier = false`, `transition_kind = GoalModelFallback`, `relevant_goal_kinds = &[GoalKindTag::VerifyBelief]`. `is_progress_barrier` returns true for `VerifyBelief` goals.
 - `AskWitness`: Same properties. Terminal for `VerifyBelief` goals when a co-located witness is available.
 
-Wire the new ops to their corresponding action defs in the action-def-to-op mapping.
+Wire the new ops to their corresponding action defs in the action-def-to-op mapping and remove the temporary “`verify_belief` may stay unclassified” exception from the planner semantics inventory test once the mapping is live.
 
-### 2. Add GoalKindTag::VerifyBelief
-
-In `crates/worldwake-ai/src/goal_model.rs`, add `VerifyBelief` to the `GoalKindTag` enum.
-
-### 3. Implement GoalKindPlannerExt for VerifyBelief
+### 2. Fill the existing `VerifyBelief` goal family operator surface
 
 In `crates/worldwake-ai/src/goal_model.rs`:
 
-- `goal_kind_tag()`: Return `GoalKindTag::VerifyBelief`.
-- `relevant_op_kinds()`: Return `VERIFY_BELIEF_OPS` (Travel, VerifyBelief, AskWitness).
-- `build_payload_override()`: Construct `VerifyBeliefPayload { subject }` for VerifyBelief op, `AskWitnessPayload { target, topic_entity, topic_commodity }` for AskWitness op.
-- `apply_planner_step()`: For VerifyBelief op, mark goal as potentially satisfied (barrier prevents further planning). For AskWitness, same.
-- `is_satisfied()`: Check `believed_entity_state(subject_entity).observed_tick >= generation_tick`.
-- `matches_binding()`: Match affordance payload's subject against the goal's subject.
+- change `VERIFY_BELIEF_OPS` from `&[]` to the real epistemic planner surface
+- keep `Travel` as the place-reaching prerequisite op
+- include `VerifyBelief` as the canonical terminal op
+- include `AskWitness` only when the corresponding live action def and planner classification are present in-scope
 
-### 4. Add VERIFY_BELIEF_OPS constant
+### 3. Finish the remaining `GoalKindPlannerExt` work for epistemic terminals
 
-```rust
-const VERIFY_BELIEF_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::VerifyBelief,
-    PlannerOpKind::AskWitness,
-];
-```
+In `crates/worldwake-ai/src/goal_model.rs`:
 
-### 5. Update all match arms
+- keep the existing `GoalKindTag`, `is_satisfied()`, and `matches_binding()` behavior
+- extend `build_payload_override()` so `PlannerOpKind::VerifyBelief` synthesizes `VerifyBeliefPayload { subject }` from the goal’s canonical `VerificationSubject`
+- synthesize `AskWitnessPayload` from the same subject only if ticket 004 has made the action live and the current goal state contains enough lawful witness-topic identity to do so without planner-side guesswork
+- extend `is_progress_barrier()` so terminal epistemic ops are explicit barriers for `GoalKind::VerifyBelief`
+- keep `apply_planner_step()` side-effect free for epistemic terminals; the barrier contract, not hypothetical state mutation, is the correct architecture here
 
-All existing match arms on `PlannerOpKind` and `GoalKindTag` must be extended with the new variants. This includes `action_def_to_op_kind`, `op_kind_to_action_def`, and any display/debug helpers.
+### 4. Update planner exhaustiveness and search-facing tests
+
+Update all planner-op match sites and tests so:
+
+- the semantics table fully classifies `verify_belief`
+- `GoalKind::VerifyBelief` no longer reports an empty relevant-op set
+- planner search can legally terminate on epistemic actions
+- any still-deferred `AskWitness` branch is explicitly documented and tested as deferred rather than silently omitted
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/planner_ops.rs` (modify — add 2 op kinds, semantics, action-def mapping)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — add GoalKindTag variant, GoalKindPlannerExt impl, VERIFY_BELIEF_OPS constant)
-- `crates/worldwake-ai/src/search/` (modify if match arms need updating — transition.rs, candidates.rs)
+- `crates/worldwake-ai/src/planner_ops.rs` (modify — add epistemic op kinds, semantics, action-def classification, tests)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — fill `VERIFY_BELIEF_OPS`, payload override synthesis, barrier behavior, tests)
+- `crates/worldwake-ai/src/search/` (modify if search tests or exhaustiveness require it)
 
 ## Out of Scope
 
 - Candidate generation (`emit_verify_belief_goals`) — ticket 006
 - Ranking and motive scoring — ticket 007
 - Golden E2E tests — ticket 008
-- Changes to `PlanningState` (no new hypothetical state transitions needed — verification is a barrier)
-- Changes to `BlockedIntentMemory` or `IntentionFrame`
-- `GoalFamilyPolicy` entry for VerifyBelief (this ticket adds planner dispatch; policy entry is part of ranking in ticket 007)
+- Any authoritative handler semantics or action tracing — tickets 003/004/009
+- New hypothetical epistemic world-state mutation in `PlanningState`; epistemic terminals remain barriers, not simulated observation outcomes
 
 ## Acceptance Criteria
 
 ### Tests That Must Pass
 
-1. Planner constructs Travel -> VerifyBelief plan for remote `VerifyBelief` goal
-2. Planner constructs AskWitness plan for `VerifyBelief` goal with co-located witness
-3. `VerifyBelief` satisfaction: goal satisfied when `observed_tick >= generation_tick`
-4. `VerifyBelief` satisfaction: goal NOT satisfied when belief is stale (`observed_tick < generation_tick`)
-5. `GoalKey` uniqueness: two `EntityLocation` verifications for different entities at same place coexist in planner
-6. `GoalKey` uniqueness: `EntityLocation` and `SupplyAvailability` at same place coexist in planner
-7. Both ops are progress barriers for `VerifyBelief` goals
-8. `relevant_op_kinds` for `VerifyBelief` returns `[Travel, VerifyBelief, AskWitness]`
-9. `PlannerOpKind` match exhaustiveness compiles (compiler-enforced)
-10. Existing suite: `cargo test -p worldwake-ai`
+1. `build_semantics_table()` classifies the live `verify_belief` action instead of relying on an unclassified exception
+2. `GoalKind::VerifyBelief` no longer reports an empty relevant-op set
+3. Planner constructs `Travel -> VerifyBelief` for a remote `VerifyBelief` goal
+4. `VerifyBelief` remains a progress barrier for `GoalKind::VerifyBelief`
+5. `VerifyBelief` satisfaction remains generation-tick based (`observed_tick >= generation_tick`)
+6. If `ask_witness` is live by implementation time, planner constructs `AskWitness` for a co-located `VerifyBelief` goal and treats it as the same terminal barrier family
+7. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 
-1. Planner only reads belief state, never authoritative world state (P12)
-2. Both epistemic ops are barriers — planner does not plan past verification (observation results unknown)
-3. `GoalKindTag` exhaustiveness — all match arms cover new variant (compiler-enforced)
+1. Planner only reads belief state, never authoritative world state, when reasoning about `VerifyBelief`
+2. Epistemic terminal ops are explicit barriers — planner does not hallucinate post-observation or post-testimony outcomes
+3. No permanent action-classification escape hatch remains for live epistemic actions
 4. Determinism — no `HashMap`, no floats, no wall-clock time in planner paths
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/planner_ops.rs` (in-module tests) — barrier and semantics tests for both new ops
-2. `crates/worldwake-ai/src/goal_model.rs` (in-module tests) — satisfaction, relevant_op_kinds, GoalKey uniqueness
-3. `crates/worldwake-ai/src/search/` (focused planner test) — Travel->VerifyBelief and AskWitness plan construction
+1. `crates/worldwake-ai/src/planner_ops.rs` — classify `verify_belief` into planner semantics and remove the temporary unclassified exception
+2. `crates/worldwake-ai/src/goal_model.rs` — prove `VerifyBelief` relevant-op exposure, payload override synthesis, and barrier behavior
+3. `crates/worldwake-ai/src/search/` — prove planner search can terminate on epistemic operators rather than leaving `VerifyBelief` unreachable
 
 ### Commands
 
-1. `cargo test -p worldwake-ai`
-2. `cargo clippy -p worldwake-ai`
-3. `cargo build --workspace`
+1. `cargo test -p worldwake-ai build_semantics_table_classifies_registered_planner_action_defs`
+2. `cargo test -p worldwake-ai`
+3. `cargo clippy -p worldwake-ai --all-targets -- -D warnings`

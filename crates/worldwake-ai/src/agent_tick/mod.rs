@@ -146,7 +146,9 @@ impl AgentTickDriver {
 
         for runtime in self.runtime_by_agent.values_mut() {
             runtime.exhaustion_cache.retain(|key, _| {
-                key.goal_key.entity.is_none_or(|entity| world.is_alive(entity))
+                key.goal_key
+                    .entity
+                    .is_none_or(|entity| world.is_alive(entity))
                     && key.goal_key.place.is_none_or(|place| world.is_alive(place))
                     && match key.anchor {
                         worldwake_core::OpportunityAnchor::Place(place) => world.is_alive(place),

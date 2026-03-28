@@ -215,7 +215,9 @@ pub(crate) fn condition_changed(
                 .unique_item_counts
                 .iter()
                 .find(|(baseline_kind, _)| baseline_kind == kind)
-                .map_or(current > 0, |(_, baseline_count)| *baseline_count != current)
+                .map_or(current > 0, |(_, baseline_count)| {
+                    *baseline_count != current
+                })
         }
         ExhaustionInvalidationCondition::WoundsChanged => {
             view.wounds(agent).len() != baseline.wound_count
@@ -322,8 +324,8 @@ fn classify_need_band(value: worldwake_core::Permille, band: ThresholdBand) -> u
 mod tests {
     use super::{
         classify_need_band, condition_changed, derive_invalidation_conditions,
-        invalidate_exhausted_goals, need_threshold_band, need_value,
-        ExhaustionBaseline, ExhaustionInvalidationCondition,
+        invalidate_exhausted_goals, need_threshold_band, need_value, ExhaustionBaseline,
+        ExhaustionInvalidationCondition,
     };
     use crate::{ExhaustionEntry, ExhaustionRetryState, GoalKey, OpportunityKey};
     use std::collections::BTreeMap;
@@ -334,8 +336,8 @@ mod tests {
         HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, JusticeDispositionProfile,
         LoadUnits, MerchandiseProfile, OfficeData, Permille, PunishmentKind, Quantity,
         RecipientKnowledgeStatus, RecordEntryId, ResourceSource, TellMemoryKey, TellProfile,
-        TellTopic, TheftDispositionProfile, ThresholdBand, UniqueItemKind, ViolationDispositionProfile,
-        ViolationId, Wound, WoundCause, WoundId, WorkstationTag,
+        TellTopic, TheftDispositionProfile, ThresholdBand, UniqueItemKind,
+        ViolationDispositionProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
@@ -457,7 +459,11 @@ mod tests {
             None
         }
 
-        fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -511,10 +517,7 @@ mod tests {
             BeliefConfidencePolicy::default()
         }
 
-        fn theft_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<TheftDispositionProfile> {
+        fn theft_disposition_profile(&self, _agent: EntityId) -> Option<TheftDispositionProfile> {
             None
         }
 
@@ -529,7 +532,10 @@ mod tests {
             None
         }
 
-        fn told_belief_memories(&self, _agent: EntityId) -> Vec<(TellMemoryKey, worldwake_core::ToldBeliefMemory)> {
+        fn told_belief_memories(
+            &self,
+            _agent: EntityId,
+        ) -> Vec<(TellMemoryKey, worldwake_core::ToldBeliefMemory)> {
             Vec::new()
         }
 
@@ -932,7 +938,10 @@ mod tests {
         let band = DriveThresholds::default().fatigue;
         let baseline_needs = HomeostaticNeeds::new(pm(100), pm(100), pm(250), pm(100), pm(100));
         let crossed_view = MockView {
-            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(310), pm(100), pm(100)))],
+            needs: vec![(
+                agent,
+                HomeostaticNeeds::new(pm(100), pm(100), pm(310), pm(100), pm(100)),
+            )],
             ..MockView::default()
         };
         let condition = ExhaustionInvalidationCondition::NeedChangedBands {
@@ -961,7 +970,10 @@ mod tests {
         let band = DriveThresholds::default().fatigue;
         let baseline_needs = HomeostaticNeeds::new(pm(100), pm(100), pm(410), pm(100), pm(100));
         let same_band_view = MockView {
-            needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(520), pm(100), pm(100)))],
+            needs: vec![(
+                agent,
+                HomeostaticNeeds::new(pm(100), pm(100), pm(520), pm(100), pm(100)),
+            )],
             ..MockView::default()
         };
         let condition = ExhaustionInvalidationCondition::NeedChangedBands {
@@ -985,7 +997,8 @@ mod tests {
     }
 
     #[test]
-    fn condition_changed_need_band_is_conservative_when_baseline_missing_and_stable_when_current_missing() {
+    fn condition_changed_need_band_is_conservative_when_baseline_missing_and_stable_when_current_missing(
+    ) {
         let agent = entity(1);
         let condition = ExhaustionInvalidationCondition::NeedChangedBands {
             need: HomeostaticNeedId::Fatigue,
@@ -996,7 +1009,10 @@ mod tests {
             &condition,
             &ExhaustionBaseline::default(),
             &MockView {
-                needs: vec![(agent, HomeostaticNeeds::new(pm(100), pm(100), pm(500), pm(100), pm(100)))],
+                needs: vec![(
+                    agent,
+                    HomeostaticNeeds::new(pm(100), pm(100), pm(500), pm(100), pm(100))
+                )],
                 ..MockView::default()
             },
             agent,
@@ -1121,7 +1137,9 @@ mod tests {
                 violation_id: ViolationId(1),
                 place: destination,
             },
-            GoalKind::StealItem { target_item: target },
+            GoalKind::StealItem {
+                target_item: target,
+            },
             GoalKind::Accuse {
                 crime_register,
                 accused: target,
@@ -1140,8 +1158,7 @@ mod tests {
 
         assert_eq!(goals.len(), 21);
         for goal in goals {
-            let (conditions, _) =
-                derive_invalidation_conditions(&goal, agent, &view, &recipes);
+            let (conditions, _) = derive_invalidation_conditions(&goal, agent, &view, &recipes);
             assert!(
                 !conditions.is_empty(),
                 "goal {goal:?} should derive at least one invalidation condition"
@@ -1202,11 +1219,9 @@ mod tests {
             &restock_conditions,
             &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin),
         );
-        assert!(
-            !self_consume_conditions.contains(
-                &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin)
-            )
-        );
+        assert!(!self_consume_conditions.contains(
+            &ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Coin)
+        ));
         assert_eq!(
             restock_baseline.commodity_quantities,
             vec![
@@ -1309,24 +1324,12 @@ mod tests {
             ..MockView::default()
         };
 
-        let (sleep_conditions, _) = derive_invalidation_conditions(
-            &sleep,
-            entity(1),
-            &view,
-            &RecipeRegistry::new(),
-        );
-        let (relieve_conditions, _) = derive_invalidation_conditions(
-            &relieve,
-            entity(1),
-            &view,
-            &RecipeRegistry::new(),
-        );
-        let (wash_conditions, _) = derive_invalidation_conditions(
-            &wash,
-            entity(1),
-            &view,
-            &RecipeRegistry::new(),
-        );
+        let (sleep_conditions, _) =
+            derive_invalidation_conditions(&sleep, entity(1), &view, &RecipeRegistry::new());
+        let (relieve_conditions, _) =
+            derive_invalidation_conditions(&relieve, entity(1), &view, &RecipeRegistry::new());
+        let (wash_conditions, _) =
+            derive_invalidation_conditions(&wash, entity(1), &view, &RecipeRegistry::new());
 
         assert_has_condition(
             &sleep_conditions,
@@ -1398,10 +1401,8 @@ mod tests {
             patient: entity(20),
         };
 
-        let first =
-            derive_invalidation_conditions(&goal, agent, &view, &RecipeRegistry::new());
-        let second =
-            derive_invalidation_conditions(&goal, agent, &view, &RecipeRegistry::new());
+        let first = derive_invalidation_conditions(&goal, agent, &view, &RecipeRegistry::new());
+        let second = derive_invalidation_conditions(&goal, agent, &view, &RecipeRegistry::new());
 
         assert_eq!(first, second);
         assert_eq!(
@@ -1451,7 +1452,9 @@ mod tests {
                 sleep_goal,
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::FrontierExhausted,
-                    invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
+                    invalidation_conditions: vec![
+                        ExhaustionInvalidationCondition::FacilitiesChanged,
+                    ],
                     baseline: ExhaustionBaseline::default(),
                     consecutive_budget_exhaustions: 0,
                 },
@@ -1518,7 +1521,9 @@ mod tests {
                 market,
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::FrontierExhausted,
-                    invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
+                    invalidation_conditions: vec![
+                        ExhaustionInvalidationCondition::FacilitiesChanged,
+                    ],
                     baseline: ExhaustionBaseline::default(),
                     consecutive_budget_exhaustions: 0,
                 },

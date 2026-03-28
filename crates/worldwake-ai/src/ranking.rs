@@ -10,8 +10,8 @@ use crate::{
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityKey, PerceptionSource, Permille, TellTopic,
-    ThresholdBand, Tick, UtilityProfile,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityKey, PerceptionSource, Permille,
+    TellTopic, ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -721,10 +721,10 @@ fn recipe_output_provenance(
             .filter_map(|(commodity, _)| self_consume_provenance(*commodity, context))
             .max_by_key(|provenance| {
                 provenance
-            .motive_inputs
-            .iter()
-            .map(|input| input.score)
-            .max()
+                    .motive_inputs
+                    .iter()
+                    .map(|input| input.score)
+                    .max()
                     .unwrap_or(0)
             })
     })
@@ -850,7 +850,9 @@ fn ranked_goal_ordering(
         return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
     }
 
-    let ordering = opportunity_strength(left).cmp(&opportunity_strength(right)).reverse();
+    let ordering = opportunity_strength(left)
+        .cmp(&opportunity_strength(right))
+        .reverse();
     if ordering != Ordering::Equal {
         return (
             ordering,
@@ -3039,7 +3041,7 @@ mod tests {
     ) -> crate::RankedGoal {
         crate::RankedGoal {
             grounded: GroundedGoal {
-            anchor: worldwake_core::OpportunityAnchor::None,
+                anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey {
                     kind,
                     commodity: None,
@@ -3186,7 +3188,10 @@ mod tests {
         let comparison =
             super::explain_ranked_goal_order(&political, &social).expect("ordering should explain");
 
-        assert_eq!(comparison.winner.goal_key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(
+            comparison.winner.goal_key.kind,
+            GoalKind::ClaimOffice { office }
+        );
         assert_eq!(
             comparison.loser.goal_key.kind,
             GoalKind::ShareBelief {

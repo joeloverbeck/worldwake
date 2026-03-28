@@ -194,8 +194,8 @@ mod tests {
     };
     use crate::{test_utils::entity_id, CommodityKind, PunishmentKind, Quantity, RecipeId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
-    use std::fmt::Debug;
     use std::collections::BTreeMap;
+    use std::fmt::Debug;
 
     fn assert_value_bounds<T: Clone + Eq + Ord + Debug + Serialize + DeserializeOwned>() {}
 

@@ -38,8 +38,8 @@ pub mod control;
 pub mod crime;
 pub mod delta;
 pub mod drives;
-pub mod epistemic;
 pub mod entity;
+pub mod epistemic;
 pub mod error;
 pub mod event_log;
 pub mod event_record;
@@ -110,8 +110,8 @@ pub use delta::{
     RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use drives::{DriveThresholds, ThresholdBand};
-pub use epistemic::{VerificationDispositionProfile, VerificationSubject};
 pub use entity::{EntityKind, EntityMeta};
+pub use epistemic::{VerificationDispositionProfile, VerificationSubject};
 pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};

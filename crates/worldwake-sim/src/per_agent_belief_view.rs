@@ -625,6 +625,19 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn verification_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_verification_disposition_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
     fn theft_disposition_profile(
         &self,
         agent: EntityId,
