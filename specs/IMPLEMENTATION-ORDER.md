@@ -162,6 +162,13 @@ S04 ──→ S06 (opportunity valuation needs market presence)
 S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
 E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
+S31 ✅, S23 ✅, S22 ✅ ──→ S33 (opportunity-scoped identity needs exhaustion, blockers, and frames)
+S33 ──→ S36 (declarative registration needs final goal identity shape)
+S33 ──→ S37 (cooldown exhaustion needs OpportunityKey)
+S33 ──→ S39 (side-benefit scoring needs opportunity awareness)
+S35 ──→ S38 (learned preferences needs activity observation for source reliability)
+S27 ✅ ──→ S34 (epistemic actions extend violation detection)
+S34, S35 (independent, can parallel with S33)
 E18, E19, E20 ──→ E22 (integration tests need everything)
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
@@ -308,6 +315,38 @@ Dependency graph:
 S30 ✅ ──→ S31 ✅
 ```
 
+**Step 13.5 Wave 5** (AI architecture review-derived):
+- **S33**: Opportunity-Scoped Goal Identity
+  - separate desire-level identity (`GoalKey`) from opportunity-level identity (`OpportunityKey`)
+  - exhaustion and blocking scoped per-opportunity; IntentionFrame persists on desire
+  - unblocks S36, S37, S39
+- **S34**: General Epistemic Actions (parallel with S33)
+  - inspect_place, ask_witness, verify_location actions + `VerifyBelief` goal kind
+  - enables canonical Scenario D (rumor → travel → empty source → replan)
+- **S35**: Observable Activity Signals (parallel with S33, S34)
+  - perception records co-located agents' active actions as `BelievedActivity`
+  - ranking discounts contested resources based on observed competition
+- **S36**: Declarative Goal Registration (after S33)
+  - `GoalKindDeclaration` struct centralizes per-goal dispatch properties
+  - compile-time enforcement: missing declarations fail compilation
+  - structural refactoring, zero behavioral change
+- **S37**: Cooldown-Based Exhaustion (after S33)
+  - replaces budget-halving backoff with cooldown-based retry at full search depth
+  - extends `BlockingFact` with specific failure classifications
+
+Dependency graph:
+```
+S31 ✅ ──→ S33
+S23 ✅ ──→ S33
+S22 ✅ ──→ S33
+S33 ──→ S36
+S33 ──→ S37
+S33 ──→ S39
+S34 (independent)
+S35 (independent)
+S35 ──→ S38
+```
+
 ---
 
 ### Phase 4: Adaptation & Integration
@@ -331,13 +370,21 @@ S30 ✅ ──→ S31 ✅
 
 ---
 
-### Phase 4+: Economy Deepening
+### Phase 4+: Economy Deepening & AI Preferences
 
 **Step 16** (parallel after E22):
 - **S04**: Merchant Selling Market Presence (needs E14)
 - **S05**: Merchant Stock Storage & Stalls (needs S04, S01, E16c)
 - **S06**: Commodity Opportunity Valuation (needs S04, benefits from S10)
 - **S10**: Bilateral Trade Negotiation (all deps met — E11, E14 completed; can be scheduled earlier)
+- **S38**: Learned Route and Source Preferences (needs S35, S33)
+  - per-agent `RouteExperience` and `SourceReliability` components from action outcomes
+  - ranking adjustments for route danger and source failure history
+  - `PreferenceProfile` provides per-agent diversity
+- **S39**: Limited Side-Benefit Plan Scoring (needs S33)
+  - post-search side-benefit detection at plan destinations
+  - tie-breaking bonus for plans that also satisfy secondary goals
+  - `side_benefit_weight` on `UtilityProfile` for per-agent diversity
 
 #### Final Acceptance
 - All Phase 4 gate criteria plus:
@@ -373,6 +420,13 @@ E17 is intentionally absent from the table below because its completed spec now 
 | `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
 | `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
 | `S10-bilateral-trade-negotiation.md` | 4+ | 16 | E11, E14 (all met) |
+| `S33-opportunity-scoped-goal-identity.md` | 3+ | 13.5 W5 | S31, S23, S22 (all met) |
+| `S34-general-epistemic-actions.md` | 3+ | 13.5 W5 | S27 (met) |
+| `S35-observable-activity-signals.md` | 3+ | 13.5 W5 | E14 (met) |
+| `S36-declarative-goal-registration.md` | 3+ | 13.5 W5 | S33 |
+| `S37-cooldown-based-exhaustion.md` | 3+ | 13.5 W5 | S33 |
+| `S38-learned-route-source-preferences.md` | 4+ | 16 | S35, S33 |
+| `S39-limited-side-benefit-plan-scoring.md` | 4+ | 16 | S33 |
 
 ## Crate Dependency Graph
 
@@ -394,6 +448,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
-| 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | ✅ COMPLETED |
+| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | IN PROGRESS (S20–S31 complete; S33–S37 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
-| 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
+| 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |
