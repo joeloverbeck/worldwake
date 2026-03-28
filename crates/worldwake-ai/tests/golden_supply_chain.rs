@@ -269,7 +269,7 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
                 DecisionOutcome::Planning(planning) => {
                     planning.candidates.generated.iter().any(|g| {
                         matches!(
-                            g.kind,
+                            g.goal_key.kind,
                             GoalKind::RestockCommodity {
                                 commodity: CommodityKind::Apple
                             }
@@ -524,7 +524,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
                 DecisionOutcome::Planning(planning) => {
                     let generated = planning.candidates.generated.iter().any(|goal| {
                         matches!(
-                            goal.kind,
+                            goal.goal_key.kind,
                             GoalKind::RestockCommodity {
                                 commodity: CommodityKind::Bread
                             }
@@ -939,7 +939,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .iter()
         .find(|trace| {
             matches!(
-                trace.goal.kind,
+                trace.opportunity.goal_key.kind,
                 GoalKind::RestockCommodity {
                     commodity: CommodityKind::Bread
                 }
@@ -1035,7 +1035,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .iter()
         .find(|trace| {
             matches!(
-                trace.goal.kind,
+                trace.opportunity.goal_key.kind,
                 GoalKind::RestockCommodity {
                     commodity: CommodityKind::Bread
                 }
@@ -1243,7 +1243,7 @@ fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
                 DecisionOutcome::Planning(planning) => {
                     planning.candidates.generated.iter().any(|g| {
                         matches!(
-                            g.kind,
+                            g.goal_key.kind,
                             GoalKind::AcquireCommodity {
                                 commodity: CommodityKind::Apple,
                                 ..

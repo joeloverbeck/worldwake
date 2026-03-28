@@ -114,9 +114,9 @@ impl EvidenceTrace {
         self.contributors.is_empty() && self.exclusions.is_empty()
     }
 
-    fn into_public(self, goal: GoalKey) -> CandidateEvidenceTrace {
+    fn into_public(self, opportunity: OpportunityKey) -> CandidateEvidenceTrace {
         CandidateEvidenceTrace {
-            goal,
+            opportunity,
             contributors: self.contributors.into_iter().collect(),
             exclusions: self.exclusions.into_iter().collect(),
             knowledge_path: self.knowledge_path,
@@ -148,7 +148,7 @@ struct GenerationContext<'a> {
 pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
-    pub evidence: BTreeMap<GoalKey, CandidateEvidenceTrace>,
+    pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
 }
 
@@ -2324,6 +2324,10 @@ fn emit_candidate_with_trace(
     }
 
     let key = GoalKey::from(kind);
+    let opportunity = OpportunityKey {
+        goal_key: key,
+        anchor,
+    };
     candidates.push(GroundedGoal {
         key,
         anchor,
@@ -2331,10 +2335,10 @@ fn emit_candidate_with_trace(
         evidence_places: evidence.places,
     });
 
-    let trace = evidence_trace.into_public(key);
+    let trace = evidence_trace.into_public(opportunity);
     diagnostics
         .evidence
-        .entry(key)
+        .entry(opportunity)
         .and_modify(|existing| merge_candidate_evidence_trace(existing, &trace))
         .or_insert(trace);
 }
@@ -3009,7 +3013,8 @@ mod tests {
         knowledge_path::{
             BeliefAspect, InstitutionalBeliefProvenance, KnowledgePath, SelfKnowledgeProvenance,
         },
-        PoliticalCandidateOmissionReason, PoliticalGoalFamily, SocialCandidateOmission,
+        CandidateEvidenceTrace, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        SocialCandidateOmission,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3765,6 +3770,17 @@ mod tests {
         })
     }
 
+    fn evidence_trace_for_goal<'a>(
+        diagnostics: &'a CandidateGenerationDiagnostics,
+        goal: GoalKey,
+    ) -> &'a CandidateEvidenceTrace {
+        diagnostics
+            .evidence
+            .values()
+            .find(|trace| trace.opportunity.goal_key == goal)
+            .expect("goal should have evidence trace")
+    }
+
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
             last_known_place: None,
@@ -4200,16 +4216,21 @@ mod tests {
         view.sellers.insert((orchard, CommodityKind::Bread), vec![seller]);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
 
-        let candidates = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
+            6,
+            true,
         );
+        let candidates = result.candidates;
 
         let acquire_goals = goals_for(&candidates, &goal);
         assert_eq!(acquire_goals.len(), 2);
+        assert_eq!(result.diagnostics.evidence.len(), 2);
 
         let orchard_goal = acquire_goals
             .iter()
@@ -4224,6 +4245,30 @@ mod tests {
             .expect("market opportunity should be emitted");
         assert_eq!(market_goal.evidence_places, BTreeSet::from([market]));
         assert_eq!(market_goal.evidence_entities, BTreeSet::from([bread_lot]));
+
+        let orchard_trace = result
+            .diagnostics
+            .evidence
+            .get(&worldwake_core::OpportunityKey {
+                goal_key: orchard_goal.key,
+                anchor: orchard_goal.anchor,
+            })
+            .expect("orchard opportunity should keep a distinct evidence trace");
+        assert_eq!(orchard_trace.opportunity.anchor, worldwake_core::OpportunityAnchor::Place(orchard));
+        assert_eq!(orchard_trace.contributors.len(), 1);
+        assert_eq!(orchard_trace.contributors[0].entity, seller);
+
+        let market_trace = result
+            .diagnostics
+            .evidence
+            .get(&worldwake_core::OpportunityKey {
+                goal_key: market_goal.key,
+                anchor: market_goal.anchor,
+            })
+            .expect("market opportunity should keep a distinct evidence trace");
+        assert_eq!(market_trace.opportunity.anchor, worldwake_core::OpportunityAnchor::Place(market));
+        assert_eq!(market_trace.contributors.len(), 1);
+        assert_eq!(market_trace.contributors[0].entity, bread_lot);
     }
 
     #[test]
@@ -5266,11 +5311,10 @@ mod tests {
             6,
             false,
         );
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&GoalKey::from(GoalKind::ProduceCommodity { recipe_id }))
-            .expect("produce goal should record typed evidence provenance");
+        let trace = evidence_trace_for_goal(
+            &result.diagnostics,
+            GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+        );
 
         assert!(trace.contributors.iter().any(|contributor| {
             contributor.kind == crate::CandidateEvidenceKind::RecipeWorkstation
@@ -6018,11 +6062,7 @@ mod tests {
         );
 
         let goal = GoalKey::from(GoalKind::StealItem { target_item: item });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&goal)
-            .expect("theft candidate should have evidence trace");
+        let trace = evidence_trace_for_goal(&result.diagnostics, goal);
         assert!(
             trace.knowledge_path.entity_beliefs.contains(
                 &crate::knowledge_path::BeliefProvenance {
@@ -6476,11 +6516,7 @@ mod tests {
                 amount: Quantity(4),
             },
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&goal)
-            .expect("fine punishment candidate should have trace evidence");
+        let trace = evidence_trace_for_goal(&result.diagnostics, goal);
         assert_eq!(
             trace.legality,
             Some(
@@ -8471,7 +8507,7 @@ mod tests {
                 trace.knowledge_path,
                 KnowledgePath::default(),
                 "knowledge_path should be empty when tracing is disabled, but goal {:?} had {:?}",
-                trace.goal,
+                trace.opportunity,
                 trace.knowledge_path,
             );
         }
@@ -8517,11 +8553,7 @@ mod tests {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&acquire_key)
-            .expect("should have evidence trace for AcquireCommodity(Bread, SelfConsume)");
+        let trace = evidence_trace_for_goal(&result.diagnostics, acquire_key);
 
         assert!(
             trace
@@ -8576,11 +8608,7 @@ mod tests {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&acquire_key)
-            .expect("should have evidence trace for AcquireCommodity(Bread, SelfConsume)");
+        let trace = evidence_trace_for_goal(&result.diagnostics, acquire_key);
 
         assert!(
             trace.knowledge_path.entity_beliefs.iter().any(|bp| {
@@ -8621,11 +8649,7 @@ mod tests {
         );
 
         let sleep_key = GoalKey::from(GoalKind::Sleep);
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&sleep_key)
-            .expect("should have evidence trace for Sleep");
+        let trace = evidence_trace_for_goal(&result.diagnostics, sleep_key);
 
         assert!(
             trace
@@ -8701,11 +8725,7 @@ mod tests {
         let produce_key = GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: RecipeId(0),
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&produce_key)
-            .expect("should have evidence trace for ProduceCommodity");
+        let trace = evidence_trace_for_goal(&result.diagnostics, produce_key);
 
         assert!(
             trace.knowledge_path.entity_beliefs.iter().any(|bp| {
@@ -8786,11 +8806,7 @@ mod tests {
         let produce_key = GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: RecipeId(0),
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&produce_key)
-            .expect("should have evidence trace for ProduceCommodity");
+        let trace = evidence_trace_for_goal(&result.diagnostics, produce_key);
 
         assert!(
             trace.knowledge_path.entity_beliefs.iter().any(|bp| {
@@ -8853,11 +8869,7 @@ mod tests {
         let restock_key = GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Bread,
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&restock_key)
-            .expect("should have evidence trace for RestockCommodity(Bread)");
+        let trace = evidence_trace_for_goal(&result.diagnostics, restock_key);
 
         assert!(
             trace
@@ -8904,11 +8916,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::EngageHostile { target: hostile });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for EngageHostile");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace
@@ -8956,11 +8964,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::ReduceDanger);
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for ReduceDanger");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace
@@ -9008,11 +9012,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::TreatWounds { patient });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for TreatWounds(patient)");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace.knowledge_path.entity_beliefs.contains(
@@ -9066,11 +9066,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::LootCorpse { corpse });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for LootCorpse");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace.knowledge_path.entity_beliefs.contains(
@@ -9145,11 +9141,7 @@ mod tests {
             listener,
             topic: TellTopic::EntityBelief { subject },
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for ShareBelief");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         let has_listener = trace
             .contributors
@@ -9227,11 +9219,7 @@ mod tests {
             listener,
             topic: TellTopic::EntityBelief { subject },
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for ShareBelief");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace.knowledge_path.entity_beliefs.contains(
@@ -9281,11 +9269,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::ClaimOffice { office });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for ClaimOffice");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         let has_office = trace.contributors.iter().any(|c| {
             c.kind == super::CandidateEvidenceKind::OfficeParticipant && c.entity == office
@@ -9351,11 +9335,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::ClaimOffice { office });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for ClaimOffice");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace
@@ -9433,11 +9413,7 @@ mod tests {
         );
 
         let key = GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&key)
-            .expect("should have evidence trace for SupportCandidateForOffice");
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
             trace
@@ -10142,11 +10118,7 @@ mod tests {
             violation_id,
             place,
         });
-        let trace = result
-            .diagnostics
-            .evidence
-            .get(&goal_key)
-            .expect("Should have evidence trace for violation candidate");
+        let trace = evidence_trace_for_goal(&result.diagnostics, goal_key);
 
         assert!(
             !trace.knowledge_path.entity_beliefs.is_empty(),

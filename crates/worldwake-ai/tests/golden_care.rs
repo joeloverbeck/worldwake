@@ -1189,7 +1189,8 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
         planning_tick_0
             .candidates
             .generated
-            .contains(&care_goal_key),
+            .iter()
+            .any(|goal| goal.goal_key == care_goal_key),
         "healer should generate TreatWounds before the authoritative start race"
     );
     let selected_plan = planning_tick_0

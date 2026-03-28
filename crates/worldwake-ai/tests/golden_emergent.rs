@@ -2482,7 +2482,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
             .candidates
             .generated
             .iter()
-            .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+            .any(|goal| goal.goal_key.kind == GoalKind::ClaimOffice { office }),
         "occupied office should stop emitting a fresh ClaimOffice candidate after the failure"
     );
     assert!(
@@ -4338,7 +4338,7 @@ fn run_same_place_concurrent_violation_lifecycle(
         .candidates
         .generated
         .iter()
-        .filter_map(|goal| match goal.kind {
+        .filter_map(|goal| match goal.goal_key.kind {
             GoalKind::InvestigateViolation {
                 violation_id,
                 place,
@@ -4701,7 +4701,7 @@ fn run_entity_missing_triggers_investigation(
         .candidates
         .generated
         .iter()
-        .find_map(|goal| match goal.kind {
+        .find_map(|goal| match goal.goal_key.kind {
             GoalKind::InvestigateViolation {
                 violation_id,
                 place,
@@ -5084,7 +5084,7 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
         .candidates
         .generated
         .iter()
-        .find_map(|goal| match goal.kind {
+        .find_map(|goal| match goal.goal_key.kind {
             GoalKind::InvestigateViolation {
                 violation_id,
                 place,
@@ -6005,7 +6005,7 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
         .candidates
         .evidence
         .iter()
-        .find(|e| e.goal.kind == punish_goal)
+        .find(|e| e.opportunity.goal_key.kind == punish_goal)
         .unwrap_or_else(|| {
             panic!(
                 "fine punishment branch should carry candidate evidence; generated={:?} evidence_goals={:?}",
@@ -6014,7 +6014,7 @@ fn golden_traceability_explains_stale_fine_branch_without_source_diving() {
                     .candidates
                     .evidence
                     .iter()
-                    .map(|e| e.goal.kind)
+                    .map(|e| e.opportunity.goal_key.kind)
                     .collect::<Vec<_>>()
             )
         });
@@ -6286,7 +6286,7 @@ fn run_supply_depletion_enables_share_belief(
             .candidates
             .generated
             .iter()
-            .any(|goal| goal.kind == share_goal),
+            .any(|goal| goal.goal_key.kind == share_goal),
         "first post-refresh planning tick should expose ShareBelief for the depleted source"
     );
 
@@ -6295,7 +6295,7 @@ fn run_supply_depletion_enables_share_belief(
             .candidates
             .generated
             .iter()
-            .find_map(|goal| match goal.kind {
+            .find_map(|goal| match goal.goal_key.kind {
                 GoalKind::InvestigateViolation {
                     violation_id,
                     place,
@@ -6527,14 +6527,14 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
             saw_planning_tick = true;
             assert!(
                 planning.candidates.generated.iter().all(|goal| {
-                    !matches!(goal.kind, GoalKind::StealItem { target_item } if target_item == theft_target)
+                    !matches!(goal.goal_key.kind, GoalKind::StealItem { target_item } if target_item == theft_target)
                 }),
                 "witness deterrence should suppress theft candidate generation; tick={current_tick:?}, generated={:?}",
                 planning
                     .candidates
                     .generated
                     .iter()
-                    .map(|goal| goal.kind)
+                    .map(|goal| goal.goal_key.kind)
                     .collect::<Vec<_>>()
             );
 
@@ -7666,7 +7666,7 @@ fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateH
         .candidates
         .generated
         .iter()
-        .find_map(|goal| match goal.kind {
+        .find_map(|goal| match goal.goal_key.kind {
             GoalKind::InvestigateViolation {
                 violation_id,
                 place,

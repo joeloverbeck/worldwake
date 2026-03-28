@@ -42,7 +42,7 @@ pub(crate) struct InFlightReconciliation<'a> {
 pub(crate) struct ReadPhaseResult {
     pub(super) ranked: Vec<RankedGoal>,
     /// Generated candidate keys (before ranking filter).
-    pub(super) generated_keys: Vec<worldwake_core::GoalKey>,
+    pub(super) generated_keys: Vec<worldwake_core::OpportunityKey>,
     /// Typed candidate-evidence provenance keyed by generated goal.
     pub(super) candidate_evidence: Vec<crate::CandidateEvidenceTrace>,
     /// Desire-level diagnostics for goals whose emitted sibling opportunities
@@ -132,7 +132,14 @@ pub(super) fn refresh_runtime_for_read_phase(
         debug_assert_eq!(recorded_id, pending.id);
     }
 
-    let generated_keys = candidates.candidates.iter().map(|c| c.key).collect();
+    let generated_keys = candidates
+        .candidates
+        .iter()
+        .map(|c| worldwake_core::OpportunityKey {
+            goal_key: c.key,
+            anchor: c.anchor,
+        })
+        .collect();
     let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);
     let outcome = rank_candidates(

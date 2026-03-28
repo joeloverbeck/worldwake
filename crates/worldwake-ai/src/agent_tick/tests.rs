@@ -3825,7 +3825,7 @@ fn trace_planning_outcome_includes_danger_provenance_for_threatened_agent() {
         .candidates
         .ranked
         .iter()
-        .find(|summary| matches!(summary.goal.kind, GoalKind::ReduceDanger))
+        .find(|summary| matches!(summary.opportunity.goal_key.kind, GoalKind::ReduceDanger))
         .and_then(|summary| summary.provenance.as_ref())
         .map(|provenance| match provenance {
             RankedGoalProvenance::Danger(assessment) => assessment,
@@ -3904,7 +3904,7 @@ fn trace_planning_outcome_includes_drive_provenance_for_recovery_boost() {
         .ranked
         .iter()
         .find(|summary| {
-            summary.goal.kind
+            summary.opportunity.goal_key.kind
                 == GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Bread,
                 }
@@ -4410,12 +4410,12 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                     .candidates
                     .generated
                     .iter()
-                    .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+                    .any(|goal| goal.goal_key.kind == GoalKind::ClaimOffice { office }),
                 "Force-law offices should emit ClaimOffice candidates in agent_tick"
             );
             assert!(
                     !planning.candidates.generated.iter().any(|goal| {
-                        goal.kind
+                        goal.goal_key.kind
                             == GoalKind::SupportCandidateForOffice {
                                 office,
                                 candidate: rival,
@@ -4583,7 +4583,7 @@ fn trace_social_resend_omission_reason() {
                     .candidates
                     .generated
                     .iter()
-                    .any(|goal| goal.kind == share_goal),
+                    .any(|goal| goal.goal_key.kind == share_goal),
                 "unchanged told beliefs must not emit ShareBelief candidates"
             );
             assert!(
@@ -4754,7 +4754,7 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
                     .candidates
                     .generated
                     .iter()
-                    .any(|goal| goal.kind == share_goal),
+                    .any(|goal| goal.goal_key.kind == share_goal),
                 "planning trace should record the share-belief candidate"
             );
             assert!(
@@ -4762,15 +4762,15 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
                     .candidates
                     .generated
                     .iter()
-                    .any(|goal| goal.kind == claim_goal),
+                    .any(|goal| goal.goal_key.kind == claim_goal),
                 "planning trace should record the political claim candidate"
             );
             let comparison = planning
                 .candidates
                 .top_ranked_comparison
                 .expect("ranked comparison should be recorded when two candidates are present");
-            assert_eq!(comparison.winner, GoalKey::new(claim_goal));
-            assert_eq!(comparison.loser, GoalKey::new(share_goal));
+            assert_eq!(comparison.winner.goal_key, GoalKey::new(claim_goal));
+            assert_eq!(comparison.loser.goal_key, GoalKey::new(share_goal));
             assert_eq!(
                 comparison.decisive_dimension,
                 crate::RankedGoalComparisonDimension::PriorityClass

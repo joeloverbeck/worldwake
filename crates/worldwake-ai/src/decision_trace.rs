@@ -118,6 +118,10 @@ impl DecisionOutcome {
                     .selected
                     .as_ref()
                     .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+                let selected_opportunity = planning
+                    .selection
+                    .selected_opportunity
+                    .map_or_else(|| "none".to_string(), format_opportunity_key);
                 let selected_plan = planning
                     .selection
                     .selected_plan
@@ -157,7 +161,7 @@ impl DecisionOutcome {
                     format_frame_transition_summary(planning.frame_transition.as_ref());
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking_suffix}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking_suffix}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -214,7 +218,7 @@ pub struct UnknownBlockerTrace {
 #[derive(Clone, Debug)]
 pub struct CandidateTrace {
     /// All grounded goal keys generated (before suppression/zero-motive filter).
-    pub generated: Vec<GoalKey>,
+    pub generated: Vec<OpportunityKey>,
     /// Typed candidate-evidence provenance keyed by grounded goal.
     pub evidence: Vec<CandidateEvidenceTrace>,
     /// Desire-level diagnostic emitted when every concrete opportunity for a
@@ -282,7 +286,7 @@ pub struct SocialCandidateOmission {
 /// Summary of a ranked goal for trace output.
 #[derive(Clone, Debug)]
 pub struct RankedGoalSummary {
-    pub goal: GoalKey,
+    pub opportunity: OpportunityKey,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
@@ -331,7 +335,7 @@ pub struct CandidateEvidenceExclusion {
 /// Typed candidate-evidence provenance for one grounded goal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CandidateEvidenceTrace {
-    pub goal: GoalKey,
+    pub opportunity: OpportunityKey,
     pub contributors: Vec<CandidateEvidenceContributor>,
     pub exclusions: Vec<CandidateEvidenceExclusion>,
     /// Knowledge path: which beliefs motivated this candidate and where they came from.
@@ -573,6 +577,8 @@ pub struct PlannedStepSummary {
 pub struct SelectionTrace {
     /// The goal/plan that was selected (None if no plans available).
     pub selected: Option<GoalKey>,
+    /// The canonical opportunity identity for the selected plan, if one exists.
+    pub selected_opportunity: Option<OpportunityKey>,
     /// Canonical summary of the final selected plan, if one exists.
     pub selected_plan: Option<SelectedPlanTrace>,
     /// Where the final selected plan came from.
@@ -789,11 +795,11 @@ impl DecisionTraceSink {
                         .candidates
                         .ranked
                         .iter()
-                        .find(|r| r.goal == ev.goal)
+                        .find(|r| r.opportunity == ev.opportunity)
                         .map_or(FeasibilityHint::Uncertain, |r| r.feasibility);
                     eprintln!(
-                        "  Candidate: {:?} [feasibility={feasibility:?}]",
-                        ev.goal.kind
+                        "  Candidate: {} [feasibility={feasibility:?}]",
+                        format_opportunity_key(ev.opportunity)
                     );
                     if !ev.contributors.is_empty() {
                         let contrib_strs: Vec<String> = ev
@@ -879,14 +885,19 @@ fn goal_status_in_planning(
         .candidates
         .ranked
         .iter()
-        .position(|candidate| candidate.goal == goal_key)
+        .position(|candidate| candidate.opportunity.goal_key == goal_key)
     {
         return GoalTraceStatus::Ranked {
             rank,
             selected: planning.selection.selected == Some(goal_key),
         };
     }
-    if planning.candidates.generated.contains(&goal_key) {
+    if planning
+        .candidates
+        .generated
+        .iter()
+        .any(|opportunity| opportunity.goal_key == goal_key)
+    {
         return GoalTraceStatus::GeneratedOnly;
     }
     GoalTraceStatus::NotGenerated
@@ -1084,12 +1095,16 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
 }
 
 fn selected_ranked_goal_summary(planning: &PlanningPipelineTrace) -> Option<&RankedGoalSummary> {
-    let selected = planning.selection.selected?;
+    let selected = planning.selection.selected_opportunity?;
     planning
         .candidates
         .ranked
         .iter()
-        .find(|summary| summary.goal == selected)
+        .find(|summary| summary.opportunity == selected)
+}
+
+fn format_opportunity_key(opportunity: OpportunityKey) -> String {
+    format!("{:?}@{:?}", opportunity.goal_key.kind, opportunity.anchor)
 }
 
 fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> String {
@@ -1135,8 +1150,10 @@ fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> S
 
 fn format_ranked_goal_comparison_summary(comparison: &RankedGoalComparison) -> String {
     format!(
-        ", ranking={:?} {:?}>{:?}",
-        comparison.decisive_dimension, comparison.winner.kind, comparison.loser.kind
+        ", ranking={:?} {}>{}",
+        comparison.decisive_dimension,
+        format_opportunity_key(comparison.winner),
+        format_opportunity_key(comparison.loser)
     )
 }
 
@@ -1433,7 +1450,7 @@ fn format_knowledge_path(kp: &KnowledgePath) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_core::{GoalKind, Tick};
+    use worldwake_core::{GoalKind, OpportunityAnchor, Tick};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -1447,6 +1464,13 @@ mod tests {
             agent,
             tick,
             outcome: DecisionOutcome::Dead,
+        }
+    }
+
+    fn default_opportunity(goal: GoalKey) -> OpportunityKey {
+        OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::None,
         }
     }
 
@@ -1470,7 +1494,7 @@ mod tests {
                 dirty: crate::DirtySet::default(),
                 plan_continued,
                 candidates: CandidateTrace {
-                    generated,
+                    generated: generated.into_iter().map(default_opportunity).collect(),
                     evidence: Vec::new(),
                     fully_blocked_desires: Vec::new(),
                     ranked,
@@ -1485,6 +1509,7 @@ mod tests {
                 },
                 selection: SelectionTrace {
                     selected,
+                    selected_opportunity: selected.map(default_opportunity),
                     selected_plan: None,
                     selected_plan_source,
                     goal_switch: None,
@@ -1581,14 +1606,14 @@ mod tests {
             vec![GoalKey::from(&zero_motive_goal)],
             vec![
                 RankedGoalSummary {
-                    goal: GoalKey::from(&selected_goal),
+                    opportunity: default_opportunity(GoalKey::from(&selected_goal)),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 900,
                     provenance: None,
                     feasibility: FeasibilityHint::Uncertain,
                 },
                 RankedGoalSummary {
-                    goal: GoalKey::from(&outranked_goal),
+                    opportunity: default_opportunity(GoalKey::from(&outranked_goal)),
                     priority_class: GoalPriorityClass::Medium,
                     motive_score: 600,
                     provenance: None,
@@ -1773,7 +1798,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             vec![RankedGoalSummary {
-                goal: GoalKey::from(&goal),
+                opportunity: default_opportunity(GoalKey::from(&goal)),
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
@@ -1791,7 +1816,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             vec![RankedGoalSummary {
-                goal: GoalKey::from(&goal),
+                opportunity: default_opportunity(GoalKey::from(&goal)),
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
@@ -1839,6 +1864,75 @@ mod tests {
     }
 
     #[test]
+    fn selected_ranked_summary_uses_selected_opportunity_for_same_goal_siblings() {
+        let goal = GoalKey::new(GoalKind::AcquireCommodity {
+            commodity: worldwake_core::CommodityKind::Bread,
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        });
+        let orchard = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(11)),
+        };
+        let market = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(12)),
+        };
+        let planning = PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![orchard, market],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                ranked: vec![
+                    RankedGoalSummary {
+                        opportunity: orchard,
+                        priority_class: GoalPriorityClass::High,
+                        motive_score: 800,
+                        provenance: None,
+                        feasibility: FeasibilityHint::Uncertain,
+                    },
+                    RankedGoalSummary {
+                        opportunity: market,
+                        priority_class: GoalPriorityClass::High,
+                        motive_score: 790,
+                        provenance: None,
+                        feasibility: FeasibilityHint::Likely,
+                    },
+                ],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: Some(goal),
+                selected_opportunity: Some(market),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        };
+
+        let selected = selected_ranked_goal_summary(&planning)
+            .expect("selected opportunity should resolve to a ranked summary");
+        assert_eq!(selected.opportunity, market);
+        assert_eq!(selected.feasibility, FeasibilityHint::Likely);
+    }
+
+    #[test]
     fn summary_dead_returns_non_empty_string() {
         let summary = DecisionOutcome::Dead.summary();
         assert!(!summary.is_empty());
@@ -1874,7 +1968,7 @@ mod tests {
                 evidence: vec![],
                 fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
-                    goal: GoalKey::new(GoalKind::Sleep),
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
                     provenance: None,
@@ -1889,6 +1983,7 @@ mod tests {
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: Some(GoalKey::new(GoalKind::Sleep)),
+                selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
                 selected_plan: Some(SelectedPlanTrace {
                     steps: vec![PlannedStepSummary {
                         action_def_id: ActionDefId(1),
@@ -1979,6 +2074,7 @@ mod tests {
             },
             selection: SelectionTrace {
                 selected: None,
+                selected_opportunity: None,
                 selected_plan: None,
                 selected_plan_source: None,
                 goal_switch: None,
@@ -2011,7 +2107,7 @@ mod tests {
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
-                generated: vec![goal],
+                generated: vec![default_opportunity(goal)],
                 evidence: vec![],
                 fully_blocked_desires: vec![DesireFullyBlocked {
                     goal_key: goal,
@@ -2036,6 +2132,7 @@ mod tests {
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: None,
+                selected_opportunity: None,
                 selected_plan: None,
                 selected_plan_source: None,
                 goal_switch: None,
@@ -2069,19 +2166,19 @@ mod tests {
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
-                generated: vec![winner, loser],
+                generated: vec![default_opportunity(winner), default_opportunity(loser)],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
                 ranked: vec![
                     RankedGoalSummary {
-                        goal: winner,
+                        opportunity: default_opportunity(winner),
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 800,
                         provenance: None,
                         feasibility: FeasibilityHint::Likely,
                     },
                     RankedGoalSummary {
-                        goal: loser,
+                        opportunity: default_opportunity(loser),
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 600,
                         provenance: None,
@@ -2089,8 +2186,8 @@ mod tests {
                     },
                 ],
                 top_ranked_comparison: Some(RankedGoalComparison {
-                    winner,
-                    loser,
+                    winner: default_opportunity(winner),
+                    loser: default_opportunity(loser),
                     decisive_dimension: RankedGoalComparisonDimension::MotiveScore,
                 }),
                 suppressed: vec![],
@@ -2101,6 +2198,7 @@ mod tests {
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: Some(winner),
+                selected_opportunity: Some(default_opportunity(winner)),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -2132,11 +2230,11 @@ mod tests {
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
-                generated: vec![GoalKey::new(GoalKind::ReduceDanger)],
+                generated: vec![default_opportunity(GoalKey::new(GoalKind::ReduceDanger))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
-                    goal: GoalKey::new(GoalKind::ReduceDanger),
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::ReduceDanger)),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 700,
                     provenance: Some(RankedGoalProvenance::Danger(crate::DangerAssessment {
@@ -2159,6 +2257,7 @@ mod tests {
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: Some(GoalKey::new(GoalKind::ReduceDanger)),
+                selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::ReduceDanger))),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -2189,15 +2288,15 @@ mod tests {
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
-                generated: vec![GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                generated: vec![default_opportunity(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
                     commodity: worldwake_core::CommodityKind::Bread,
-                })],
+                }))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
-                    goal: GoalKey::new(GoalKind::ConsumeOwnedCommodity {
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
                         commodity: worldwake_core::CommodityKind::Bread,
-                    }),
+                    })),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 380_000,
                     provenance: Some(RankedGoalProvenance::Drive(
@@ -2230,6 +2329,11 @@ mod tests {
                 selected: Some(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
                     commodity: worldwake_core::CommodityKind::Bread,
                 })),
+                selected_opportunity: Some(default_opportunity(GoalKey::new(
+                    GoalKind::ConsumeOwnedCommodity {
+                        commodity: worldwake_core::CommodityKind::Bread,
+                    },
+                ))),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -2261,11 +2365,15 @@ mod tests {
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
-                generated: vec![GoalKey::new(GoalKind::ClaimOffice { office: entity(4) })],
+                generated: vec![default_opportunity(GoalKey::new(GoalKind::ClaimOffice {
+                    office: entity(4),
+                }))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
-                    goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::ClaimOffice {
+                        office: entity(4),
+                    })),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 400,
                     provenance: None,
@@ -2318,6 +2426,9 @@ mod tests {
             },
             selection: SelectionTrace {
                 selected: Some(GoalKey::new(GoalKind::ClaimOffice { office: entity(4) })),
+                selected_opportunity: Some(default_opportunity(GoalKey::new(
+                    GoalKind::ClaimOffice { office: entity(4) },
+                ))),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -2598,6 +2709,7 @@ mod tests {
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
                 selected: None,
+                selected_opportunity: None,
                 selected_plan: None,
                 selected_plan_source: None,
                 goal_switch: None,
@@ -2720,7 +2832,7 @@ mod tests {
             place: Some(place),
         };
         let evidence = CandidateEvidenceTrace {
-            goal: goal_key,
+            opportunity: default_opportunity(goal_key),
             contributors: vec![CandidateEvidenceContributor {
                 kind: CandidateEvidenceKind::Seller,
                 place,
@@ -2752,11 +2864,11 @@ mod tests {
                 dirty: crate::DirtySet::default(),
                 plan_continued: false,
                 candidates: CandidateTrace {
-                    generated: vec![goal_key],
+                    generated: vec![default_opportunity(goal_key)],
                     evidence: vec![evidence],
                     fully_blocked_desires: vec![],
                     ranked: vec![RankedGoalSummary {
-                        goal: goal_key,
+                        opportunity: default_opportunity(goal_key),
                         priority_class: GoalPriorityClass::Medium,
                         motive_score: 100,
                         provenance: None,
@@ -2771,6 +2883,7 @@ mod tests {
                 planning: PlanSearchTrace { attempts: vec![] },
                 selection: SelectionTrace {
                     selected: None,
+                    selected_opportunity: None,
                     selected_plan: None,
                     selected_plan_source: None,
                     goal_switch: None,

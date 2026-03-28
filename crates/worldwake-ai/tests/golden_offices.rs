@@ -1401,7 +1401,7 @@ fn run_remote_record_consultation_political_action(seed: Seed) -> (StateHash, St
     );
     assert!(
         planning_tick_zero.candidates.generated.iter().any(
-            |goal| matches!(goal.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
+            |goal| matches!(goal.goal_key.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
         ),
         "tick 0 candidates should include ClaimOffice for the vacant office"
     );
@@ -1732,7 +1732,7 @@ fn run_knowledge_asymmetry_race(seed: Seed) -> (StateHash, StateHash) {
     };
     assert!(
         informed_planning.candidates.generated.iter().any(
-            |goal| matches!(goal.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
+            |goal| matches!(goal.goal_key.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
         ),
         "informed claimant should generate ClaimOffice at tick 0"
     );
@@ -1766,7 +1766,7 @@ fn run_knowledge_asymmetry_race(seed: Seed) -> (StateHash, StateHash) {
     };
     assert!(
         uninformed_planning.candidates.generated.iter().any(
-            |goal| matches!(goal.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
+            |goal| matches!(goal.goal_key.kind, GoalKind::ClaimOffice { office: goal_office } if goal_office == office)
         ),
         "uninformed claimant should also generate ClaimOffice at tick 0"
     );
@@ -2528,7 +2528,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
             .candidates
             .generated
             .iter()
-            .any(|goal| goal.kind == GoalKind::ClaimOffice { office }),
+            .any(|goal| goal.goal_key.kind == GoalKind::ClaimOffice { office }),
         "tick 0 candidates should include ClaimOffice for the force-law office"
     );
     assert!(
@@ -2550,7 +2550,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
                     .candidates
                     .ranked
                     .iter()
-                    .map(|goal| &goal.goal.kind)
+                    .map(|goal| &goal.opportunity.goal_key.kind)
                     .collect::<Vec<_>>(),
                 planning_tick_zero
                     .planning

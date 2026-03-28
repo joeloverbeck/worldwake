@@ -529,7 +529,7 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         .ranked
         .iter()
         .find(|goal| {
-            goal.goal.kind
+            goal.opportunity.goal_key.kind
                 == GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Bread,
                 }
@@ -539,7 +539,7 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         .candidates
         .ranked
         .iter()
-        .find(|goal| goal.goal.kind == GoalKind::Wash)
+        .find(|goal| goal.opportunity.goal_key.kind == GoalKind::Wash)
         .expect("tick 0 ranking should include Wash");
 
     assert_eq!(

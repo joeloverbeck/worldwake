@@ -10,7 +10,7 @@ use crate::{
 use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, PerceptionSource, Permille, TellTopic,
+    EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityKey, PerceptionSource, Permille, TellTopic,
     ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
@@ -824,8 +824,8 @@ pub enum RankedGoalComparisonDimension {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RankedGoalComparison {
-    pub winner: GoalKey,
-    pub loser: GoalKey,
+    pub winner: OpportunityKey,
+    pub loser: OpportunityKey,
     pub decisive_dimension: RankedGoalComparisonDimension,
 }
 
@@ -899,8 +899,26 @@ pub(crate) fn explain_ranked_goal_order(
     let (ordering, decisive_dimension) = ranked_goal_ordering(left, right);
     let decisive_dimension = decisive_dimension?;
     let (winner, loser) = match ordering {
-        Ordering::Less => (left.grounded.key, right.grounded.key),
-        Ordering::Greater => (right.grounded.key, left.grounded.key),
+        Ordering::Less => (
+            OpportunityKey {
+                goal_key: left.grounded.key,
+                anchor: left.grounded.anchor,
+            },
+            OpportunityKey {
+                goal_key: right.grounded.key,
+                anchor: right.grounded.anchor,
+            },
+        ),
+        Ordering::Greater => (
+            OpportunityKey {
+                goal_key: right.grounded.key,
+                anchor: right.grounded.anchor,
+            },
+            OpportunityKey {
+                goal_key: left.grounded.key,
+                anchor: left.grounded.anchor,
+            },
+        ),
         Ordering::Equal => return None,
     };
     Some(RankedGoalComparison {
@@ -3126,8 +3144,8 @@ mod tests {
         let comparison =
             super::explain_ranked_goal_order(&winner, &loser).expect("ordering should explain");
 
-        assert_eq!(comparison.winner.kind, GoalKind::Sleep);
-        assert_eq!(comparison.loser.kind, GoalKind::Wash);
+        assert_eq!(comparison.winner.goal_key.kind, GoalKind::Sleep);
+        assert_eq!(comparison.loser.goal_key.kind, GoalKind::Wash);
         assert_eq!(
             comparison.decisive_dimension,
             super::RankedGoalComparisonDimension::MotiveScore
@@ -3165,9 +3183,9 @@ mod tests {
         let comparison =
             super::explain_ranked_goal_order(&political, &social).expect("ordering should explain");
 
-        assert_eq!(comparison.winner.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(comparison.winner.goal_key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(
-            comparison.loser.kind,
+            comparison.loser.goal_key.kind,
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::InstitutionalClaim {

@@ -703,6 +703,7 @@ fn process_agent(
                 }),
                 selection: selection_trace.unwrap_or(SelectionTrace {
                     selected: None,
+                    selected_opportunity: None,
                     selected_plan: None,
                     selected_plan_source: None,
                     goal_switch: None,
