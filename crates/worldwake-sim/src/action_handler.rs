@@ -282,6 +282,9 @@ pub enum ActionAbortRequestReason {
     TargetNotAlive {
         target: EntityId,
     },
+    TargetIncapacitated {
+        target: EntityId,
+    },
     TargetLacksWounds {
         target: EntityId,
     },

@@ -744,6 +744,25 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         ))
     }
 
+    fn ask_witness_memory(
+        &self,
+        actor: EntityId,
+        key: &worldwake_core::AskWitnessMemoryKey,
+    ) -> Option<worldwake_core::AskWitnessMemory> {
+        if actor != self.agent {
+            return None;
+        }
+
+        let profile = self.verification_disposition_profile(actor)?;
+        self.belief_store
+            .ask_witness_memory(
+                key,
+                self.current_tick,
+                profile.ask_memory_retention_ticks,
+            )
+            .cloned()
+    }
+
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_combat_profile(agent).copied())

@@ -117,6 +117,7 @@ pub enum DurationExpr {
     ActorTheftDisposition,
     ActorInvestigationDisposition,
     ActorVerificationDisposition,
+    ActorWitnessQueryDisposition,
     ActorDefendStance,
     CombatWeapon,
     TargetTreatment {
@@ -138,6 +139,7 @@ impl DurationExpr {
             | Self::ActorTheftDisposition
             | Self::ActorInvestigationDisposition
             | Self::ActorVerificationDisposition
+            | Self::ActorWitnessQueryDisposition
             | Self::ActorDefendStance
             | Self::CombatWeapon
             | Self::TargetTreatment { .. } => None,
@@ -210,6 +212,10 @@ impl DurationExpr {
             Self::ActorVerificationDisposition => world
                 .get_component_verification_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.verify_belief_duration_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks verification disposition profile")),
+            Self::ActorWitnessQueryDisposition => world
+                .get_component_verification_disposition_profile(actor)
+                .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks verification disposition profile")),
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
@@ -412,7 +418,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 13] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 14] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -425,6 +431,7 @@ mod tests {
         DurationExpr::ActorTheftDisposition,
         DurationExpr::ActorInvestigationDisposition,
         DurationExpr::ActorVerificationDisposition,
+        DurationExpr::ActorWitnessQueryDisposition,
         DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
         DurationExpr::TargetTreatment {
@@ -492,6 +499,7 @@ mod tests {
             DurationExpr::ActorVerificationDisposition.fixed_ticks(),
             None
         );
+        assert_eq!(DurationExpr::ActorWitnessQueryDisposition.fixed_ticks(), None);
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(
@@ -810,6 +818,12 @@ mod tests {
             ActionDuration::new(8)
         );
         assert_eq!(
+            DurationExpr::ActorWitnessQueryDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(5)
+        );
+        assert_eq!(
             DurationExpr::ActorDefendStance
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
@@ -870,6 +884,12 @@ mod tests {
         );
         assert_eq!(
             DurationExpr::ActorVerificationDisposition
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap_err(),
+            format!("actor {actor} lacks verification disposition profile")
+        );
+        assert_eq!(
+            DurationExpr::ActorWitnessQueryDisposition
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap_err(),
             format!("actor {actor} lacks verification disposition profile")

@@ -141,6 +141,14 @@ pub trait GoalBeliefView {
         let _ = (actor, counterparty, topic);
         None
     }
+    fn ask_witness_memory(
+        &self,
+        actor: EntityId,
+        key: &worldwake_core::AskWitnessMemoryKey,
+    ) -> Option<worldwake_core::AskWitnessMemory> {
+        let _ = (actor, key);
+        None
+    }
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         let _ = agent;
         None
@@ -383,6 +391,14 @@ pub trait RuntimeBeliefView {
         topic: &TellTopic,
     ) -> Option<RecipientKnowledgeStatus> {
         let _ = (actor, counterparty, topic);
+        None
+    }
+    fn ask_witness_memory(
+        &self,
+        actor: EntityId,
+        key: &worldwake_core::AskWitnessMemoryKey,
+    ) -> Option<worldwake_core::AskWitnessMemory> {
+        let _ = (actor, key);
         None
     }
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
@@ -824,6 +840,14 @@ macro_rules! impl_goal_belief_view {
                 )
             }
 
+            fn ask_witness_memory(
+                &self,
+                actor: worldwake_core::EntityId,
+                key: &worldwake_core::AskWitnessMemoryKey,
+            ) -> Option<worldwake_core::AskWitnessMemory> {
+                $crate::RuntimeBeliefView::ask_witness_memory(self, actor, key)
+            }
+
             fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
                 $crate::RuntimeBeliefView::courage(self, agent)
             }
@@ -1018,6 +1042,9 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorVerificationDisposition => view
             .verification_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.verify_belief_duration_ticks.get())),
+        DurationExpr::ActorWitnessQueryDisposition => view
+            .verification_disposition_profile(actor)
+            .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get())),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
             .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),

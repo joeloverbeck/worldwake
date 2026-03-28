@@ -1,5 +1,5 @@
 use crate::{
-    register_accuse_action, register_attack_action, register_bury_action,
+    register_accuse_action, register_ask_witness_action, register_attack_action, register_bury_action,
     register_consult_record_action, register_craft_actions, register_defend_action,
     register_exile_action, register_fine_action, register_harvest_actions, register_heal_action,
     register_investigate_action, register_loot_action, register_needs_actions,
@@ -40,6 +40,7 @@ pub fn register_all_actions(
     let _ = register_heal_action(defs, handlers);
     let _ = register_investigate_action(defs, handlers);
     let _ = register_verify_belief_action(defs, handlers);
+    let _ = register_ask_witness_action(defs, handlers);
     let _ = register_accuse_action(defs, handlers);
     let _ = register_fine_action(defs, handlers);
     let _ = register_exile_action(defs, handlers);
@@ -100,6 +101,7 @@ mod tests {
             "heal",
             "investigate",
             "verify_belief",
+            "ask_witness",
             "accuse",
             "fine",
             "exile",

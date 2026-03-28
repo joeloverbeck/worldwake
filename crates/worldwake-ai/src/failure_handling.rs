@@ -497,7 +497,8 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Blockin
         ActionAbortRequestReason::PayloadEntityMismatch { .. }
         | ActionAbortRequestReason::TargetNotColocated { .. }
         | ActionAbortRequestReason::TargetNotDead { .. }
-        | ActionAbortRequestReason::TargetNotAlive { .. } => Some(BlockingFact::TargetGone),
+        | ActionAbortRequestReason::TargetNotAlive { .. }
+        | ActionAbortRequestReason::TargetIncapacitated { .. } => Some(BlockingFact::TargetGone),
         ActionAbortRequestReason::ActorAlreadyHasCombatStance { .. }
         | ActionAbortRequestReason::CommodityNotCombatWeapon { .. }
         | ActionAbortRequestReason::ActorMissingCombatProfile { .. }

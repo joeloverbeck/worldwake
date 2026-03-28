@@ -37,6 +37,7 @@ pub struct AgentBeliefStore {
     pub social_observations: Vec<SocialObservation>,
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
+    pub asked_witnesses: BTreeMap<AskWitnessMemoryKey, AskWitnessMemory>,
     pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
 }
 
@@ -70,6 +71,14 @@ impl AgentBeliefStore {
 
     pub fn record_heard_belief(&mut self, key: TellMemoryKey, memory: HeardBeliefMemory) {
         self.heard_beliefs.insert(key, memory);
+    }
+
+    pub fn record_asked_witness(
+        &mut self,
+        key: AskWitnessMemoryKey,
+        memory: AskWitnessMemory,
+    ) {
+        self.asked_witnesses.insert(key, memory);
     }
 
     pub fn record_institutional_belief(
@@ -164,6 +173,12 @@ impl AgentBeliefStore {
         );
     }
 
+    pub fn enforce_ask_witness_memory(&mut self, current_tick: Tick, retention_ticks: u32) {
+        self.asked_witnesses.retain(|_, memory| {
+            within_retention_window(memory.asked_tick, current_tick, u64::from(retention_ticks))
+        });
+    }
+
     #[must_use]
     pub fn told_belief_memory(
         &self,
@@ -217,6 +232,18 @@ impl AgentBeliefStore {
                 current_tick,
                 profile.conversation_memory_retention_ticks,
             )
+        })
+    }
+
+    #[must_use]
+    pub fn ask_witness_memory(
+        &self,
+        key: &AskWitnessMemoryKey,
+        current_tick: Tick,
+        retention_ticks: u32,
+    ) -> Option<&AskWitnessMemory> {
+        self.asked_witnesses.get(key).filter(|memory| {
+            within_retention_window(memory.asked_tick, current_tick, u64::from(retention_ticks))
         })
     }
 
@@ -663,6 +690,18 @@ pub struct HeardBeliefMemory {
     pub heard_state: SharedTellState,
     pub heard_tick: Tick,
     pub disposition: HeardBeliefDisposition,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct AskWitnessMemoryKey {
+    pub counterparty: EntityId,
+    pub topic_entity: Option<EntityId>,
+    pub topic_commodity: Option<CommodityKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AskWitnessMemory {
+    pub asked_tick: Tick,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1291,12 +1330,12 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
-        BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
-        MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-        RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState, SocialObservation,
-        SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
-        ToldBeliefMemory,
+        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot,
+        AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
+        BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
+        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
+        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, current_institutional_belief_topics,
@@ -1438,6 +1477,18 @@ mod tests {
                 disposition,
             },
         )
+    }
+
+    fn ask_memory_key(
+        counterparty: u32,
+        topic_entity: Option<u32>,
+        topic_commodity: Option<CommodityKind>,
+    ) -> AskWitnessMemoryKey {
+        AskWitnessMemoryKey {
+            counterparty: entity(counterparty),
+            topic_entity: topic_entity.map(entity),
+            topic_commodity,
+        }
     }
 
     fn office_holder_belief(
@@ -1582,6 +1633,7 @@ mod tests {
         assert!(store.social_observations.is_empty());
         assert!(store.told_beliefs.is_empty());
         assert!(store.heard_beliefs.is_empty());
+        assert!(store.asked_witnesses.is_empty());
         assert!(store.institutional_beliefs.is_empty());
     }
 
@@ -2441,6 +2493,57 @@ mod tests {
             store.heard_beliefs.keys().copied().collect::<Vec<_>>(),
             vec![tell_memory_key(5, 50), tell_memory_key(6, 60)]
         );
+    }
+
+    #[test]
+    fn ask_witness_memory_filters_expired_entries_by_retention_window() {
+        let mut store = AgentBeliefStore::new();
+        let stale_key = ask_memory_key(7, Some(44), Some(CommodityKind::Bread));
+        let fresh_key = ask_memory_key(8, Some(45), None);
+        store.record_asked_witness(
+            stale_key,
+            AskWitnessMemory {
+                asked_tick: Tick(3),
+            },
+        );
+        store.record_asked_witness(
+            fresh_key,
+            AskWitnessMemory {
+                asked_tick: Tick(7),
+            },
+        );
+
+        assert_eq!(store.ask_witness_memory(&stale_key, Tick(9), 4), None);
+        assert_eq!(
+            store
+                .ask_witness_memory(&fresh_key, Tick(9), 4)
+                .map(|memory| memory.asked_tick),
+            Some(Tick(7))
+        );
+    }
+
+    #[test]
+    fn enforce_ask_witness_memory_prunes_expired_entries() {
+        let mut store = AgentBeliefStore::new();
+        let stale_key = ask_memory_key(7, Some(44), None);
+        let fresh_key = ask_memory_key(8, None, Some(CommodityKind::Apple));
+        store.record_asked_witness(
+            stale_key,
+            AskWitnessMemory {
+                asked_tick: Tick(2),
+            },
+        );
+        store.record_asked_witness(
+            fresh_key,
+            AskWitnessMemory {
+                asked_tick: Tick(8),
+            },
+        );
+
+        store.enforce_ask_witness_memory(Tick(9), 3);
+
+        assert!(!store.asked_witnesses.contains_key(&stale_key));
+        assert!(store.asked_witnesses.contains_key(&fresh_key));
     }
 
     #[test]

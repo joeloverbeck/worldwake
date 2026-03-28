@@ -204,6 +204,7 @@ mod tests {
             social_observations: Vec::new(),
             told_beliefs: BTreeMap::new(),
             heard_beliefs: BTreeMap::new(),
+            asked_witnesses: BTreeMap::new(),
             institutional_beliefs: BTreeMap::from([(
                 crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(24) },
                 vec![crate::BelievedInstitutionalClaim {
