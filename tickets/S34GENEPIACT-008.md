@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: S34GENEPIACT-001 through S34GENEPIACT-007 (all engine changes complete)
+**Deps**: S34GENEPIACT-001 through S34GENEPIACT-007, S34GENEPIACT-009 (all engine changes and epistemic action traceability complete)
 
 ## Problem
 
@@ -21,10 +21,11 @@ No golden E2E coverage exists for deliberate epistemic actions. Without golden t
 3. All golden tests require `PerceptionProfile` on agents that need to observe post-action results (per CLAUDE.md: "Golden production tests require `PerceptionProfile` on agents that need to observe newly created entities").
 4. All golden tests require `VerificationDispositionProfile` on the agent under test for candidate generation.
 5. Decision traces (`h.driver.enable_tracing()`) should be used for diagnosing golden test behavior per CLAUDE.md debugging guidance.
-6. Action traces (`h.enable_action_tracing()`) should be used for verifying action lifecycle per CLAUDE.md.
+6. Action traces (`h.enable_action_tracing()`) should be used for verifying action lifecycle per CLAUDE.md, and after reassessment that should mean typed epistemic action detail rather than weaker action-name or downstream-state inference.
 7. Deterministic replay companions use `replay_and_verify()` to prove replay consistency.
 8. This is a golden E2E ticket. Full action registries required. Not a needs-only harness scenario.
 9. Scenario isolation: each golden should isolate the intended epistemic chain from competing affordances by controlling the world setup (limited commodity sources, specific agent placement, targeted belief seeding).
+10. Mismatch + correction: the original ticket implicitly assumed epistemic actions would already be first-class in action traces. Current code only provides typed `ActionTraceDetail` for `Tell` and `Investigate`, so this ticket should depend on S34GENEPIACT-009 rather than weakening its verification surface.
 
 ## Architecture Check
 
@@ -33,11 +34,11 @@ No golden E2E coverage exists for deliberate epistemic actions. Without golden t
 
 ## Verification Layers
 
-1. Scenario D variant (rumor -> travel -> verify -> violation -> replan) -> golden E2E: decision trace shows VerifyBelief candidate, plan search finds Travel->VerifyBelief, action trace shows verify_belief commit, belief store shows SupplyDepleted violation, subsequent tick shows replan to alternative
-2. Ask-witness chain -> golden E2E: decision trace shows VerifyBelief candidate, plan search finds AskWitness, action trace shows ask_witness commit with Report provenance, subsequent planning uses the received belief
-3. Stale-belief refresh -> golden E2E: decision trace shows VerifyBelief candidate for stale entity-location belief, travel + verify_belief confirms entity present, belief refreshed with DirectObservation, original goal proceeds
+1. Scenario D variant (rumor -> travel -> verify -> violation -> replan) -> golden E2E: decision trace shows VerifyBelief candidate, plan search finds Travel->VerifyBelief, action trace shows `ActionTraceDetail::VerifyBelief { subject }`, authoritative/belief assertions show `SupplyDepleted`, subsequent tick shows replan to alternative
+2. Ask-witness chain -> golden E2E: decision trace shows VerifyBelief candidate, plan search finds AskWitness, action trace shows `ActionTraceDetail::AskWitness { target, topic_* }`, subsequent belief assertions prove Report provenance and planning reuse
+3. Stale-belief refresh -> golden E2E: decision trace shows VerifyBelief candidate for stale entity-location belief, action trace shows typed `VerifyBelief` detail for that subject, belief refreshed with DirectObservation, original goal proceeds
 4. Deterministic replay -> replay_and_verify() for each golden
-5. All verification via golden E2E layer; lower-layer coverage is in tickets 001-007.
+5. Lower-layer epistemic action-trace detail coverage is provided by ticket 009; this ticket consumes that strengthened proof surface rather than recreating it ad hoc.
 
 ## What to Change
 
@@ -47,19 +48,19 @@ Create a golden test (likely in `crates/worldwake-ai/tests/golden_emergent.rs` o
 
 - **Setup**: Agent at Place A with stale rumor-sourced belief about commodity availability at distant Place B (resource source). The source at Place B is actually depleted. Agent has `VerificationDispositionProfile` with belief_verification_threshold that the stale belief falls below. Agent has a need that requires the commodity.
 - **Expected chain**: Agent emits need-based AcquireCommodity candidate -> evidence entity (source) has low-confidence belief -> emit_verify_belief_goals emits VerifyBelief(SupplyAvailability) -> planner finds Travel(PlaceB) -> VerifyBelief -> agent travels -> verifies -> finds depleted -> SupplyDepleted violation recorded -> replans to alternative source or different goal.
-- **Assertions**: Decision trace shows VerifyBelief candidate emitted, plan search succeeds, action trace shows verify_belief commit, violation memory contains SupplyDepleted, agent replans (no longer pursuing depleted source).
+- **Assertions**: Decision trace shows VerifyBelief candidate emitted, plan search succeeds, action trace contains `ActionTraceDetail::VerifyBelief` for the expected `VerificationSubject`, violation memory contains SupplyDepleted, agent replans (no longer pursuing depleted source).
 
 ### 2. Ask-witness chain golden
 
 - **Setup**: Agent A at Place X with stale belief about entity E's location. Agent B at Place X with fresh direct-observation belief about entity E at Place Y. Agent A has `VerificationDispositionProfile`.
 - **Expected chain**: Agent A emits VerifyBelief candidate for entity E -> planner finds AskWitness (Agent B is co-located) -> ask_witness commits -> Agent A receives Report-sourced belief about E at Place Y -> Agent A uses this belief in subsequent planning.
-- **Assertions**: Action trace shows ask_witness commit, Agent A's belief store contains entity E at Place Y with Report provenance, conversation memory entries exist for both agents.
+- **Assertions**: Action trace shows `ActionTraceDetail::AskWitness` for the expected witness/topic, Agent A's belief store contains entity E at Place Y with Report provenance, conversation memory entries exist for both agents.
 
 ### 3. Stale-belief refresh golden
 
 - **Setup**: Agent at Place A with stale belief about entity E being at Place B. Entity E IS at Place B. Agent has a goal that depends on interacting with entity E. Agent has `VerificationDispositionProfile`.
 - **Expected chain**: Agent emits goal depending on E -> evidence entity E has low-confidence belief -> VerifyBelief candidate emitted -> planner finds Travel(PlaceB) -> VerifyBelief -> agent travels -> verifies -> entity found -> belief refreshed with DirectObservation (observed_tick = current_tick) -> VerifyBelief goal satisfied -> proceeds with original goal.
-- **Assertions**: Decision trace shows VerifyBelief candidate, verify_belief action commits with entity present, belief refreshed, VerifyBelief goal satisfied, original goal resumes.
+- **Assertions**: Decision trace shows VerifyBelief candidate, action trace shows `ActionTraceDetail::VerifyBelief` for the expected subject, belief refreshed, VerifyBelief goal satisfied, original goal resumes.
 
 ### 4. Deterministic replay companions
 
@@ -97,6 +98,7 @@ For each golden, add a `replay_and_verify()` companion test proving deterministi
 4. Deterministic replay produces identical state hashes (P11)
 5. No golden test depends on HashMap/HashSet ordering or floats
 6. Canonical Scenario D can emerge through deliberate verification, not only passive perception (spec acceptance criterion 11)
+7. Epistemic golden proofs rely on typed action-trace detail for committed `verify_belief` / `ask_witness` identity rather than only downstream side effects
 
 ## Test Plan
 

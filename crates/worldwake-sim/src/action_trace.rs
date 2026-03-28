@@ -362,6 +362,8 @@ impl ActionTraceDetail {
             | ActionPayload::Trade(_)
             | ActionPayload::Combat(_)
             | ActionPayload::Loot(_)
+            | ActionPayload::VerifyBelief(_)
+            | ActionPayload::AskWitness(_)
             | ActionPayload::QueueForFacilityUse(_) => None,
         }
     }

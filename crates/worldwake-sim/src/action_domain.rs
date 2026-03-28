@@ -7,6 +7,7 @@ pub enum ActionDomain {
     Production,
     Trade,
     Social,
+    Epistemic,
     Travel,
     Transport,
     Combat,
@@ -31,12 +32,13 @@ mod tests {
     >() {
     }
 
-    const ALL_DOMAINS: [ActionDomain; 10] = [
+    const ALL_DOMAINS: [ActionDomain; 11] = [
         ActionDomain::Generic,
         ActionDomain::Needs,
         ActionDomain::Production,
         ActionDomain::Trade,
         ActionDomain::Social,
+        ActionDomain::Epistemic,
         ActionDomain::Travel,
         ActionDomain::Transport,
         ActionDomain::Combat,
