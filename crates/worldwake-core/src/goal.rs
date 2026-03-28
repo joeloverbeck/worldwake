@@ -91,6 +91,23 @@ pub struct GoalKey {
     pub place: Option<EntityId>,
 }
 
+/// Concrete world-state anchor distinguishing one opportunity from another
+/// for the same desire (`GoalKey`).
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum OpportunityAnchor {
+    Place(EntityId),
+    Entity(EntityId),
+    None,
+}
+
+/// Identifies a specific opportunity: a desire plus the concrete anchor
+/// being pursued for that desire.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct OpportunityKey {
+    pub goal_key: GoalKey,
+    pub anchor: OpportunityAnchor,
+}
+
 impl GoalKey {
     pub fn new(kind: GoalKind) -> Self {
         Self::from(kind)
@@ -156,8 +173,12 @@ impl From<&GoalKind> for GoalKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommodityPurpose, GoalKey, GoalKind, TellTopic, ViolationId};
+    use super::{
+        CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, TellTopic,
+        ViolationId,
+    };
     use crate::{test_utils::entity_id, CommodityKind, PunishmentKind, Quantity, RecipeId};
+    use std::collections::BTreeMap;
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
 
@@ -168,6 +189,14 @@ mod tests {
         assert_value_bounds::<CommodityPurpose>();
         assert_value_bounds::<GoalKind>();
         assert_value_bounds::<GoalKey>();
+        assert_value_bounds::<OpportunityAnchor>();
+        assert_value_bounds::<OpportunityKey>();
+    }
+
+    #[test]
+    fn opportunity_goal_identity_types_satisfy_value_bounds() {
+        assert_value_bounds::<OpportunityAnchor>();
+        assert_value_bounds::<OpportunityKey>();
     }
 
     #[test]
@@ -274,6 +303,75 @@ mod tests {
         let roundtrip: GoalKey = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, key);
+    }
+
+    #[test]
+    fn opportunity_anchor_ordering_is_stable() {
+        let place = entity_id(40, 0);
+        let entity = entity_id(41, 0);
+        let mut anchors = vec![
+            OpportunityAnchor::Entity(entity),
+            OpportunityAnchor::None,
+            OpportunityAnchor::Place(place),
+        ];
+
+        anchors.sort();
+
+        assert_eq!(
+            anchors,
+            vec![
+                OpportunityAnchor::Place(place),
+                OpportunityAnchor::Entity(entity),
+                OpportunityAnchor::None,
+            ]
+        );
+    }
+
+    #[test]
+    fn opportunity_key_bincode_roundtrip_preserves_anchor_and_goal() {
+        let key = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            anchor: OpportunityAnchor::Place(entity_id(42, 0)),
+        };
+
+        let bytes = bincode::serialize(&key).unwrap();
+        let roundtrip: OpportunityKey = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, key);
+    }
+
+    #[test]
+    fn opportunity_key_btreemap_iteration_is_deterministic() {
+        let sleep = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::None,
+        };
+        let acquire_at_market = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            anchor: OpportunityAnchor::Place(entity_id(43, 0)),
+        };
+        let treat_patient = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::TreatWounds {
+                patient: entity_id(44, 0),
+            }),
+            anchor: OpportunityAnchor::Entity(entity_id(44, 0)),
+        };
+
+        let keys = BTreeMap::from([
+            (sleep, "sleep"),
+            (treat_patient, "treat"),
+            (acquire_at_market, "acquire"),
+        ])
+        .into_keys()
+        .collect::<Vec<_>>();
+
+        assert_eq!(keys, vec![acquire_at_market, sleep, treat_patient]);
     }
 
     #[test]

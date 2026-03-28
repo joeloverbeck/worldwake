@@ -119,7 +119,7 @@ pub use facility_queue::{
     GrantedFacilityUse, QueuedFacilityUse,
 };
 pub use factions::{FactionData, FactionPurpose};
-pub use goal::{CommodityPurpose, GoalKey, GoalKind};
+pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
     BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
