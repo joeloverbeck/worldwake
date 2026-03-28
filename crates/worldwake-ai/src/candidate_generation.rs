@@ -15,7 +15,7 @@ use crate::{
     theft::assess_theft_deterrence,
     GroundedGoal,
 };
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
@@ -23,9 +23,9 @@ use worldwake_core::{
     CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, PerceptionSource,
-    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
-    RecordKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    ViolationId, ViolationKind, ViolationMemory,
+    OpportunityAnchor, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
+    Quantity, RecordData, RecordKind, SocialObservation, SocialObservationDetail, TellTopic,
+    TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -210,7 +210,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         };
     }
 
-    let mut candidates = BTreeMap::new();
+    let mut candidates = Vec::new();
     let mut diagnostics = CandidateGenerationDiagnostics::default();
     let needs = view.homeostatic_needs(agent);
     let thresholds = view.drive_thresholds(agent);
@@ -240,14 +240,64 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     CandidateGenerationResult {
-        candidates: candidates.into_values().collect(),
+        candidates: filter_blocked_candidates(candidates, blocked, current_tick),
         diagnostics,
         pending_violations,
     }
 }
 
+fn filter_blocked_candidates(
+    candidates: Vec<GroundedGoal>,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+) -> Vec<GroundedGoal> {
+    candidates
+        .into_iter()
+        .filter(|candidate| !is_candidate_blocked(candidate, blocked, current_tick))
+        .collect()
+}
+
+fn is_candidate_blocked(
+    candidate: &GroundedGoal,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+) -> bool {
+    blocked.intents.values().any(|intent| {
+        intent.blocker_key.goal_key == candidate.key
+            && intent.expires_tick > current_tick
+            && intent.blocks_goal_generation()
+            && candidate_matches_blocker(candidate, &intent.blocker_key)
+    })
+}
+
+fn candidate_matches_blocker(
+    candidate: &GroundedGoal,
+    blocker: &worldwake_core::BlockerKey,
+) -> bool {
+    if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
+        return true;
+    }
+
+    if let Some(place) = blocker.place {
+        let anchor_matches = matches!(candidate.anchor, OpportunityAnchor::Place(anchor) if anchor == place);
+        if !anchor_matches && !candidate.evidence_places.contains(&place) {
+            return false;
+        }
+    }
+
+    if let Some(target) = blocker.target {
+        let anchor_matches =
+            matches!(candidate.anchor, OpportunityAnchor::Entity(anchor) if anchor == target);
+        if !anchor_matches && !candidate.evidence_entities.contains(&target) {
+            return false;
+        }
+    }
+
+    true
+}
+
 fn emit_need_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -264,7 +314,7 @@ fn emit_need_candidates(
 }
 
 fn emit_production_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -274,7 +324,7 @@ fn emit_production_candidates(
 }
 
 fn emit_enterprise_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -283,7 +333,7 @@ fn emit_enterprise_candidates(
 }
 
 fn emit_combat_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -295,7 +345,7 @@ fn emit_combat_candidates(
 }
 
 fn emit_crime_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -304,7 +354,7 @@ fn emit_crime_candidates(
 }
 
 fn emit_justice_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -327,7 +377,7 @@ fn emit_justice_candidates(
 }
 
 fn emit_accusation_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     known_social_observations: &[SocialObservation],
@@ -376,10 +426,9 @@ fn emit_accusation_candidates(
                         accused,
                         violation_id: record.id,
                     },
+                    OpportunityAnchor::Entity(accused),
                     evidence,
                     EvidenceTrace::default(),
-                    ctx.blocked,
-                    ctx.current_tick,
                 );
             }
         }
@@ -405,7 +454,7 @@ fn known_authority_crime_registers(ctx: &GenerationContext<'_>) -> Vec<(EntityId
 }
 
 fn emit_punishment_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     current_crime_case_claims: &[BelievedInstitutionalClaim],
@@ -492,10 +541,9 @@ fn emit_punishment_candidates(
                 accusation_entry: entry_id,
                 punishment,
             },
+            OpportunityAnchor::Entity(accused),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
@@ -573,7 +621,7 @@ fn office_governed_faction_for_accused(
 }
 
 fn emit_social_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -706,10 +754,9 @@ fn emit_social_candidates(
                 candidates,
                 diagnostics,
                 GoalKind::ShareBelief { listener, topic },
+                OpportunityAnchor::Entity(listener),
                 evidence,
                 trace,
-                ctx.blocked,
-                ctx.current_tick,
             );
         }
     }
@@ -731,7 +778,7 @@ fn subject_is_listener_observable_entity_belief(
 }
 
 fn emit_political_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -926,7 +973,7 @@ fn support_declaration_matches_candidate(
 }
 
 fn emit_claim_office_candidate(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
@@ -1003,15 +1050,14 @@ fn emit_claim_office_candidate(
         candidates,
         diagnostics,
         GoalKind::ClaimOffice { office },
+        OpportunityAnchor::Entity(office),
         evidence,
         trace,
-        ctx.blocked,
-        ctx.current_tick,
     );
 }
 
 fn emit_support_candidate_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
@@ -1103,10 +1149,9 @@ fn emit_support_candidate_goals(
             candidates,
             diagnostics,
             GoalKind::SupportCandidateForOffice { office, candidate },
+            OpportunityAnchor::Entity(office),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
@@ -1152,7 +1197,7 @@ fn candidate_is_eligible(
 }
 
 fn emit_engage_hostile_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1202,16 +1247,15 @@ fn emit_engage_hostile_goals(
             candidates,
             diagnostics,
             GoalKind::EngageHostile { target },
+            OpportunityAnchor::Entity(target),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
 
 fn emit_self_consume_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -1238,7 +1282,7 @@ fn emit_self_consume_candidates(
 }
 
 fn emit_need_driven_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     need_id: HomeostaticNeedId,
@@ -1276,6 +1320,7 @@ fn emit_need_driven_candidates(
                 emit_candidate(
                     candidates,
                     GoalKind::ConsumeOwnedCommodity { commodity },
+                    OpportunityAnchor::None,
                     evidence,
                     ctx.blocked,
                     ctx.current_tick,
@@ -1288,7 +1333,7 @@ fn emit_need_driven_candidates(
             continue;
         }
 
-        if let Some((evidence, mut evidence_trace)) = direct_acquisition_path_evidence(
+        for (candidate_place, evidence, mut evidence_trace) in direct_acquisition_path_opportunities(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -1319,17 +1364,16 @@ fn emit_need_driven_candidates(
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
                 },
+                OpportunityAnchor::Place(candidate_place),
                 evidence,
                 evidence_trace,
-                ctx.blocked,
-                ctx.current_tick,
             );
         }
     }
 }
 
 fn emit_sleep_goal(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -1350,16 +1394,15 @@ fn emit_sleep_goal(
             candidates,
             diagnostics,
             GoalKind::Sleep,
+            OpportunityAnchor::None,
             Evidence::with_entity(ctx.agent),
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
 
 fn emit_relieve_goal(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -1380,16 +1423,15 @@ fn emit_relieve_goal(
             candidates,
             diagnostics,
             GoalKind::Relieve,
+            OpportunityAnchor::None,
             Evidence::with_entity(ctx.agent),
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
 
 fn emit_wash_goal(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -1416,16 +1458,15 @@ fn emit_wash_goal(
             candidates,
             diagnostics,
             GoalKind::Wash,
+            OpportunityAnchor::None,
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
 
 fn emit_reduce_danger_goal(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1475,16 +1516,16 @@ fn emit_reduce_danger_goal(
             candidates,
             diagnostics,
             GoalKind::ReduceDanger,
+            ctx.place
+                .map_or(OpportunityAnchor::None, OpportunityAnchor::Place),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
 
 fn emit_care_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1506,10 +1547,9 @@ fn emit_care_goals(
             candidates,
             diagnostics,
             GoalKind::TreatWounds { patient: ctx.agent },
+            OpportunityAnchor::None,
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 
@@ -1541,10 +1581,9 @@ fn emit_care_goals(
             candidates,
             diagnostics,
             GoalKind::TreatWounds { patient: entity },
+            OpportunityAnchor::Entity(entity),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
@@ -1586,7 +1625,7 @@ fn social_listeners_at(
 }
 
 fn emit_produce_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -1616,7 +1655,7 @@ fn emit_produce_goals(
             continue;
         }
 
-        if let Some((mut evidence, mut evidence_trace)) = recipe_path_evidence(
+        for (candidate_place, mut evidence, mut evidence_trace) in recipe_path_opportunities(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -1644,17 +1683,16 @@ fn emit_produce_goals(
                 candidates,
                 diagnostics,
                 GoalKind::ProduceCommodity { recipe_id },
+                OpportunityAnchor::Place(candidate_place),
                 evidence,
                 evidence_trace,
-                ctx.blocked,
-                ctx.current_tick,
             );
         }
     }
 }
 
 fn emit_restock_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1666,7 +1704,7 @@ fn emit_restock_goals(
         if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
-        if let Some((evidence, mut evidence_trace)) = acquisition_path_evidence(
+        for (candidate_place, evidence, mut evidence_trace) in acquisition_path_opportunities(
             ctx.view,
             ctx.agent,
             ctx.place,
@@ -1692,17 +1730,16 @@ fn emit_restock_goals(
                 candidates,
                 diagnostics,
                 GoalKind::RestockCommodity { commodity },
+                OpportunityAnchor::Place(candidate_place),
                 evidence,
                 evidence_trace,
-                ctx.blocked,
-                ctx.current_tick,
             );
         }
     }
 }
 
 fn emit_move_cargo_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1757,10 +1794,9 @@ fn emit_move_cargo_goals(
                 commodity,
                 destination,
             },
+            OpportunityAnchor::Place(destination),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
@@ -1791,7 +1827,7 @@ fn deliverable_quantity(
 }
 
 fn emit_loot_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1826,10 +1862,9 @@ fn emit_loot_goals(
             candidates,
             diagnostics,
             GoalKind::LootCorpse { corpse },
+            OpportunityAnchor::Entity(corpse),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
@@ -1846,7 +1881,7 @@ fn corpse_has_known_loot(view: &dyn GoalBeliefView, corpse: EntityId) -> bool {
 }
 
 fn emit_bury_goals(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1890,16 +1925,15 @@ fn emit_bury_goals(
                 corpse,
                 burial_site,
             },
+            OpportunityAnchor::Entity(corpse),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
 
 fn emit_theft_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1965,10 +1999,9 @@ fn emit_theft_candidates(
             candidates,
             diagnostics,
             GoalKind::StealItem { target_item: item },
+            OpportunityAnchor::Entity(item),
             evidence,
             trace,
-            ctx.blocked,
-            ctx.current_tick,
         );
     }
 }
@@ -2011,38 +2044,28 @@ fn belief_provenance_for_contributors(
 }
 
 fn emit_candidate(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     kind: GoalKind,
+    anchor: OpportunityAnchor,
     evidence: Evidence,
-    blocked: &BlockedIntentMemory,
-    current_tick: Tick,
+    _blocked: &BlockedIntentMemory,
+    _current_tick: Tick,
 ) {
     if evidence.is_empty() {
         return;
     }
 
     let key = GoalKey::from(kind);
-    if blocked.is_blocked(&key, None, None, None, current_tick) {
-        return;
-    }
-
-    match candidates.entry(key) {
-        Entry::Vacant(entry) => {
-            entry.insert(GroundedGoal {
-                key,
-                evidence_entities: evidence.entities,
-                evidence_places: evidence.places,
-            });
-        }
-        Entry::Occupied(mut entry) => {
-            entry.get_mut().evidence_entities.extend(evidence.entities);
-            entry.get_mut().evidence_places.extend(evidence.places);
-        }
-    }
+    candidates.push(GroundedGoal {
+        key,
+        anchor,
+        evidence_entities: evidence.entities,
+        evidence_places: evidence.places,
+    });
 }
 
 fn emit_recorded_violation_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -2067,7 +2090,7 @@ fn emit_recorded_violation_candidates(
 /// perception at the agent's current location.  Returns pending violation
 /// records for the caller to apply to [`ViolationMemory`].
 fn emit_expectation_violation_candidates(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) -> Vec<PendingViolationRecord> {
@@ -2186,7 +2209,7 @@ fn emit_expectation_violation_candidates(
 /// Emit an `InvestigateViolation` goal candidate for an `EntityMissing` or
 /// `SupplyDepleted` violation, with belief-observation contradiction provenance.
 fn emit_violation_goal(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     beliefs: &[(EntityId, BelievedEntityState)],
     violation_id: ViolationId,
@@ -2246,44 +2269,31 @@ fn emit_violation_goal(
             violation_id,
             place: investigation_place,
         },
+        OpportunityAnchor::Place(investigation_place),
         evidence,
         trace,
-        ctx.blocked,
-        ctx.current_tick,
     );
 }
 
 fn emit_candidate_with_trace(
-    candidates: &mut BTreeMap<GoalKey, GroundedGoal>,
+    candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     kind: GoalKind,
+    anchor: OpportunityAnchor,
     evidence: Evidence,
     evidence_trace: EvidenceTrace,
-    blocked: &BlockedIntentMemory,
-    current_tick: Tick,
 ) {
     if evidence.is_empty() {
         return;
     }
 
     let key = GoalKey::from(kind);
-    if blocked.is_blocked(&key, None, None, None, current_tick) {
-        return;
-    }
-
-    match candidates.entry(key) {
-        Entry::Vacant(entry) => {
-            entry.insert(GroundedGoal {
-                key,
-                evidence_entities: evidence.entities,
-                evidence_places: evidence.places,
-            });
-        }
-        Entry::Occupied(mut entry) => {
-            entry.get_mut().evidence_entities.extend(evidence.entities);
-            entry.get_mut().evidence_places.extend(evidence.places);
-        }
-    }
+    candidates.push(GroundedGoal {
+        key,
+        anchor,
+        evidence_entities: evidence.entities,
+        evidence_places: evidence.places,
+    });
 
     let trace = evidence_trace.into_public(key);
     diagnostics
@@ -2334,15 +2344,15 @@ fn merge_candidate_evidence_trace(
     }
 }
 
-fn acquisition_path_evidence(
+fn acquisition_path_opportunities(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     commodity: CommodityKind,
     recipes: &RecipeRegistry,
     travel_horizon: u8,
-) -> Option<(Evidence, EvidenceTrace)> {
-    acquisition_path_evidence_inner(
+) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
+    acquisition_path_opportunities_inner(
         view,
         agent,
         place,
@@ -2356,15 +2366,15 @@ fn acquisition_path_evidence(
     )
 }
 
-fn direct_acquisition_path_evidence(
+fn direct_acquisition_path_opportunities(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
     commodity: CommodityKind,
     recipes: &RecipeRegistry,
     travel_horizon: u8,
-) -> Option<(Evidence, EvidenceTrace)> {
-    acquisition_path_evidence_inner(
+) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
+    acquisition_path_opportunities_inner(
         view,
         agent,
         place,
@@ -2376,6 +2386,36 @@ fn direct_acquisition_path_evidence(
             visited_commodities: &BTreeSet::new(),
         },
     )
+}
+
+fn acquisition_path_opportunities_inner(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    options: AcquisitionSearchOptions<'_>,
+) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
+    let Some(origin) = place else {
+        return Vec::new();
+    };
+
+    reachable_places_within_horizon(view, origin, travel_horizon)
+        .into_iter()
+        .filter_map(|candidate_place| {
+            acquisition_path_evidence_at_place(
+                view,
+                agent,
+                candidate_place,
+                commodity,
+                recipes,
+                travel_horizon,
+                options,
+            )
+            .map(|(evidence, trace)| (candidate_place, evidence, trace))
+        })
+        .collect()
 }
 
 fn acquisition_path_evidence_inner(
@@ -2480,6 +2520,81 @@ fn acquisition_path_evidence_inner(
     (!evidence.entities.is_empty()).then_some((evidence, trace))
 }
 
+fn acquisition_path_evidence_at_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    candidate_place: EntityId,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    options: AcquisitionSearchOptions<'_>,
+) -> Option<(Evidence, EvidenceTrace)> {
+    let mut place_evidence = Evidence::default();
+    let mut place_trace = EvidenceTrace::default();
+
+    for seller in view.agents_selling_at(candidate_place, commodity) {
+        if seller != agent {
+            place_evidence.places.insert(candidate_place);
+            place_evidence.entities.insert(seller);
+            place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
+        }
+    }
+    if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity) {
+        for lot in &local_lots.entities {
+            place_trace.contributor(CandidateEvidenceKind::LooseLot, candidate_place, *lot);
+        }
+        place_evidence.merge(local_lots);
+    }
+    for source in view.resource_sources_at(candidate_place, commodity) {
+        if view
+            .resource_source(source)
+            .is_some_and(|resource| resource.available_quantity > Quantity(0))
+        {
+            place_evidence.places.insert(candidate_place);
+            place_evidence.entities.insert(source);
+            place_trace.contributor(CandidateEvidenceKind::ResourceSource, candidate_place, source);
+        } else {
+            place_trace.exclusion(
+                CandidateEvidenceKind::ResourceSource,
+                candidate_place,
+                source,
+                CandidateEvidenceExclusionReason::DepletedResourceSource,
+            );
+        }
+    }
+    for corpse in view.corpse_entities_at(candidate_place) {
+        if corpse_contains_commodity(view, corpse, commodity) {
+            place_evidence.places.insert(candidate_place);
+            place_evidence.entities.insert(corpse);
+            place_trace.contributor(CandidateEvidenceKind::Corpse, candidate_place, corpse);
+        }
+    }
+    if options.include_recipes {
+        for recipe_id in view.known_recipes(agent) {
+            let Some(recipe) = recipes.get(recipe_id) else {
+                continue;
+            };
+            if !recipe.outputs.iter().any(|(output, _)| *output == commodity) {
+                continue;
+            }
+            if let Some((recipe_evidence, recipe_trace)) = recipe_path_evidence_at_place(
+                view,
+                agent,
+                candidate_place,
+                recipe,
+                recipes,
+                travel_horizon,
+                options.visited_commodities,
+            ) {
+                place_evidence.merge(recipe_evidence);
+                place_trace.merge(recipe_trace);
+            }
+        }
+    }
+
+    (!place_evidence.is_empty()).then_some((place_evidence, place_trace))
+}
+
 fn reachable_places_within_horizon(
     view: &dyn GoalBeliefView,
     origin: EntityId,
@@ -2522,25 +2637,6 @@ fn local_unpossessed_commodity_evidence(
     (!evidence.entities.is_empty()).then_some(evidence)
 }
 
-fn recipe_path_evidence(
-    view: &dyn GoalBeliefView,
-    agent: EntityId,
-    place: Option<EntityId>,
-    recipe: &RecipeDefinition,
-    recipes: &RecipeRegistry,
-    travel_horizon: u8,
-) -> Option<(Evidence, EvidenceTrace)> {
-    recipe_path_evidence_inner(
-        view,
-        agent,
-        place,
-        recipe,
-        recipes,
-        travel_horizon,
-        &BTreeSet::new(),
-    )
-}
-
 fn recipe_path_evidence_inner(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -2553,6 +2649,90 @@ fn recipe_path_evidence_inner(
     let place = place?;
     let (workstation_evidence, workstation_trace) =
         available_recipe_workstation_evidence(view, agent, Some(place), recipe, travel_horizon)?;
+
+    if recipe.inputs.is_empty() {
+        let mut evidence = Evidence::with_place(place);
+        let mut trace = workstation_trace;
+        for workstation in &workstation_evidence.entities {
+            let &(output_commodity, output_quantity) = recipe.outputs.first()?;
+            let source_ok = view.resource_source(*workstation).is_some_and(|source| {
+                source.commodity == output_commodity && source.available_quantity >= output_quantity
+            });
+            if source_ok {
+                evidence.entities.insert(*workstation);
+                trace.contributor(CandidateEvidenceKind::ResourceSource, place, *workstation);
+            }
+        }
+        return (!evidence.entities.is_empty()).then_some((evidence, trace));
+    }
+
+    let mut evidence = workstation_evidence;
+    let mut trace = workstation_trace;
+    for (commodity, required_quantity) in aggregate_recipe_quantities(&recipe.inputs) {
+        let owned_quantity = view.commodity_quantity(agent, commodity);
+        if owned_quantity >= required_quantity {
+            continue;
+        }
+
+        let (input_evidence, input_trace) = acquisition_path_evidence_inner(
+            view,
+            agent,
+            Some(place),
+            commodity,
+            recipes,
+            travel_horizon,
+            AcquisitionSearchOptions {
+                include_recipes: true,
+                visited_commodities,
+            },
+        )?;
+        evidence.merge(input_evidence);
+        trace.merge(input_trace);
+    }
+
+    Some((evidence, trace))
+}
+
+fn recipe_path_opportunities(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    recipe: &RecipeDefinition,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
+    let Some(origin) = place else {
+        return Vec::new();
+    };
+
+    reachable_places_within_horizon(view, origin, travel_horizon)
+        .into_iter()
+        .filter_map(|candidate_place| {
+            recipe_path_evidence_at_place(
+                view,
+                agent,
+                candidate_place,
+                recipe,
+                recipes,
+                travel_horizon,
+                &BTreeSet::new(),
+            )
+            .map(|(evidence, trace)| (candidate_place, evidence, trace))
+        })
+        .collect()
+}
+
+fn recipe_path_evidence_at_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    recipe: &RecipeDefinition,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    visited_commodities: &BTreeSet<CommodityKind>,
+) -> Option<(Evidence, EvidenceTrace)> {
+    let (workstation_evidence, workstation_trace) =
+        available_recipe_workstation_evidence_at_place(view, agent, place, recipe)?;
 
     if recipe.inputs.is_empty() {
         let mut evidence = Evidence::with_place(place);
@@ -2635,6 +2815,42 @@ fn available_recipe_workstation_evidence(
         }
     }
     (!evidence.entities.is_empty()).then_some((evidence, trace))
+}
+
+fn available_recipe_workstation_evidence_at_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    recipe: &RecipeDefinition,
+) -> Option<(Evidence, EvidenceTrace)> {
+    let workstation_tag = recipe.required_workstation_tag?;
+
+    for required_tool in &recipe.required_tool_kinds {
+        if view.unique_item_count(agent, *required_tool) == 0 {
+            return None;
+        }
+    }
+
+    let mut evidence = Evidence::default();
+    let mut trace = EvidenceTrace::default();
+    let available_workstations = view
+        .matching_workstations_at(place, workstation_tag)
+        .into_iter()
+        .filter(|workstation| !view.has_production_job(*workstation))
+        .collect::<Vec<_>>();
+    if available_workstations.is_empty() {
+        return None;
+    }
+    evidence.places.insert(place);
+    for workstation in available_workstations {
+        evidence.entities.insert(workstation);
+        trace.contributor(
+            CandidateEvidenceKind::RecipeWorkstation,
+            place,
+            workstation,
+        );
+    }
+    Some((evidence, trace))
 }
 
 fn aggregate_recipe_quantities(
@@ -3472,6 +3688,16 @@ mod tests {
             .any(|candidate| candidate.key.kind == goal)
     }
 
+    fn goals_for<'a>(
+        candidates: &'a [crate::GroundedGoal],
+        goal: &GoalKind,
+    ) -> Vec<&'a crate::GroundedGoal> {
+        candidates
+            .iter()
+            .filter(|candidate| candidate.key.kind == *goal)
+            .collect()
+    }
+
     fn contains_political_omission(
         diagnostics: &CandidateGenerationDiagnostics,
         family: PoliticalGoalFamily,
@@ -3865,6 +4091,7 @@ mod tests {
             })
             .expect("reachable remote harvest source should emit produce goal");
 
+        assert_eq!(goal.anchor, worldwake_core::OpportunityAnchor::Place(orchard));
         assert!(goal.evidence_entities.contains(&workstation));
         assert!(!contains_goal(
             &candidates.candidates,
@@ -3905,28 +4132,95 @@ mod tests {
     }
 
     #[test]
-    fn blocked_acquire_goal_is_suppressed() {
+    fn acquire_multi_source_emits_distinct_place_anchors_and_isolated_evidence() {
         let agent = entity(1);
-        let place = entity(10);
+        let home = entity(10);
+        let orchard = entity(11);
+        let market = entity(12);
         let seller = entity(2);
+        let bread_lot = entity(3);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, bread_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(home, EntityKind::Place);
+        view.entity_kinds.insert(orchard, EntityKind::Place);
+        view.entity_kinds.insert(market, EntityKind::Place);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.effective_places.insert(bread_lot, market);
+        view.entities_at.insert(market, vec![bread_lot]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard, market]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.sellers.insert((orchard, CommodityKind::Bread), vec![seller]);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let acquire_goals = goals_for(&candidates, &goal);
+        assert_eq!(acquire_goals.len(), 2);
+
+        let orchard_goal = acquire_goals
+            .iter()
+            .find(|candidate| candidate.anchor == worldwake_core::OpportunityAnchor::Place(orchard))
+            .expect("orchard opportunity should be emitted");
+        assert_eq!(orchard_goal.evidence_places, BTreeSet::from([orchard]));
+        assert_eq!(orchard_goal.evidence_entities, BTreeSet::from([seller]));
+
+        let market_goal = acquire_goals
+            .iter()
+            .find(|candidate| candidate.anchor == worldwake_core::OpportunityAnchor::Place(market))
+            .expect("market opportunity should be emitted");
+        assert_eq!(market_goal.evidence_places, BTreeSet::from([market]));
+        assert_eq!(market_goal.evidence_entities, BTreeSet::from([bread_lot]));
+    }
+
+    #[test]
+    fn blocked_acquire_place_only_suppresses_matching_opportunity() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let market = entity(12);
+        let orchard_seller = entity(2);
+        let market_seller = entity(3);
         let key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         });
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, seller]);
-        view.effective_places.insert(agent, place);
-        view.effective_places.insert(seller, place);
+        view.alive.extend([agent, orchard_seller, market_seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(orchard_seller, orchard);
+        view.effective_places.insert(market_seller, market);
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.adjacent_places.insert(home, vec![orchard, market]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.sellers.insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
+        view.sellers.insert((market, CommodityKind::Bread), vec![market_seller]);
+
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
             blocker_key: BlockerKey {
                 goal_key: key,
-                place: None,
+                place: Some(orchard),
                 target: None,
                 action_def: None,
             },
@@ -3939,13 +4233,18 @@ mod tests {
         let candidates =
             generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
 
-        assert!(!contains_goal(
+        let acquire_goals = goals_for(
             &candidates,
-            GoalKind::AcquireCommodity {
+            &GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
-            }
-        ));
+            },
+        );
+        assert_eq!(acquire_goals.len(), 1);
+        assert_eq!(
+            acquire_goals[0].anchor,
+            worldwake_core::OpportunityAnchor::Place(market)
+        );
     }
 
     #[test]
@@ -5037,13 +5336,13 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
         };
-        let mut candidates = BTreeMap::new();
+        let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
 
         emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
         emit_produce_goals(&mut candidates, &mut diagnostics, &ctx, None, None);
         assert!(!contains_goal(
-            &candidates.into_values().collect::<Vec<_>>(),
+            &candidates,
             GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             }
@@ -5053,12 +5352,11 @@ mod tests {
             enterprise: analyze_candidate_enterprise(&view, agent, Some(place)),
             ..ctx
         };
-        let mut candidates = BTreeMap::new();
+        let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
 
         emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
         emit_produce_goals(&mut candidates, &mut diagnostics, &ctx, None, None);
-        let candidates = candidates.into_values().collect::<Vec<_>>();
 
         assert!(contains_goal(
             &candidates,

@@ -1211,6 +1211,7 @@ fn ranked_goal(
 ) -> RankedGoal {
     RankedGoal {
         grounded: crate::GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(goal),
             evidence_entities: evidence_entities.into_iter().collect(),
             evidence_places: evidence_places.into_iter().collect(),
@@ -1550,6 +1551,7 @@ fn abandon_expired_facility_queues_removes_actor_from_authoritative_queue() {
         harness.actor,
         Tick(4),
         NonZeroU32::new(3).unwrap(),
+        PlanningBudget::default().structural_block_ticks,
     )
     .unwrap());
 
@@ -1601,36 +1603,14 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
         harness.actor,
         Tick(4),
         NonZeroU32::new(3).unwrap(),
+        PlanningBudget::default().structural_block_ticks,
     )
     .unwrap());
 
-    let mut facility_intents = harness
+    let blocked = harness
         .world
-        .get_component_facility_queue_intents(harness.actor)
-        .cloned()
-        .unwrap_or_default();
-    let mut blocked = BlockedIntentMemory::default();
-    let _ = refresh_runtime_for_read_phase(
-        &harness.world,
-        &harness.scheduler,
-        &harness.defs,
-        &mut runtime,
-        None,
-        &mut facility_intents,
-        &mut blocked,
-        &mut ViolationMemory::default(),
-        harness.actor,
-        &[],
-        ReadPhaseContext {
-            recipe_registry: &harness.recipes,
-            utility: &UtilityProfile::default(),
-            tick: Tick(4),
-            travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
-            structural_block_ticks: PlanningBudget::default().structural_block_ticks,
-        },
-        false,
-    );
-
+        .get_component_blocked_intent_memory(harness.actor)
+        .expect("queue abandonment should persist a blocked intent immediately");
     assert_eq!(blocked.intents.len(), 1);
     let intent = blocked.intents.values().next().unwrap();
     assert_eq!(
@@ -1639,7 +1619,12 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     );
     assert_eq!(intent.blocker_key.target, Some(facility));
     assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
-    assert!(facility_intents.intents.is_empty());
+    assert!(
+        harness
+            .world
+            .get_component_facility_queue_intents(harness.actor)
+            .is_none_or(|intents| intents.intents.is_empty())
+    );
 }
 
 #[test]

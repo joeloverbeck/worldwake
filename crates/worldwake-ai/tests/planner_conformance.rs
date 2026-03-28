@@ -137,7 +137,8 @@ fn disable_ai_control(h: &mut GoldenHarness, agent: EntityId) {
 }
 
 fn grounded(kind: GoalKind) -> GroundedGoal {
-    GroundedGoal {
+        GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(kind),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),

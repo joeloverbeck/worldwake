@@ -1663,6 +1663,7 @@ mod tests {
     fn hypothetical_transition_preserves_goal_model_fallback_for_non_pickup_ops() {
         let (state, actor, _town, bread) = sample_snapshot();
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }),
@@ -1698,6 +1699,7 @@ mod tests {
             .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
             .unwrap();
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }),
@@ -1729,6 +1731,7 @@ mod tests {
             .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
             .unwrap();
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }),
@@ -1751,6 +1754,7 @@ mod tests {
             relevant_goal_kinds: GOALS_MOVE_CARGO,
         };
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
@@ -1788,6 +1792,7 @@ mod tests {
             relevant_goal_kinds: GOALS_MOVE_CARGO,
         };
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
@@ -1843,6 +1848,7 @@ mod tests {
             relevant_goal_kinds: GOALS_MOVE_CARGO,
         };
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::MoveCargo {
                 commodity: CommodityKind::Bread,
                 destination: entity(99),
@@ -1905,6 +1911,7 @@ mod tests {
             relevant_goal_kinds: GOALS_MOVE_CARGO,
         };
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
@@ -1939,6 +1946,7 @@ mod tests {
             relevant_goal_kinds: GOALS_MOVE_CARGO,
         };
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,

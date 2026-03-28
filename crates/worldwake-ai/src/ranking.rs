@@ -254,6 +254,7 @@ struct DriveFactor {
     weight: Permille,
     band: ThresholdBand,
     recovery_relevant: bool,
+    relief_per_unit: Permille,
 }
 
 fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
@@ -376,6 +377,7 @@ fn drive_goal_provenance(
             pressure,
             weight,
             score: score_product(weight, pressure),
+            relief_per_unit: Permille::new_unchecked(1000),
             recovery_relevant,
         }],
     ))
@@ -697,6 +699,7 @@ fn self_consume_provenance(
             pressure: factor.pressure,
             weight: factor.weight,
             score: score_product(factor.weight, factor.pressure),
+            relief_per_unit: factor.relief_per_unit,
             recovery_relevant: factor.recovery_relevant,
         })
         .collect::<Vec<_>>();
@@ -716,10 +719,10 @@ fn recipe_output_provenance(
             .filter_map(|(commodity, _)| self_consume_provenance(*commodity, context))
             .max_by_key(|provenance| {
                 provenance
-                    .motive_inputs
-                    .iter()
-                    .map(|input| input.score)
-                    .max()
+            .motive_inputs
+            .iter()
+            .map(|input| input.score)
+            .max()
                     .unwrap_or(0)
             })
     })
@@ -776,6 +779,7 @@ fn relevant_self_consume_factors(
             weight: context.utility.hunger_weight,
             band: thresholds.hunger,
             recovery_relevant: true,
+            relief_per_unit: profile.hunger_relief_per_unit,
         });
     }
     if profile.thirst_relief_per_unit.value() > 0 {
@@ -785,6 +789,7 @@ fn relevant_self_consume_factors(
             weight: context.utility.thirst_weight,
             band: thresholds.thirst,
             recovery_relevant: true,
+            relief_per_unit: profile.thirst_relief_per_unit,
         });
     }
     factors
@@ -809,6 +814,7 @@ pub enum RankedGoalComparisonDimension {
     PriorityClass,
     Feasibility,
     MotiveScore,
+    OpportunityStrength,
     ShareBeliefTopicOrder,
     GoalKindOrder,
     CommodityKey,
@@ -840,6 +846,14 @@ fn ranked_goal_ordering(
     let ordering = right.motive_score.cmp(&left.motive_score);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
+    }
+
+    let ordering = opportunity_strength(left).cmp(&opportunity_strength(right)).reverse();
+    if ordering != Ordering::Equal {
+        return (
+            ordering,
+            Some(RankedGoalComparisonDimension::OpportunityStrength),
+        );
     }
 
     let ordering = compare_share_belief_topics(&left.grounded.key.kind, &right.grounded.key.kind);
@@ -921,6 +935,32 @@ fn compare_share_belief_topics(left: &GoalKind, right: &GoalKind) -> Ordering {
                 _ => left_topic.cmp(right_topic),
             }),
         _ => Ordering::Equal,
+    }
+}
+
+fn opportunity_strength(goal: &RankedGoal) -> u32 {
+    match (&goal.grounded.key.kind, goal.provenance.as_ref()) {
+        (
+            GoalKind::ConsumeOwnedCommodity { .. }
+            | GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::SelfConsume,
+                ..
+            }
+            | GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::RecipeInput(_),
+                ..
+            }
+            | GoalKind::ProduceCommodity { .. },
+            Some(RankedGoalProvenance::Drive(provenance)),
+        ) => provenance
+            .motive_inputs
+            .iter()
+            .map(|input| {
+                u32::from(input.pressure.value()) * u32::from(input.relief_per_unit.value())
+            })
+            .max()
+            .unwrap_or(0),
+        _ => 0,
     }
 }
 
@@ -1279,6 +1319,7 @@ mod tests {
 
     fn goal(kind: GoalKind) -> GroundedGoal {
         GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(kind),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2977,6 +3018,7 @@ mod tests {
     ) -> crate::RankedGoal {
         crate::RankedGoal {
             grounded: GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey {
                     kind,
                     commodity: None,

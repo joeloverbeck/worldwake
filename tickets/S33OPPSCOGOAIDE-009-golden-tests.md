@@ -1,68 +1,64 @@
-# S33OPPSCOGOAIDE-009: Golden tests for opportunity-scoped goal switching
+# S33OPPSCOGOAIDE-009: Golden tests for opportunity-scoped source switching
 
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None — test-only
-**Deps**: S33OPPSCOGOAIDE-002, S33OPPSCOGOAIDE-003, S33OPPSCOGOAIDE-004, S33OPPSCOGOAIDE-005, S33OPPSCOGOAIDE-006
+**Engine Changes**: Usually none; test harness/support updates allowed if needed for observability
+**Deps**: S33OPPSCOGOAIDE-004, S33OPPSCOGOAIDE-005, S33OPPSCOGOAIDE-006, S33OPPSCOGOAIDE-010
 
 ## Problem
 
-The spec requires golden E2E tests demonstrating that agents autonomously switch between alternative sources when one is blocked or exhausted. These tests validate the full pipeline: candidate generation → two-pass filtering → ranking → dedup → plan search → execution → source switching.
+The remaining S33 end-to-end proof is not generic "opportunity behavior"; it is autonomous source switching after one concrete opportunity becomes blocked or exhausted while another remains valid. Adjacent goldens already landed during `S33OPPSCOGOAIDE-002`, but the integrated proof for the final architecture is still missing.
 
 ## Assumption Reassessment (2026-03-28)
 
-1. Golden tests live in `crates/worldwake-ai/tests/` (golden test files). Existing golden tests use the test harness with `h.step_once()` and assertion helpers.
-2. The spec requires two golden scenarios:
-   - Agent with two known apple sources: blocks one, autonomously switches to alternative.
-   - Agent exhausts search at orchard (source depleted), travels to market instead.
-3. Decision tracing (`h.driver.enable_tracing()`) and action tracing (`h.enable_action_tracing()`) are available for debugging.
-4. `PerceptionProfile` is required on agents that need to observe post-production output (per CLAUDE.md). Golden tests for production/acquisition scenarios must set up perception.
-5. Deterministic replay companions are required per spec — each golden must have a replay round-trip test.
-6. This is a golden-driven ticket. The live `GoalKind` under test is `AcquireCommodity { commodity: Apple, purpose: Consume }`. The operator surface includes: travel actions, harvest/trade actions, candidate generation for acquire goals.
-7. Setup must include: topology with two distinct places (orchard + market), commodity sources at each, agent with needs that drive acquisition, and blocker/depletion mechanisms.
+1. Golden tests live in `crates/worldwake-ai/tests/` and use the AI harness with deterministic seeds.
+2. Some nearby coverage already exists from archived `S33OPPSCOGOAIDE-002` work. This ticket should not duplicate those scenarios; it should prove the final multi-source switching invariant once `004`, `005`, `006`, and `010` land.
+3. Decision tracing and action tracing remain the right debugging tools for these goldens and should be used for assertions when candidate absence/suppression is the core claim.
+4. `PerceptionProfile` still matters anywhere the agent must observe produced or stocked output before replanning.
+5. The live desire under test is still `AcquireCommodity` for a concrete commodity with at least two lawful sources.
 
 ## Architecture Check
 
-1. Golden tests are the correct verification surface for end-to-end pipeline behavior. Focused unit tests (in prior tickets) verify individual components; goldens verify the integrated pipeline produces correct autonomous behavior.
+1. Golden tests are the correct verification surface because the final risk is cross-layer: candidate emission, blocking/exhaustion memory, admission ordering, planning scope, and execution must all cooperate.
 2. No backward-compatibility shims.
 
 ## Verification Layers
 
-1. Source switching on block → golden E2E: agent's active action changes from orchard-directed to market-directed after block.
-2. Source switching on exhaustion → golden E2E: agent replans to alternative source after search exhaustion.
-3. Replay determinism → replay round-trip test: identical outcome from same seed + inputs.
-4. All existing golden tests continue to pass → existing single-source scenarios are behavioral equivalents.
+1. Blocked-source switching -> golden E2E.
+2. Exhausted-source switching -> golden E2E.
+3. Replay determinism -> replay companion tests if the harness pattern still requires them.
+4. Existing AI golden suite still passes.
 
 ## What to Change
 
-### 1. Golden: Agent switches source when one is blocked
+### 1. Golden: blocked source switches to alternative
 
 Setup:
 - Topology: 3 places (home, orchard, market) with travel edges.
 - Agent at home with hunger need driving `AcquireCommodity(Apple)`.
 - Apple sources at both orchard and market.
-- Block the orchard opportunity (via `BlockedIntentMemory::record()` or by making orchard unreachable/depleted).
+- Block the orchard opportunity using the same authoritative/runtime path the live architecture uses for blocker persistence.
 - Step ticks and assert agent plans toward market instead.
 
 Assertions:
 - Agent does NOT idle or stall.
-- Agent's plan targets the unblocked source.
-- Decision trace shows the blocked opportunity was filtered and the alternative was selected.
+- Agent targets the unblocked source rather than stalling or returning to the blocked one.
+- Decision trace proves the blocked opportunity was suppressed and the alternative remained live.
 
-### 2. Golden: Agent exhausts orchard, travels to market
+### 2. Golden: exhausted source falls through to alternative
 
 Setup:
 - Topology: 3 places (home, orchard, market) with travel edges.
 - Agent at home with hunger need.
 - Orchard has depleted apple source (0 quantity or no resource source).
 - Market has available apples (merchant with stock or resource source).
-- Step ticks: agent first attempts orchard (search exhausts), then replans to market.
+- Step ticks so the higher-ranked or initially chosen source exhausts, then assert fallthrough to the alternative source.
 
 Assertions:
-- Exhaustion is recorded for `OpportunityKey { ..., Place(orchard) }`.
-- Market opportunity remains plannable.
-- Agent eventually travels to market.
+- Exhaustion is recorded for the specific exhausted opportunity, not the whole desire.
+- The alternative source remains plannable and is actually chosen.
+- The trace/assertions exclude lawful competing explanations such as "the agent never knew about the second source."
 
 ### 3. Replay companions
 
@@ -70,12 +66,12 @@ For each golden, add a deterministic replay round-trip test that re-derives the 
 
 ## Files to Touch
 
-- `crates/worldwake-ai/tests/golden_opportunity_switching.rs` (new — golden test file)
+- `crates/worldwake-ai/tests/` (modify or add the focused golden file that best fits the existing suite structure)
 
 ## Out of Scope
 
-- Focused unit tests for individual components (covered by S33OPPSCOGOAIDE-002 through S33OPPSCOGOAIDE-007)
-- Changes to production code
+- Focused unit tests for individual components
+- Production-code behavior changes unless the golden exposes a genuine bug that must be fixed in the same implementation sequence
 - New action types or new commodity types — use existing Apple/harvest/trade infrastructure
 - Performance optimization
 
@@ -83,30 +79,31 @@ For each golden, add a deterministic replay round-trip test that re-derives the 
 
 ### Tests That Must Pass
 
-1. `golden_blocked_source_switches_to_alternative` — agent with blocked orchard autonomously targets market.
-2. `golden_exhausted_source_replans_to_alternative` — agent exhausts orchard search, replans to market.
-3. Replay companions pass for both goldens.
-4. All existing golden tests pass (behavioral equivalence for single-source scenarios).
+1. Blocked-source golden proves the blocked opportunity is suppressed while the alternative remains actionable.
+2. Exhausted-source golden proves exhaustion is opportunity-scoped and fallthrough occurs.
+3. Replay companions pass if the existing golden harness expects them.
+4. All existing AI golden tests pass.
 5. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 
-1. Agents plan from beliefs only, never world state (P12).
+1. Agents plan from beliefs only, never direct world-state inspection.
 2. Blocking one source does not suppress planning for alternative sources (core S33 invariant).
 3. Exhaustion is scoped per-opportunity, not per-desire.
-4. Deterministic replay produces identical outcomes from same seed.
-5. `IntentionFrame` continuity is maintained when tactic switches within the same desire.
+4. Planning uses candidate-local evidence scope once `S33OPPSCOGOAIDE-010` lands.
+5. Deterministic replay produces identical outcomes from the same seed.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_opportunity_switching.rs` — `golden_blocked_source_switches_to_alternative` — blocked orchard, agent targets market.
-2. `crates/worldwake-ai/tests/golden_opportunity_switching.rs` — `golden_exhausted_source_replans_to_alternative` — depleted orchard, agent replans to market.
-3. `crates/worldwake-ai/tests/golden_opportunity_switching.rs` — replay companions for both above.
+1. `crates/worldwake-ai/tests/` — `golden_blocked_source_switches_to_alternative`
+2. `crates/worldwake-ai/tests/` — `golden_exhausted_source_switches_to_alternative`
+3. Replay companions for both scenarios if the suite keeps paired replay coverage
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- golden_opportunity`
+1. `cargo test -p worldwake-ai -- golden`
 2. `cargo test -p worldwake-ai`
-3. `cargo clippy --workspace && cargo test --workspace`
+3. `cargo clippy --workspace`
+4. `cargo test --workspace`

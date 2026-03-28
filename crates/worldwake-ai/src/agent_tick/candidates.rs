@@ -1,4 +1,7 @@
-use worldwake_core::{CauseRef, EntityId, Tick, VisibilitySpec, WitnessData, WorldTxn};
+use worldwake_core::{
+    BlockedIntent, BlockingFact, BlockerKey, CauseRef, EntityId, Tick, VisibilitySpec,
+    WitnessData, WorldTxn,
+};
 use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView, TickInputError};
 
 pub(super) fn abandon_expired_facility_queues(
@@ -6,6 +9,7 @@ pub(super) fn abandon_expired_facility_queues(
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
     tick: Tick,
+    structural_block_ticks: u32,
 ) -> Result<bool, TickInputError> {
     let limit = {
         let view = PerAgentBeliefView::from_world(agent, world);
@@ -15,7 +19,14 @@ pub(super) fn abandon_expired_facility_queues(
         limit
     };
 
-    abandon_expired_facility_queues_with_limit(world, event_log, agent, tick, limit)
+    abandon_expired_facility_queues_with_limit(
+        world,
+        event_log,
+        agent,
+        tick,
+        limit,
+        structural_block_ticks,
+    )
 }
 
 pub(super) fn abandon_expired_facility_queues_with_limit(
@@ -24,6 +35,7 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
     agent: EntityId,
     tick: Tick,
     limit: std::num::NonZeroU32,
+    structural_block_ticks: u32,
 ) -> Result<bool, TickInputError> {
     let expired_facilities = {
         let view = PerAgentBeliefView::from_world(agent, world);
@@ -53,6 +65,32 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
         if !queue.remove_actor(agent) {
             continue;
         }
+        let queued_intent = world
+            .get_component_facility_queue_intents(agent)
+            .and_then(|intents| intents.intents.get(&facility).copied());
+        let mut blocked_memory = world
+            .get_component_blocked_intent_memory(agent)
+            .cloned()
+            .unwrap_or_default();
+        let mut facility_queue_intents = world
+            .get_component_facility_queue_intents(agent)
+            .cloned()
+            .unwrap_or_default();
+        facility_queue_intents.intents.remove(&facility);
+        if let Some(intent) = queued_intent {
+            blocked_memory.record(BlockedIntent {
+                blocker_key: BlockerKey {
+                    goal_key: intent.goal_key,
+                    place: world.effective_place(agent),
+                    target: Some(facility),
+                    action_def: Some(intent.intended_action),
+                },
+                blocking_fact: BlockingFact::ExclusiveFacilityUnavailable,
+                diagnostic_context: None,
+                observed_tick: tick,
+                expires_tick: tick + u64::from(structural_block_ticks),
+            });
+        }
 
         let mut txn = WorldTxn::new(
             world,
@@ -65,6 +103,20 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
         );
         txn.set_component_facility_use_queue(facility, queue)
             .map_err(|error| TickInputError::new(error.to_string()))?;
+        if blocked_memory.intents.is_empty() {
+            txn.clear_component_blocked_intent_memory(agent)
+                .map_err(|error| TickInputError::new(error.to_string()))?;
+        } else {
+            txn.set_component_blocked_intent_memory(agent, blocked_memory)
+                .map_err(|error| TickInputError::new(error.to_string()))?;
+        }
+        if facility_queue_intents.intents.is_empty() {
+            txn.clear_component_facility_queue_intents(agent)
+                .map_err(|error| TickInputError::new(error.to_string()))?;
+        } else {
+            txn.set_component_facility_queue_intents(agent, facility_queue_intents)
+                .map_err(|error| TickInputError::new(error.to_string()))?;
+        }
         let _ = txn.commit(event_log);
         changed = true;
     }

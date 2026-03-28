@@ -180,7 +180,44 @@ pub(super) fn handle_facility_queue_transitions(
 
         if was_queued && !now_queued && now_granted.is_none() {
             if previous_place == current_place {
-                if let Some(intent) = facility_intents.intents.remove(&facility) {
+                let fallback_intent = runtime.current_plan.as_ref().and_then(|plan| {
+                    let intended_action = view
+                        .facility_grant(facility)
+                        .map(|grant| grant.intended_action)
+                        .or_else(|| {
+                            plan.steps.iter().find_map(|step| {
+                                let matches_facility = step
+                                    .targets
+                                    .first()
+                                    .copied()
+                                    .and_then(crate::authoritative_target)
+                                    == Some(facility);
+                                if !matches_facility {
+                                    return None;
+                                }
+                                match step.op_kind {
+                                    crate::PlannerOpKind::QueueForFacilityUse => step
+                                        .payload_override
+                                        .as_ref()
+                                        .and_then(worldwake_sim::ActionPayload::as_queue_for_facility_use)
+                                        .map(|payload| payload.intended_action),
+                                    crate::PlannerOpKind::Harvest | crate::PlannerOpKind::Craft => {
+                                        Some(step.def_id)
+                                    }
+                                    _ => None,
+                                }
+                            })
+                        })?;
+                    Some(QueuedFacilityIntent {
+                        goal_key: plan.goal,
+                        intended_action,
+                    })
+                });
+                if let Some(intent) = facility_intents
+                    .intents
+                    .remove(&facility)
+                    .or(fallback_intent)
+                {
                     blocked_memory.record(BlockedIntent {
                         blocker_key: BlockerKey {
                             goal_key: intent.goal_key,

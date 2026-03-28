@@ -1579,6 +1579,7 @@ pub struct RankedDriveMotiveInput {
     pub pressure: Permille,
     pub weight: Permille,
     pub score: u32,
+    pub relief_per_unit: Permille,
     pub recovery_relevant: bool,
 }
 
@@ -1599,6 +1600,7 @@ pub enum RankedGoalProvenance {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GroundedGoal {
     pub key: GoalKey,
+    pub anchor: worldwake_core::OpportunityAnchor,
     pub evidence_entities: BTreeSet<EntityId>,
     pub evidence_places: BTreeSet<EntityId>,
 }
@@ -1785,6 +1787,7 @@ mod tests {
     #[test]
     fn grounded_goal_roundtrips_through_bincode() {
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::TreatWounds {
                 patient: entity_id(7, 1),
             }),
@@ -1802,6 +1805,7 @@ mod tests {
     fn ranked_goal_roundtrips_through_bincode() {
         let goal = RankedGoal {
             grounded: GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(GoalKind::TreatWounds {
                     patient: entity_id(7, 1),
                 }),
@@ -3192,6 +3196,7 @@ mod tests {
     fn grounded_goal_synthesizes_tell_root_targets_from_goal_identity() {
         let listener = entity(8);
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief {
@@ -3238,6 +3243,7 @@ mod tests {
     fn grounded_goal_synthesizes_accuse_root_targets_from_goal_identity() {
         let accused = entity(10);
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::Accuse {
                 crime_register: entity(9),
                 accused,
@@ -3281,6 +3287,7 @@ mod tests {
     fn grounded_goal_synthesizes_trade_root_targets_from_single_evidence_entity() {
         let seller = entity(11);
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
@@ -3324,6 +3331,7 @@ mod tests {
     #[test]
     fn grounded_goal_does_not_synthesize_trade_root_targets_from_ambiguous_evidence() {
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
@@ -3367,6 +3375,7 @@ mod tests {
     #[test]
     fn grounded_goal_reports_unsupported_trade_synthesis_for_unrelated_goal() {
         let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::Sleep),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -5833,6 +5842,7 @@ mod tests {
 
     fn claim_office_goal(office: EntityId) -> GroundedGoal {
         GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ClaimOffice { office }),
             evidence_entities: BTreeSet::from([office]),
             evidence_places: BTreeSet::new(),

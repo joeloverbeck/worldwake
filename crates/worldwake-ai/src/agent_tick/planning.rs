@@ -165,8 +165,10 @@ pub(super) fn build_candidate_plans(
     Vec<crate::decision_trace::SearchExpansionSummary>,
 )> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let mut seen_goals = BTreeSet::new();
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
+        .filter(|c| seen_goals.insert(c.grounded.key))
         .filter(|c| {
             !exhaustion_cache
                 .get(&c.grounded.key)
@@ -180,9 +182,9 @@ pub(super) fn build_candidate_plans(
         return Vec::new();
     }
 
-    // Build a single merged snapshot with the union of all candidates' evidence
-    // sets. This avoids N separate snapshot constructions (each with BFS +
-    // Floyd-Warshall + entity queries) when N candidates share similar evidence.
+    // The current evidence model still relies on a merged view here for some
+    // lawful prerequisite chains. Keep snapshot construction shared until the
+    // per-opportunity evidence surface is strong enough to preserve those plans.
     let mut merged_evidence_entities = BTreeSet::new();
     let mut merged_evidence_places = BTreeSet::new();
     for ranked in &candidates_to_plan {

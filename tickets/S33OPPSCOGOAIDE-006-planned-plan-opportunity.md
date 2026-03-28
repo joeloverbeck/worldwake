@@ -1,33 +1,38 @@
-# S33OPPSCOGOAIDE-006: Add OpportunityKey to PlannedPlan and update plan search iteration
+# S33OPPSCOGOAIDE-006: Add OpportunityKey to PlannedPlan
 
 **Status**: PENDING
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: Yes — PlannedPlan struct change, build_candidate_plans iteration update
-**Deps**: S33OPPSCOGOAIDE-001, S33OPPSCOGOAIDE-002
+**Engine Changes**: Yes — `PlannedPlan` struct shape changes
+**Deps**: S33OPPSCOGOAIDE-002
 
 ## Problem
 
-`PlannedPlan` currently only carries `goal: GoalKey`. After opportunity-scoped planning, the plan must also record which `OpportunityKey` it was searched for. This enables `record_exhausted_goals()` (S33OPPSCOGOAIDE-004) to record exhaustion under the correct opportunity, and allows the decision runtime to track which opportunity is currently being executed.
+`PlannedPlan` currently only carries `goal: GoalKey`. After `S33OPPSCOGOAIDE-002`, candidate generation and blocker matching are already opportunity-scoped, but the selected plan still sheds that identity at the plan object boundary. The plan runtime therefore cannot carry a canonical concrete opportunity through execution, persistence, and debugging.
+
+The shared abstraction boundary under audit is:
+
+- opportunity-scoped candidate identity entering search
+- persisted/selected `PlannedPlan` identity leaving search
 
 ## Assumption Reassessment (2026-03-28)
 
-1. `PlannedPlan` at `crates/worldwake-ai/src/planner_ops.rs:782-830` has fields `{ goal, steps, total_estimated_ticks, terminal_kind }`. No `opportunity` field exists. Confirmed.
-2. `PlannedPlan` is constructed in `search.rs` when a plan is found. The goal field is set from the search target.
-3. `PlannedPlan` is consumed in `plan_selection.rs::select_best_plan()` and stored in `AgentDecisionRuntime`.
-4. `IntentionFrame` at `crates/worldwake-core/src/intention_frame.rs:131-152` persists on `goal: GoalKey`. Per spec, IntentionFrame does NOT change — it remains at desire level. Frame continuity is maintained when opportunity switches within the same desire.
-5. `PlannedPlan` is serialized (via serde) as part of `AgentDecisionRuntime` — save/load must handle the new field (S33OPPSCOGOAIDE-008).
+1. `PlannedPlan` in `crates/worldwake-ai/src/planner_ops.rs` still stores desire identity but no concrete `OpportunityKey`. That remains the live gap.
+2. `IntentionFrame` in `crates/worldwake-core/src/intention_frame.rs` is intentionally desire-scoped and should stay that way. This ticket must not broaden frame identity to opportunity scope.
+3. Save/load support is not already done. Once `PlannedPlan` grows a new field, `S33OPPSCOGOAIDE-008` must own the format bump and persistence verification.
+4. This ticket should not absorb planning admission or snapshot-scope behavior. Those responsibilities belong to `S33OPPSCOGOAIDE-005` and `S33OPPSCOGOAIDE-010`.
 
 ## Architecture Check
 
-1. Adding `opportunity: OpportunityKey` to `PlannedPlan` is the minimal structural change. The alternative — carrying opportunity as separate runtime state — would decouple plan identity from its opportunity, making debugging harder.
-2. No backward-compatibility shims. The `goal` field is retained for desire-level identity (used by IntentionFrame matching). The `opportunity` field is purely additive.
+1. The canonical transport path after this change is: candidate opportunity -> searched opportunity -> `PlannedPlan.opportunity`. Carrying opportunity separately in runtime side state would recreate a duplicate lawful path for the same fact.
+2. `goal` remains because desire identity is still real and still used by `IntentionFrame`. `opportunity` is not an alias for `goal`; it is the concrete execution identity that was previously missing.
+3. No backward-compatibility shims.
 
 ## Verification Layers
 
-1. `PlannedPlan.opportunity` matches searched opportunity → focused unit test: plan found for specific anchor, field reflects it.
-2. IntentionFrame continuity on tactic switch → focused unit test: frame persists when `PlannedPlan.opportunity` changes but `PlannedPlan.goal` stays the same.
-3. Single-layer ticket (struct field addition + construction site updates).
+1. `PlannedPlan.opportunity` matches the searched opportunity -> focused unit test.
+2. Desire continuity remains on `GoalKey` -> focused unit test or runtime assertion proving `IntentionFrame` behavior does not change.
+3. Persistence impact is acknowledged but deferred -> no local save/load assertions here beyond compile/runtime integration.
 
 ## What to Change
 
@@ -45,30 +50,27 @@ pub struct PlannedPlan {
 }
 ```
 
-### 2. Update `PlannedPlan` construction in `search.rs`
+### 2. Populate it at plan construction
 
-When `search_plan()` finds a plan and constructs `PlannedPlan`, populate the `opportunity` field from the `GroundedGoal` that was searched.
+When plan search returns a `PlannedPlan`, populate `opportunity` from the concrete `GroundedGoal` being searched, not by reconstructing it later from unrelated runtime state.
 
-### 3. Update `build_candidate_plans()` to pass opportunity through
+### 3. Thread the field through selection/runtime consumers
 
-The iteration in `build_candidate_plans()` already has access to `RankedGoal.grounded` (which carries `key` and `anchor` after S33OPPSCOGOAIDE-002). Construct `OpportunityKey { goal_key: grounded.key, anchor: grounded.anchor }` and pass it to plan construction.
-
-### 4. Update `plan_selection.rs` if it constructs or accesses `PlannedPlan` fields
-
-`select_best_plan()` selects from plan search results — ensure the `opportunity` field flows through correctly.
+Update any code that stores, clones, compares, or traces `PlannedPlan` so the new field is preserved. The ticket should not redefine higher-level behavior; it should make the concrete opportunity explicit wherever the plan already flows.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/planner_ops.rs` (modify — add `opportunity` field to `PlannedPlan`)
-- `crates/worldwake-ai/src/search.rs` (modify — populate `opportunity` on `PlannedPlan` construction)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — pass opportunity to plan construction)
-- `crates/worldwake-ai/src/plan_selection.rs` (modify — if it accesses `PlannedPlan` fields directly)
+- `crates/worldwake-ai/src/search.rs` and/or the plan-construction site (modify — populate `opportunity`)
+- `crates/worldwake-ai/src/plan_selection.rs` (modify if it copies or inspects `PlannedPlan`)
+- `crates/worldwake-ai/src/decision_runtime.rs` (modify if runtime storage or helper methods need the new field)
 
 ## Out of Scope
 
 - `IntentionFrame` changes (spec says none — frame persists on `GoalKey`)
-- Exhaustion re-keying (S33OPPSCOGOAIDE-004)
-- Post-rank dedup (S33OPPSCOGOAIDE-005)
+- Exhaustion re-keying (`S33OPPSCOGOAIDE-004`)
+- Post-rank opportunity selection (`S33OPPSCOGOAIDE-005`)
+- Planning snapshot isolation (`S33OPPSCOGOAIDE-010`)
 - Save/load version bump (S33OPPSCOGOAIDE-008)
 - Decision trace changes (S33OPPSCOGOAIDE-007)
 
@@ -77,27 +79,28 @@ The iteration in `build_candidate_plans()` already has access to `RankedGoal.gro
 ### Tests That Must Pass
 
 1. `PlannedPlan.opportunity` correctly reflects the searched opportunity's `OpportunityKey`.
-2. Plan for `AcquireCommodity(Apple)` at orchard carries `OpportunityKey { ..., Place(orchard) }`.
-3. Frame persists when plan switches from orchard-opportunity to market-opportunity (same `GoalKey`).
+2. A plan for `AcquireCommodity(Apple)` at orchard carries the orchard opportunity rather than only the desire key.
+3. `IntentionFrame` continuity still keys off `GoalKey`, not `OpportunityKey`.
 4. Existing suite: `cargo test -p worldwake-ai`
 5. Existing suite: `cargo clippy --workspace`
 
 ### Invariants
 
-1. `PlannedPlan.goal == PlannedPlan.opportunity.goal_key` always (consistency).
-2. `IntentionFrame` is NOT modified — it persists on `GoalKey` only.
-3. `PlannedPlan` serialization includes the new `opportunity` field.
+1. `PlannedPlan.goal == PlannedPlan.opportunity.goal_key` always.
+2. `IntentionFrame` is not widened; it remains desire-scoped.
+3. No second side-channel carries the selected opportunity once this field exists.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/search.rs` or `planner_ops.rs` — `test_planned_plan_carries_opportunity` — plan carries correct OpportunityKey.
-2. `crates/worldwake-ai/src/agent_tick/` — `test_frame_continuity_on_tactic_switch` — IntentionFrame persists when opportunity changes within same GoalKey.
-3. Existing plan search tests updated to verify `opportunity` field.
+1. `crates/worldwake-ai/src/search.rs` or `planner_ops.rs` — `planned_plan_carries_searched_opportunity`
+2. Existing plan/runtime tests updated to assert `IntentionFrame` continuity still follows `GoalKey`
+3. Any `PlannedPlan` equality/serde/clone tests updated for the new field as needed
 
 ### Commands
 
 1. `cargo test -p worldwake-ai -- planned_plan`
 2. `cargo test -p worldwake-ai -- plan_selection`
-3. `cargo clippy --workspace && cargo test --workspace`
+3. `cargo clippy --workspace`
+4. `cargo test --workspace`

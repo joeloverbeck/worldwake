@@ -407,7 +407,13 @@ fn process_agent(
         }
     }
 
-    let _ = abandon_expired_facility_queues(ctx.world, ctx.event_log, agent, tick)?;
+    let _ = abandon_expired_facility_queues(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        tick,
+        budget.structural_block_ticks,
+    )?;
 
     // ── Pre-planning assumption evaluation ──
     // Evaluate frame assumptions (except NoCriticalThreat, which needs ranked

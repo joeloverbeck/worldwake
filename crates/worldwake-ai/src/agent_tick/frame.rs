@@ -678,6 +678,7 @@ mod tests {
     fn make_ranked_goal(priority_class: GoalPriorityClass) -> RankedGoal {
         RankedGoal {
             grounded: GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::new(GoalKind::Sleep),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),

@@ -2075,6 +2075,7 @@ mod tests {
                                 pressure: worldwake_core::Permille::new(760).unwrap(),
                                 weight: worldwake_core::Permille::new(500).unwrap(),
                                 score: 380_000,
+                                relief_per_unit: worldwake_core::Permille::new(1000).unwrap(),
                                 recovery_relevant: true,
                             }],
                         },

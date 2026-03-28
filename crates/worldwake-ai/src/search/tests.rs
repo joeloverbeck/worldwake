@@ -451,7 +451,8 @@ fn insert_bread_lot(
 }
 
 fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
-    GroundedGoal {
+        GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity { commodity }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
@@ -459,7 +460,8 @@ fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
 }
 
 fn acquire_goal_with_purpose(commodity: CommodityKind, purpose: CommodityPurpose) -> GroundedGoal {
-    GroundedGoal {
+        GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity { commodity, purpose }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
@@ -817,6 +819,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         .insert((seller, CommodityKind::Bread), Quantity(2));
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -905,6 +908,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -978,6 +982,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Firewood,
             purpose: CommodityPurpose::RecipeInput(RecipeId(0)),
@@ -1441,6 +1446,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
     );
     view.thresholds.insert(actor, DriveThresholds::default());
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -1505,6 +1511,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: acquire_goal(CommodityKind::Bread).key,
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([town]),
@@ -1559,6 +1566,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::SelfConsume).key,
         evidence_entities: BTreeSet::from([medicine]),
         evidence_places: BTreeSet::from([town]),
@@ -1622,6 +1630,7 @@ fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: acquire_goal(CommodityKind::Apple).key,
         evidence_entities: BTreeSet::from([apples]),
         evidence_places: BTreeSet::from([town]),
@@ -1708,6 +1717,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination,
@@ -1799,6 +1809,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination,
@@ -1938,6 +1949,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
 
     let view = PerAgentBeliefView::from_world(actor, &world);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination,
@@ -2063,6 +2075,7 @@ fn search_uses_hypothetical_movement_to_reduce_local_danger() {
     view.attackers.insert(actor, vec![attacker]);
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town, refuge]),
@@ -2117,6 +2130,7 @@ fn search_marks_leaf_combat_as_combat_commitment() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town]),
@@ -2172,6 +2186,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
     let semantics_table = build_semantics_table(&registry);
     let defend = registry.iter().find(|def| def.name == "defend").unwrap();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town]),
@@ -2234,6 +2249,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
     view.attackers.insert(actor, vec![attacker]);
 
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town]),
@@ -2321,6 +2337,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
     let semantics_table = build_semantics_table(&registry);
     let steal = registry.iter().find(|def| def.name == "steal").unwrap();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::StealItem { target_item }),
         evidence_entities: BTreeSet::from([target_item]),
         evidence_places: BTreeSet::from([town]),
@@ -2504,6 +2521,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
     let (registry, handlers) = build_registry_with_recipes(&recipes);
     let semantics = build_semantics_table(&registry);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -2677,6 +2695,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
     let fixture = build_exclusive_orchard_fixture(false);
 
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -2730,6 +2749,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
     let fixture = build_exclusive_orchard_fixture(true);
 
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -2786,6 +2806,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
     enqueue_actor_for_exclusive_fixture(&mut fixture, Tick(2));
 
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -2837,6 +2858,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
 fn search_filters_blocked_facility_use_from_queue_candidates() {
     let fixture = build_exclusive_orchard_fixture(false);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -2903,6 +2925,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
 fn search_trace_records_blocked_facility_use_root_filter() {
     let fixture = build_exclusive_orchard_fixture(false);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -3024,6 +3047,7 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
     };
     sync_all_beliefs(&mut fixture.world, fixture.actor, Tick(2));
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -3147,6 +3171,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         (actor, orchard_row)
     };
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
@@ -3867,6 +3892,7 @@ fn combined_places_include_remote_medicine_lot_for_treat_wounds() {
     );
     let state = PlanningState::new(&snapshot);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
@@ -3899,6 +3925,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
@@ -3967,6 +3994,7 @@ fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
     );
     let state = PlanningState::new(&snapshot);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
@@ -4025,6 +4053,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
@@ -4109,6 +4138,7 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
     let recipes = RecipeRegistry::new();
     let budget = PlanningBudget::default();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::StealItem { target_item }),
         evidence_entities: BTreeSet::from([target_item]),
         evidence_places: BTreeSet::from([town]),
@@ -4175,6 +4205,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let recipes = RecipeRegistry::new();
     let budget = PlanningBudget::default();
     let accuse_goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Accuse {
             crime_register: town,
             accused,
@@ -4184,6 +4215,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         evidence_places: BTreeSet::from([town]),
     };
     let punish_goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::PunishAccused {
             office: faction,
             accused,
@@ -4293,6 +4325,7 @@ fn test_binding_two_corpses_same_place() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::LootCorpse { corpse: corpse_x }),
         evidence_entities: BTreeSet::from([corpse_x, corpse_y]),
         evidence_places: BTreeSet::from([town]),
@@ -4376,6 +4409,7 @@ fn test_binding_two_hostiles_same_place() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::EngageHostile { target: hostile_a }),
         evidence_entities: BTreeSet::from([hostile_a, hostile_b]),
         evidence_places: BTreeSet::from([town]),
@@ -4451,6 +4485,7 @@ fn test_binding_flexible_goal_unaffected() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Sleep),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([town]),
@@ -4512,6 +4547,7 @@ fn test_binding_rejection_trace_populated() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::LootCorpse { corpse: corpse_x }),
         evidence_entities: BTreeSet::from([corpse_x, corpse_y]),
         evidence_places: BTreeSet::from([town]),
@@ -4619,6 +4655,7 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -4702,6 +4739,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -4785,6 +4823,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
@@ -4950,6 +4989,7 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
     view.wounds.insert(patient, vec![wound(400)]);
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
@@ -5199,6 +5239,7 @@ fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belie
         2,
     );
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
         evidence_entities: BTreeSet::from([candidate, office, record]),
         evidence_places: BTreeSet::from([archive, hall]),
@@ -5289,6 +5330,7 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         1,
     );
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
         evidence_entities: BTreeSet::from([candidate, office]),
         evidence_places: BTreeSet::from([hall]),
@@ -5359,6 +5401,7 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         0,
     );
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ClaimOffice { office }),
         evidence_entities: BTreeSet::from([office]),
         evidence_places: BTreeSet::from([hall]),
@@ -5431,6 +5474,7 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
     let registry = ActionDefRegistry::new();
     let handlers = worldwake_sim::ActionHandlerRegistry::new();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ClaimOffice { office }),
         evidence_entities: BTreeSet::from([office]),
         evidence_places: BTreeSet::from([place]),
@@ -5493,6 +5537,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,

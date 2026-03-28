@@ -121,6 +121,7 @@ mod tests {
     fn ranked(goal: worldwake_core::GoalKind, class: GoalPriorityClass, motive: u32) -> RankedGoal {
         RankedGoal {
             grounded: GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(goal),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),

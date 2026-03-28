@@ -3,35 +3,34 @@
 **Status**: PENDING
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: Yes — new variant in decision trace types
-**Deps**: S33OPPSCOGOAIDE-003
+**Engine Changes**: Yes — decision trace diagnostics only
+**Deps**: S33OPPSCOGOAIDE-002
 
 ## Problem
 
-When all opportunities for a `GoalKey` are blocked in the two-pass filter (S33OPPSCOGOAIDE-003), this should be recorded in the decision trace for debugging (P27 — Debuggability Is a Product Feature). Currently no trace variant captures desire-level escalation from per-opportunity blocking.
+When all opportunities for a `GoalKey` are blocked by the live post-emission blocker filter, the decision trace does not currently expose that desire-level outcome clearly. The trace can show that no candidate survived, but it does not summarize that every concrete opportunity for one desire was suppressed. That weakens the debugging contract for opportunity-scoped planning.
 
 ## Assumption Reassessment (2026-03-28)
 
-1. `DecisionOutcome` at `crates/worldwake-ai/src/decision_trace.rs:77-91` has variants: `Dead`, `ActiveAction { ... }`, `Planning(Box<PlanningPipelineTrace>)`. The `Planning` variant carries a `PlanningPipelineTrace` which includes candidate generation diagnostics.
-2. `CandidateGenerationDiagnostics` exists in `decision_trace.rs` — this is where per-generation diagnostic data is collected. This is the natural place to record desire-level escalation.
-3. The two-pass filter (S33OPPSCOGOAIDE-003) returns filtered-out candidates — this data can be aggregated into the diagnostic.
-4. This is a diagnostic-only ticket — no behavioral change to the planning pipeline.
-5. Single-layer ticket (decision trace types only).
+1. `DecisionOutcome::Planning` already carries candidate-generation diagnostics in `crates/worldwake-ai/src/decision_trace.rs`. This remains the correct layer for the new debug surface.
+2. The stale assumption that a separate two-pass filter return payload exists is no longer accurate. The blocker filter behavior shipped inside archived `S33OPPSCOGOAIDE-002`; this ticket must derive diagnostics from the live filtering path instead of assuming a separate output channel.
+3. This is diagnostic-only work. It must not change candidate selection, blocker memory, or ranking behavior.
+4. The canonical fact being surfaced is: "all known opportunities for this `GoalKey` were blocked this tick." It should be carried once in tracing, not reconstructed ad hoc in every test.
 
 ## Architecture Check
 
-1. Adding a diagnostic field to `CandidateGenerationDiagnostics` (or a new sub-struct) is cleaner than adding a new `DecisionOutcome` variant, because desire-level escalation is part of the candidate generation phase, not a top-level outcome.
+1. A diagnostic field on candidate-generation/planning trace data is cleaner than a new top-level `DecisionOutcome` variant because the behavior occurs inside candidate filtering, not after the pipeline has chosen a different outcome class.
 2. No backward-compatibility shims.
 
 ## Verification Layers
 
-1. Trace records `DesireFullyBlocked` when all opportunities blocked → focused unit test with decision tracing enabled.
-2. Trace does NOT record escalation when at least one opportunity survives → focused unit test.
-3. Single-layer ticket; additional layer mapping not applicable.
+1. Trace records desire-level full blocking when all opportunities are blocked -> focused trace test.
+2. Trace does not record it when at least one opportunity survives -> focused trace test.
+3. Human-readable dump includes the same information -> focused formatting assertion if practical.
 
 ## What to Change
 
-### 1. Add `DesireFullyBlocked` diagnostic struct
+### 1. Add a desire-level blocked diagnostic
 
 ```rust
 #[derive(Debug, Clone)]
@@ -41,23 +40,23 @@ pub struct DesireFullyBlocked {
 }
 ```
 
-### 2. Add field to `CandidateGenerationDiagnostics`
+### 2. Store it in candidate-generation diagnostics
 
 Add `pub fully_blocked_desires: Vec<DesireFullyBlocked>` to the existing diagnostics struct.
 
-### 3. Populate during two-pass filter
+### 3. Populate it from the live blocker-filter implementation
 
-After the Pass 2 filter in S33OPPSCOGOAIDE-003, aggregate filtered-out candidates by `GoalKey`. For each `GoalKey` where ALL opportunities were blocked, create a `DesireFullyBlocked` entry.
+Aggregate blocked opportunities by `GoalKey` after the live post-emission blocker filter runs. Emit a `DesireFullyBlocked` entry only when every emitted opportunity for that desire was filtered out as blocked.
 
 ### 4. Include in trace output
 
-Ensure `dump_agent()` and `summary()` on the decision trace include fully-blocked desires for debugging.
+Ensure `dump_agent()` and any relevant trace summary/debug output include the fully blocked desire information.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/decision_trace.rs` (modify — add `DesireFullyBlocked` struct, add field to diagnostics)
-- `crates/worldwake-ai/src/candidate_generation.rs` (modify — populate `fully_blocked_desires` during two-pass filter)
-- `crates/worldwake-ai/src/agent_tick/candidates.rs` (modify — pass diagnostics through pipeline if needed)
+- `crates/worldwake-ai/src/decision_trace.rs` (modify — add diagnostic type/field)
+- `crates/worldwake-ai/src/candidate_generation.rs` and/or live candidate-filtering site (modify — populate the diagnostic from current blocker filtering)
+- `crates/worldwake-ai/src/agent_tick/candidates.rs` (modify if diagnostics plumbing needs adjustment)
 
 ## Out of Scope
 
@@ -72,26 +71,28 @@ Ensure `dump_agent()` and `summary()` on the decision trace include fully-blocke
 ### Tests That Must Pass
 
 1. Decision trace records `DesireFullyBlocked` when all opportunities for a `GoalKey` are blocked.
-2. Decision trace does NOT record `DesireFullyBlocked` when at least one opportunity survives.
-3. `dump_agent()` output includes fully-blocked desire information.
+2. Decision trace does not record it when at least one opportunity survives.
+3. `dump_agent()` or equivalent trace debug output includes the diagnostic.
 4. Existing suite: `cargo test -p worldwake-ai`
 5. Existing suite: `cargo clippy --workspace`
 
 ### Invariants
 
-1. `DesireFullyBlocked` is diagnostic only — no behavioral change to the planning pipeline.
-2. Trace data is opt-in (zero-cost when tracing disabled).
-3. `fully_blocked_desires` is empty when no desire-level escalation occurs.
+1. `DesireFullyBlocked` is diagnostic only.
+2. Trace data remains opt-in.
+3. The diagnostic is emitted only when the full set of emitted opportunities for a desire was blocked this tick.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/decision_trace.rs` or `candidate_generation.rs` — `test_trace_desire_fully_blocked` — all opportunities blocked, trace records it.
-2. `test_trace_no_escalation_when_partial` — one opportunity survives, no escalation recorded.
+1. `crates/worldwake-ai/src/decision_trace.rs` or candidate-filter tests — `trace_records_desire_fully_blocked`
+2. `trace_omits_desire_fully_blocked_when_one_opportunity_survives`
+3. Trace dump formatting test if a human-readable printer is updated
 
 ### Commands
 
 1. `cargo test -p worldwake-ai -- desire_fully_blocked`
 2. `cargo test -p worldwake-ai -- decision_trace`
-3. `cargo clippy --workspace && cargo test --workspace`
+3. `cargo clippy --workspace`
+4. `cargo test --workspace`
