@@ -1053,9 +1053,6 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorInvestigationDisposition => view
             .violation_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.investigation_duration_ticks.get())),
-        DurationExpr::ActorVerificationDisposition => view
-            .verification_disposition_profile(actor)
-            .map(|profile| ActionDuration::new(profile.verify_belief_duration_ticks.get())),
         DurationExpr::ActorWitnessQueryDisposition => view
             .verification_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get())),

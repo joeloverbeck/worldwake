@@ -509,7 +509,6 @@ mod tests {
             }),
             ComponentValue::VerificationDispositionProfile(VerificationDispositionProfile {
                 belief_verification_threshold: Permille::new(400).unwrap(),
-                verify_belief_duration_ticks: std::num::NonZeroU32::new(4).unwrap(),
                 witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
                 ask_memory_retention_ticks: 12,
             }),

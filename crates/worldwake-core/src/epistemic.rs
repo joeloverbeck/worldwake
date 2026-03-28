@@ -22,7 +22,6 @@ pub enum VerificationSubject {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct VerificationDispositionProfile {
     pub belief_verification_threshold: Permille,
-    pub verify_belief_duration_ticks: NonZeroU32,
     pub witness_query_duration_ticks: NonZeroU32,
     pub ask_memory_retention_ticks: u32,
 }
@@ -79,7 +78,6 @@ mod tests {
     fn verification_disposition_profile_roundtrips_through_bincode() {
         let profile = VerificationDispositionProfile {
             belief_verification_threshold: Permille::new(400).unwrap(),
-            verify_belief_duration_ticks: NonZeroU32::new(5).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
             ask_memory_retention_ticks: 17,
         };

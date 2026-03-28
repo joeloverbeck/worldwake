@@ -148,7 +148,6 @@ fn derive_blocking_fact(
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::VerifyBelief
         | PlannerOpKind::AskWitness => {}
     }
 
@@ -378,7 +377,6 @@ fn classify_input_failure(
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::VerifyBelief
         | PlannerOpKind::AskWitness => None,
     }?;
 
@@ -402,8 +400,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
-        | PlannerOpKind::Craft
-        | PlannerOpKind::VerifyBelief => view.entity_kind(target).is_none(),
+        | PlannerOpKind::Craft => view.entity_kind(target).is_none(),
         PlannerOpKind::Consume
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
@@ -652,8 +649,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
-        | PlannerOpKind::Investigate
-        | PlannerOpKind::VerifyBelief => None,
+        | PlannerOpKind::Investigate => None,
         PlannerOpKind::Bury
         | PlannerOpKind::Consume
         | PlannerOpKind::QueueForFacilityUse
@@ -738,7 +734,6 @@ fn related_place(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness => view.effective_place(agent),
-        PlannerOpKind::VerifyBelief => goal_key.place.or_else(|| view.effective_place(agent)),
     }
 }
 

@@ -73,7 +73,7 @@ pub use action_payload::{
     HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
     PressForceClaimActionPayload, PunishActionPayload, QueueForFacilityUsePayload,
     TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-    VerifyBeliefPayload, YieldForceClaimActionPayload,
+    YieldForceClaimActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,

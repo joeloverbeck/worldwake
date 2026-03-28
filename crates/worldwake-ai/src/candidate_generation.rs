@@ -3908,7 +3908,6 @@ mod tests {
     fn default_verification_profile() -> VerificationDispositionProfile {
         VerificationDispositionProfile {
             belief_verification_threshold: pm(500),
-            verify_belief_duration_ticks: NonZeroU32::new(3).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
         }
@@ -4102,7 +4101,7 @@ mod tests {
     }
 
     #[test]
-    fn low_confidence_evidence_keeps_originating_goal_without_standalone_verify_belief_goal() {
+    fn low_confidence_evidence_keeps_originating_goal_without_standalone_epistemic_goal() {
         let agent = entity(1);
         let place = entity(10);
         let seller = entity(2);
@@ -4145,7 +4144,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_resource_source_stays_on_restock_goal_without_standalone_verify_belief_goal() {
+    fn stale_resource_source_stays_on_restock_goal_without_standalone_epistemic_goal() {
         let agent = entity(1);
         let camp = entity(10);
         let crossroads = entity(11);

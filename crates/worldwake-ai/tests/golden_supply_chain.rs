@@ -939,8 +939,8 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         selected_tick_zero_plan
             .steps
             .iter()
-            .all(|step| step.op_kind != PlannerOpKind::VerifyBelief),
-        "arrival-observable stale facts should stop at travel rather than synthesize verify_belief"
+            .all(|step| step.op_kind != PlannerOpKind::AskWitness),
+        "arrival-observable stale facts should stop at travel rather than insert a social query step"
     );
     let initial_selected_opportunity = tick_zero_planning
         .selection
@@ -1105,10 +1105,10 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
             .events_for(merchant)
             .iter()
             .any(|event| {
-                event.action_name == "verify_belief"
+                event.action_name == "ask_witness"
                     && matches!(event.kind, ActionTraceKind::Committed { .. })
             }),
-        "arrival-observable stale-source recovery should not commit verify_belief"
+        "arrival-observable stale-source recovery should not commit any explicit epistemic action"
     );
     assert_eq!(
         h.world

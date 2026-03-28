@@ -116,11 +116,7 @@ pub(super) fn search_candidates(
             semantics_table
                 .iter()
                 .filter_map(|(def_id, semantics)| {
-                    matches!(
-                        semantics.op_kind,
-                        PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness
-                    )
-                    .then_some(*def_id)
+                    (semantics.op_kind == PlannerOpKind::AskWitness).then_some(*def_id)
                 }),
         );
     }

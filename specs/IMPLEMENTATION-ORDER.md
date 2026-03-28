@@ -325,7 +325,7 @@ S30 ✅ ──→ S31 ✅
   - exhaustion and blocking scoped per-opportunity; IntentionFrame persists on desire
   - unblocks S36, S37, S39
 - **S34**: General Epistemic Actions (parallel with S33)
-  - inspect_place, ask_witness, verify_location actions + `VerifyBelief` goal kind
+  - ask_witness action + grounded-goal stale-evidence barrier contract
   - enables canonical Scenario D (rumor → travel → empty source → replan)
 - **S35**: Observable Activity Signals (parallel with S33, S34)
   - perception records co-located agents' active actions as `BelievedActivity`

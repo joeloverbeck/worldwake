@@ -4419,7 +4419,6 @@ mod tests {
         let id = world.create_entity(EntityKind::Agent, Tick(1));
         let profile = VerificationDispositionProfile {
             belief_verification_threshold: Permille::new(400).unwrap(),
-            verify_belief_duration_ticks: std::num::NonZeroU32::new(4).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
         };
@@ -4440,7 +4439,6 @@ mod tests {
         let office = world.create_entity(EntityKind::Office, Tick(1));
         let profile = VerificationDispositionProfile {
             belief_verification_threshold: Permille::new(400).unwrap(),
-            verify_belief_duration_ticks: std::num::NonZeroU32::new(4).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
         };

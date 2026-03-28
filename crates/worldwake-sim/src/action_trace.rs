@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, InstitutionalClaim,
     PunishmentFineStartFailureTrace, PunishmentFineTraceFacts, PunishmentKind, RecordKind,
-    TellTopic, Tick, VerificationSubject, ViolationId, World,
+    TellTopic, Tick, ViolationId, World,
 };
 
 /// A single action lifecycle event recorded during `step_tick()`.
@@ -36,9 +36,6 @@ pub enum ActionTraceDetail {
     },
     Investigate {
         violation_id: ViolationId,
-    },
-    VerifyBelief {
-        subject: VerificationSubject,
     },
     AskWitness {
         target: EntityId,
@@ -356,9 +353,6 @@ impl ActionTraceDetail {
             ActionPayload::Investigate(payload) => Some(Self::Investigate {
                 violation_id: payload.violation_id,
             }),
-            ActionPayload::VerifyBelief(payload) => Some(Self::VerifyBelief {
-                subject: payload.subject,
-            }),
             ActionPayload::AskWitness(payload) => Some(Self::AskWitness {
                 target: payload.target,
                 topic_entity: payload.topic_entity,
@@ -391,9 +385,6 @@ impl ActionTraceDetail {
             }
             Self::Investigate { violation_id } => {
                 format!("investigate violation {}", violation_id.0)
-            }
-            Self::VerifyBelief { subject } => {
-                format!("verify_belief subject {subject:?}")
             }
             Self::AskWitness {
                 target,
@@ -499,13 +490,11 @@ mod tests {
     use crate::{
         ActionAbortRequestReason, AskWitnessPayload, PunishActionPayload, RequestAttemptTrace,
         RequestBindingKind, RequestProvenance, ResolvedRequestTrace, TellActionPayload,
-        VerifyBeliefPayload,
     };
     use worldwake_core::{
         build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, ControlSource,
         EventLog, InstitutionalClaim, InstitutionalRecordEntry, PrototypePlace, PunishmentKind,
-        Quantity, RecordData, RecordEntryId, Tick, VerificationSubject, VisibilitySpec,
-        WitnessData, WorldTxn,
+        Quantity, RecordData, RecordEntryId, Tick, VisibilitySpec, WitnessData, WorldTxn,
     };
 
     const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
@@ -700,28 +689,6 @@ mod tests {
     }
 
     #[test]
-    fn detail_from_payload_extracts_verify_belief_identity() {
-        let subject = VerificationSubject::SupplyAvailability {
-            commodity: CommodityKind::Bread,
-            source: EntityId {
-                slot: 8,
-                generation: 0,
-            },
-            place: EntityId {
-                slot: 9,
-                generation: 0,
-            },
-        };
-
-        assert_eq!(
-            ActionTraceDetail::from_payload(&ActionPayload::VerifyBelief(VerifyBeliefPayload {
-                subject,
-            })),
-            Some(ActionTraceDetail::VerifyBelief { subject })
-        );
-    }
-
-    #[test]
     fn detail_from_payload_extracts_ask_witness_identity() {
         let target = EntityId {
             slot: 7,
@@ -857,33 +824,6 @@ mod tests {
         let summary = committed.summary();
         assert!(summary.contains("committed"));
         assert!(summary.contains("investigate violation 11"));
-    }
-
-    #[test]
-    fn summary_includes_verify_belief_detail_when_present() {
-        let subject = VerificationSubject::EntityLocation {
-            entity: EntityId {
-                slot: 7,
-                generation: 0,
-            },
-            place: EntityId {
-                slot: 8,
-                generation: 0,
-            },
-        };
-        let committed = sample_event(
-            2,
-            ActionTraceKind::Committed {
-                instance_id: ActionInstanceId(1),
-                outcome: CommitOutcome::empty(),
-            },
-        )
-        .with_detail(Some(ActionTraceDetail::VerifyBelief { subject }));
-
-        let summary = committed.summary();
-        assert!(summary.contains("committed"));
-        assert!(summary.contains("verify_belief subject"));
-        assert!(summary.contains("EntityLocation"));
     }
 
     #[test]

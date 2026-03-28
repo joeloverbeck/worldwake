@@ -413,7 +413,6 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::PressForceClaim
         | crate::PlannerOpKind::YieldForceClaim
         | crate::PlannerOpKind::Investigate
-        | crate::PlannerOpKind::VerifyBelief
         | crate::PlannerOpKind::AskWitness => {}
     }
 }

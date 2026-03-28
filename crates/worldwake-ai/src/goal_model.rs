@@ -706,9 +706,7 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness => {
-                Err(GoalPayloadOverrideError::UnsupportedGoal)
-            }
+            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -952,7 +950,6 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::MoveCargo
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Investigate
-            | PlannerOpKind::VerifyBelief
             | PlannerOpKind::AskWitness
             | PlannerOpKind::Accuse
             | PlannerOpKind::Fine
@@ -1279,7 +1276,6 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Fine
             | PlannerOpKind::Exile
             | PlannerOpKind::Investigate
-            | PlannerOpKind::VerifyBelief
             | PlannerOpKind::AskWitness
             | PlannerOpKind::Bury => {}
         }
@@ -6229,7 +6225,6 @@ mod tests {
     fn verification_profile() -> VerificationDispositionProfile {
         VerificationDispositionProfile {
             belief_verification_threshold: Permille::new(400).unwrap(),
-            verify_belief_duration_ticks: NonZeroU32::new(4).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
             ask_memory_retention_ticks: 10,
         }

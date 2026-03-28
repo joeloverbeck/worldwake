@@ -4,11 +4,11 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` epistemic type renaming, downstream `worldwake-ai`/`worldwake-sim`/`worldwake-systems` call-site cleanup, S34 spec correction
-**Deps**: [tickets/S34GENEPIACT-013.md](/home/joeloverbeck/projects/worldwake/tickets/S34GENEPIACT-013.md), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
+**Deps**: [archive/tickets/completed/S34GENEPIACT-013.md](/home/joeloverbeck/projects/worldwake/archive/tickets/completed/S34GENEPIACT-013.md), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
 
 ## Problem
 
-If S34GENEPIACT-013 removes `verify_belief`, the remaining cross-layer names become misleading:
+After S34GENEPIACT-013 removed `verify_belief`, the remaining cross-layer names are now misleading:
 
 - `VerificationSubject`
 - `VerificationDispositionProfile`
@@ -18,7 +18,7 @@ Those names were reasonable when the architecture still modeled explicit verific
 
 ## Assumption Reassessment (2026-03-28)
 
-1. This ticket is contingent on S34GENEPIACT-013 landing. Before removal, the current names still match some live code. After removal, the same names would overstate the breadth of the remaining contract.
+1. S34GENEPIACT-013 has landed and removed the dormant `verify_belief` action/path. The remaining names now overstate the breadth of the live contract rather than merely risking future drift.
 2. The live shared abstraction boundary under audit is the cross-layer stale-subject identity and per-agent disposition profile currently defined in [epistemic.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/epistemic.rs) and re-exported through `worldwake-core`, then consumed in `worldwake-ai`, `worldwake-sim`, and `worldwake-systems`.
 3. Existing focused coverage currently proves these names as concrete serializable core contracts:
    - `verification_subject_entity_location_roundtrips_through_bincode`
@@ -33,10 +33,10 @@ Those names were reasonable when the architecture still modeled explicit verific
    - this is not a golden/E2E ticket
 7. No heuristic/filter is being removed here. The missing substrate concern was addressed by S34GENEPIACT-012 and the dead-path removal by S34GENEPIACT-013. This ticket only ensures the surviving API names no longer misdescribe the architecture.
 8. Adjacent contradiction classification:
-   - required consequence if S34GENEPIACT-013 lands: decide whether the remaining names still honestly describe the contract
-   - this ticket assumes the answer is “no” and performs the rename cleanly
+   - confirmed consequence after S34GENEPIACT-013: the remaining names no longer honestly describe the contract and should be renamed
+   - this ticket owns that rename cleanly
    - future cleanup beyond this ticket: only if a new explicit inspection action later appears, at which point names may need to widen again under a new ticket
-9. Mismatch + correction: if S34GENEPIACT-013 decides to keep `VerificationSubject` intentionally because it still names “what stale fact is being queried” better than any alternative, this ticket must be closed or respecified. Do not perform churny renames without that reassessment.
+9. Reassessment result: S34GENEPIACT-013 kept `VerificationSubject` and `VerificationDispositionProfile` only as temporary survivals during behavior removal, not because those names remained ideal. This ticket should stay open and perform the rename rather than close as churn.
 
 ## Architecture Check
 
@@ -49,7 +49,8 @@ Those names were reasonable when the architecture still modeled explicit verific
 1. Renamed core epistemic contracts still round-trip through serde/bincode and remain component-safe -> focused `worldwake-core` unit tests
 2. Downstream AI/sim/systems code compiles and still passes existing focused behavior coverage -> focused crate tests plus package test runs
 3. No behavior change is introduced beyond renaming and field-name cleanup -> unchanged focused AI golden/runtime tests from S34GENEPIACT-013 remain green
-4. This is primarily a cross-layer contract ticket, so focused unit coverage plus compile/test verification is the right proof surface; no extra golden mapping is needed unless reassessment during implementation finds an accidental behavior change
+4. Active specs/tickets no longer preserve the misleading verification-centric terminology -> targeted doc/ticket diff review
+5. This is primarily a cross-layer contract ticket, so focused unit coverage plus compile/test verification is the right proof surface; no extra golden mapping is needed unless reassessment during implementation finds an accidental behavior change
 
 ## What to Change
 
@@ -61,7 +62,7 @@ Confirm whether the remaining contract is better described by names such as:
 - `EpistemicDispositionProfile`
 - `epistemic_barrier_threshold`
 
-The exact names may differ, but they must describe the surviving live semantics rather than the removed verification action.
+The exact names may differ, but they must describe the surviving live semantics rather than the removed verification action. Reassessment after S34GENEPIACT-013 now strongly suggests that a rename is warranted rather than optional.
 
 ### 2. Rename the core contract without aliases
 
@@ -78,7 +79,10 @@ Update the S34 spec and any still-pending tickets that refer to the old names so
 - `crates/worldwake-ai/src/goal_model.rs` (modify — update type names)
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — update profile/field names)
 - `crates/worldwake-ai/src/planning_state.rs` (modify — update belief-view/profile access points)
-- `crates/worldwake-sim/src/action_semantics.rs` (modify — update profile field names if still used)
+- `crates/worldwake-ai/src/planning_snapshot.rs` (modify — update stored snapshot/profile type names)
+- `crates/worldwake-ai/src/ranking.rs` (modify — update profile type names used in test/support views)
+- `crates/worldwake-sim/src/belief_view.rs` (modify — update belief-view/profile type names)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — update per-agent view type names)
 - `crates/worldwake-systems/src/epistemic_actions.rs` (modify — update surviving `ask_witness` and epistemic profile references)
 - `specs/S34-general-epistemic-actions.md` (modify — correct the surviving terminology)
 - `tickets/S34GENEPIACT-010.md` and any later pending S34 tickets (modify if needed — keep terminology consistent)
@@ -98,7 +102,9 @@ Update the S34 spec and any still-pending tickets that refer to the old names so
 3. `cargo test -p worldwake-core`
 4. `cargo test -p worldwake-ai`
 5. `cargo test -p worldwake-systems epistemic_actions`
-6. `cargo clippy -p worldwake-core -p worldwake-ai -p worldwake-systems --all-targets -- -D warnings`
+6. `cargo test -p worldwake-sim action_payload`
+7. `cargo test -p worldwake-sim action_trace`
+8. `cargo clippy -p worldwake-core -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -118,4 +124,6 @@ Update the S34 spec and any still-pending tickets that refer to the old names so
 1. `cargo test -p worldwake-core`
 2. `cargo test -p worldwake-ai`
 3. `cargo test -p worldwake-systems epistemic_actions`
-4. `cargo clippy -p worldwake-core -p worldwake-ai -p worldwake-systems --all-targets -- -D warnings`
+4. `cargo test -p worldwake-sim action_payload`
+5. `cargo test -p worldwake-sim action_trace`
+6. `cargo clippy -p worldwake-core -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`

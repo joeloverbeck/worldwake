@@ -1,6 +1,6 @@
 # S34GENEPIACT-013: Remove dormant verify_belief substrate after arrival-observable barrier cleanup
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-core` epistemic profile cleanup, `worldwake-sim` payload/trace/duration cleanup, `worldwake-systems` action registry and handler removal, `worldwake-ai` planner-op/failure-path cleanup, S34 spec correction
@@ -22,8 +22,8 @@ That violates the repo’s architectural bar in two ways:
    - `goal_model::tests::grounded_goal_epistemic_subjects_extract_stale_subjects_from_originating_goal_evidence`
    - `goal_model::tests::grounded_goal_epistemic_barrier_matches_only_matching_payloads`
    - `goal_model::tests::search_restock_goal_returns_ask_witness_barrier_for_matching_colocated_payload`
-   - `candidate_generation::tests::low_confidence_evidence_keeps_originating_goal_without_standalone_verify_belief_goal`
-   - `candidate_generation::tests::stale_resource_source_stays_on_restock_goal_without_standalone_verify_belief_goal`
+   - `candidate_generation::tests::low_confidence_evidence_keeps_originating_goal_without_standalone_epistemic_goal`
+   - `candidate_generation::tests::stale_resource_source_stays_on_restock_goal_without_standalone_epistemic_goal`
 3. Existing authoritative/runtime coverage in [epistemic_actions.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/epistemic_actions.rs) still proves both `ask_witness` and `verify_belief`. This is not a missing-tests-only cleanup. The production registry still exposes `register_verify_belief_action()`, `verify_belief` still appears in the full action catalog in [action_registry.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/action_registry.rs), and focused tests still cover `register_verify_belief_action_creates_expected_definition` plus six `verify_belief_*` behavior tests.
 4. The exact shared abstraction boundary under audit is mixed-layer and centered on the now-dormant verification action contract:
    - core/profile layer: `VerificationDispositionProfile::verify_belief_duration_ticks` and `VerificationSubject` in [epistemic.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/epistemic.rs)
@@ -43,15 +43,19 @@ That violates the repo’s architectural bar in two ways:
    The canonical end state after this ticket should be one path only. The dormant alias path must be removed in-scope rather than left as a compatibility substrate.
 10. Adjacent contradictions:
    - required consequence of this ticket: remove `verify_belief` from runtime catalogs, payload contracts, planner classifications, and tests
+   - required ticket correction: the live `ask_witness` deduplication substrate is `AgentBeliefStore::asked_witnesses`, `AskWitnessMemoryKey`, and `AskWitnessMemory` in [belief.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/belief.rs), not Tell-memory reuse as the S34 spec currently claims
    - likely follow-up cleanup, not in scope here: once removal lands, remaining `Verification*` names may become semantically misleading for the surviving social-query contract and should be evaluated separately
 11. Mismatch + correction: `specs/S34-general-epistemic-actions.md` still mentions `verify_belief` as a lower-layer substrate that may remain for future fact classes. If this ticket removes the substrate entirely, the spec must say that no explicit inspection action exists in the live architecture and any future reintroduction requires a new fact class plus a new ticket.
 12. Mismatch + correction: `VerificationDispositionProfile` currently stores both `belief_verification_threshold` and `verify_belief_duration_ticks`. After removal, the threshold may still be lawful because the AI still decides when stale evidence becomes barrier-worthy for travel or `ask_witness`, but the action-duration field has no live consumer and must not survive as dead schema.
+13. Mismatch + correction: [specs/IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md) still advertises the older "`inspect_place`, `ask_witness`, `verify_location` actions + `VerifyBelief` goal kind" wave summary. That roadmap line must be corrected in-scope so active planning material does not contradict the post-cleanup architecture.
+14. Verification command reassessment: the current `cargo test -- --list` surface confirms dedicated `worldwake-sim` `action_payload::*verify_belief*`, `action_trace::*verify_belief*`, and `worldwake-systems` `epistemic_actions::*verify_belief*` tests exist. A focused runtime cleanup ticket therefore needs explicit `action_payload` coverage and duration/registry proof, not only `action_trace`.
 
 ## Architecture Check
 
 1. Full removal is cleaner than keeping `verify_belief` as a dormant substrate. A dormant action still acts as a false architectural promise, invites future alias paths, and weakens debugging by advertising a contract the planner no longer uses.
 2. Full removal is cleaner than inventing an inspection-only fact class to justify the current action. That would be speculative scaffolding with no current world substrate, violating the repo’s preference for concrete state over anticipatory abstraction.
 3. No backwards-compatibility aliasing or deprecation shim should survive. If `verify_belief` is removed, all cross-layer references must be removed in-scope: action registration, payload variants, planner op classification, trace detail, profile field, and focused tests.
+4. Full removal is still architecturally preferable to the current shape. The current architecture advertises a first-class explicit inspection action even though the only live stale-fact families already resolve through lawful arrival perception or social querying. Keeping that unused action substrate would preserve a false second transport path rather than a real extension point.
 
 ## Verification Layers
 
@@ -59,8 +63,10 @@ That violates the repo’s architectural bar in two ways:
 2. `ask_witness` remains the only explicit epistemic action in the live catalog -> focused `worldwake-systems` action-registry/runtime tests and planner-op classification tests
 3. No `verify_belief` action identity remains in runtime traces or payload transport -> focused `worldwake-sim` action payload and action trace tests
 4. Removal does not break AI failure reconciliation for surviving epistemic paths -> focused `worldwake-ai` failure-handling and search tests
-5. The strongest proof that the old path is gone is lower-layer focused coverage and registry/payload absence, not downstream golden behavior alone; the stale-source golden remains only a regression guard for the canonical travel-side path
-6. This is mixed-layer, so additional layer mapping is required and included above
+5. No dead action-duration consumer remains for the removed action -> focused `worldwake-sim` action-semantics/belief-view tests plus clippy/typecheck on removed enum variants
+6. Active planning docs no longer advertise the removed path -> spec and implementation-order doc diff review
+7. The strongest proof that the old path is gone is lower-layer focused coverage and registry/payload absence, not downstream golden behavior alone; the stale-source golden remains only a regression guard for the canonical travel-side path
+8. This is mixed-layer, so additional layer mapping is required and included above
 
 ## What to Change
 
@@ -99,15 +105,21 @@ Delete `VerificationDispositionProfile::verify_belief_duration_ticks` and update
 
 Update [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md) so it no longer describes `verify_belief` as a live or dormant substrate. The spec should explicitly say that a future inspection-only action requires a future fact class and a new ticket; it is not preserved in today’s schema “just in case.”
 
+Correct the stale `ask_witness` memory narrative in that spec to match the live contract: `ask_witness` currently uses dedicated `AskWitnessMemory*` state rather than Tell-memory reuse, and this ticket does not change that substrate.
+
+Update [specs/IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md) so active roadmap text no longer advertises a removed `VerifyBelief`/`verify_location` path.
+
 ## Files to Touch
 
 - `crates/worldwake-core/src/epistemic.rs` (modify — remove dead `verify_belief_duration_ticks`; keep only surviving core epistemic contract)
+- `crates/worldwake-core/src/lib.rs` (modify — remove exported dead `VerifyBeliefPayload`-adjacent surface if required by type re-exports)
 - `crates/worldwake-core/src/world.rs` (modify — update fixtures/defaults using the profile)
 - `crates/worldwake-core/src/delta.rs` (modify — update delta fixtures/serde expectations)
 - `crates/worldwake-sim/src/action_payload.rs` (modify — remove `VerifyBelief` payload transport)
 - `crates/worldwake-sim/src/action_trace.rs` (modify — remove `VerifyBelief` trace detail support)
 - `crates/worldwake-sim/src/action_semantics.rs` (modify — remove verification-duration resolution)
 - `crates/worldwake-sim/src/belief_view.rs` (modify — remove any remaining verification-duration read path)
+- `crates/worldwake-sim/src/lib.rs` (modify — remove `VerifyBeliefPayload` export)
 - `crates/worldwake-systems/src/epistemic_actions.rs` (modify — remove `verify_belief` action definition/handler/tests)
 - `crates/worldwake-systems/src/action_registry.rs` (modify — remove registry exposure and full-catalog expectation)
 - `crates/worldwake-systems/src/lib.rs` (modify — remove exported `register_verify_belief_action`)
@@ -115,6 +127,7 @@ Update [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worl
 - `crates/worldwake-ai/src/failure_handling.rs` (modify — remove dead failure branches)
 - `crates/worldwake-ai/src/goal_model.rs` (modify — remove stale `VerifyBelief` references from semantics/tests)
 - `specs/S34-general-epistemic-actions.md` (modify — correct the live contract after full removal)
+- `specs/IMPLEMENTATION-ORDER.md` (modify — remove stale roadmap wording about `VerifyBelief` / `verify_location`)
 
 ## Out of Scope
 
@@ -131,9 +144,10 @@ Update [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worl
 2. Focused sim/systems coverage proves `verify_belief` is gone from action payloads, traces, and the full action registry
 3. Existing stale-source recovery coverage still passes under the canonical travel-side barrier contract
 4. `cargo test -p worldwake-ai`
-5. `cargo test -p worldwake-sim action_trace`
-6. `cargo test -p worldwake-systems epistemic_actions`
-7. `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
+5. `cargo test -p worldwake-sim action_payload`
+6. `cargo test -p worldwake-sim action_trace`
+7. `cargo test -p worldwake-systems epistemic_actions`
+8. `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -147,15 +161,36 @@ Update [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worl
 
 1. `crates/worldwake-ai/src/goal_model.rs` — remove or replace any focused tests that still mention `VerifyBelief` as a possible barrier
    Rationale: prove the AI contract no longer advertises a dead planner op.
-2. `crates/worldwake-sim/src/action_payload.rs` and `crates/worldwake-sim/src/action_trace.rs` — replace `verify_belief` payload/trace expectations with absence-focused coverage and surviving `ask_witness` coverage
-   Rationale: prove the runtime transport layer no longer carries the removed action identity.
+2. `crates/worldwake-sim/src/action_payload.rs`, `crates/worldwake-sim/src/action_trace.rs`, and `crates/worldwake-sim/src/action_semantics.rs` — replace `verify_belief` payload/trace expectations with absence-focused coverage and surviving `ask_witness` coverage
+   Rationale: prove the runtime transport and duration layer no longer carries the removed action identity.
 3. `crates/worldwake-systems/src/action_registry.rs` and `crates/worldwake-systems/src/epistemic_actions.rs` — replace `verify_belief` registration/behavior tests with surviving `ask_witness` and catalog assertions
    Rationale: prove the action catalog and authoritative runtime no longer expose the removed path.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- --list | rg "verify_belief|search_restock_goal_returns_travel_barrier_for_remote_stale_source|ask_witness"`
-2. `cargo test -p worldwake-sim action_trace`
-3. `cargo test -p worldwake-systems epistemic_actions`
-4. `cargo test -p worldwake-ai`
-5. `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai -- --list | rg "search_restock_goal_returns_travel_barrier_for_remote_stale_source|ask_witness|standalone_epistemic_goal"`
+2. `cargo test -p worldwake-sim action_payload`
+3. `cargo test -p worldwake-sim action_trace`
+4. `cargo test -p worldwake-systems epistemic_actions`
+5. `cargo test -p worldwake-ai`
+6. `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
+
+## Outcome
+
+Completed: 2026-03-28
+
+What actually changed:
+- Removed the dormant `verify_belief` path across core, sim, systems, and AI: no payload variant, no trace detail, no action registration/handler, no planner op, and no duration/profile field remain.
+- Preserved the canonical architecture for currently modeled stale facts: travel-side arrival refresh for arrival-observable subjects, plus `ask_witness` as the only explicit epistemic action.
+- Corrected active planning docs so `specs/S34-general-epistemic-actions.md` and `specs/IMPLEMENTATION-ORDER.md` no longer advertise the removed path, and updated the S34 spec to describe the live `AskWitnessMemory` deduplication contract.
+
+Deviations from original plan:
+- The cleanup reached a few additional AI/sim surfaces not named in the original ticket file list: planner duration inventory, AI search candidate widening, AI observation bookkeeping, and golden assertions that still named `VerifyBelief`.
+- `crates/worldwake-core/src/lib.rs` did not require a change after reassessment; the dead exported surface lived in `worldwake-sim/src/lib.rs`, not core.
+
+Verification results:
+- Passed `cargo test -p worldwake-sim action_payload`
+- Passed `cargo test -p worldwake-sim action_trace`
+- Passed `cargo test -p worldwake-systems epistemic_actions`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`

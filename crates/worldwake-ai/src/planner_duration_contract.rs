@@ -7,7 +7,6 @@ pub enum PlannerDurationDependency {
     ActorTradeDisposition,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
-    ActorVerificationDisposition,
     ActorWitnessQueryDisposition,
     ActorDefendStance,
     CombatWeapon,
@@ -16,13 +15,12 @@ pub enum PlannerDurationDependency {
     TravelToTarget,
 }
 
-pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 12] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 11] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
     PlannerDurationDependency::ActorTradeDisposition,
     PlannerDurationDependency::ActorTheftDisposition,
     PlannerDurationDependency::ActorInvestigationDisposition,
-    PlannerDurationDependency::ActorVerificationDisposition,
     PlannerDurationDependency::ActorWitnessQueryDisposition,
     PlannerDurationDependency::ActorDefendStance,
     PlannerDurationDependency::CombatWeapon,
@@ -43,7 +41,6 @@ impl PlannerDurationDependency {
             Self::ActorTradeDisposition => "ActorTradeDisposition",
             Self::ActorTheftDisposition => "ActorTheftDisposition",
             Self::ActorInvestigationDisposition => "ActorInvestigationDisposition",
-            Self::ActorVerificationDisposition => "ActorVerificationDisposition",
             Self::ActorWitnessQueryDisposition => "ActorWitnessQueryDisposition",
             Self::ActorDefendStance => "ActorDefendStance",
             Self::CombatWeapon => "CombatWeapon",
@@ -61,9 +58,6 @@ impl PlannerDurationDependency {
             DurationExpr::ActorTheftDisposition => Some(Self::ActorTheftDisposition),
             DurationExpr::ActorInvestigationDisposition => {
                 Some(Self::ActorInvestigationDisposition)
-            }
-            DurationExpr::ActorVerificationDisposition => {
-                Some(Self::ActorVerificationDisposition)
             }
             DurationExpr::ActorWitnessQueryDisposition => {
                 Some(Self::ActorWitnessQueryDisposition)

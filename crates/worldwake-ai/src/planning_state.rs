@@ -3633,7 +3633,6 @@ mod tests {
             actor,
             VerificationDispositionProfile {
                 belief_verification_threshold: pm(400),
-                verify_belief_duration_ticks: NonZeroU32::new(4).unwrap(),
                 witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
                 ask_memory_retention_ticks: 10,
             },
@@ -3768,11 +3767,6 @@ mod tests {
                 ),
                 PlannerDurationDependency::ActorInvestigationDisposition => (
                     DurationExpr::ActorInvestigationDisposition,
-                    Vec::new(),
-                    ActionPayload::None,
-                ),
-                PlannerDurationDependency::ActorVerificationDisposition => (
-                    DurationExpr::ActorVerificationDisposition,
                     Vec::new(),
                     ActionPayload::None,
                 ),

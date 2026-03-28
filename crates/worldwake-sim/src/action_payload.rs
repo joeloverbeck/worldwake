@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     ActionDefId, CombatWeaponRef, CommodityKind, EntityId, PunishmentKind, Quantity, RecipeId,
-    RecordEntryId, TellTopic, UniqueItemKind, VerificationSubject, ViolationId, WorkstationTag,
+    RecordEntryId, TellTopic, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -24,7 +24,6 @@ pub enum ActionPayload {
     Combat(CombatActionPayload),
     Loot(LootActionPayload),
     Investigate(InvestigateActionPayload),
-    VerifyBelief(VerifyBeliefPayload),
     AskWitness(AskWitnessPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
 }
@@ -50,7 +49,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -76,7 +74,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -102,7 +99,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -128,7 +124,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -154,7 +149,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -180,7 +174,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -206,7 +199,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -232,7 +224,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -258,7 +249,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -284,7 +274,6 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -310,7 +299,6 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -337,7 +325,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_) => None,
         }
     }
@@ -362,7 +349,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -388,7 +374,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -414,7 +399,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -440,7 +424,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -466,33 +449,6 @@ impl ActionPayload {
             | Self::Trade(_)
             | Self::Combat(_)
             | Self::Loot(_)
-            | Self::VerifyBelief(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn as_verify_belief(&self) -> Option<&VerifyBeliefPayload> {
-        match self {
-            Self::VerifyBelief(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
             | Self::AskWitness(_)
             | Self::QueueForFacilityUse(_) => None,
         }
@@ -519,7 +475,6 @@ impl ActionPayload {
             | Self::Combat(_)
             | Self::Loot(_)
             | Self::Investigate(_)
-            | Self::VerifyBelief(_)
             | Self::QueueForFacilityUse(_) => None,
         }
     }
@@ -625,11 +580,6 @@ pub struct InvestigateActionPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct VerifyBeliefPayload {
-    pub subject: VerificationSubject,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct AskWitnessPayload {
     pub target: EntityId,
     pub topic_entity: Option<EntityId>,
@@ -649,12 +599,12 @@ mod tests {
         DeclareSupportActionPayload, HarvestActionPayload, InvestigateActionPayload,
         LootActionPayload, PressForceClaimActionPayload, PunishActionPayload,
         QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, VerifyBeliefPayload, YieldForceClaimActionPayload,
+        TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
         ActionDefId, CombatWeaponRef, CommodityKind, EntityId, PunishmentKind, Quantity, RecipeId,
-        RecordEntryId, TellTopic, UniqueItemKind, VerificationSubject, ViolationId, WorkstationTag,
+        RecordEntryId, TellTopic, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -820,37 +770,6 @@ mod tests {
         }
     }
 
-    fn sample_verify_belief_entity_location_payload() -> VerifyBeliefPayload {
-        VerifyBeliefPayload {
-            subject: VerificationSubject::EntityLocation {
-                entity: EntityId {
-                    slot: 24,
-                    generation: 1,
-                },
-                place: EntityId {
-                    slot: 2,
-                    generation: 0,
-                },
-            },
-        }
-    }
-
-    fn sample_verify_belief_supply_payload() -> VerifyBeliefPayload {
-        VerifyBeliefPayload {
-            subject: VerificationSubject::SupplyAvailability {
-                commodity: CommodityKind::Bread,
-                source: EntityId {
-                    slot: 25,
-                    generation: 0,
-                },
-                place: EntityId {
-                    slot: 6,
-                    generation: 2,
-                },
-            },
-        }
-    }
-
     fn sample_ask_witness_payload() -> AskWitnessPayload {
         AskWitnessPayload {
             target: EntityId {
@@ -899,7 +818,6 @@ mod tests {
         assert_traits::<LootActionPayload>();
         assert_traits::<InvestigateActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
-        assert_traits::<VerifyBeliefPayload>();
         assert_traits::<AskWitnessPayload>();
     }
 
@@ -1118,8 +1036,6 @@ mod tests {
         let loot = ActionPayload::Loot(sample_loot_payload());
         let investigate = ActionPayload::Investigate(sample_investigate_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
-        let verify_belief =
-            ActionPayload::VerifyBelief(sample_verify_belief_entity_location_payload());
         let ask_witness = ActionPayload::AskWitness(sample_ask_witness_payload());
 
         assert_eq!(combat.as_consult_record(), None);
@@ -1187,26 +1103,6 @@ mod tests {
             Some(&sample_queue_payload())
         );
 
-        assert_eq!(verify_belief.as_consult_record(), None);
-        assert_eq!(verify_belief.as_tell(), None);
-        assert_eq!(verify_belief.as_harvest(), None);
-        assert_eq!(verify_belief.as_bribe(), None);
-        assert_eq!(verify_belief.as_threaten(), None);
-        assert_eq!(verify_belief.as_declare_support(), None);
-        assert_eq!(verify_belief.as_press_force_claim(), None);
-        assert_eq!(verify_belief.as_yield_force_claim(), None);
-        assert_eq!(verify_belief.as_transport(), None);
-        assert_eq!(verify_belief.as_craft(), None);
-        assert_eq!(verify_belief.as_trade(), None);
-        assert_eq!(verify_belief.as_combat(), None);
-        assert_eq!(verify_belief.as_loot(), None);
-        assert_eq!(verify_belief.as_investigate(), None);
-        assert_eq!(verify_belief.as_queue_for_facility_use(), None);
-        assert_eq!(
-            verify_belief.as_verify_belief(),
-            Some(&sample_verify_belief_entity_location_payload())
-        );
-
         assert_eq!(ask_witness.as_consult_record(), None);
         assert_eq!(ask_witness.as_tell(), None);
         assert_eq!(ask_witness.as_harvest(), None);
@@ -1222,7 +1118,6 @@ mod tests {
         assert_eq!(ask_witness.as_loot(), None);
         assert_eq!(ask_witness.as_investigate(), None);
         assert_eq!(ask_witness.as_queue_for_facility_use(), None);
-        assert_eq!(ask_witness.as_verify_belief(), None);
         assert_eq!(
             ask_witness.as_ask_witness(),
             Some(&sample_ask_witness_payload())
@@ -1248,7 +1143,6 @@ mod tests {
         assert_eq!(none.as_loot(), None);
         assert_eq!(none.as_investigate(), None);
         assert_eq!(none.as_queue_for_facility_use(), None);
-        assert_eq!(none.as_verify_belief(), None);
         assert_eq!(none.as_ask_witness(), None);
     }
 
@@ -1385,26 +1279,6 @@ mod tests {
     #[test]
     fn queue_for_facility_use_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::QueueForFacilityUse(sample_queue_payload());
-
-        let bytes = bincode::serialize(&payload).unwrap();
-        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
-
-        assert_eq!(roundtrip, payload);
-    }
-
-    #[test]
-    fn verify_belief_entity_location_payload_roundtrips_through_bincode() {
-        let payload = ActionPayload::VerifyBelief(sample_verify_belief_entity_location_payload());
-
-        let bytes = bincode::serialize(&payload).unwrap();
-        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
-
-        assert_eq!(roundtrip, payload);
-    }
-
-    #[test]
-    fn verify_belief_supply_payload_roundtrips_through_bincode() {
-        let payload = ActionPayload::VerifyBelief(sample_verify_belief_supply_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

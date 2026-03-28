@@ -37,7 +37,6 @@ pub enum PlannerOpKind {
     PressForceClaim,
     YieldForceClaim,
     Investigate,
-    VerifyBelief,
     AskWitness,
 }
 
@@ -186,7 +185,6 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Combat, "attack") => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend") => Some(PlannerOpKind::Defend),
         (ActionDomain::Generic, "investigate") => Some(PlannerOpKind::Investigate),
-        (ActionDomain::Epistemic, "verify_belief") => Some(PlannerOpKind::VerifyBelief),
         (ActionDomain::Epistemic, "ask_witness") => Some(PlannerOpKind::AskWitness),
         _ => None,
     }
@@ -305,7 +303,6 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::VerifyBelief
         | PlannerOpKind::AskWitness => unreachable!("handled by social_or_combat_semantics"),
     }
 }
@@ -382,9 +379,7 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             PlannerTransitionKind::GoalModelFallback,
             GOALS_PRESS_FORCE_CLAIM,
         ),
-        PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::VerifyBelief
-        | PlannerOpKind::AskWitness => base_semantics(
+        PlannerOpKind::YieldForceClaim | PlannerOpKind::AskWitness => base_semantics(
             op_kind,
             false,
             false,
@@ -1488,11 +1483,10 @@ mod tests {
             PlannerOpKind::Bribe,
             PlannerOpKind::Threaten,
             PlannerOpKind::DeclareSupport,
-            PlannerOpKind::VerifyBelief,
             PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 22);
+        assert_eq!(all.len(), 21);
     }
 
     #[test]
@@ -1529,7 +1523,6 @@ mod tests {
             ("bribe", PlannerOpKind::Bribe),
             ("threaten", PlannerOpKind::Threaten),
             ("declare_support", PlannerOpKind::DeclareSupport),
-            ("verify_belief", PlannerOpKind::VerifyBelief),
             ("ask_witness", PlannerOpKind::AskWitness),
         ];
         let expected_transitions = [
