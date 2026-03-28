@@ -119,6 +119,9 @@ Replaced coarse exhaustion invalidation with goal-aware conditions plus baseline
 ### S13: Political Emergence Golden E2E Suites — COMPLETED
 Established cross-system political emergence golden coverage: Scenario 44 proves utility-weight-driven care-vs-enterprise priority ordering under wounds, Scenario 45 proves combat death cascading into force-law vacancy and succession through shared state, and Scenario 46 proves autonomous Tell transferring institutional office beliefs to unlock political planning at a remote jurisdiction. All 7 golden tests (3 main + 2 variant + 3 replay) in `golden_emergent.rs` with structured `// Scenario 44/45/46:` source annotations. The completed spec is archived at `archive/specs/S13-political-emergence-golden-suites.md`.
 
+### S33: Opportunity-Scoped Goal Identity — COMPLETED
+Established desire-level `GoalKey` vs opportunity-level `OpportunityKey` separation across the full AI pipeline: per-opportunity `GroundedGoal` emission, post-emission blocker filtering with desire-level blocked diagnostics, opportunity-keyed exhaustion/runtime persistence, ranked same-goal sibling admission without desire-level collapse, `PlannedPlan.opportunity`, and golden proof for blocked-source and exhausted-opportunity source switching. The completed spec is archived at `archive/specs/S33-opportunity-scoped-goal-identity.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -162,10 +165,10 @@ S04 ──→ S06 (opportunity valuation needs market presence)
 S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
 E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
-S31 ✅, S23 ✅, S22 ✅ ──→ S33 (opportunity-scoped identity needs exhaustion, blockers, and frames)
-S33 ──→ S36 (declarative registration needs final goal identity shape)
-S33 ──→ S37 (cooldown exhaustion needs OpportunityKey)
-S33 ──→ S39 (side-benefit scoring needs opportunity awareness)
+S31 ✅, S23 ✅, S22 ✅ ──→ S33 ✅ (opportunity-scoped identity completed)
+S33 ✅ ──→ S36 (declarative registration needs final goal identity shape)
+S33 ✅ ──→ S37 (cooldown exhaustion needs OpportunityKey)
+S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
 S35 ──→ S38 (learned preferences needs activity observation for source reliability)
 S27 ✅ ──→ S34 (epistemic actions extend violation detection)
 S34, S35 (independent, can parallel with S33)
@@ -316,8 +319,9 @@ S30 ✅ ──→ S31 ✅
 ```
 
 **Step 13.5 Wave 5** (AI architecture review-derived):
-- **S33**: Opportunity-Scoped Goal Identity
-  - separate desire-level identity (`GoalKey`) from opportunity-level identity (`OpportunityKey`)
+- **S33**: Opportunity-Scoped Goal Identity — ✅ COMPLETED
+  - separated desire-level identity (`GoalKey`) from opportunity-level identity (`OpportunityKey`) across candidate generation, blocker/exhaustion scope, plan binding, ranked admission, and persisted runtime state
+  - archived spec: `archive/specs/S33-opportunity-scoped-goal-identity.md`
   - exhaustion and blocking scoped per-opportunity; IntentionFrame persists on desire
   - unblocks S36, S37, S39
 - **S34**: General Epistemic Actions (parallel with S33)
@@ -336,12 +340,12 @@ S30 ✅ ──→ S31 ✅
 
 Dependency graph:
 ```
-S31 ✅ ──→ S33
-S23 ✅ ──→ S33
-S22 ✅ ──→ S33
-S33 ──→ S36
-S33 ──→ S37
-S33 ──→ S39
+S31 ✅ ──→ S33 ✅
+S23 ✅ ──→ S33 ✅
+S22 ✅ ──→ S33 ✅
+S33 ✅ ──→ S36
+S33 ✅ ──→ S37
+S33 ✅ ──→ S39
 S34 (independent)
 S35 (independent)
 S35 ──→ S38
@@ -420,7 +424,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
 | `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
 | `S10-bilateral-trade-negotiation.md` | 4+ | 16 | E11, E14 (all met) |
-| `S33-opportunity-scoped-goal-identity.md` | 3+ | 13.5 W5 | S31, S23, S22 (all met) |
+| ~~`S33-opportunity-scoped-goal-identity.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | `S34-general-epistemic-actions.md` | 3+ | 13.5 W5 | S27 (met) |
 | `S35-observable-activity-signals.md` | 3+ | 13.5 W5 | E14 (met) |
 | `S36-declarative-goal-registration.md` | 3+ | 13.5 W5 | S33 |
@@ -448,6 +452,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
-| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | IN PROGRESS (S20–S31 complete; S33–S37 pending) |
+| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | IN PROGRESS (S20–S31 and S33 complete; S34–S37 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |

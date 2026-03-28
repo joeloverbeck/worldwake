@@ -14,7 +14,7 @@ use worldwake_ai::{
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
     FrameState, HomeostaticNeeds, IntentionDispositionProfile, MetabolismProfile,
-    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, UtilityProfile,
+    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick, UtilityProfile,
     WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, SaveableRuntime};
@@ -26,7 +26,7 @@ use worldwake_sim::{ActionTraceKind, SaveableRuntime};
 // Systems: Needs, Production, Travel, AI
 // GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 // ActionDomains: Needs, Travel, Production
-// Places: VillageSquare, OrchardFarm
+// Places: VillageSquare, GeneralStore
 //
 // Setup: Two critically hungry agents at Village Square. Alice has 1 bread.
 //   Orchard Farm has apples.
@@ -309,6 +309,208 @@ fn golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deter
     assert_eq!(
         first, second,
         "The unrelated commodity change frontier-exhaustion scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 1c: Exhausted Opportunity Falls Through To Sibling Source
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Production, Travel
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Needs, Transport
+// Places: VillageSquare, GeneralStore
+// Principles: 12, 18, 19, 25
+//
+// Setup: One critically hungry agent at Village Square knows two lawful loose
+//   bread lots: one local at Village Square and one remote at General Store.
+//   Runtime state is seeded with a frontier-exhausted `OpportunityKey` for the
+//   local lot opportunity.
+//
+// Proves: Candidate generation still emits both concrete opportunities, but
+//   planning suppresses only the exhausted local opportunity and selects the
+//   sibling remote opportunity instead. The agent then follows the remote
+//   pick-up/eat branch and reduces hunger without consuming the local lot.
+//
+// Chain: seeded exhausted local opportunity -> candidate generation emits both
+//   lots -> planning suppresses only the exhausted local branch -> remote
+//   opportunity selected -> remote pick-up -> eat -> hunger relief.
+
+#[derive(Debug, Eq, PartialEq)]
+struct ExhaustedOpportunitySwitchObservation {
+    local_generated: bool,
+    remote_generated: bool,
+    local_attempted: bool,
+    remote_attempted: bool,
+    selected_remote: bool,
+}
+
+fn run_exhausted_opportunity_switches_to_sibling_source(
+    seed: Seed,
+) -> ExhaustedOpportunitySwitchObservation {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    let remote_place = prototype_place_entity(PrototypePlace::GeneralStore);
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Ari",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PerceptionProfile {
+            memory_capacity: 64,
+            memory_retention_ticks: 240,
+            observation_fidelity: pm(875),
+            confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
+        },
+    );
+    let mut txn = new_txn(&mut h.world, 0);
+    let _local_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+    txn.set_ground_location(_local_lot, VILLAGE_SQUARE).unwrap();
+    let _remote_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+    txn.set_ground_location(_remote_lot, remote_place).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let bread_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let local_opportunity = OpportunityKey {
+        goal_key: bread_goal,
+        anchor: OpportunityAnchor::Place(VILLAGE_SQUARE),
+    };
+    let remote_opportunity = OpportunityKey {
+        goal_key: bread_goal,
+        anchor: OpportunityAnchor::Place(remote_place),
+    };
+    let mut runtime = AgentDecisionRuntime::default();
+    runtime.exhaustion_cache.insert(
+        local_opportunity,
+        ExhaustionEntry {
+            retry_state: ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: vec![
+                ExhaustionInvalidationCondition::PositionChanged,
+                ExhaustionInvalidationCondition::CommodityChanged(CommodityKind::Bread),
+            ],
+            baseline: ExhaustionBaseline {
+                position: Some(VILLAGE_SQUARE),
+                commodity_quantities: vec![(CommodityKind::Bread, Quantity(0))],
+                ..ExhaustionBaseline::default()
+            },
+            consecutive_budget_exhaustions: 0,
+        },
+    );
+    let runtime_bytes = bincode::serialize(&DriverStateMirror {
+        runtime_by_agent: std::collections::BTreeMap::from([(agent, runtime)]),
+        budget: worldwake_ai::PlanningBudget::default(),
+    })
+    .expect("golden scenario should serialize seeded runtime");
+    h.driver = worldwake_ai::AgentTickDriver::from_saved_runtime(&runtime_bytes, &h.world)
+        .expect("golden scenario should restore seeded runtime");
+    h.driver.enable_tracing();
+
+    h.step_once();
+
+    let trace_sink = h.driver.trace_sink().expect("decision tracing was enabled");
+    let tick_zero_trace = trace_sink
+        .trace_at(agent, Tick(0))
+        .expect("agent should have a tick 0 planning trace");
+    let planning_tick_0 = match &tick_zero_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at tick 0, got {other:?}"),
+    };
+
+    assert_eq!(
+        planning_tick_0.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "seeded exhaustion should still yield a fresh remote search selection"
+    );
+    assert!(
+        planning_tick_0.selection.selected_opportunity_is(remote_opportunity),
+        "the non-exhausted remote sibling should be selected at tick 0"
+    );
+
+    let local_generated = planning_tick_0
+        .candidates
+        .generated_contains_opportunity(local_opportunity);
+    let remote_generated = planning_tick_0
+        .candidates
+        .generated_contains_opportunity(remote_opportunity);
+    let selected_remote = planning_tick_0
+        .selection
+        .selected_opportunity_is(remote_opportunity);
+    let local_attempted = planning_tick_0
+        .planning
+        .attempts
+        .iter()
+        .any(|attempt| attempt.opportunity_anchor == OpportunityAnchor::Place(VILLAGE_SQUARE));
+    let remote_attempted = planning_tick_0
+        .planning
+        .attempts
+        .iter()
+        .any(|attempt| attempt.opportunity_anchor == OpportunityAnchor::Place(remote_place));
+
+    ExhaustedOpportunitySwitchObservation {
+        local_generated,
+        remote_generated,
+        local_attempted,
+        remote_attempted,
+        selected_remote,
+    }
+}
+
+#[test]
+fn golden_exhausted_opportunity_switches_to_sibling_source() {
+    let observation = run_exhausted_opportunity_switches_to_sibling_source(Seed([202; 32]));
+
+    assert!(
+        observation.local_generated,
+        "the exhausted local opportunity should still exist at candidate generation time"
+    );
+    assert!(
+        observation.remote_generated,
+        "the sibling remote opportunity should still be generated for the same desire"
+    );
+    assert!(
+        !observation.local_attempted,
+        "the exhausted local opportunity should be suppressed before plan search"
+    );
+    assert!(
+        observation.remote_attempted,
+        "the live sibling opportunity should remain admissible to search"
+    );
+    assert!(
+        observation.selected_remote,
+        "the remote sibling opportunity should be the selected concrete source"
+    );
+}
+
+#[test]
+fn golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically() {
+    let first = run_exhausted_opportunity_switches_to_sibling_source(Seed([202; 32]));
+    let second = run_exhausted_opportunity_switches_to_sibling_source(Seed([202; 32]));
+    assert_eq!(
+        first, second,
+        "The exhausted-opportunity sibling-switch scenario should replay deterministically"
     );
 }
 

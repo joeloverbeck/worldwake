@@ -5,7 +5,10 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
+use worldwake_ai::{
+    CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
+    PlannerOpKind, SelectedPlanSource,
+};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
@@ -1132,6 +1135,18 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
         .driver
         .trace_sink()
         .expect("decision tracing should be enabled");
+    let acquire_apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let local_opportunity = OpportunityKey {
+        goal_key: acquire_apple_goal,
+        anchor: OpportunityAnchor::Place(VILLAGE_SQUARE),
+    };
+    let remote_opportunity = OpportunityKey {
+        goal_key: acquire_apple_goal,
+        anchor: OpportunityAnchor::Place(ORCHARD_FARM),
+    };
     for agent in agents {
         let trace_tick_0 = trace_sink
             .trace_at(agent, Tick(0))
@@ -1158,6 +1173,24 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
             next_step.targets,
             vec![local_workstation],
             "both contenders should initially target the same local orchard from the same belief snapshot"
+        );
+        assert!(
+            planning_tick_0
+                .candidates
+                .generated_contains_opportunity(local_opportunity),
+            "the local source should be generated as a concrete opportunity at tick 0"
+        );
+        assert!(
+            planning_tick_0
+                .candidates
+                .generated_contains_opportunity(remote_opportunity),
+            "the remote sibling source should also be generated at tick 0"
+        );
+        assert!(
+            planning_tick_0
+                .selection
+                .selected_opportunity_is(local_opportunity),
+            "before the blocker is recorded, each contender should select the local opportunity"
         );
     }
 
@@ -1332,6 +1365,42 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
     assert!(
         loser_hunger_decreased,
         "the losing contender should eventually eat after the remote fallback branch completes"
+    );
+    let fallback_replan_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .traces_for(loser)
+        .into_iter()
+        .find(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => {
+                trace.tick > Tick(1)
+                    && planning.selection.selected_plan_source
+                        == Some(SelectedPlanSource::SearchSelection)
+                    && planning.selection.selected_opportunity_is(remote_opportunity)
+                    && planning.planning.attempts.iter().any(|attempt| {
+                        attempt.goal == acquire_apple_goal
+                            && attempt.opportunity_anchor == OpportunityAnchor::Place(ORCHARD_FARM)
+                    })
+            }
+            _ => false,
+        })
+        .expect("the losing contender should eventually perform a fresh remote sibling replan");
+    let fallback_planning = match &fallback_replan_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected fallback planning trace, got {other:?}"),
+    };
+    assert!(
+        fallback_planning
+            .candidates
+            .generated_contains_opportunity(remote_opportunity),
+        "the sibling remote opportunity should remain generated on the fallback replan"
+    );
+    assert!(
+        fallback_planning
+            .selection
+            .selected_opportunity_is(remote_opportunity),
+        "the eventual fresh replan should select the remote sibling opportunity"
     );
     assert_eq!(
         h.world

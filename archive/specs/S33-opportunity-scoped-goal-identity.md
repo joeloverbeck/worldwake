@@ -1,5 +1,7 @@
 # S33: Opportunity-Scoped Goal Identity
 
+**Status**: COMPLETED
+
 ## Summary
 
 Separate desire-level identity from opportunity-level identity in the goal system. Currently `GoalKey` conflates "what condition the agent wants true" with "which specific source/tactic the agent is pursuing." This causes exhaustion of one source (e.g., orchard apples blocked) to suppress planning for unrelated alternatives (e.g., market apples). Introduce `OpportunityAnchor` and `OpportunityKey` so that blocking, exhaustion, and plan binding scope to specific opportunities while IntentionFrames and desire-level reasoning remain at `GoalKey` granularity.
@@ -227,3 +229,24 @@ N/A — no positive feedback loops.
 7. Two-pass candidate generation correctly separates emission from blocker filtering.
 8. Ranked opportunity admission with exhaustion fallthrough preserves same-pass sibling search rather than re-collapsing to desire identity before planning.
 9. `build_planning_snapshot()` continues to receive per-opportunity evidence for belief scoping.
+
+## Outcome
+
+- Completed: 2026-03-28
+- What actually changed:
+  - established `OpportunityAnchor` / `OpportunityKey` as the canonical concrete opportunity identity across candidate generation, blocker diagnostics, exhaustion state, ranked planning admission, and `PlannedPlan`
+  - refactored `GroundedGoal` emission to one candidate per concrete opportunity with isolated evidence scope instead of desire-level evidence merging
+  - moved blocker handling to post-emission opportunity filtering with desire-level `DesireFullyBlocked` diagnostics
+  - re-keyed exhaustion/runtime persistence to `OpportunityKey`
+  - removed the temporary first-per-`GoalKey` planning admission collapse so ranked sibling opportunities are searched directly in order
+  - closed the remaining golden gap by strengthening blocked-source recovery coverage and adding exhausted-opportunity selection coverage
+- Deviations from original plan:
+  - the work landed as a sequence of narrower S33 tickets rather than one monolithic patch; the archived ticket trail is the authoritative implementation record
+  - the final exhausted-opportunity golden stops at the selected-opportunity boundary for its loose-lot scenario, because that is the strongest isolated proof surface for the S33 invariant without conflating a separate downstream execution contradiction
+  - save/load/version effects were absorbed by the concrete runtime-shape tickets instead of a single end-spec change list
+- Verification results:
+  - focused candidate-generation, planning, decision-trace, persistence, and search tests for opportunity-scoped identity all passed
+  - golden coverage now includes blocked-source and exhausted-opportunity source switching
+  - `cargo test -p worldwake-ai` passed
+  - `cargo clippy --workspace` passed
+  - `cargo test --workspace` passed

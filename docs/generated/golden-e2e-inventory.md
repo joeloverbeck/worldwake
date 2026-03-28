@@ -7,13 +7,13 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 179
+- Total `golden_*` tests: 181
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
-| `golden_ai_decisions.rs` | 16 |
+| `golden_ai_decisions.rs` | 18 |
 | `golden_care.rs` | 16 |
 | `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 9 |
@@ -29,6 +29,8 @@ Do not hand-edit it.
 - `golden_goal_invalidation_by_another_agent`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deterministically`
+- `golden_exhausted_opportunity_switches_to_sibling_source`
+- `golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically`
 - `golden_priority_based_interrupt`
 - `golden_blocked_intent_memory_with_ttl_expiry`
 - `golden_deprivation_cascade`
