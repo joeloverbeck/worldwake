@@ -104,6 +104,13 @@ pub trait GoalBeliefView {
         let _ = agent;
         Permille::new_unchecked(1000)
     }
+    fn verification_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+        let _ = agent;
+        None
+    }
     fn theft_disposition_profile(
         &self,
         agent: EntityId,
@@ -784,6 +791,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> worldwake_core::Permille {
                 $crate::RuntimeBeliefView::observation_fidelity(self, agent)
+            }
+
+            fn verification_disposition_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::VerificationDispositionProfile> {
+                $crate::RuntimeBeliefView::verification_disposition_profile(self, agent)
             }
 
             fn theft_disposition_profile(

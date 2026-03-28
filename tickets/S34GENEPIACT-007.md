@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — worldwake-ai: ranking additions for VerifyBelief goal family
-**Deps**: S34GENEPIACT-006 (candidates emitted), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
+**Deps**: [archive/tickets/completed/S34GENEPIACT-006.md](/home/joeloverbeck/projects/worldwake/archive/tickets/completed/S34GENEPIACT-006.md) (completed candidate emission), [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md)
 
 ## Problem
 
@@ -19,6 +19,7 @@
 5. `goal_ranking_provenance()` and `motive_score()` in `crates/worldwake-ai/src/ranking.rs` still leave `VerifyBelief` effectively inert: the goal is classified as `Low`, but `motive_score()` returns `0`, and there is no dedicated verification provenance path.
 6. The zero-motive filter in `rank_candidates()` is still the right contract. After this ticket, `VerifyBelief` should participate only when the agent’s `VerificationDispositionProfile` supplies positive motive weight; lack of profile or zero weight should continue to suppress the goal, preserving P20 diversity in [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md).
 7. Mismatch + correction: the original ticket claimed it needed to add a `GoalFamilyPolicy` entry and priority-class assignment. Those are already delivered. The remaining work is motive scoring, provenance, and focused coverage proving that emitted `VerifyBelief` candidates are not silently zeroed out.
+8. Follow-on confirmation after ticket 006 completion: [crates/worldwake-ai/src/candidate_generation.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/candidate_generation.rs) now emits `VerifyBelief` candidates, but [crates/worldwake-ai/src/ranking.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/ranking.rs) still returns `0` for `GoalKind::VerifyBelief` in `motive_score()`. This ticket is now the sole active owner of making emitted verification candidates selectable through the normal ranking path.
 
 ## Architecture Check
 
