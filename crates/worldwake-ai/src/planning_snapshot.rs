@@ -3,12 +3,13 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecordData, ResourceSource, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
-    TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity,
+    RecipeId, RecordData, ResourceSource, SocialObservation, SuccessionLaw, TellMemoryKey,
+    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, VerificationDispositionProfile,
+    ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -222,6 +223,7 @@ pub struct PlanningSnapshot {
     pub(crate) office_support_declaration_beliefs: BTreeMap<EntityId, OfficeSupportBeliefReads>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
     pub(crate) actor_tell_profile: Option<TellProfile>,
+    pub(crate) actor_verification_profile: Option<VerificationDispositionProfile>,
     pub(crate) actor_consultation_speed_factor: Option<Permille>,
     /// All-pairs shortest travel times between snapshot places.
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
@@ -332,6 +334,7 @@ impl PlanningSnapshot {
                 .collect(),
             actor_confidence_policy: view.belief_confidence_policy(actor),
             actor_tell_profile: view.tell_profile(actor),
+            actor_verification_profile: view.verification_disposition_profile(actor),
             actor_consultation_speed_factor: view.consultation_speed_factor(actor),
             shortest_travel_ticks,
         }

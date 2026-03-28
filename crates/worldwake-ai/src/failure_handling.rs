@@ -147,7 +147,9 @@ fn derive_blocking_fact(
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::Investigate => {}
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::VerifyBelief
+        | PlannerOpKind::AskWitness => {}
     }
 
     if danger_too_high(view, agent) {
@@ -375,7 +377,9 @@ fn classify_input_failure(
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::Investigate => None,
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::VerifyBelief
+        | PlannerOpKind::AskWitness => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -398,7 +402,8 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
-        | PlannerOpKind::Craft => view.entity_kind(target).is_none(),
+        | PlannerOpKind::Craft
+        | PlannerOpKind::VerifyBelief => view.entity_kind(target).is_none(),
         PlannerOpKind::Consume
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
@@ -416,7 +421,8 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::Investigate => view.entity_kind(target).is_none() || view.is_dead(target),
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::AskWitness => view.entity_kind(target).is_none() || view.is_dead(target),
         PlannerOpKind::Travel => false,
     }
 }
@@ -646,7 +652,8 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
-        | PlannerOpKind::Investigate => None,
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::VerifyBelief => None,
         PlannerOpKind::Bury
         | PlannerOpKind::Consume
         | PlannerOpKind::QueueForFacilityUse
@@ -657,6 +664,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Defend
+        | PlannerOpKind::AskWitness
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
         | PlannerOpKind::Exile => step.targets.first().copied().and_then(authoritative_target),
@@ -728,7 +736,9 @@ fn related_place(
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::Investigate => view.effective_place(agent),
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::AskWitness => view.effective_place(agent),
+        PlannerOpKind::VerifyBelief => goal_key.place.or_else(|| view.effective_place(agent)),
     }
 }
 

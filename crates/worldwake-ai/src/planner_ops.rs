@@ -37,6 +37,8 @@ pub enum PlannerOpKind {
     PressForceClaim,
     YieldForceClaim,
     Investigate,
+    VerifyBelief,
+    AskWitness,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -73,6 +75,7 @@ const GOALS_TRAVEL: &[GoalKindTag] = &[
     GoalKindTag::MoveCargo,
     GoalKindTag::LootCorpse,
     GoalKindTag::InvestigateViolation,
+    GoalKindTag::VerifyBelief,
 ];
 const GOALS_ACQUIRE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
@@ -131,6 +134,7 @@ const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
 ];
 const GOALS_PRESS_FORCE_CLAIM: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
 const GOALS_INVESTIGATE: &[GoalKindTag] = &[GoalKindTag::InvestigateViolation];
+const GOALS_VERIFY_BELIEF: &[GoalKindTag] = &[GoalKindTag::VerifyBelief];
 
 #[must_use]
 pub fn build_semantics_table(
@@ -184,6 +188,8 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Combat, "attack") => Some(PlannerOpKind::Attack),
         (ActionDomain::Combat, "defend") => Some(PlannerOpKind::Defend),
         (ActionDomain::Generic, "investigate") => Some(PlannerOpKind::Investigate),
+        (ActionDomain::Epistemic, "verify_belief") => Some(PlannerOpKind::VerifyBelief),
+        (ActionDomain::Epistemic, "ask_witness") => Some(PlannerOpKind::AskWitness),
         _ => None,
     }
 }
@@ -300,7 +306,9 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::DeclareSupport
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
-        | PlannerOpKind::Investigate => unreachable!("handled by social_or_combat_semantics"),
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::VerifyBelief
+        | PlannerOpKind::AskWitness => unreachable!("handled by social_or_combat_semantics"),
     }
 }
 
@@ -389,6 +397,13 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             false,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_INVESTIGATE,
+        ),
+        PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+            GOALS_VERIFY_BELIEF,
         ),
         _ => return None,
     })
@@ -1480,9 +1495,11 @@ mod tests {
             PlannerOpKind::Bribe,
             PlannerOpKind::Threaten,
             PlannerOpKind::DeclareSupport,
+            PlannerOpKind::VerifyBelief,
+            PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 20);
+        assert_eq!(all.len(), 22);
     }
 
     #[test]
@@ -1519,6 +1536,8 @@ mod tests {
             ("bribe", PlannerOpKind::Bribe),
             ("threaten", PlannerOpKind::Threaten),
             ("declare_support", PlannerOpKind::DeclareSupport),
+            ("verify_belief", PlannerOpKind::VerifyBelief),
+            ("ask_witness", PlannerOpKind::AskWitness),
         ];
         let expected_transitions = [
             ("tell", PlannerTransitionKind::GoalModelFallback),
@@ -1537,10 +1556,7 @@ mod tests {
             .map(|def| def.name.as_str())
             .collect::<Vec<_>>();
 
-        assert!(
-            unclassified == ["verify_belief"],
-            "unexpected unclassified actions: {unclassified:?}"
-        );
+        assert!(unclassified.is_empty(), "unexpected unclassified actions: {unclassified:?}");
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);

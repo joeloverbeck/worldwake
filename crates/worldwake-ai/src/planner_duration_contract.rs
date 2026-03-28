@@ -7,6 +7,8 @@ pub enum PlannerDurationDependency {
     ActorTradeDisposition,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
+    ActorVerificationDisposition,
+    ActorWitnessQueryDisposition,
     ActorDefendStance,
     CombatWeapon,
     TargetTreatment,
@@ -14,12 +16,14 @@ pub enum PlannerDurationDependency {
     TravelToTarget,
 }
 
-pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 10] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 12] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
     PlannerDurationDependency::ActorTradeDisposition,
     PlannerDurationDependency::ActorTheftDisposition,
     PlannerDurationDependency::ActorInvestigationDisposition,
+    PlannerDurationDependency::ActorVerificationDisposition,
+    PlannerDurationDependency::ActorWitnessQueryDisposition,
     PlannerDurationDependency::ActorDefendStance,
     PlannerDurationDependency::CombatWeapon,
     PlannerDurationDependency::TargetTreatment,
@@ -39,6 +43,8 @@ impl PlannerDurationDependency {
             Self::ActorTradeDisposition => "ActorTradeDisposition",
             Self::ActorTheftDisposition => "ActorTheftDisposition",
             Self::ActorInvestigationDisposition => "ActorInvestigationDisposition",
+            Self::ActorVerificationDisposition => "ActorVerificationDisposition",
+            Self::ActorWitnessQueryDisposition => "ActorWitnessQueryDisposition",
             Self::ActorDefendStance => "ActorDefendStance",
             Self::CombatWeapon => "CombatWeapon",
             Self::TargetTreatment => "TargetTreatment",
@@ -55,10 +61,14 @@ impl PlannerDurationDependency {
             DurationExpr::ActorTheftDisposition => Some(Self::ActorTheftDisposition),
             DurationExpr::ActorInvestigationDisposition => {
                 Some(Self::ActorInvestigationDisposition)
-            },
-            DurationExpr::ActorVerificationDisposition
-            | DurationExpr::ActorWitnessQueryDisposition
-            | DurationExpr::Fixed(_) => None,
+            }
+            DurationExpr::ActorVerificationDisposition => {
+                Some(Self::ActorVerificationDisposition)
+            }
+            DurationExpr::ActorWitnessQueryDisposition => {
+                Some(Self::ActorWitnessQueryDisposition)
+            }
+            DurationExpr::Fixed(_) => None,
             DurationExpr::ActorDefendStance => Some(Self::ActorDefendStance),
             DurationExpr::CombatWeapon => Some(Self::CombatWeapon),
             DurationExpr::TargetTreatment { .. } => Some(Self::TargetTreatment),
