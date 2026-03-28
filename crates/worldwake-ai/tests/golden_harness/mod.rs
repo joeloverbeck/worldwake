@@ -1275,8 +1275,9 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_ai::{
-        AgentDecisionRuntime, ExhaustionBaseline, ExhaustionEntry, GoalKey, GoalKind,
-        GoalPriorityClass, HypotheticalEntityId, PlanningBudget, ExhaustionRetryState,
+        AgentDecisionRuntime, CommodityPurpose, ExhaustionBaseline, ExhaustionEntry,
+        ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
+        PlanningBudget,
     };
     use worldwake_core::{ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
@@ -1331,6 +1332,10 @@ mod tests {
             slot: 90_002,
             generation: 0,
         };
+        let dead_place = EntityId {
+            slot: 90_003,
+            generation: 0,
+        };
         let mut runtime = AgentDecisionRuntime {
             last_effective_place: Some(dead_entity),
             last_facility_access_signature: vec![
@@ -1362,6 +1367,33 @@ mod tests {
             OpportunityKey {
                 goal_key: GoalKey::from(GoalKind::TreatWounds { patient: actor }),
                 anchor: OpportunityAnchor::Entity(actor),
+            },
+            ExhaustionEntry {
+                retry_state: ExhaustionRetryState::BudgetRetryPending,
+                invalidation_conditions: Vec::new(),
+                baseline: ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
+            },
+        );
+        runtime.exhaustion_cache.insert(
+            OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                anchor: OpportunityAnchor::Place(dead_place),
+            },
+            ExhaustionEntry {
+                retry_state: ExhaustionRetryState::FrontierExhausted,
+                invalidation_conditions: Vec::new(),
+                baseline: ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
+            },
+        );
+        runtime.exhaustion_cache.insert(
+            OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: OpportunityAnchor::None,
             },
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -1407,11 +1439,26 @@ mod tests {
                 }),
                 anchor: OpportunityAnchor::Entity(dead_entity),
             }));
+        assert!(!runtime
+            .exhaustion_cache
+            .contains_key(&OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                anchor: OpportunityAnchor::Place(dead_place),
+            }));
         assert!(runtime
             .exhaustion_cache
             .contains_key(&OpportunityKey {
                 goal_key: GoalKey::from(GoalKind::TreatWounds { patient: actor }),
                 anchor: OpportunityAnchor::Entity(actor),
+            }));
+        assert!(runtime
+            .exhaustion_cache
+            .contains_key(&OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: OpportunityAnchor::None,
             }));
     }
 

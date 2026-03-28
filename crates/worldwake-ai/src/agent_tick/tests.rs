@@ -319,6 +319,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
     let live_place = h.world.topology().place_ids().next().unwrap();
     let dead_agent = entity(810);
     let dead_entity = entity(811);
+    let dead_place = entity(812);
     let mut driver = AgentTickDriver::new(PlanningBudget {
         max_candidates_to_plan: 7,
         ..PlanningBudget::default()
@@ -385,6 +386,44 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
             consecutive_budget_exhaustions: 0,
         },
     );
+    runtime.exhaustion_cache.insert(
+        exhaustion_key(
+            GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            OpportunityAnchor::Place(dead_place),
+        ),
+        crate::ExhaustionEntry {
+            retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
+            baseline: ExhaustionBaseline {
+                position: Some(live_place),
+                needs: Some(HomeostaticNeeds::new_sated()),
+                commodity_quantities: vec![(CommodityKind::Bread, Quantity(0))],
+                unique_item_counts: Vec::new(),
+                wound_count: 0,
+                hostile_count: 0,
+            },
+            consecutive_budget_exhaustions: 0,
+        },
+    );
+    runtime.exhaustion_cache.insert(
+        exhaustion_key(GoalKey::from(GoalKind::Sleep), OpportunityAnchor::None),
+        crate::ExhaustionEntry {
+            retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
+            baseline: ExhaustionBaseline {
+                position: Some(live_place),
+                needs: Some(HomeostaticNeeds::new_sated()),
+                commodity_quantities: Vec::new(),
+                unique_item_counts: Vec::new(),
+                wound_count: 0,
+                hostile_count: 0,
+            },
+            consecutive_budget_exhaustions: 0,
+        },
+    );
     driver.runtime_by_agent.insert(h.actor, runtime);
     driver
         .runtime_by_agent
@@ -421,6 +460,15 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
             }),
             OpportunityAnchor::Entity(dead_entity),
         )));
+    assert!(!runtime
+        .exhaustion_cache
+        .contains_key(&exhaustion_key(
+            GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            OpportunityAnchor::Place(dead_place),
+        )));
     assert_eq!(
         runtime
             .exhaustion_cache
@@ -452,6 +500,27 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         })
     );
     assert_eq!(
+        runtime
+            .exhaustion_cache
+            .get(&exhaustion_key(
+                GoalKey::from(GoalKind::Sleep),
+                OpportunityAnchor::None,
+            )),
+        Some(&crate::ExhaustionEntry {
+            retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
+            baseline: ExhaustionBaseline {
+                position: Some(live_place),
+                needs: Some(HomeostaticNeeds::new_sated()),
+                commodity_quantities: Vec::new(),
+                unique_item_counts: Vec::new(),
+                wound_count: 0,
+                hostile_count: 0,
+            },
+            consecutive_budget_exhaustions: 0,
+        })
+    );
+    assert_eq!(
         runtime.dirty,
         DirtySet::STRUCTURAL_MASK | DirtySet::SNAPSHOT_MASK | DirtySet::FRAME_MASK
     );
@@ -476,6 +545,7 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
     let live_place = h.world.topology().place_ids().next().unwrap();
     let dead_agent = entity(800);
     let dead_entity = entity(801);
+    let dead_place = entity(802);
     let mut runtime = AgentDecisionRuntime {
         last_effective_place: Some(dead_entity),
         last_facility_access_signature: vec![
@@ -515,6 +585,30 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
             consecutive_budget_exhaustions: 0,
         },
     );
+    runtime.exhaustion_cache.insert(
+        exhaustion_key(
+            GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            OpportunityAnchor::Place(dead_place),
+        ),
+        crate::ExhaustionEntry {
+            retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
+            consecutive_budget_exhaustions: 0,
+        },
+    );
+    runtime.exhaustion_cache.insert(
+        exhaustion_key(GoalKey::from(GoalKind::Sleep), OpportunityAnchor::None),
+        crate::ExhaustionEntry {
+            retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
+            invalidation_conditions: Vec::new(),
+            baseline: crate::ExhaustionBaseline::default(),
+            consecutive_budget_exhaustions: 0,
+        },
+    );
     h.driver.runtime_by_agent.insert(h.actor, runtime);
     h.driver
         .runtime_by_agent
@@ -546,11 +640,26 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
             }),
             OpportunityAnchor::Entity(dead_entity),
         )));
+    assert!(!runtime
+        .exhaustion_cache
+        .contains_key(&exhaustion_key(
+            GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            OpportunityAnchor::Place(dead_place),
+        )));
     assert!(runtime
         .exhaustion_cache
         .contains_key(&exhaustion_key(
             GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
             OpportunityAnchor::Entity(h.actor),
+        )));
+    assert!(runtime
+        .exhaustion_cache
+        .contains_key(&exhaustion_key(
+            GoalKey::from(GoalKind::Sleep),
+            OpportunityAnchor::None,
         )));
     assert_eq!(
         runtime.dirty,
