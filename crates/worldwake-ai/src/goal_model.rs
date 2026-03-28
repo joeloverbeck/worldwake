@@ -1669,9 +1669,16 @@ pub struct RankedDriveGoalProvenance {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RankedVerificationGoalProvenance {
+    pub final_priority_class: GoalPriorityClass,
+    pub verification_motive_weight: Permille,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RankedGoalProvenance {
     Danger(DangerAssessment),
     Drive(RankedDriveGoalProvenance),
+    Verification(RankedVerificationGoalProvenance),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

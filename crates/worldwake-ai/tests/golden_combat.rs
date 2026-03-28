@@ -587,6 +587,9 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         RankedGoalProvenance::Danger(_) => {
             panic!("bread goal should not use danger provenance")
         }
+        RankedGoalProvenance::Verification(_) => {
+            panic!("bread goal should not use verification provenance")
+        }
     }
     match wash_goal
         .provenance
@@ -610,6 +613,9 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         }
         RankedGoalProvenance::Danger(_) => {
             panic!("wash goal should not use danger provenance")
+        }
+        RankedGoalProvenance::Verification(_) => {
+            panic!("wash goal should not use verification provenance")
         }
     }
 

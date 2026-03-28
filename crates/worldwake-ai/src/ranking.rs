@@ -5,7 +5,7 @@ use crate::{
     theft::assess_theft_deterrence,
     DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
     RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
-    RankedPriorityAdjustment,
+    RankedPriorityAdjustment, RankedVerificationGoalProvenance,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
@@ -129,6 +129,7 @@ fn ranked_priority_class(
         |provenance| match provenance {
             RankedGoalProvenance::Danger(_) => context.decision_context.danger_class,
             RankedGoalProvenance::Drive(provenance) => provenance.final_priority_class,
+            RankedGoalProvenance::Verification(provenance) => provenance.final_priority_class,
         },
     )
 }
@@ -151,6 +152,9 @@ fn ranked_motive_score(
                 .map(|input| input.score)
                 .max()
                 .unwrap_or(0),
+            RankedGoalProvenance::Verification(provenance) => {
+                u32::from(provenance.verification_motive_weight.value())
+            }
         },
     )
 }
@@ -203,6 +207,9 @@ fn goal_ranking_provenance(
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => Some(
             RankedGoalProvenance::Danger(context.danger_assessment.clone()),
         ),
+        GoalKind::VerifyBelief { .. } => {
+            verification_provenance(context).map(RankedGoalProvenance::Verification)
+        }
         GoalKind::StealItem { .. } | GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => {
             None
         }
@@ -499,7 +506,7 @@ fn motive_score(
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
-        GoalKind::VerifyBelief { .. } => 0,
+        GoalKind::VerifyBelief { .. } => verification_motive(context),
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
             .view
@@ -638,6 +645,25 @@ fn investigation_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) 
         0
     };
     base.saturating_add(ownership_bonus)
+}
+
+fn verification_motive(context: &RankingContext<'_>) -> u32 {
+    context
+        .view
+        .verification_disposition_profile(context.agent)
+        .map_or(0, |profile| {
+            u32::from(profile.verification_motive_weight.value())
+        })
+}
+
+fn verification_provenance(
+    context: &RankingContext<'_>,
+) -> Option<RankedVerificationGoalProvenance> {
+    let profile = context.view.verification_disposition_profile(context.agent)?;
+    Some(RankedVerificationGoalProvenance {
+        final_priority_class: GoalPriorityClass::Low,
+        verification_motive_weight: profile.verification_motive_weight,
+    })
 }
 
 fn drive_score(
@@ -1048,8 +1074,8 @@ mod tests {
         EntityKind, HomeostaticNeeds, InTransitOnEdge, JusticeDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, PunishmentKind,
         Quantity, RecipeId, ResourceSource, TellTopic, TheftDispositionProfile, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, VerificationDispositionProfile,
+        VerificationSubject, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1071,6 +1097,7 @@ mod tests {
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
+        verification_profiles: BTreeMap<EntityId, VerificationDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
@@ -1209,6 +1236,12 @@ mod tests {
         }
         fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
             self.theft_profiles.get(&agent).cloned()
+        }
+        fn verification_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<VerificationDispositionProfile> {
+            self.verification_profiles.get(&agent).cloned()
         }
         fn justice_disposition_profile(
             &self,
@@ -1365,6 +1398,16 @@ mod tests {
         }
     }
 
+    fn verification_profile(weight: u16) -> VerificationDispositionProfile {
+        VerificationDispositionProfile {
+            belief_verification_threshold: pm(500),
+            verify_belief_duration_ticks: NonZeroU32::new(3).unwrap(),
+            witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+            verification_motive_weight: pm(weight),
+            ask_memory_retention_ticks: 12,
+        }
+    }
+
     fn current_tick() -> Tick {
         Tick(10)
     }
@@ -1487,6 +1530,133 @@ mod tests {
             .unwrap();
         assert_eq!(punish.priority_class, GoalPriorityClass::Low);
         assert_eq!(punish.motive_score, 640);
+    }
+
+    #[test]
+    fn verify_belief_uses_profile_driven_motive_and_explicit_provenance() {
+        let agent = entity(1);
+        let market = entity(7);
+        let seller = entity(8);
+        let mut view = base_view(agent);
+        view.verification_profiles
+            .insert(agent, verification_profile(240));
+        view.beliefs
+            .insert(agent, vec![(seller, believed_state(2, PerceptionSource::DirectObservation))]);
+
+        let ranked = rank(
+            &[goal(GoalKind::VerifyBelief {
+                subject: VerificationSubject::EntityLocation {
+                    entity: seller,
+                    place: market,
+                },
+                generation_tick: Tick(10),
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[0].motive_score, 240);
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("verify belief should carry explicit provenance")
+        {
+            RankedGoalProvenance::Verification(provenance) => {
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::Low);
+                assert_eq!(provenance.verification_motive_weight, pm(240));
+            }
+            RankedGoalProvenance::Danger(_) | RankedGoalProvenance::Drive(_) => {
+                panic!("verify belief should not reuse danger or drive provenance")
+            }
+        }
+    }
+
+    #[test]
+    fn verify_belief_without_profile_is_zero_motive_and_filtered() {
+        let agent = entity(1);
+        let market = entity(7);
+        let seller = entity(8);
+        let view = base_view(agent);
+
+        let outcome = rank(
+            &[goal(GoalKind::VerifyBelief {
+                subject: VerificationSubject::EntityLocation {
+                    entity: seller,
+                    place: market,
+                },
+                generation_tick: Tick(10),
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert!(outcome.ranked.is_empty());
+        assert_eq!(
+            outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::VerifyBelief {
+                subject: VerificationSubject::EntityLocation {
+                    entity: seller,
+                    place: market,
+                },
+                generation_tick: Tick(10),
+            })]
+        );
+    }
+
+    #[test]
+    fn verify_belief_is_suppressed_under_critical_survival_pressure() {
+        let agent = entity(1);
+        let market = entity(7);
+        let seller = entity(8);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), thresholds.fatigue.critical(), pm(0), pm(0)),
+        );
+        view.verification_profiles
+            .insert(agent, verification_profile(1000));
+
+        let outcome = rank(
+            &[
+                goal(GoalKind::VerifyBelief {
+                    subject: VerificationSubject::EntityLocation {
+                        entity: seller,
+                        place: market,
+                    },
+                    generation_tick: Tick(10),
+                }),
+                goal(GoalKind::Sleep),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        let ranked = outcome.ranked;
+        assert_eq!(ranked.len(), 1);
+        assert!(matches!(ranked[0].grounded.key.kind, GoalKind::Sleep));
+        assert_eq!(
+            outcome.suppressed,
+            vec![GoalKey::from(GoalKind::VerifyBelief {
+                subject: VerificationSubject::EntityLocation {
+                    entity: seller,
+                    place: market,
+                },
+                generation_tick: Tick(10),
+            })]
+        );
     }
 
     #[test]
@@ -2584,6 +2754,9 @@ mod tests {
             RankedGoalProvenance::Danger(_) => {
                 panic!("hunger candidate should not use danger provenance")
             }
+            RankedGoalProvenance::Verification(_) => {
+                panic!("hunger candidate should not use verification provenance")
+            }
         }
     }
 
@@ -2713,6 +2886,9 @@ mod tests {
                 RankedGoalProvenance::Danger(_) => {
                     panic!("relieve/wash should not use danger provenance")
                 }
+                RankedGoalProvenance::Verification(_) => {
+                    panic!("relieve/wash should not use verification provenance")
+                }
             }
         }
     }
@@ -2783,6 +2959,9 @@ mod tests {
             RankedGoalProvenance::Danger(_) => {
                 panic!("bread goal should not use danger provenance")
             }
+            RankedGoalProvenance::Verification(_) => {
+                panic!("bread goal should not use verification provenance")
+            }
         }
 
         match wash
@@ -2806,6 +2985,9 @@ mod tests {
             }
             RankedGoalProvenance::Danger(_) => {
                 panic!("wash goal should not use danger provenance")
+            }
+            RankedGoalProvenance::Verification(_) => {
+                panic!("wash goal should not use verification provenance")
             }
         }
     }
