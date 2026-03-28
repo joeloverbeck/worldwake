@@ -4492,15 +4492,13 @@ fn run_same_place_concurrent_violation_lifecycle(
             .trace_at(investigator, just_ran_tick)
             .expect("decision trace should exist for each stepped tick");
         if let DecisionOutcome::Planning(planning) = &trace.outcome {
-            if planning.selection.selected
-                == Some(
-                    GoalKind::InvestigateViolation {
-                        violation_id: sibling_violation_id,
-                        place: VILLAGE_SQUARE,
-                    }
-                    .into(),
-                )
-            {
+            if planning.selection.selected_goal_is(
+                GoalKind::InvestigateViolation {
+                    violation_id: sibling_violation_id,
+                    place: VILLAGE_SQUARE,
+                }
+                .into(),
+            ) {
                 sibling_selected = true;
             }
         }

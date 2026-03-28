@@ -2526,9 +2526,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
     assert!(
         planning_tick_zero
             .candidates
-            .generated
-            .iter()
-            .any(|goal| goal.goal_key.kind == GoalKind::ClaimOffice { office }),
+            .generated_contains_goal(GoalKind::ClaimOffice { office }.into()),
         "tick 0 candidates should include ClaimOffice for the force-law office"
     );
     assert!(

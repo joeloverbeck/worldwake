@@ -4405,24 +4405,19 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
 
     match &traces[0].outcome {
         crate::DecisionOutcome::Planning(planning) => {
+            let claim_goal = GoalKey::from(GoalKind::ClaimOffice { office });
+            let support_goal = GoalKey::from(GoalKind::SupportCandidateForOffice {
+                office,
+                candidate: rival,
+            });
             assert!(
-                planning
-                    .candidates
-                    .generated
-                    .iter()
-                    .any(|goal| goal.goal_key.kind == GoalKind::ClaimOffice { office }),
+                planning.candidates.generated_contains_goal(claim_goal),
                 "Force-law offices should emit ClaimOffice candidates in agent_tick"
             );
             assert!(
-                    !planning.candidates.generated.iter().any(|goal| {
-                        goal.goal_key.kind
-                            == GoalKind::SupportCandidateForOffice {
-                                office,
-                                candidate: rival,
-                            }
-                    }),
-                    "Force-law offices must not emit SupportCandidateForOffice candidates in agent_tick"
-                );
+                !planning.candidates.generated_contains_goal(support_goal),
+                "Force-law offices must not emit SupportCandidateForOffice candidates in agent_tick"
+            );
             assert!(
                 planning.planning.attempts.iter().any(|attempt| {
                     matches!(

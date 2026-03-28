@@ -1188,9 +1188,7 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
     assert!(
         planning_tick_0
             .candidates
-            .generated
-            .iter()
-            .any(|goal| goal.goal_key == care_goal_key),
+            .generated_contains_goal(care_goal_key),
         "healer should generate TreatWounds before the authoritative start race"
     );
     let selected_plan = planning_tick_0
@@ -1198,13 +1196,9 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
         .selected_plan
         .as_ref()
         .expect("healer should select a care plan before the start failure");
-    assert_eq!(
-        planning_tick_0
-            .selection
-            .selected
-            .expect("tick 0 should have a selected goal")
-            .kind,
-        care_goal
+    assert!(
+        planning_tick_0.selection.selected_goal_is(care_goal_key),
+        "tick 0 should select TreatWounds before the start failure"
     );
     assert_eq!(
         selected_plan

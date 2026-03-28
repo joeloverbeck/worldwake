@@ -933,18 +933,13 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         }),
         "tick 0 plan should route through Orchard Farm from the stale prerequisite belief"
     );
+    let initial_selected_opportunity = tick_zero_planning
+        .selection
+        .selected_opportunity
+        .expect("tick 0 should select a concrete stale-source opportunity");
     let initial_candidate_trace = tick_zero_planning
         .candidates
-        .evidence
-        .iter()
-        .find(|trace| {
-            matches!(
-                trace.opportunity.goal_key.kind,
-                GoalKind::RestockCommodity {
-                    commodity: CommodityKind::Bread
-                }
-            )
-        })
+        .evidence_for_opportunity(initial_selected_opportunity)
         .expect("initial stale branch should record typed candidate evidence provenance");
     assert!(initial_candidate_trace
         .contributors
@@ -1029,18 +1024,13 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         }),
         "post-failure plan should route through the fallback firewood source"
     );
+    let fallback_selected_opportunity = replan_planning
+        .selection
+        .selected_opportunity
+        .expect("fallback replan should select a concrete bandit-camp opportunity");
     let fallback_candidate_trace = replan_planning
         .candidates
-        .evidence
-        .iter()
-        .find(|trace| {
-            matches!(
-                trace.opportunity.goal_key.kind,
-                GoalKind::RestockCommodity {
-                    commodity: CommodityKind::Bread
-                }
-            )
-        })
+        .evidence_for_opportunity(fallback_selected_opportunity)
         .expect("fallback replan should record typed candidate evidence provenance");
     assert!(fallback_candidate_trace
         .contributors

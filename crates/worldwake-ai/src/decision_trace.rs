@@ -239,6 +239,56 @@ pub struct CandidateTrace {
     pub omitted_social: Vec<SocialCandidateOmission>,
 }
 
+impl CandidateTrace {
+    #[must_use]
+    pub fn generated_contains_goal(&self, goal_key: GoalKey) -> bool {
+        self.generated
+            .iter()
+            .any(|opportunity| opportunity.goal_key == goal_key)
+    }
+
+    #[must_use]
+    pub fn generated_contains_opportunity(&self, opportunity: OpportunityKey) -> bool {
+        self.generated.contains(&opportunity)
+    }
+
+    #[must_use]
+    pub fn ranked_summary_for_opportunity(
+        &self,
+        opportunity: OpportunityKey,
+    ) -> Option<&RankedGoalSummary> {
+        self.ranked
+            .iter()
+            .find(|summary| summary.opportunity == opportunity)
+    }
+
+    #[must_use]
+    pub fn ranked_summaries_for_goal(&self, goal_key: GoalKey) -> Vec<&RankedGoalSummary> {
+        self.ranked
+            .iter()
+            .filter(|summary| summary.opportunity.goal_key == goal_key)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn evidence_for_opportunity(
+        &self,
+        opportunity: OpportunityKey,
+    ) -> Option<&CandidateEvidenceTrace> {
+        self.evidence
+            .iter()
+            .find(|trace| trace.opportunity == opportunity)
+    }
+
+    #[must_use]
+    pub fn evidence_for_goal(&self, goal_key: GoalKey) -> Vec<&CandidateEvidenceTrace> {
+        self.evidence
+            .iter()
+            .filter(|trace| trace.opportunity.goal_key == goal_key)
+            .collect()
+    }
+}
+
 /// Desire-level blocking summary for opportunity-scoped candidate filtering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesireFullyBlocked {
@@ -592,6 +642,18 @@ pub struct SelectionTrace {
     pub plan_replacement: Option<SelectedPlanReplacementTrace>,
 }
 
+impl SelectionTrace {
+    #[must_use]
+    pub fn selected_goal_is(&self, goal_key: GoalKey) -> bool {
+        self.selected == Some(goal_key)
+    }
+
+    #[must_use]
+    pub fn selected_opportunity_is(&self, opportunity: OpportunityKey) -> bool {
+        self.selected_opportunity == Some(opportunity)
+    }
+}
+
 /// Canonical summary of the final plan the agent is following after selection.
 #[derive(Clone, Debug)]
 pub struct SelectedPlanTrace {
@@ -714,6 +776,14 @@ pub struct GoalHistoryEntry {
     pub status: GoalTraceStatus,
     pub plan_continued: bool,
     pub selected_plan_source: Option<SelectedPlanSource>,
+}
+
+impl PlanningPipelineTrace {
+    #[must_use]
+    pub fn selected_ranked_summary(&self) -> Option<&RankedGoalSummary> {
+        let selected = self.selection.selected_opportunity?;
+        self.candidates.ranked_summary_for_opportunity(selected)
+    }
 }
 
 // ── Collection Sink ─────────────────────────────────────────────
@@ -883,21 +953,23 @@ fn goal_status_in_planning(
     }
     if let Some(rank) = planning
         .candidates
-        .ranked
-        .iter()
-        .position(|candidate| candidate.opportunity.goal_key == goal_key)
+        .ranked_summaries_for_goal(goal_key)
+        .into_iter()
+        .next()
+        .and_then(|summary| {
+            planning
+                .candidates
+                .ranked
+                .iter()
+                .position(|candidate| candidate.opportunity == summary.opportunity)
+        })
     {
         return GoalTraceStatus::Ranked {
             rank,
-            selected: planning.selection.selected == Some(goal_key),
+            selected: planning.selection.selected_goal_is(goal_key),
         };
     }
-    if planning
-        .candidates
-        .generated
-        .iter()
-        .any(|opportunity| opportunity.goal_key == goal_key)
-    {
+    if planning.candidates.generated_contains_goal(goal_key) {
         return GoalTraceStatus::GeneratedOnly;
     }
     GoalTraceStatus::NotGenerated
@@ -1095,12 +1167,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
 }
 
 fn selected_ranked_goal_summary(planning: &PlanningPipelineTrace) -> Option<&RankedGoalSummary> {
-    let selected = planning.selection.selected_opportunity?;
-    planning
-        .candidates
-        .ranked
-        .iter()
-        .find(|summary| summary.opportunity == selected)
+    planning.selected_ranked_summary()
 }
 
 fn format_opportunity_key(opportunity: OpportunityKey) -> String {
@@ -1926,10 +1993,62 @@ mod tests {
             frame_transition: None,
         };
 
-        let selected = selected_ranked_goal_summary(&planning)
+        assert!(planning.candidates.generated_contains_goal(goal));
+        assert!(planning.candidates.generated_contains_opportunity(orchard));
+        assert!(planning.selection.selected_goal_is(goal));
+        assert!(planning.selection.selected_opportunity_is(market));
+
+        let selected = planning
+            .selected_ranked_summary()
             .expect("selected opportunity should resolve to a ranked summary");
         assert_eq!(selected.opportunity, market);
         assert_eq!(selected.feasibility, FeasibilityHint::Likely);
+        assert_eq!(
+            planning
+                .candidates
+                .ranked_summaries_for_goal(goal)
+                .into_iter()
+                .map(|summary| summary.opportunity)
+                .collect::<Vec<_>>(),
+            vec![orchard, market]
+        );
+    }
+
+    #[test]
+    fn candidate_trace_helpers_lookup_evidence_by_goal_and_opportunity() {
+        let goal = GoalKey::new(GoalKind::ClaimOffice { office: entity(30) });
+        let opportunity = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Entity(entity(31)),
+        };
+        let evidence = CandidateEvidenceTrace {
+            opportunity,
+            contributors: vec![CandidateEvidenceContributor {
+                kind: CandidateEvidenceKind::OfficeParticipant,
+                place: entity(32),
+                entity: entity(31),
+            }],
+            exclusions: vec![],
+            knowledge_path: KnowledgePath::default(),
+            legality: None,
+        };
+        let candidates = CandidateTrace {
+            generated: vec![opportunity],
+            evidence: vec![evidence.clone()],
+            fully_blocked_desires: vec![],
+            ranked: vec![],
+            top_ranked_comparison: None,
+            suppressed: vec![],
+            zero_motive: vec![],
+            omitted_political: vec![],
+            omitted_social: vec![],
+        };
+
+        assert_eq!(
+            candidates.evidence_for_opportunity(opportunity),
+            Some(&evidence)
+        );
+        assert_eq!(candidates.evidence_for_goal(goal), vec![&evidence]);
     }
 
     #[test]
