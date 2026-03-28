@@ -557,7 +557,7 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         "the setup should leave wash with the higher motive score so the test proves class promotion, not a motive tie; bread={bread_goal:?}, wash={wash_goal:?}"
     );
     assert_eq!(
-        planning_tick_0.selection.selected.map(|goal| goal.kind),
+        planning_tick_0.selection.selected_goal().map(|goal| goal.kind),
         Some(GoalKind::ConsumeOwnedCommodity {
             commodity: CommodityKind::Bread,
         }),
@@ -1281,7 +1281,7 @@ fn run_defend_changed_conditions_scenario(seed: Seed) -> (StateHash, StateHash) 
             _ => None,
         });
     let first_post_resolution_goal = first_post_resolution_trace
-        .and_then(|planning| planning.selection.selected.as_ref())
+        .and_then(|planning| planning.selection.selected_goal())
         .map(|goal| goal.kind);
 
     assert!(
@@ -1437,8 +1437,7 @@ fn golden_reduce_danger_defensive_mitigation() {
             .is_some_and(|trace| match &trace.outcome {
                 DecisionOutcome::Planning(planning) => planning
                     .selection
-                    .selected
-                    .as_ref()
+                    .selected_goal()
                     .is_some_and(|goal| goal.kind == GoalKind::ReduceDanger),
                 _ => false,
             });

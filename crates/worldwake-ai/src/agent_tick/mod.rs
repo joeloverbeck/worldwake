@@ -702,7 +702,6 @@ fn process_agent(
                     attempts: Vec::new(),
                 }),
                 selection: selection_trace.unwrap_or(SelectionTrace {
-                    selected: None,
                     selected_opportunity: None,
                     selected_plan: None,
                     selected_plan_source: None,

@@ -115,8 +115,7 @@ impl DecisionOutcome {
             DecisionOutcome::Planning(planning) => {
                 let selected = planning
                     .selection
-                    .selected
-                    .as_ref()
+                    .selected_goal()
                     .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
                 let selected_opportunity = planning
                     .selection
@@ -625,8 +624,6 @@ pub struct PlannedStepSummary {
 /// Trace of plan selection and goal switching.
 #[derive(Clone, Debug)]
 pub struct SelectionTrace {
-    /// The goal/plan that was selected (None if no plans available).
-    pub selected: Option<GoalKey>,
     /// The canonical opportunity identity for the selected plan, if one exists.
     pub selected_opportunity: Option<OpportunityKey>,
     /// Canonical summary of the final selected plan, if one exists.
@@ -644,8 +641,13 @@ pub struct SelectionTrace {
 
 impl SelectionTrace {
     #[must_use]
+    pub fn selected_goal(&self) -> Option<GoalKey> {
+        self.selected_opportunity.map(|opportunity| opportunity.goal_key)
+    }
+
+    #[must_use]
     pub fn selected_goal_is(&self, goal_key: GoalKey) -> bool {
-        self.selected == Some(goal_key)
+        self.selected_goal() == Some(goal_key)
     }
 
     #[must_use]
@@ -1043,8 +1045,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
         DecisionOutcome::Planning(planning) => {
             let selected = planning
                 .selection
-                .selected
-                .as_ref()
+                .selected_goal()
                 .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
             let selected_plan = planning
                 .selection
@@ -1575,7 +1576,6 @@ mod tests {
                     attempts: Vec::new(),
                 },
                 selection: SelectionTrace {
-                    selected,
                     selected_opportunity: selected.map(default_opportunity),
                     selected_plan: None,
                     selected_plan_source,
@@ -1975,7 +1975,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: Some(goal),
                 selected_opportunity: Some(market),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
@@ -2012,6 +2011,34 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![orchard, market]
         );
+    }
+
+    #[test]
+    fn selected_goal_helper_derives_from_selected_opportunity() {
+        let goal = GoalKey::new(GoalKind::ClaimOffice { office: entity(14) });
+        let selection = SelectionTrace {
+            selected_opportunity: Some(OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Entity(entity(15)),
+            }),
+            selected_plan: None,
+            selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+            goal_switch: None,
+            previous_goal: None,
+            plan_replacement: None,
+        };
+
+        assert_eq!(selection.selected_goal(), Some(goal));
+        assert!(selection.selected_goal_is(goal));
+        assert!(!SelectionTrace {
+            selected_opportunity: None,
+            selected_plan: None,
+            selected_plan_source: None,
+            goal_switch: None,
+            previous_goal: None,
+            plan_replacement: None,
+        }
+        .selected_goal_is(goal));
     }
 
     #[test]
@@ -2101,7 +2128,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: Some(GoalKey::new(GoalKind::Sleep)),
                 selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
                 selected_plan: Some(SelectedPlanTrace {
                     steps: vec![PlannedStepSummary {
@@ -2192,7 +2218,6 @@ mod tests {
                 }],
             },
             selection: SelectionTrace {
-                selected: None,
                 selected_opportunity: None,
                 selected_plan: None,
                 selected_plan_source: None,
@@ -2250,7 +2275,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: None,
                 selected_opportunity: None,
                 selected_plan: None,
                 selected_plan_source: None,
@@ -2316,7 +2340,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: Some(winner),
                 selected_opportunity: Some(default_opportunity(winner)),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
@@ -2375,7 +2398,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: Some(GoalKey::new(GoalKind::ReduceDanger)),
                 selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::ReduceDanger))),
                 selected_plan: None,
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
@@ -2445,9 +2467,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: Some(GoalKey::new(GoalKind::ConsumeOwnedCommodity {
-                    commodity: worldwake_core::CommodityKind::Bread,
-                })),
                 selected_opportunity: Some(default_opportunity(GoalKey::new(
                     GoalKind::ConsumeOwnedCommodity {
                         commodity: worldwake_core::CommodityKind::Bread,
@@ -2544,7 +2563,6 @@ mod tests {
                 }],
             },
             selection: SelectionTrace {
-                selected: Some(GoalKey::new(GoalKind::ClaimOffice { office: entity(4) })),
                 selected_opportunity: Some(default_opportunity(GoalKey::new(
                     GoalKind::ClaimOffice { office: entity(4) },
                 ))),
@@ -2827,7 +2845,6 @@ mod tests {
             },
             planning: PlanSearchTrace { attempts: vec![] },
             selection: SelectionTrace {
-                selected: None,
                 selected_opportunity: None,
                 selected_plan: None,
                 selected_plan_source: None,
@@ -3001,7 +3018,6 @@ mod tests {
                 },
                 planning: PlanSearchTrace { attempts: vec![] },
                 selection: SelectionTrace {
-                    selected: None,
                     selected_opportunity: None,
                     selected_plan: None,
                     selected_plan_source: None,

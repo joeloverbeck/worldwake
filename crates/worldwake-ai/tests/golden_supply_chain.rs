@@ -530,7 +530,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
                             }
                         )
                     });
-                    let selected = planning.selection.selected.as_ref().is_some_and(|goal| {
+                    let selected = planning.selection.selected_goal().is_some_and(|goal| {
                         matches!(
                             goal.kind,
                             GoalKind::RestockCommodity {
@@ -915,7 +915,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         "stale-belief scenario should start from a fresh search result"
     );
     assert!(matches!(
-        tick_zero_planning.selection.selected.as_ref().map(|goal| &goal.kind),
+        tick_zero_planning.selection.selected_goal().as_ref().map(|goal| &goal.kind),
         Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
     ));
     assert_eq!(
@@ -959,7 +959,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
                     trace.tick > Tick(0)
                         && planning.selection.selected_plan_source
                             == Some(SelectedPlanSource::SearchSelection)
-                        && planning.selection.selected.as_ref().is_some_and(|goal| {
+                        && planning.selection.selected_goal().is_some_and(|goal| {
                             matches!(
                                 goal.kind,
                                 GoalKind::RestockCommodity {
@@ -993,7 +993,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .as_ref()
         .expect("fallback planning should select a bandit-camp plan");
     assert!(matches!(
-        replan_planning.selection.selected.as_ref().map(|goal| &goal.kind),
+        replan_planning.selection.selected_goal().as_ref().map(|goal| &goal.kind),
         Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
     ));
     let replacement = replan_planning

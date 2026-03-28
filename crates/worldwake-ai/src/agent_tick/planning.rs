@@ -568,7 +568,6 @@ pub(super) fn plan_and_validate_next_step_traced(
         attempts: Vec::new(),
     };
     let mut selection_trace = SelectionTrace {
-        selected: None,
         selected_opportunity: None,
         selected_plan: None,
         selected_plan_source: None,
@@ -597,7 +596,6 @@ pub(super) fn plan_and_validate_next_step_traced(
                     if valid {
                         runtime.dirty = DirtySet::default();
                         plan_continued = true;
-                        selection_trace.selected = active_goal_key;
                         selection_trace.selected_opportunity =
                             runtime.current_plan.as_ref().map(|plan| plan.opportunity);
                         selection_trace.selected_plan = runtime.current_plan.as_ref().map(|plan| {
@@ -688,7 +686,6 @@ pub(super) fn plan_and_validate_next_step_traced(
                 matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
                     .then(|| summarize_search_provenance(&plans))
                     .flatten();
-            selection_trace.selected = Some(selected_goal);
             selection_trace.selected_opportunity = Some(selected_plan.opportunity);
             selection_trace.selected_plan = Some(summarize_selected_plan(
                 &selected_plan,

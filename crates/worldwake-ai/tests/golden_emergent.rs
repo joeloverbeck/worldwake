@@ -2269,7 +2269,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
         trace_sink
             .trace_at(loser, Tick(0))
             .and_then(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => planning.selection.selected.as_ref(),
+                DecisionOutcome::Planning(planning) => planning.selection.selected_goal(),
                 _ => None,
             })
             .map(|goal| goal.kind),
@@ -4358,7 +4358,7 @@ fn run_same_place_concurrent_violation_lifecycle(
 
     let initial_selected_violation_id = match first_planning
         .selection
-        .selected
+        .selected_goal()
         .expect("one investigate goal should be selected")
         .kind
     {
@@ -4710,7 +4710,7 @@ fn run_entity_missing_triggers_investigation(
     let generated_violation_id = generated_goal.0;
 
     assert_eq!(
-        first_planning.selection.selected,
+        first_planning.selection.selected_goal(),
         Some(
             GoalKind::InvestigateViolation {
                 violation_id: generated_violation_id,
@@ -5091,7 +5091,7 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
         })
         .expect("owner arrival should generate an investigate goal for the missing owned lot");
     assert_eq!(
-        detection_planning.selection.selected,
+        detection_planning.selection.selected_goal(),
         Some(
             GoalKind::InvestigateViolation {
                 violation_id: generated_violation_id,
@@ -6537,7 +6537,7 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
             );
 
             saw_self_care_selection |= matches!(
-                planning.selection.selected.as_ref().map(|goal| goal.kind),
+                planning.selection.selected_goal().as_ref().map(|goal| goal.kind),
                 Some(GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Apple,
                 })
