@@ -498,15 +498,18 @@ fn golden_deprivation_wound_worsening_consolidates_not_duplicates_replays_determ
     );
 }
 
-// ===========================================================================
-// Suite 2: wounded_politician_priority_resolution
+// Scenario 44: Wounded Politician Enterprise vs Care Priority
+// ---------------------------------------------------------------------------
 //
-// Proves: care and political ambition follow the shared ranking pipeline.
+// Systems: Care, Politics, AI, Succession
+// GoalKinds: TreatWounds, ClaimOffice
+// ActionDomains: Care, Social
+// Places: VillageSquare
+// Principles: 3, 20, 24
+//
+// Proves care and political ambition follow the shared ranking pipeline.
 // Medium pain can outrank office ambition, while low pain can leave the office
 // claim path ahead, all without office-specific priority exceptions.
-// Foundation: Principle 3, Principle 20, Principle 24.
-// Cross-systems: Care + AI ranking + Political planning + Succession.
-// ===========================================================================
 
 #[allow(clippy::too_many_lines)]
 fn run_wounded_politician(
@@ -1216,16 +1219,18 @@ fn golden_loot_corpse_self_care_chain_replays_deterministically() {
     );
 }
 
-// ===========================================================================
-// Suite 5: combat_death_triggers_force_succession
+// Scenario 45: Combat Death Triggers Force Succession
+// ---------------------------------------------------------------------------
 //
-// Proves: challenger AI can open combat against an incumbent, and the resulting
+// Systems: Combat, Politics, AI
+// GoalKinds: EngageHostile
+// ActionDomains: Combat, Social
+// Places: VillageSquare
+// Principles: 1, 9, 24
+//
+// Proves challenger AI can open combat against an incumbent, and the resulting
 // death drives force-law succession entirely through authoritative world state
-// and event history. No combat-specific political hook or political action
-// alias is involved.
-// Foundation: Principle 1, Principle 9, Principle 24.
-// Cross-systems: Combat + Politics + AI combat goal generation.
-// ===========================================================================
+// and event history. No combat-specific political hook participates.
 
 #[allow(clippy::too_many_lines)]
 fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
@@ -1559,15 +1564,18 @@ fn golden_combat_death_triggers_force_succession_replays_deterministically() {
     );
 }
 
-// ===========================================================================
-// Suite 6: social_tell_propagates_political_knowledge
+// Scenario 46: Social Tell Propagates Political Knowledge
+// ---------------------------------------------------------------------------
 //
-// Proves: the social Tell system can lawfully move office knowledge into the
-// political planning layer, unlocking the ordinary office-claim path without
-// belief injection shortcuts or political/social coupling.
-// Foundation: Principle 1, Principle 7, Principle 13, Principle 24.
-// Cross-systems: Social + Beliefs + Travel + AI political planning + Politics.
-// ===========================================================================
+// Systems: Social, Beliefs, Travel, AI, Politics, Succession
+// GoalKinds: ShareBelief, ClaimOffice
+// ActionDomains: Social, Movement
+// Places: BanditCamp, VillageSquare
+// Principles: 1, 7, 13, 24
+//
+// Proves the social Tell system can lawfully move institutional office knowledge
+// into the political planning layer, unlocking the ordinary office-claim path
+// without belief injection shortcuts or political/social coupling.
 
 #[allow(clippy::too_many_lines)]
 fn run_tell_propagates_political_knowledge(seed: Seed) -> (StateHash, StateHash) {

@@ -116,6 +116,9 @@ Established belief-vs-observation violation detection, per-agent violation memor
 ### S31: Goal-Aware Exhaustion Invalidation — COMPLETED
 Replaced coarse exhaustion invalidation with goal-aware conditions plus baseline snapshots, removed the `EXHAUSTION_SKIP_TTL` retry gate in favor of condition-based cache clearing, separated budget-exhaustion retry from invalidation semantics, and closed the loop with golden validation for needs-driven recovery, unrelated commodity non-invalidation, and deterministic save/load persistence of the exhaustion runtime state. The completed spec is archived at `archive/specs/S31-goal-aware-exhaustion-invalidation.md`.
 
+### S13: Political Emergence Golden E2E Suites — COMPLETED
+Established cross-system political emergence golden coverage: Scenario 44 proves utility-weight-driven care-vs-enterprise priority ordering under wounds, Scenario 45 proves combat death cascading into force-law vacancy and succession through shared state, and Scenario 46 proves autonomous Tell transferring institutional office beliefs to unlock political planning at a remote jurisdiction. All 7 golden tests (3 main + 2 variant + 3 replay) in `golden_emergent.rs` with structured `// Scenario 44/45/46:` source annotations. The completed spec is archived at `archive/specs/S13-political-emergence-golden-suites.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -129,7 +132,7 @@ S09 ✅ (design fix to defend action duration completed)
 S11 ✅ (wound lifecycle audit completed)
 S11 ──→ S17 ✅ (wound lifecycle golden E2E coverage completed)
 S12 ✅ (planner prerequisite-aware search heuristic completed)
-E16c ──→ S13 (political emergence golden coverage needs institutional beliefs)
+E16c ──→ S13 ✅ (political emergence golden coverage completed)
 E16b, E16c ──→ S16b-golden ✅ (force-legitimacy emergence golden suites completed)
 E16c ──→ S19 ✅ (institutional record consultation golden coverage completed)
 S15 ✅ (cross-system start-failure emergence golden coverage)
@@ -226,9 +229,9 @@ S22 ✅, S23 ✅ ──→ S27 ✅ (expectation-violation goals completed)
   - replaced thin force-succession shortcut with explicit jurisdiction-control state (claims, contests, hold durations, installation)
 - **E17**: Crime, Theft & Justice — ✅ COMPLETED
   - explicit theft, crime evidence, accusation/punishment records, and E17 golden closeout are shipped; archived spec: `archive/specs/E17-crime-theft-justice.md`; Phase 3 itself remains open for non-E17 items such as `S13`, `T10`, `T11`, and `T25`
-- **S13**: Political Emergence Golden E2E Suites
-  - needs E16c (institutional beliefs for proper belief-based political knowledge paths)
-  - adds cross-system emergence coverage for combat-driven succession, Tell-driven office claims, and care-vs-politics ordering
+- **S13**: Political Emergence Golden E2E Suites — ✅ COMPLETED
+  - 7 golden tests (Scenarios 44/45/46) proving combat-death succession, Tell-driven office claims, and care-vs-enterprise priority ordering
+  - archived spec: `archive/specs/S13-political-emergence-golden-suites.md`
 - **S16b-golden**: Force-Legitimacy Emergence Golden E2E Suites — ✅ COMPLETED
   - 3 golden suites proving force-legitimacy participates in emergent multi-system chains (controller departure, hostility propagation, contested state propagation)
 
@@ -352,7 +355,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 
 | Spec | Phase | Step | Dependencies |
 |------|-------|------|-------------|
-| `S13-political-emergence-golden-suites.md` | 3 | 13 | E16c, E16d, E12, S07, E14 |
+| ~~`S13-political-emergence-golden-suites.md`~~ | 3 | 13 | ✅ COMPLETED |
 | ~~`S20-structural-cleanup.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | ~~`S26-planner-conformance-tests.md`~~ | 3+ | 13.5 W0 | ✅ COMPLETED |
 | ~~`S21-promote-causal-runtime-state.md`~~ | 3+ | 13.5 W1 | ✅ COMPLETED |
@@ -390,7 +393,7 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 2: Emergent Economy | E09–E13 | Agents autonomously survive | ✅ COMPLETED |
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
-| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; `S13` plus gate items `T10`/`T11`/`T25` remain open) |
+| 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S31 | Honest causal state, general intentions, refined diagnostics, planning performance | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy Deepening | S04–S06 | Merchant economy depth | PENDING |
