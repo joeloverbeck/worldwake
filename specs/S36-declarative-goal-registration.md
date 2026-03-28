@@ -2,7 +2,7 @@
 
 ## Summary
 
-Introduce a centralized declarative registration system for `GoalKind` variants that consolidates the per-goal dispatch tables currently scattered across 8+ files and ~734 match sites. Adding a new goal kind currently requires parallel edits to candidate generation, ranking, goal_model, exhaustion, feasibility, intention frame progress, planner op relevance, and trace labeling — with no compile-time enforcement that all required declarations exist. This spec introduces a `GoalRegistration` trait and exhaustive-match enforcement so that incomplete goal declarations fail compilation.
+Introduce a centralized declarative registration system for AI goal dispatch that consolidates the static and strategy-selection tables currently scattered across multiple `worldwake-ai` files. The live code has already shown that `GoalKindTag` is too coarse to serve as the universal declaration key: some dispatch distinctions depend on payload shape inside one `GoalKindTag`. S36 therefore introduces a payload-aware AI-internal declaration key derived from concrete `GoalKind`, a declaration table keyed by that derived key, and exhaustive-match enforcement so incomplete dispatch registration fails compilation.
 
 ## Source
 
@@ -14,127 +14,145 @@ Phase 3+: AI Architecture Overhaul, Step 13.5 Wave 5
 
 ## Crates
 
-- `worldwake-core` (GoalKind, possible trait definition)
 - `worldwake-ai` (registration implementation, dispatch table consolidation)
 
 ## Dependencies
 
 - S33 (opportunity-scoped goal identity — goal identity changes should land first so registration covers the final shape)
-- S31 ✅ (exhaustion invalidation conditions — registration must include invalidation condition declarations)
-- S22 ✅ (intention frames — registration must include progress op declarations)
-- S25 ✅ (feasibility sketching — registration must include feasibility hint declarations)
+- S31 ✅ (exhaustion invalidation conditions — registration must eventually own invalidation strategy selection)
+- S25 ✅ (feasibility sketching — registration must eventually own feasibility strategy selection)
+
+Not a direct dependency:
+
+- S22 ✅ (intention frames) — live reassessment shows `agent_tick/frame.rs::progress_op_kinds()` is `IntentionDomain`-owned, not goal-registration-owned. S36 must not silently absorb domain registration into goal registration.
 
 ## FOUNDATIONS Alignment
 
 - **P26** (No Backward Compatibility): Consolidation removes duplicate dispatch paths. No shim or compatibility layer between old scattered tables and new registration.
-- **P28** (Every System Spec Must Declare Causal Hooks): Registration IS declaration — each goal declares its ranking family, invalidation conditions, planner semantics, and belief requirements in one place.
+- **P28** (Every System Spec Must Declare Causal Hooks): Registration is declaration, but only at the correct abstraction boundary. Static goal dispatch and dynamic strategy selection should be declared explicitly; domain-owned progress semantics should stay domain-owned until a separate domain-registration design exists.
 - **P27** (Debuggability): Centralized registration makes it trivial to inspect what each goal kind supports.
+- **P3** (Concrete State Over Abstract Scores): `GoalKind` remains the authoritative concrete goal identity. The new declaration key is a derived AI-internal read-model for dispatch, not a replacement source of truth.
 
 ## Design Goals
 
-1. **Single source of truth**: Each goal kind's dispatch properties declared once, in one place.
-2. **Compile-time completeness**: Adding a `GoalKind` variant without registering all required properties fails compilation.
-3. **Exhaustive matches**: Remove wildcard (`_`) arms from goal-dispatch matches where adding a variant should force review.
-4. **No behavioral change**: This is a structural refactoring. All existing behavior preserved exactly.
-5. **Incremental migration**: Can migrate one goal kind at a time to the registration system.
+1. **Single source of truth**: Each dispatch-distinguishing goal shape declares its AI dispatch properties once, in one place.
+2. **Payload-aware completeness**: The declaration substrate must be able to distinguish payload-sensitive static behavior such as `AcquireCommodity` purpose splits and any similar live distinctions.
+3. **Static vs dynamic separation**: Static facts belong directly in declarations; dynamic invalidation/feasibility behavior belongs behind declaration-owned strategy selectors, not hard-coded free-floating `match GoalKind` tables.
+4. **Exhaustive matches**: Remove wildcard (`_`) arms from dispatch code where adding a variant or dispatch-distinguishing payload branch should force review.
+5. **No behavioral change**: This is a structural refactoring. All existing behavior preserved exactly.
+6. **Incremental migration**: Can migrate one dispatch surface at a time to the registration system.
 
 ## Current Shape (Scattered Dispatch)
 
 Per-goal-kind logic currently lives in:
 1. `candidate_generation.rs` — which candidates to emit per goal family
-2. `ranking.rs` — ranking family, motive computation, policy evaluation
+2. `ranking.rs` — provenance family / ranking strategy selection plus motive and priority computation
 3. `goal_model.rs` — `GoalKindPlannerExt` trait with `relevant_ops()`, `is_satisfied()`, `matches_binding()`, goal-to-op dispatch
 4. `exhaustion.rs` — `derive_invalidation_conditions()` per goal kind
-5. `feasibility.rs` — `feasibility_hint()` per goal kind
-6. `agent_tick/` — intention frame `progress_op_kinds()` per domain
-7. `decision_trace.rs` — trace labels per goal kind
-8. `planner_ops.rs` — hypothetical transition per op kind (cross-cuts goals)
+5. `feasibility.rs` — `goal_specific_feasibility()` per goal kind
+6. `decision_trace.rs` — selected-goal summaries currently fall back to `Debug` formatting rather than a declaration-owned label surface
+7. `planner_ops.rs` — reverse goal-membership tables per planner op
+8. `agent_tick/` — intention frame `progress_op_kinds()` per `IntentionDomain` (important: currently domain-owned, not goal-owned)
 
 ## Deliverables
 
-### 1. `GoalKindDeclaration` struct (worldwake-ai)
+### 1. Payload-aware declaration key (worldwake-ai)
 
-Rather than a trait with dynamic dispatch (which would require `dyn` complexity), use a static struct with all required fields:
+Introduce an AI-internal key derived from concrete `GoalKind` that is exhaustive over dispatch-distinguishing goal shapes, not just over coarse `GoalKindTag` variants.
+
+Examples the live code already proves need payload-aware distinction:
+
+- `AcquireCommodity::SelfConsume`
+- `AcquireCommodity::Restock`
+- `AcquireCommodity::RecipeInput`
+- any other live goal shape where static dispatch differs inside one `GoalKindTag`
+
+`GoalKind` remains the authoritative concrete identity. The declaration key is a derived dispatch read-model only.
+
+### 2. `GoalDispatchDeclaration` struct (worldwake-ai)
+
+Rather than a trait with dynamic dispatch, use a static declaration struct for the static part of AI goal dispatch plus explicit strategy selectors for dynamic surfaces:
 
 ```rust
-/// Static declaration of all dispatch properties for a GoalKind variant.
-pub struct GoalKindDeclaration {
+/// Static declaration of AI dispatch properties for one dispatch-distinguishing goal shape.
+pub struct GoalDispatchDeclaration {
     /// Human-readable label for traces and debugging.
     pub trace_label: &'static str,
-    /// Ranking family (Survival, Danger, Normal, etc.).
-    pub ranking_family: RankingFamily,
+    /// Structured ranked-goal provenance family, if any.
+    pub provenance_family: Option<RankedGoalProvenanceFamily>,
     /// Which PlannerOpKinds are relevant for this goal (used in search filtering).
     pub relevant_ops: &'static [PlannerOpKind],
-    /// PlannerOpKinds that indicate progress for intention frames.
-    pub progress_ops: &'static [PlannerOpKind],
-    /// Invalidation conditions for exhaustion cache (S31).
-    pub invalidation_conditions: &'static [ExhaustionInvalidationCondition],
+    /// Which invalidation strategy derives exhaustion conditions/baselines.
+    pub invalidation_strategy: InvalidationStrategy,
+    /// Which feasibility strategy derives cheap local-likelihood hints.
+    pub feasibility_strategy: FeasibilityStrategy,
     /// Whether this goal uses exact binding (S03).
     pub exact_binding: bool,
 }
 ```
 
-### 2. Registration table (worldwake-ai)
+### 3. Registration table (worldwake-ai)
 
-A `const fn` or `static` table mapping each `GoalKindTag` to its `GoalKindDeclaration`:
+A `const fn` or `static` table mapping each declaration key to its declaration:
 
 ```rust
-/// Introduce a tag enum mirroring GoalKind variants without payload.
-/// GoalKindTag already exists in the codebase — extend with declaration lookup.
-impl GoalKindTag {
-    pub const fn declaration(&self) -> &'static GoalKindDeclaration {
+impl GoalDispatchKey {
+    pub const fn declaration(&self) -> &'static GoalDispatchDeclaration {
         match self {
-            GoalKindTag::Eat => &DECL_EAT,
-            GoalKindTag::Drink => &DECL_DRINK,
+            GoalDispatchKey::AcquireSelfConsume => &DECL_ACQUIRE_SELF_CONSUME,
+            GoalDispatchKey::AcquireRestock => &DECL_ACQUIRE_RESTOCK,
             // ... exhaustive, no wildcard
         }
     }
 }
 
-static DECL_EAT: GoalKindDeclaration = GoalKindDeclaration {
-    trace_label: "Eat",
-    ranking_family: RankingFamily::Survival,
-    relevant_ops: &[PlannerOpKind::Consume, PlannerOpKind::Travel],
-    progress_ops: &[PlannerOpKind::Consume, PlannerOpKind::Travel],
-    invalidation_conditions: &[
-        ExhaustionInvalidationCondition::NeedCrossedThreshold {
-            need: HomeostaticNeedId::Hunger,
-            delta: Permille(100),
-        },
-        ExhaustionInvalidationCondition::CommodityChanged,
-        ExhaustionInvalidationCondition::PositionChanged,
-    ],
+static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "AcquireCommodity(SelfConsume)",
+    provenance_family: Some(RankedGoalProvenanceFamily::Drive),
+    relevant_ops: &[PlannerOpKind::Travel, PlannerOpKind::Trade, PlannerOpKind::Harvest],
+    invalidation_strategy: InvalidationStrategy::AcquireSelfConsume,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlace,
     exact_binding: false,
 };
-// ... one declaration per GoalKindTag variant
+// ... one declaration per dispatch-distinguishing key
 ```
 
-### 3. Replace scattered dispatch with declaration lookups
+### 4. Replace scattered dispatch with declaration lookups
 
-For each existing dispatch site, replace the per-goal-kind match with a declaration lookup:
+For each existing dispatch site, replace the per-goal-kind match with a declaration lookup or declaration-owned strategy selection:
 
-- `derive_invalidation_conditions(goal_kind)` → `goal_kind.tag().declaration().invalidation_conditions`
-- `relevant_ops(goal_kind)` → `goal_kind.tag().declaration().relevant_ops`
-- `progress_op_kinds(domain, goal_kind)` → `goal_kind.tag().declaration().progress_ops`
-- Trace labels → `goal_kind.tag().declaration().trace_label`
-- Ranking family → `goal_kind.tag().declaration().ranking_family`
+- `ranked_goal_provenance_family(goal_kind)` → `goal_kind.dispatch_key().declaration().provenance_family`
+- `relevant_ops(goal_kind)` → `goal_kind.dispatch_key().declaration().relevant_ops`
+- planner-op reverse membership → derived from the same declaration table rather than a second manual matrix
+- trace labels → `goal_kind.dispatch_key().declaration().trace_label`
+- `derive_invalidation_conditions(goal_kind)` → declaration-owned `invalidation_strategy`
+- `goal_specific_feasibility(goal_kind)` → declaration-owned `feasibility_strategy`
 
-Note: Some dispatch sites require runtime payload data (e.g., `is_satisfied()` needs the specific entity/commodity from the goal). These remain as methods on `GoalKindPlannerExt` but with exhaustive matches (no wildcard arms).
+Out of scope for this spec:
 
-### 4. Exhaustive match enforcement
+- `IntentionDomain` progress-op ownership. `progress_op_kinds()` remains domain-owned unless a separate future design introduces domain registration intentionally.
+
+Note: Some dispatch sites require runtime payload data and live belief/recipe inputs. These should route through declaration-owned strategies, not through static copied data.
+
+### 5. Exhaustive match enforcement
 
 Audit all `match goal_kind { ... _ => ... }` patterns in the AI crate. For each:
 - If the wildcard arm provides a meaningful default that's correct for all future variants: Keep it but add a `#[deny(unreachable_patterns)]` lint or explicit comment documenting why.
 - If the wildcard arm is a shortcut that should be reviewed per variant: Replace with exhaustive match.
 
 Priority targets (these MUST become exhaustive):
-- `derive_invalidation_conditions()` — adding a goal without invalidation rules is a correctness bug
+- declaration-key lookup — adding a goal without dispatch-key review is a correctness bug
+- declaration table lookup — adding a dispatch key without declaration is a correctness bug
+- `derive_invalidation_conditions()` strategy routing — adding a goal without invalidation-strategy review is a correctness bug
 - `relevant_ops()` — adding a goal without planner relevance is a correctness bug
-- `feasibility_hint()` — missing feasibility dispatch defaults to `Uncertain` (acceptable as explicit default)
+- `goal_specific_feasibility()` strategy routing — missing feasibility-strategy review is a correctness bug even if the default result remains `Uncertain`
 
-### 5. `GoalKindTag` exhaustiveness
+### 6. `GoalKindTag` exhaustiveness
 
-Ensure `GoalKindTag` has a variant for every `GoalKind` variant. The `From<&GoalKind>` conversion must be exhaustive (no wildcard). Adding a `GoalKind` variant without a corresponding `GoalKindTag` variant and declaration fails compilation.
+`GoalKindTag` should remain exhaustive where the coarse tag is still a legitimate contract, but S36 must not rely on `GoalKindTag` as the universal declaration key. The compile-time completeness target is:
+
+- adding a `GoalKind` variant without updating the dispatch-key lookup fails compilation
+- adding a new dispatch-distinguishing key without a declaration fails compilation
 
 ## Component Registration
 
@@ -152,40 +170,43 @@ N/A — no new feedback loops.
 N/A.
 
 ### Stored state vs. derived read-model list
-- **Stored**: `GoalKindDeclaration` (compile-time static data).
-- **Derived**: All existing dispatch results (now derived from declarations instead of scattered matches).
+- **Stored**: `GoalDispatchDeclaration` plus explicit strategy enums (compile-time static data).
+- **Derived**: payload-aware declaration key from concrete `GoalKind`; all static dispatch results; all dynamic invalidation/feasibility outcomes computed through declaration-owned strategies.
 
 ## Migration Strategy
 
-1. Create `GoalKindDeclaration` struct and one declaration per existing `GoalKindTag` variant.
-2. Add `declaration()` method on `GoalKindTag`.
-3. Replace dispatch sites one at a time:
-   - Start with `derive_invalidation_conditions()` (most mechanically verifiable).
-   - Then `relevant_ops()`.
-   - Then `progress_ops`.
-   - Then trace labels and ranking family.
-4. After all dispatch sites migrated, audit remaining wildcard matches and convert to exhaustive where appropriate.
-5. Run all golden tests after each dispatch site migration to verify behavioral equivalence.
+1. Introduce the payload-aware declaration key and correct the S36 spec assumptions.
+2. Create `GoalDispatchDeclaration` and one declaration per dispatch-distinguishing key.
+3. Migrate static dispatch first:
+   - provenance family / ranking strategy selection
+   - goal-side relevant ops
+   - planner-op reverse membership
+   - declaration-owned trace labels where labels are the contract
+4. Migrate dynamic strategy routing:
+   - exhaustion invalidation strategy selection
+   - feasibility strategy selection
+5. After migrated surfaces land, audit remaining wildcard matches and convert to exhaustive where appropriate.
+6. Run focused unit tests plus full `worldwake-ai` regression coverage after each migration step.
 
 ## Tests
 
 ### Compile-time tests
-- [ ] Adding a `GoalKindTag` variant without a corresponding `GoalKindDeclaration` fails compilation
-- [ ] Adding a `GoalKind` variant without a `GoalKindTag` variant fails compilation
-- [ ] Wildcard arms in priority dispatch sites (invalidation, relevant_ops) are removed
+- [ ] Adding a `GoalKind` variant without a dispatch-key mapping fails compilation
+- [ ] Adding a dispatch key without a corresponding declaration fails compilation
+- [ ] Wildcard arms in priority dispatch sites (declaration key, invalidation strategy routing, relevant ops) are removed
 
 ### Behavioral equivalence tests
 - [ ] All existing golden tests pass unchanged after migration
 - [ ] All existing focused/unit tests pass unchanged
-- [ ] Declaration-based dispatch produces identical results to pre-migration match-based dispatch for every GoalKindTag variant
+- [ ] Declaration-based dispatch produces identical results to pre-migration dispatch for every live dispatch-distinguishing goal shape
 
 ### Documentation tests
-- [ ] `declaration()` returns correct values for spot-checked goal kinds (at least 5)
+- [ ] dispatch-key lookup and declaration lookup return correct values for spot-checked payload-sensitive and payload-insensitive goal shapes
 
 ## Acceptance Criteria
 
-1. Every `GoalKindTag` variant has exactly one `GoalKindDeclaration`.
-2. `derive_invalidation_conditions()` and `relevant_ops()` dispatch through declarations, not scattered matches.
-3. Adding a new `GoalKind` variant without declaration fails compilation.
+1. Every dispatch-distinguishing goal shape has exactly one declaration entry.
+2. Static goal dispatch routes through declarations, and dynamic invalidation/feasibility routing uses declaration-owned strategy selectors.
+3. Adding a new `GoalKind` variant without dispatch-key/declaration review fails compilation.
 4. All existing golden tests pass unchanged (zero behavioral change).
 5. No backward-compatibility shims between old and new dispatch paths.

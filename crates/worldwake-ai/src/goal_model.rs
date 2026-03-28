@@ -50,8 +50,16 @@ pub enum GoalKindTag {
     PunishAccused,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RankedGoalProvenanceFamily {
+    Danger,
+    Drive,
+    Verification,
+}
+
 pub trait GoalKindPlannerExt {
     fn goal_kind_tag(&self) -> GoalKindTag;
+    fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily>;
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind];
     fn relevant_observed_commodities(
         &self,
@@ -442,6 +450,41 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::StealItem { .. } => GoalKindTag::StealItem,
             GoalKind::Accuse { .. } => GoalKindTag::Accuse,
             GoalKind::PunishAccused { .. } => GoalKindTag::PunishAccused,
+        }
+    }
+
+    fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
+        match self {
+            GoalKind::ConsumeOwnedCommodity { .. }
+            | GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::SelfConsume | CommodityPurpose::RecipeInput(_),
+                ..
+            }
+            | GoalKind::Sleep
+            | GoalKind::Relieve
+            | GoalKind::Wash
+            | GoalKind::ProduceCommodity { .. } => Some(RankedGoalProvenanceFamily::Drive),
+            GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
+                Some(RankedGoalProvenanceFamily::Danger)
+            }
+            GoalKind::VerifyBelief { .. } => Some(RankedGoalProvenanceFamily::Verification),
+            GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::Restock,
+                ..
+            }
+            | GoalKind::TreatWounds { .. }
+            | GoalKind::SellCommodity { .. }
+            | GoalKind::RestockCommodity { .. }
+            | GoalKind::MoveCargo { .. }
+            | GoalKind::LootCorpse { .. }
+            | GoalKind::BuryCorpse { .. }
+            | GoalKind::ShareBelief { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::InvestigateViolation { .. }
+            | GoalKind::StealItem { .. }
+            | GoalKind::Accuse { .. }
+            | GoalKind::PunishAccused { .. } => None,
         }
     }
 
@@ -1797,7 +1840,7 @@ pub struct RankedGoal {
 mod tests {
     use super::{
         GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
-        RankedGoal, RootCandidateSynthesis,
+        RankedGoal, RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
     use crate::{
         build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
@@ -1965,6 +2008,41 @@ mod tests {
             }
             .goal_kind_tag(),
             GoalKindTag::PunishAccused
+        );
+    }
+
+    #[test]
+    fn ranked_goal_provenance_family_is_payload_aware() {
+        assert_eq!(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+            .ranked_goal_provenance_family(),
+            Some(RankedGoalProvenanceFamily::Drive)
+        );
+        assert_eq!(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::Restock,
+            }
+            .ranked_goal_provenance_family(),
+            None
+        );
+        assert_eq!(
+            GoalKind::ReduceDanger.ranked_goal_provenance_family(),
+            Some(RankedGoalProvenanceFamily::Danger)
+        );
+        assert_eq!(
+            GoalKind::VerifyBelief {
+                subject: VerificationSubject::EntityLocation {
+                    entity: entity_id(11, 0),
+                    place: entity_id(12, 0),
+                },
+                generation_tick: worldwake_core::Tick(3),
+            }
+            .ranked_goal_provenance_family(),
+            Some(RankedGoalProvenanceFamily::Verification)
         );
     }
 

@@ -3,9 +3,10 @@ use crate::{
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
     theft::assess_theft_deterrence,
-    DecisionContext, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
-    RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
-    RankedPriorityAdjustment, RankedVerificationGoalProvenance,
+    DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
+    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
+    RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment,
+    RankedVerificationGoalProvenance,
 };
 use std::cmp::Ordering;
 use worldwake_core::{
@@ -164,18 +165,37 @@ fn goal_ranking_provenance(
     context: &RankingContext<'_>,
     recipes: &RecipeRegistry,
 ) -> Option<RankedGoalProvenance> {
-    match candidate.key.kind {
+    match candidate.key.kind.ranked_goal_provenance_family() {
+        Some(RankedGoalProvenanceFamily::Drive) => {
+            drive_goal_ranking_provenance(&candidate.key.kind, context, recipes)
+        }
+        Some(RankedGoalProvenanceFamily::Danger) => Some(RankedGoalProvenance::Danger(
+            context.danger_assessment.clone(),
+        )),
+        Some(RankedGoalProvenanceFamily::Verification) => {
+            verification_provenance(context).map(RankedGoalProvenance::Verification)
+        }
+        None => None,
+    }
+}
+
+fn drive_goal_ranking_provenance(
+    goal_kind: &GoalKind,
+    context: &RankingContext<'_>,
+    recipes: &RecipeRegistry,
+) -> Option<RankedGoalProvenance> {
+    match goal_kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
         | GoalKind::AcquireCommodity {
             commodity,
             purpose: CommodityPurpose::SelfConsume,
-        } => self_consume_provenance(commodity, context).map(RankedGoalProvenance::Drive),
+        } => self_consume_provenance(*commodity, context).map(RankedGoalProvenance::Drive),
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
         }
         | GoalKind::ProduceCommodity { recipe_id } => {
-            recipe_output_provenance(recipe_id, context, recipes).map(RankedGoalProvenance::Drive)
+            recipe_output_provenance(*recipe_id, context, recipes).map(RankedGoalProvenance::Drive)
         }
         GoalKind::Sleep => drive_goal_provenance(
             context,
@@ -204,15 +224,6 @@ fn goal_ranking_provenance(
             false,
         )
         .map(RankedGoalProvenance::Drive),
-        GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => Some(
-            RankedGoalProvenance::Danger(context.danger_assessment.clone()),
-        ),
-        GoalKind::VerifyBelief { .. } => {
-            verification_provenance(context).map(RankedGoalProvenance::Verification)
-        }
-        GoalKind::StealItem { .. } | GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => {
-            None
-        }
         _ => None,
     }
 }
