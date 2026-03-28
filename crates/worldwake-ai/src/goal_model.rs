@@ -12,7 +12,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, InstitutionalBeliefRead,
+    belief_confidence, CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind,
+    InstitutionalBeliefRead,
     Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw, VerificationSubject,
     WorkstationTag,
 };
@@ -21,7 +22,7 @@ use worldwake_sim::{
     ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
     LootActionPayload, PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition,
     RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
-    TransportActionPayload, VerifyBeliefPayload,
+    TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -44,7 +45,6 @@ pub enum GoalKindTag {
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
-    VerifyBelief,
     StealItem,
     Accuse,
     PunishAccused,
@@ -54,7 +54,6 @@ pub enum GoalKindTag {
 pub enum RankedGoalProvenanceFamily {
     Danger,
     Drive,
-    Verification,
 }
 
 pub trait GoalKindPlannerExt {
@@ -179,11 +178,6 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::DeclareSupport,
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
-const VERIFY_BELIEF_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::VerifyBelief,
-    PlannerOpKind::AskWitness,
-];
 const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
 const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
 const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
@@ -209,6 +203,84 @@ fn ask_witness_payload_matches_subject(
         } => {
             payload.topic_entity == Some(source) && payload.topic_commodity == Some(commodity)
         }
+    }
+}
+
+pub(crate) fn verification_subject_for_belief(
+    entity: EntityId,
+    belief: &worldwake_core::BelievedEntityState,
+) -> Option<VerificationSubject> {
+    let place = belief.last_known_place?;
+    belief
+        .resource_source
+        .as_ref()
+        .map(|resource| VerificationSubject::SupplyAvailability {
+            commodity: resource.commodity,
+            source: entity,
+            place,
+        })
+        .or(Some(VerificationSubject::EntityLocation { entity, place }))
+}
+
+pub(crate) fn grounded_goal_epistemic_subjects(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+) -> Vec<VerificationSubject> {
+    let actor = state.snapshot().actor();
+    let Some(profile) = state.verification_disposition_profile(actor) else {
+        return Vec::new();
+    };
+    let policy = state.belief_confidence_policy(actor);
+    let current_tick = state.current_tick();
+
+    goal.evidence_entities
+        .iter()
+        .filter_map(|entity| {
+            let belief = state
+                .known_entity_beliefs(actor)
+                .into_iter()
+                .find_map(|(known, belief)| (known == *entity).then_some(belief))?;
+            let staleness_ticks = current_tick.0.saturating_sub(belief.observed_tick.0);
+            if belief_confidence(&belief.source, staleness_ticks, &policy)
+                >= profile.belief_verification_threshold
+            {
+                return None;
+            }
+            let subject = verification_subject_for_belief(*entity, &belief)?;
+            let place = match subject {
+                VerificationSubject::EntityLocation { place, .. }
+                | VerificationSubject::SupplyAvailability { place, .. } => place,
+            };
+            let anchored_here = matches!(
+                goal.anchor,
+                worldwake_core::OpportunityAnchor::Place(anchor) if anchor == place
+            );
+            (anchored_here || goal.evidence_places.contains(&place)).then_some(subject)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub(crate) fn grounded_goal_matches_epistemic_barrier(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    op_kind: PlannerOpKind,
+    payload: Option<&ActionPayload>,
+) -> bool {
+    let subjects = grounded_goal_epistemic_subjects(goal, state);
+    if subjects.is_empty() {
+        return false;
+    }
+
+    match (op_kind, payload) {
+        (PlannerOpKind::VerifyBelief, Some(ActionPayload::VerifyBelief(verify))) => {
+            subjects.contains(&verify.subject)
+        }
+        (PlannerOpKind::AskWitness, Some(ActionPayload::AskWitness(ask))) => subjects
+            .into_iter()
+            .any(|subject| ask_witness_payload_matches_subject(ask, subject)),
+        _ => false,
     }
 }
 
@@ -241,17 +313,6 @@ fn payload_override_from_affordance(
             .filter(|accuse| accuse.violation_id == *violation_id)
             .map(|_| Some(payload.clone()))
             .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
-        GoalKind::VerifyBelief { subject, .. } => match payload {
-            ActionPayload::VerifyBelief(verify) if verify.subject == *subject => {
-                Ok(Some(payload.clone()))
-            }
-            ActionPayload::AskWitness(ask)
-                if ask_witness_payload_matches_subject(ask, *subject) =>
-            {
-                Ok(Some(payload.clone()))
-            }
-            _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
-        },
         _ => Ok(Some(payload.clone())),
     }
 }
@@ -446,7 +507,6 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => GoalKindTag::InvestigateViolation,
-            GoalKind::VerifyBelief { .. } => GoalKindTag::VerifyBelief,
             GoalKind::StealItem { .. } => GoalKindTag::StealItem,
             GoalKind::Accuse { .. } => GoalKindTag::Accuse,
             GoalKind::PunishAccused { .. } => GoalKindTag::PunishAccused,
@@ -467,7 +527,6 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
                 Some(RankedGoalProvenanceFamily::Danger)
             }
-            GoalKind::VerifyBelief { .. } => Some(RankedGoalProvenanceFamily::Verification),
             GoalKind::AcquireCommodity {
                 purpose: CommodityPurpose::Restock,
                 ..
@@ -508,7 +567,6 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
             GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
-            GoalKind::VerifyBelief { .. } => VERIFY_BELIEF_OPS,
             GoalKind::Accuse { .. } => ACCUSE_OPS,
             GoalKind::PunishAccused { punishment, .. } => match punishment {
                 PunishmentKind::Fine { .. } => FINE_OPS,
@@ -527,12 +585,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SellCommodity { commodity }
             | GoalKind::RestockCommodity { commodity }
             | GoalKind::MoveCargo { commodity, .. } => Some([*commodity].into_iter().collect()),
-            GoalKind::VerifyBelief { subject, .. } => Some(match subject {
-                VerificationSubject::EntityLocation { .. } => BTreeSet::new(),
-                VerificationSubject::SupplyAvailability { commodity, .. } => {
-                    [*commodity].into_iter().collect()
-                }
-            }),
             GoalKind::ProduceCommodity { recipe_id } => recipes.get(*recipe_id).map(|recipe| {
                 recipe
                     .inputs
@@ -650,15 +702,9 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::VerifyBelief => match self {
-                GoalKind::VerifyBelief { subject, .. } => {
-                    Ok(Some(ActionPayload::VerifyBelief(VerifyBeliefPayload {
-                        subject: *subject,
-                    })))
-                }
-                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
-            },
-            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness => {
+                Err(GoalPayloadOverrideError::UnsupportedGoal)
+            }
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -932,15 +978,6 @@ impl GoalKindPlannerExt for GoalKind {
             return true;
         }
 
-        if matches!(self, GoalKind::VerifyBelief { .. })
-            && matches!(
-                step.op_kind,
-                PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness
-            )
-        {
-            return true;
-        }
-
         if matches!(self, GoalKind::Accuse { .. }) && step.op_kind == PlannerOpKind::Accuse {
             return true;
         }
@@ -1064,7 +1101,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::InvestigateViolation { .. }
-            | GoalKind::VerifyBelief { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => false,
         }
@@ -1129,10 +1165,6 @@ impl GoalKindPlannerExt for GoalKind {
                 state.effective_place(*listener).into_iter().collect()
             }
             GoalKind::InvestigateViolation { place, .. } => vec![*place],
-            GoalKind::VerifyBelief { subject, .. } => match subject {
-                VerificationSubject::EntityLocation { place, .. }
-                | VerificationSubject::SupplyAvailability { place, .. } => vec![*place],
-            },
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
@@ -1268,15 +1300,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SupportCandidateForOffice { .. } => true,
 
             GoalKind::InvestigateViolation { place, .. } => authoritative_targets.contains(place),
-            GoalKind::VerifyBelief { subject, .. } => match op_kind {
-                PlannerOpKind::AskWitness => true,
-                _ => match subject {
-                    VerificationSubject::EntityLocation { place, .. }
-                    | VerificationSubject::SupplyAvailability { place, .. } => {
-                        authoritative_targets.contains(place)
-                    }
-                },
-            },
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target }
@@ -1712,16 +1735,9 @@ pub struct RankedDriveGoalProvenance {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RankedVerificationGoalProvenance {
-    pub final_priority_class: GoalPriorityClass,
-    pub verification_motive_weight: Permille,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RankedGoalProvenance {
     Danger(DangerAssessment),
     Drive(RankedDriveGoalProvenance),
-    Verification(RankedVerificationGoalProvenance),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1839,6 +1855,7 @@ pub struct RankedGoal {
 #[cfg(test)]
 mod tests {
     use super::{
+        grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
         GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
         RankedGoal, RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
@@ -2033,17 +2050,6 @@ mod tests {
             GoalKind::ReduceDanger.ranked_goal_provenance_family(),
             Some(RankedGoalProvenanceFamily::Danger)
         );
-        assert_eq!(
-            GoalKind::VerifyBelief {
-                subject: VerificationSubject::EntityLocation {
-                    entity: entity_id(11, 0),
-                    place: entity_id(12, 0),
-                },
-                generation_tick: worldwake_core::Tick(3),
-            }
-            .ranked_goal_provenance_family(),
-            Some(RankedGoalProvenanceFamily::Verification)
-        );
     }
 
     #[test]
@@ -2124,26 +2130,6 @@ mod tests {
     }
 
     #[test]
-    fn verify_belief_goal_relevant_ops_include_epistemic_terminals() {
-        let goal = GoalKind::VerifyBelief {
-            subject: VerificationSubject::EntityLocation {
-                entity: entity_id(4, 0),
-                place: entity_id(10, 0),
-            },
-            generation_tick: Tick(5),
-        };
-
-        assert_eq!(
-            goal.relevant_op_kinds(),
-            &[
-                PlannerOpKind::Travel,
-                PlannerOpKind::VerifyBelief,
-                PlannerOpKind::AskWitness,
-            ]
-        );
-    }
-
-    #[test]
     fn sleep_goal_observed_commodities_are_empty() {
         let recipes = worldwake_sim::RecipeRegistry::new();
 
@@ -2188,30 +2174,6 @@ mod tests {
         };
 
         assert!(goal.is_progress_barrier(&step));
-    }
-
-    #[test]
-    fn verify_belief_epistemic_terminals_are_progress_barriers() {
-        let goal = GoalKind::VerifyBelief {
-            subject: VerificationSubject::EntityLocation {
-                entity: entity_id(7, 0),
-                place: entity_id(8, 0),
-            },
-            generation_tick: Tick(5),
-        };
-
-        for op_kind in [PlannerOpKind::VerifyBelief, PlannerOpKind::AskWitness] {
-            let step = PlannedStep {
-                def_id: ActionDefId(78),
-                op_kind,
-                targets: Vec::new(),
-                payload_override: None,
-                estimated_ticks: 2,
-                is_materialization_barrier: false,
-                expected_materializations: Vec::new(),
-            };
-            assert!(goal.is_progress_barrier(&step));
-        }
     }
 
     #[test]
@@ -2425,8 +2387,8 @@ mod tests {
         .is_satisfied(&state));
     }
 
-    #[derive(Default)]
     struct TestBeliefView {
+        current_tick: Tick,
         alive: BTreeSet<EntityId>,
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
@@ -2465,7 +2427,53 @@ mod tests {
         office_data_map: BTreeMap<EntityId, OfficeData>,
     }
 
+    impl Default for TestBeliefView {
+        fn default() -> Self {
+            Self {
+                current_tick: Tick(0),
+                alive: BTreeSet::new(),
+                kinds: BTreeMap::new(),
+                effective_places: BTreeMap::new(),
+                entities_at: BTreeMap::new(),
+                direct_possessions: BTreeMap::new(),
+                direct_possessors: BTreeMap::new(),
+                adjacent: BTreeMap::new(),
+                lot_commodities: BTreeMap::new(),
+                consumable_profiles: BTreeMap::new(),
+                commodity_quantities: BTreeMap::new(),
+                controlled_quantities: BTreeMap::new(),
+                controllable: BTreeSet::new(),
+                demand_memory: BTreeMap::new(),
+                carry_capacities: BTreeMap::new(),
+                entity_loads: BTreeMap::new(),
+                needs: BTreeMap::new(),
+                thresholds: BTreeMap::new(),
+                trade_profiles: BTreeMap::new(),
+                merchandise_profiles: BTreeMap::new(),
+                wounds: BTreeMap::new(),
+                resource_sources: BTreeMap::new(),
+                workstation_tags: BTreeMap::new(),
+                place_tags: BTreeMap::new(),
+                courage_values: BTreeMap::new(),
+                combat_profiles: BTreeMap::new(),
+                consultation_speed_factors: BTreeMap::new(),
+                record_data: BTreeMap::new(),
+                known_entity_beliefs: BTreeMap::new(),
+                verification_profiles: BTreeMap::new(),
+                ask_witness_memories: BTreeMap::new(),
+                office_holder_beliefs: BTreeMap::new(),
+                force_controller_beliefs: BTreeMap::new(),
+                support_declaration_beliefs: BTreeMap::new(),
+                office_data_map: BTreeMap::new(),
+            }
+        }
+    }
+
     impl RuntimeBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
@@ -3703,153 +3711,6 @@ mod tests {
     }
 
     #[test]
-    fn verify_belief_goal_builds_verify_belief_payload_override() {
-        let actor = entity(1);
-        let place = entity(10);
-        let subject_entity = entity(11);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, place, subject_entity]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(place, EntityKind::Place);
-        view.kinds.insert(subject_entity, EntityKind::Facility);
-        view.effective_places.insert(actor, place);
-        view.effective_places.insert(subject_entity, place);
-        view.entities_at.insert(place, vec![actor, subject_entity]);
-
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([subject_entity]),
-            &BTreeSet::from([place]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let subject = VerificationSubject::EntityLocation {
-            entity: subject_entity,
-            place,
-        };
-        let goal = GoalKind::VerifyBelief {
-            subject,
-            generation_tick: Tick(5),
-        };
-        let def = ActionDef {
-            id: ActionDefId(12),
-            name: "verify_belief".to_string(),
-            domain: ActionDomain::Epistemic,
-            actor_constraints: Vec::new(),
-            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
-            preconditions: Vec::new(),
-            reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
-            body_cost_per_tick: BodyCostPerTick::zero(),
-            interruptibility: Interruptibility::FreelyInterruptible,
-            commit_conditions: Vec::new(),
-            visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::new(),
-            payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
-        };
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::VerifyBelief,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[GoalKindTag::VerifyBelief],
-        };
-
-        let payload = goal
-            .build_payload_override(None, &state, &[place], &def, &semantics)
-            .unwrap();
-
-        assert_eq!(
-            payload,
-            Some(ActionPayload::VerifyBelief(VerifyBeliefPayload { subject }))
-        );
-    }
-
-    #[test]
-    fn verify_belief_goal_rejects_mismatched_ask_witness_affordance_payload() {
-        let actor = entity(1);
-        let witness = entity(2);
-        let right_subject = entity(3);
-        let wrong_subject = entity(4);
-        let town = entity(10);
-        let remote = entity(11);
-        let mut view = TestBeliefView::default();
-        view.alive
-            .extend([actor, witness, right_subject, wrong_subject, town, remote]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(witness, EntityKind::Agent);
-        view.kinds.insert(right_subject, EntityKind::Facility);
-        view.kinds.insert(wrong_subject, EntityKind::Facility);
-        view.kinds.insert(town, EntityKind::Place);
-        view.kinds.insert(remote, EntityKind::Place);
-        view.effective_places.insert(actor, town);
-        view.effective_places.insert(witness, town);
-        view.effective_places.insert(right_subject, remote);
-        view.effective_places.insert(wrong_subject, remote);
-        view.entities_at.insert(town, vec![actor, witness]);
-        view.entities_at.insert(remote, vec![right_subject, wrong_subject]);
-
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([witness, right_subject, wrong_subject]),
-            &BTreeSet::from([town, remote]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::VerifyBelief {
-            subject: VerificationSubject::EntityLocation {
-                entity: right_subject,
-                place: remote,
-            },
-            generation_tick: Tick(5),
-        };
-        let def = ActionDef {
-            id: ActionDefId(13),
-            name: "ask_witness".to_string(),
-            domain: ActionDomain::Epistemic,
-            actor_constraints: Vec::new(),
-            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
-                kind: EntityKind::Agent,
-            }],
-            preconditions: Vec::new(),
-            reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
-            body_cost_per_tick: BodyCostPerTick::zero(),
-            interruptibility: Interruptibility::FreelyInterruptible,
-            commit_conditions: Vec::new(),
-            visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::new(),
-            payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
-        };
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::AskWitness,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[GoalKindTag::VerifyBelief],
-        };
-        let affordance_payload = ActionPayload::AskWitness(AskWitnessPayload {
-            target: witness,
-            topic_entity: Some(wrong_subject),
-            topic_commodity: None,
-        });
-
-        let result = goal.build_payload_override(
-            Some(&affordance_payload),
-            &state,
-            &[witness],
-            &def,
-            &semantics,
-        );
-
-        assert_eq!(result, Err(GoalPayloadOverrideError::UnsupportedGoal));
-    }
-
-    #[test]
     fn consume_goal_satisfaction_is_owned_by_goal_model() {
         let (mut view, actor, _seller) = base_view();
         let goal = GoalKind::ConsumeOwnedCommodity {
@@ -3890,6 +3751,161 @@ mod tests {
 
         assert!(acquire_goal.is_progress_barrier(&barrier_step));
         assert!(!sleep_goal.is_progress_barrier(&barrier_step));
+    }
+
+    #[test]
+    fn grounded_goal_epistemic_subjects_extract_stale_subjects_from_originating_goal_evidence() {
+        let actor = entity(1);
+        let source = entity(2);
+        let town = entity(10);
+        let remote = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, source, town, remote]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(source, EntityKind::Facility);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.current_tick = Tick(50);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(source, remote);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(remote, vec![source]);
+        view.verification_profiles
+            .insert(actor, verification_profile());
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                source,
+                believed_entity_state_at(
+                    remote,
+                    Tick(0),
+                    Some(ResourceSource {
+                        commodity: CommodityKind::Bread,
+                        available_quantity: Quantity(4),
+                        max_quantity: Quantity(4),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    }),
+                ),
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([source]),
+            &BTreeSet::from([town, remote]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(remote),
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            evidence_entities: BTreeSet::from([source]),
+            evidence_places: BTreeSet::from([remote]),
+        };
+
+        assert_eq!(
+            grounded_goal_epistemic_subjects(&goal, &state),
+            vec![VerificationSubject::SupplyAvailability {
+                commodity: CommodityKind::Bread,
+                source,
+                place: remote,
+            }]
+        );
+    }
+
+    #[test]
+    fn grounded_goal_epistemic_barrier_matches_only_matching_payloads() {
+        let actor = entity(1);
+        let witness = entity(2);
+        let source = entity(3);
+        let town = entity(10);
+        let remote = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, witness, source, town, remote]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(witness, EntityKind::Agent);
+        view.kinds.insert(source, EntityKind::Facility);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.current_tick = Tick(50);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(witness, town);
+        view.effective_places.insert(source, remote);
+        view.entities_at.insert(town, vec![actor, witness]);
+        view.entities_at.insert(remote, vec![source]);
+        view.verification_profiles
+            .insert(actor, verification_profile());
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                source,
+                believed_entity_state_at(
+                    remote,
+                    Tick(0),
+                    Some(ResourceSource {
+                        commodity: CommodityKind::Bread,
+                        available_quantity: Quantity(4),
+                        max_quantity: Quantity(4),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    }),
+                ),
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([witness, source]),
+            &BTreeSet::from([town, remote]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(remote),
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            evidence_entities: BTreeSet::from([source]),
+            evidence_places: BTreeSet::from([remote]),
+        };
+
+        assert!(grounded_goal_matches_epistemic_barrier(
+            &goal,
+            &state,
+            PlannerOpKind::VerifyBelief,
+            Some(&ActionPayload::VerifyBelief(worldwake_sim::VerifyBeliefPayload {
+                subject: VerificationSubject::SupplyAvailability {
+                    commodity: CommodityKind::Bread,
+                    source,
+                    place: remote,
+                },
+            })),
+        ));
+        assert!(grounded_goal_matches_epistemic_barrier(
+            &goal,
+            &state,
+            PlannerOpKind::AskWitness,
+            Some(&ActionPayload::AskWitness(AskWitnessPayload {
+                target: witness,
+                topic_entity: Some(source),
+                topic_commodity: Some(CommodityKind::Bread),
+            })),
+        ));
+        assert!(!grounded_goal_matches_epistemic_barrier(
+            &goal,
+            &state,
+            PlannerOpKind::AskWitness,
+            Some(&ActionPayload::AskWitness(AskWitnessPayload {
+                target: witness,
+                topic_entity: None,
+                topic_commodity: Some(CommodityKind::Apple),
+            })),
+        ));
     }
 
     #[test]
@@ -6207,7 +6223,6 @@ mod tests {
             belief_verification_threshold: Permille::new(400).unwrap(),
             verify_belief_duration_ticks: NonZeroU32::new(4).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
-            verification_motive_weight: Permille::new(200).unwrap(),
             ask_memory_retention_ticks: 10,
         }
     }
@@ -6258,7 +6273,7 @@ mod tests {
     }
 
     #[test]
-    fn search_verify_belief_returns_travel_then_verify_belief_barrier_for_remote_subject() {
+    fn search_restock_goal_returns_travel_then_verify_belief_barrier_for_remote_stale_source() {
         let actor = entity(1);
         let subject_entity = entity(2);
         let town = entity(10);
@@ -6270,6 +6285,7 @@ mod tests {
         view.kinds.insert(subject_entity, EntityKind::Facility);
         view.kinds.insert(town, EntityKind::Place);
         view.kinds.insert(remote, EntityKind::Place);
+        view.current_tick = Tick(50);
         view.effective_places.insert(actor, town);
         view.effective_places.insert(subject_entity, remote);
         view.entities_at.insert(town, vec![actor]);
@@ -6284,19 +6300,24 @@ mod tests {
             actor,
             vec![(
                 subject_entity,
-                believed_entity_state_at(remote, Tick(0), None),
+                believed_entity_state_at(
+                    remote,
+                    Tick(0),
+                    Some(ResourceSource {
+                        commodity: CommodityKind::Bread,
+                        available_quantity: Quantity(4),
+                        max_quantity: Quantity(4),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    }),
+                ),
             )],
         );
 
-        let subject = VerificationSubject::EntityLocation {
-            entity: subject_entity,
-            place: remote,
-        };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::Place(remote),
-            key: GoalKey::from(GoalKind::VerifyBelief {
-                subject,
-                generation_tick: Tick(5),
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::from([subject_entity]),
             evidence_places: BTreeSet::from([remote]),
@@ -6331,12 +6352,18 @@ mod tests {
         assert_eq!(plan.steps[1].op_kind, PlannerOpKind::VerifyBelief);
         assert_eq!(
             plan.steps[1].payload_override,
-            Some(ActionPayload::VerifyBelief(VerifyBeliefPayload { subject }))
+            Some(ActionPayload::VerifyBelief(VerifyBeliefPayload {
+                subject: VerificationSubject::SupplyAvailability {
+                    commodity: CommodityKind::Bread,
+                    source: subject_entity,
+                    place: remote,
+                },
+            }))
         );
     }
 
     #[test]
-    fn search_verify_belief_returns_ask_witness_barrier_for_matching_colocated_payload() {
+    fn search_restock_goal_returns_ask_witness_barrier_for_matching_colocated_payload() {
         let actor = entity(1);
         let witness = entity(2);
         let subject_entity = entity(3);
@@ -6350,6 +6377,7 @@ mod tests {
         view.kinds.insert(subject_entity, EntityKind::Facility);
         view.kinds.insert(town, EntityKind::Place);
         view.kinds.insert(remote, EntityKind::Place);
+        view.current_tick = Tick(50);
         view.effective_places.insert(actor, town);
         view.effective_places.insert(witness, town);
         view.effective_places.insert(subject_entity, remote);
@@ -6361,19 +6389,24 @@ mod tests {
             actor,
             vec![(
                 subject_entity,
-                believed_entity_state_at(remote, Tick(0), None),
+                believed_entity_state_at(
+                    remote,
+                    Tick(0),
+                    Some(ResourceSource {
+                        commodity: CommodityKind::Bread,
+                        available_quantity: Quantity(4),
+                        max_quantity: Quantity(4),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    }),
+                ),
             )],
         );
 
-        let subject = VerificationSubject::EntityLocation {
-            entity: subject_entity,
-            place: remote,
-        };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::Place(remote),
-            key: GoalKey::from(GoalKind::VerifyBelief {
-                subject,
-                generation_tick: Tick(5),
+            key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::from([subject_entity]),
             evidence_places: BTreeSet::from([remote]),
@@ -6410,7 +6443,7 @@ mod tests {
             Some(ActionPayload::AskWitness(AskWitnessPayload {
                 target: witness,
                 topic_entity: Some(subject_entity),
-                topic_commodity: None,
+                topic_commodity: Some(CommodityKind::Bread),
             }))
         );
     }

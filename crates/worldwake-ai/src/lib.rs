@@ -64,7 +64,7 @@ pub use feasibility::{feasibility_hint, FeasibilityHint};
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
     RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
-    RankedGoalProvenanceFamily, RankedPriorityAdjustment, RankedVerificationGoalProvenance,
+    RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
 pub use goal_policy::{
     evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,

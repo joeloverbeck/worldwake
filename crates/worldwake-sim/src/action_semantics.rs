@@ -767,7 +767,6 @@ mod tests {
                     belief_verification_threshold: Permille::new(400).unwrap(),
                     verify_belief_duration_ticks: nz(8),
                     witness_query_duration_ticks: nz(5),
-                    verification_motive_weight: pm(200),
                     ask_memory_retention_ticks: 10,
                 },
             )

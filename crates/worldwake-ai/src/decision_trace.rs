@@ -1214,11 +1214,6 @@ fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> S
                 motive_inputs,
             )
         }
-        RankedGoalProvenance::Verification(provenance) => format!(
-            ", verification=final={:?} motive_weight={}",
-            provenance.final_priority_class,
-            provenance.verification_motive_weight.value(),
-        ),
     }
 }
 
@@ -2505,72 +2500,6 @@ mod tests {
         assert!(summary.contains("drive=base=High final=Critical"));
         assert!(summary.contains("ClottedWoundRecoveryPromotion"));
         assert!(summary.contains("Hunger(pressure=760, weight=500, score=380000"));
-    }
-
-    #[test]
-    fn summary_planning_includes_selected_verification_provenance() {
-        let opportunity = default_opportunity(GoalKey::new(GoalKind::VerifyBelief {
-            subject: worldwake_core::VerificationSubject::EntityLocation {
-                entity: worldwake_core::EntityId {
-                    slot: 2,
-                    generation: 1,
-                },
-                place: worldwake_core::EntityId {
-                    slot: 3,
-                    generation: 1,
-                },
-            },
-            generation_tick: Tick(5),
-        }));
-        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
-            dirty: crate::DirtySet::NO_PLAN,
-            plan_continued: false,
-            candidates: CandidateTrace {
-                generated: vec![opportunity],
-                evidence: vec![],
-                fully_blocked_desires: vec![],
-                ranked: vec![RankedGoalSummary {
-                    opportunity,
-                    priority_class: GoalPriorityClass::Low,
-                    motive_score: 240,
-                    provenance: Some(RankedGoalProvenance::Verification(
-                        crate::RankedVerificationGoalProvenance {
-                            final_priority_class: GoalPriorityClass::Low,
-                            verification_motive_weight: worldwake_core::Permille::new(240)
-                                .unwrap(),
-                        },
-                    )),
-                    feasibility: FeasibilityHint::Uncertain,
-                }],
-                top_ranked_comparison: None,
-                suppressed: vec![],
-                zero_motive: vec![],
-                omitted_political: vec![],
-                omitted_social: vec![],
-            },
-            planning: PlanSearchTrace { attempts: vec![] },
-            selection: SelectionTrace {
-                selected_opportunity: Some(opportunity),
-                selected_plan: None,
-                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
-                goal_switch: None,
-                previous_goal: None,
-                plan_replacement: None,
-            },
-            execution: ExecutionTrace {
-                enqueued_step: None,
-                revalidation_passed: None,
-                failure: None,
-            },
-            action_start_failures: vec![],
-            unknown_blockers: vec![],
-            frame_transition: None,
-        }));
-
-        let summary = outcome.summary();
-
-        assert!(summary.contains("verification=final=Low"));
-        assert!(summary.contains("motive_weight=240"));
     }
 
     #[test]

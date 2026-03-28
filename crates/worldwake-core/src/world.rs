@@ -4421,7 +4421,6 @@ mod tests {
             belief_verification_threshold: Permille::new(400).unwrap(),
             verify_belief_duration_ticks: std::num::NonZeroU32::new(4).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
-            verification_motive_weight: Permille::new(250).unwrap(),
             ask_memory_retention_ticks: 12,
         };
 
@@ -4443,7 +4442,6 @@ mod tests {
             belief_verification_threshold: Permille::new(400).unwrap(),
             verify_belief_duration_ticks: std::num::NonZeroU32::new(4).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
-            verification_motive_weight: Permille::new(250).unwrap(),
             ask_memory_retention_ticks: 12,
         };
 

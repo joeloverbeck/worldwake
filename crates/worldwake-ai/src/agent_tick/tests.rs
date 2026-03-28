@@ -3920,9 +3920,6 @@ fn trace_planning_outcome_includes_danger_provenance_for_threatened_agent() {
             RankedGoalProvenance::Drive(_) => {
                 panic!("reduce-danger candidate should not carry drive provenance")
             }
-            RankedGoalProvenance::Verification(_) => {
-                panic!("reduce-danger candidate should not carry verification provenance")
-            }
         })
         .expect("reduce-danger candidate should carry structured danger provenance");
 
@@ -4034,9 +4031,6 @@ fn trace_planning_outcome_includes_drive_provenance_for_recovery_boost() {
                 UtilityProfile::default().hunger_weight
             );
             assert!(provenance.motive_inputs[0].recovery_relevant);
-        }
-        RankedGoalProvenance::Verification(_) => {
-            panic!("bread candidate should not carry verification provenance")
         }
         RankedGoalProvenance::Danger(_) => {
             panic!("bread candidate should not carry danger provenance")

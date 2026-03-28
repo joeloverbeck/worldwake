@@ -1,4 +1,7 @@
-use crate::goal_model::RootCandidateSynthesis;
+use crate::goal_model::{
+    grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
+    RootCandidateSynthesis,
+};
 use crate::planner_ops::{planner_only_candidates, PlannerOpKind};
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
@@ -106,16 +109,48 @@ pub(super) fn search_candidates(
     root_omissions: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
     relevant_defs: &BTreeSet<ActionDefId>,
 ) -> Vec<SearchCandidate> {
+    let epistemic_subjects = grounded_goal_epistemic_subjects(goal, &node.state);
+    let mut affordance_defs = relevant_defs.clone();
+    if !epistemic_subjects.is_empty() {
+        affordance_defs.extend(
+            semantics_table
+                .iter()
+                .filter_map(|(def_id, semantics)| {
+                    matches!(
+                        semantics.op_kind,
+                        PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness
+                    )
+                    .then_some(*def_id)
+                }),
+        );
+    }
+
     let affordance_candidates = get_affordances_for_defs(
         &node.state,
         node.state.snapshot().actor(),
         registry,
         handlers,
-        relevant_defs,
+        &affordance_defs,
     )
     .into_iter()
     .flat_map(|affordance| {
         search_candidates_from_affordance(goal, &node.state, registry, &affordance)
+    })
+    .filter(|candidate| {
+        semantics_table
+            .get(&candidate.def_id)
+            .is_none_or(|semantics| {
+                if epistemic_subjects.is_empty() {
+                    return true;
+                }
+                semantics.op_kind == PlannerOpKind::Travel
+                    || grounded_goal_matches_epistemic_barrier(
+                        goal,
+                        &node.state,
+                        semantics.op_kind,
+                        candidate.payload_override.as_ref(),
+                    )
+            })
     })
     .collect::<Vec<_>>();
     let mut candidates = affordance_candidates;

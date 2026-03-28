@@ -75,7 +75,6 @@ const GOALS_TRAVEL: &[GoalKindTag] = &[
     GoalKindTag::MoveCargo,
     GoalKindTag::LootCorpse,
     GoalKindTag::InvestigateViolation,
-    GoalKindTag::VerifyBelief,
 ];
 const GOALS_ACQUIRE: &[GoalKindTag] = &[
     GoalKindTag::ConsumeOwnedCommodity,
@@ -134,7 +133,6 @@ const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
 ];
 const GOALS_PRESS_FORCE_CLAIM: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
 const GOALS_INVESTIGATE: &[GoalKindTag] = &[GoalKindTag::InvestigateViolation];
-const GOALS_VERIFY_BELIEF: &[GoalKindTag] = &[GoalKindTag::VerifyBelief];
 
 #[must_use]
 pub fn build_semantics_table(
@@ -384,7 +382,9 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             PlannerTransitionKind::GoalModelFallback,
             GOALS_PRESS_FORCE_CLAIM,
         ),
-        PlannerOpKind::YieldForceClaim => base_semantics(
+        PlannerOpKind::YieldForceClaim
+        | PlannerOpKind::VerifyBelief
+        | PlannerOpKind::AskWitness => base_semantics(
             op_kind,
             false,
             false,
@@ -397,13 +397,6 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             false,
             PlannerTransitionKind::GoalModelFallback,
             GOALS_INVESTIGATE,
-        ),
-        PlannerOpKind::VerifyBelief | PlannerOpKind::AskWitness => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_VERIFY_BELIEF,
         ),
         _ => return None,
     })

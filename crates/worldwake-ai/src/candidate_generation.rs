@@ -17,7 +17,7 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    belief_confidence, current_institutional_belief_topics, load_per_unit,
+    current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CommodityKind,
     CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
@@ -25,8 +25,7 @@ use worldwake_core::{
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, OpportunityAnchor,
     OpportunityKey, PerceptionSource, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
     PunishmentKind, Quantity, RecordData, RecordKind, SocialObservation, SocialObservationDetail,
-    TellTopic, TheftFacts, Tick, VerificationSubject, ViolationId, ViolationKind,
-    ViolationMemory,
+    TellTopic, TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -240,7 +239,6 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_verify_belief_goals(&mut candidates, &mut diagnostics, &ctx);
 
     let candidates = filter_blocked_candidates(candidates, blocked, current_tick, &mut diagnostics);
 
@@ -2102,112 +2100,6 @@ fn emit_candidate(
     });
 }
 
-fn emit_verify_belief_goals(
-    candidates: &mut Vec<GroundedGoal>,
-    diagnostics: &mut CandidateGenerationDiagnostics,
-    ctx: &GenerationContext<'_>,
-) {
-    let Some(profile) = ctx.view.verification_disposition_profile(ctx.agent) else {
-        return;
-    };
-
-    let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
-    if beliefs.is_empty() {
-        return;
-    }
-    let policy = ctx.view.belief_confidence_policy(ctx.agent);
-    let mut subjects = BTreeSet::new();
-
-    for candidate in candidates.iter() {
-        for entity in &candidate.evidence_entities {
-            let Some((_, belief)) = beliefs.iter().find(|(known, _)| known == entity) else {
-                continue;
-            };
-            let staleness_ticks = ctx.current_tick.0.saturating_sub(belief.observed_tick.0);
-            if belief_confidence(&belief.source, staleness_ticks, &policy)
-                >= profile.belief_verification_threshold
-            {
-                continue;
-            }
-            let Some(subject) = verification_subject_for_belief(*entity, belief) else {
-                continue;
-            };
-            subjects.insert(subject);
-        }
-    }
-
-    for subject in subjects {
-        let (subject_entity, place, aspect) = match subject {
-            VerificationSubject::EntityLocation { entity, place } => {
-                (entity, place, BeliefAspect::LocationAt { place })
-            }
-            VerificationSubject::SupplyAvailability {
-                commodity,
-                source,
-                place,
-            } => (source, place, BeliefAspect::HasCommodity { commodity }),
-        };
-        let Some((_, belief)) = beliefs
-            .iter()
-            .find(|(entity, _)| *entity == subject_entity)
-        else {
-            continue;
-        };
-
-        let evidence = Evidence {
-            entities: BTreeSet::from([subject_entity]),
-            places: BTreeSet::from([place]),
-        };
-        let trace = if ctx.tracing_enabled {
-            EvidenceTrace {
-                contributors: BTreeSet::new(),
-                exclusions: BTreeSet::new(),
-                knowledge_path: KnowledgePath {
-                    self_knowledge: Vec::new(),
-                    entity_beliefs: vec![BeliefProvenance {
-                        subject: subject_entity,
-                        aspect,
-                        source: belief.source,
-                        observed_tick: belief.observed_tick,
-                    }],
-                    institutional_beliefs: Vec::new(),
-                },
-                legality: None,
-            }
-        } else {
-            EvidenceTrace::default()
-        };
-
-        emit_candidate_with_trace(
-            candidates,
-            diagnostics,
-            GoalKind::VerifyBelief {
-                subject,
-                generation_tick: ctx.current_tick,
-            },
-            OpportunityAnchor::Place(place),
-            evidence,
-            trace,
-        );
-    }
-}
-
-fn verification_subject_for_belief(
-    entity: EntityId,
-    belief: &BelievedEntityState,
-) -> Option<VerificationSubject> {
-    let place = belief.last_known_place?;
-    belief
-        .resource_source
-        .as_ref()
-        .map(|resource| VerificationSubject::SupplyAvailability {
-            commodity: resource.commodity,
-            source: entity,
-            place,
-        })
-        .or(Some(VerificationSubject::EntityLocation { entity, place }))
-}
-
 fn emit_recorded_violation_candidates(
     candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -3143,8 +3035,8 @@ mod tests {
         RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
         SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile,
         TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, VerificationDispositionProfile, VerificationSubject, ViolationKind,
-        ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        UniqueItemKind, VerificationDispositionProfile, ViolationKind, ViolationMemory,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -4018,7 +3910,6 @@ mod tests {
             belief_verification_threshold: pm(500),
             verify_belief_duration_ticks: NonZeroU32::new(3).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
-            verification_motive_weight: pm(200),
             ask_memory_retention_ticks: 12,
         }
     }
@@ -4211,7 +4102,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_belief_emits_for_low_confidence_evidence_dependency() {
+    fn low_confidence_evidence_keeps_originating_goal_without_standalone_verify_belief_goal() {
         let agent = entity(1);
         let place = entity(10);
         let seller = entity(2);
@@ -4243,119 +4134,18 @@ mod tests {
             &candidates,
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
-                purpose: CommodityPurpose::SelfConsume,
-            }
-        ));
-        assert!(contains_goal(
-            &candidates,
-            GoalKind::VerifyBelief {
-                subject: VerificationSubject::EntityLocation {
-                    entity: seller,
-                    place,
-                },
-                generation_tick: Tick(50),
-            }
-        ));
-    }
-
-    #[test]
-    fn verify_belief_requires_verification_profile() {
-        let agent = entity(1);
-        let place = entity(10);
-        let seller = entity(2);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([agent, seller]);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(seller, EntityKind::Agent);
-        view.effective_places.insert(agent, place);
-        view.effective_places.insert(seller, place);
-        view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds
-            .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
-        view.beliefs
-            .insert(agent, vec![known_entity(seller, place)]);
-
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &RecipeRegistry::new(),
-            Tick(50),
-        );
-
-        assert!(!candidates
-            .iter()
-            .any(|candidate| matches!(candidate.key.kind, GoalKind::VerifyBelief { .. })));
-    }
-
-    #[test]
-    fn verify_belief_deduplicates_same_subject_across_multiple_candidates() {
-        let agent = entity(1);
-        let place = entity(10);
-        let seller = entity(2);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([agent, seller]);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(seller, EntityKind::Agent);
-        view.effective_places.insert(agent, place);
-        view.effective_places.insert(seller, place);
-        view.homeostatic_needs
-            .insert(agent, HomeostaticNeeds::new(pm(250), pm(250), pm(0), pm(0), pm(0)));
-        view.drive_thresholds
-            .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
-        view.sellers
-            .insert((place, CommodityKind::Water), vec![seller]);
-        view.beliefs
-            .insert(agent, vec![known_entity(seller, place)]);
-        view.verification_disposition_profiles
-            .insert(agent, default_verification_profile());
-
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &RecipeRegistry::new(),
-            Tick(50),
-        );
-
-        assert!(contains_goal(
-            &candidates,
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Bread,
-                purpose: CommodityPurpose::SelfConsume,
-            }
-        ));
-        assert!(contains_goal(
-            &candidates,
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
             }
         ));
         assert_eq!(
-            candidates
-                .iter()
-                .filter(|candidate| {
-                    candidate.key.kind
-                        == GoalKind::VerifyBelief {
-                            subject: VerificationSubject::EntityLocation {
-                                entity: seller,
-                                place,
-                            },
-                            generation_tick: Tick(50),
-                        }
-                })
-                .count(),
-            1
+            candidates.len(),
+            1,
+            "low-confidence prerequisite evidence should keep the originating acquisition opportunity only"
         );
     }
 
     #[test]
-    fn verify_belief_emits_supply_subject_for_stale_resource_source() {
+    fn stale_resource_source_stays_on_restock_goal_without_standalone_verify_belief_goal() {
         let agent = entity(1);
         let camp = entity(10);
         let crossroads = entity(11);
@@ -4423,106 +4213,15 @@ mod tests {
 
         assert!(contains_goal(
             &result.candidates,
-            GoalKind::VerifyBelief {
-                subject: VerificationSubject::SupplyAvailability {
-                    commodity: CommodityKind::Apple,
-                    source: workstation,
-                    place: orchard,
-                },
-                generation_tick: Tick(50),
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0),
             }
         ));
-    }
-
-    #[test]
-    fn verify_belief_skips_high_confidence_evidence() {
-        let agent = entity(1);
-        let place = entity(10);
-        let seller = entity(2);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([agent, seller]);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(seller, EntityKind::Agent);
-        view.effective_places.insert(agent, place);
-        view.effective_places.insert(seller, place);
-        view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds
-            .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
-        view.beliefs.insert(
-            agent,
-            vec![(
-                seller,
-                BelievedEntityState {
-                    observed_tick: Tick(5),
-                    ..known_entity(seller, place).1
-                },
-            )],
+        assert_eq!(
+            result.candidates.len(),
+            1,
+            "stale source evidence should remain on the originating production opportunity without emitting a second verification-only candidate"
         );
-        view.verification_disposition_profiles
-            .insert(agent, default_verification_profile());
-
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &RecipeRegistry::new(),
-            Tick(5),
-        );
-
-        assert!(!candidates
-            .iter()
-            .any(|candidate| matches!(candidate.key.kind, GoalKind::VerifyBelief { .. })));
-    }
-
-    #[test]
-    fn verify_belief_adds_belief_provenance_trace() {
-        let agent = entity(1);
-        let place = entity(10);
-        let seller = entity(2);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([agent, seller]);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(seller, EntityKind::Agent);
-        view.effective_places.insert(agent, place);
-        view.effective_places.insert(seller, place);
-        view.homeostatic_needs.insert(agent, hunger(250));
-        view.drive_thresholds
-            .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
-        view.beliefs
-            .insert(agent, vec![known_entity(seller, place)]);
-        view.verification_disposition_profiles
-            .insert(agent, default_verification_profile());
-
-        let result = generate_candidates_with_travel_horizon(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &ViolationMemory::default(),
-            &RecipeRegistry::new(),
-            Tick(50),
-            6,
-            true,
-        );
-
-        let goal_key = GoalKey::from(GoalKind::VerifyBelief {
-            subject: VerificationSubject::EntityLocation {
-                entity: seller,
-                place,
-            },
-            generation_tick: Tick(50),
-        });
-        let trace = evidence_trace_for_goal(&result.diagnostics, goal_key);
-
-        assert_eq!(trace.knowledge_path.entity_beliefs.len(), 1);
-        let provenance = &trace.knowledge_path.entity_beliefs[0];
-        assert_eq!(provenance.subject, seller);
-        assert_eq!(provenance.aspect, BeliefAspect::LocationAt { place });
-        assert_eq!(provenance.source, PerceptionSource::DirectObservation);
-        assert_eq!(provenance.observed_tick, Tick(5));
     }
 
     #[test]

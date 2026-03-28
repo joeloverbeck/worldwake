@@ -167,13 +167,6 @@ fn goal_specific_feasibility(
                 None // Uncertain — needs travel
             }
         }
-        GoalKind::VerifyBelief { .. } => {
-            if goal.grounded.key.place == view.effective_place(agent) {
-                Some(FeasibilityHint::Likely)
-            } else {
-                None // Uncertain — needs travel
-            }
-        }
         GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. } => {
             check_colocated_or_dead(view, agent, *accused)
         }

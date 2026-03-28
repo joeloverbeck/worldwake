@@ -855,7 +855,6 @@ mod tests {
                 belief_verification_threshold: pm(400),
                 verify_belief_duration_ticks: nz(duration),
                 witness_query_duration_ticks: nz(2),
-                verification_motive_weight: pm(200),
                 ask_memory_retention_ticks: 12,
             },
         )

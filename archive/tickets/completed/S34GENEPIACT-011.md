@@ -1,9 +1,9 @@
 # S34GENEPIACT-011: Replace standalone VerifyBelief goals with originating-goal epistemic progress barriers
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — `worldwake-core` goal contract cleanup, `worldwake-ai` candidate/search/goal-model refactor, S34 spec correction, focused AI + golden coverage updates
+**Engine Changes**: Yes — `worldwake-core` goal contract cleanup, `worldwake-ai` grounded-goal/search barrier refactor, S34 spec correction, focused AI + golden coverage updates
 **Deps**: [specs/S34-general-epistemic-actions.md](/home/joeloverbeck/projects/worldwake/specs/S34-general-epistemic-actions.md), [archive/tickets/not-implemented/S34GENEPIACT-008.md](/home/joeloverbeck/projects/worldwake/archive/tickets/not-implemented/S34GENEPIACT-008.md), [archive/tickets/completed/S34GENEPIACT-009.md](/home/joeloverbeck/projects/worldwake/archive/tickets/completed/S34GENEPIACT-009.md)
 
 ## Problem
@@ -41,30 +41,35 @@ The clean fix is not to add a second prerequisite-barrier path beside the curren
    - committed epistemic action identity -> action trace
    - belief refresh / contradiction aftermath -> authoritative belief and violation state
    Later downstream effects must not be used as a proxy for the earlier selection contract when lower-layer proof surfaces exist.
-10. The clean architecture likely requires removing `GoalKind::VerifyBelief` from the live goal model, not merely stopping its candidate emission. Leaving the variant, ranking path, or suppression family alive as an alternate route would preserve the same dual-path contradiction under a different name.
+10. The clean architecture still requires removing `GoalKind::VerifyBelief` from the live goal model, not merely stopping its candidate emission. Leaving the variant, ranking path, or suppression family alive as an alternate route would preserve the same dual-path contradiction under a different name.
 11. Adjacent contradiction classification:
    - required consequence of this ticket: S34 spec text and focused planner tests must be rewritten to the originating-goal barrier contract
    - future follow-up, not in scope here: new deliberate epistemic goldens remain in [S34GENEPIACT-010.md](/home/joeloverbeck/projects/worldwake/tickets/S34GENEPIACT-010.md) once this canonical architecture exists
 12. Mismatch + correction: the archived [S34GENEPIACT-008.md](/home/joeloverbeck/projects/worldwake/archive/tickets/not-implemented/S34GENEPIACT-008.md) correctly identified the architectural direction, but it understated the breadth of the live contract and the amount of existing proof already in the repo. This ticket corrects that scope into a one-shot replacement instead of an incremental patch.
+13. Mismatch + correction: the live code shows stale-belief verification depends on a specific `GroundedGoal` opportunity's evidence set, anchor, and current self-belief reads, not just on the abstract `GoalKind`. The barrier substrate therefore belongs at the grounded-goal/search boundary in `worldwake-ai`, not as a new generic `GoalKind` family or a widened `GoalKind`-level API surface. The only `worldwake-core` contract change needed is removal of the obsolete standalone `GoalKind::VerifyBelief`.
 
 ## Architecture Check
 
 1. Replacing standalone `VerifyBelief` with originating-goal epistemic barriers is cleaner than tuning ranking, motive weights, or suppression around the current competing-goal model. That current model splits one intention into two rival top-level desires, which is weaker than the foundations' revisable-commitment model.
 2. The cleanest robust design is:
-   - derive an AI-internal stale-evidence barrier requirement from `GroundedGoal` evidence and the actor's belief state
-   - allow originating goals to surface `verify_belief` / `ask_witness` as explicit progress barriers when that requirement exists
+   - derive an AI-internal stale-evidence barrier requirement from `GroundedGoal` evidence, anchor, and the actor's belief state
+   - synthesize `verify_belief` / `ask_witness` root candidates for the originating goal only when that grounded opportunity proves a real stale prerequisite
    - keep epistemic action payloads and traces unchanged as the explicit world-action layer
    - remove the standalone `VerifyBelief` goal family entirely so no alias path survives
-3. This aligns with [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md):
+3. The ticket should prefer the smallest durable surface area that still removes the architectural contradiction. That means:
+   - delete the obsolete core goal variant and its ranking/policy plumbing
+   - do not smear epistemic-barrier semantics across every `GoalKind` API if the live requirement is evidence-specific and search-root-specific
+   - place the new helper where search already reasons over concrete grounded opportunities and payload synthesis
+4. This aligns with [docs/FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md):
    - Principle 18: goals name desired world conditions and include enabling subchains
    - Principle 19: commitments are revisable when assumptions break
    - Principle 24: epistemic actions remain explicit state-mediated actions, not planner magic
-4. No backwards-compatibility aliasing or dual-path coexistence is acceptable here. The old standalone verification goal path must be removed in-scope if the new barrier path lands.
+5. No backwards-compatibility aliasing or dual-path coexistence is acceptable here. The old standalone verification goal path must be removed in-scope if the new barrier path lands.
 
 ## Verification Layers
 
 1. Standalone top-level verification candidate path no longer exists -> focused candidate-generation tests in `worldwake-ai`
-2. Originating goals synthesize `verify_belief` / `ask_witness` as explicit progress barriers from stale evidence -> focused planner/search tests and decision-trace-facing runtime tests in `worldwake-ai`
+2. Originating grounded goals synthesize `verify_belief` / `ask_witness` as explicit progress barriers from stale evidence -> focused planner/search tests and decision-trace-facing runtime tests in `worldwake-ai`
 3. Committed epistemic action identity remains explicit and typed -> `action_trace` tests in `worldwake-sim` plus any focused runtime consumption tests in `worldwake-systems`
 4. Belief refresh or contradiction aftermath still mutates the same authoritative belief / violation state -> focused epistemic action tests in `worldwake-systems`
 5. Existing stale-prerequisite recovery scenarios still work under the new canonical path -> updated focused/golden regression in `worldwake-ai`
@@ -99,14 +104,14 @@ Introduce one canonical AI-internal helper or data contract that derives explici
 
 - derive from the actor's current belief state plus the grounded goal's evidence
 - synthesize lawful `VerificationSubject` / witness-topic requirements for `verify_belief` and `ask_witness`
-- be consumed by the originating goal's search/root-candidate logic rather than by a separate top-level goal family
+- be consumed by the originating goal's grounded-goal/search root-candidate logic rather than by a separate top-level goal family
 - remain explainable in decision traces and focused planner tests
 
-This substrate belongs in `worldwake-ai`, not `worldwake-core`, because it is an AI planning/read-model concern rather than world identity.
+This substrate belongs in `worldwake-ai`, not `worldwake-core`, because it is an AI planning/read-model concern rather than world identity. It should attach to `GroundedGoal`/search handling rather than inflating the abstract `GoalKind` contract unless reassessment during implementation proves a concrete blocker.
 
 ### 4. Rewire planner/search behavior to use originating-goal epistemic barriers
 
-Update planner/search logic so originating goals with stale evidence can lawfully choose:
+Update planner/search logic so originating grounded goals with stale evidence can lawfully choose:
 
 - `AskWitness` when a co-located witness payload matches the stale subject
 - `Travel -> VerifyBelief` when the stale subject must be checked at a remote place
@@ -125,10 +130,11 @@ Rewrite the focused tests so they prove:
 ## Files to Touch
 
 - `specs/S34-general-epistemic-actions.md` (modify — correct the canonical S34 architecture)
-- `crates/worldwake-core/src/goal.rs` (modify — remove or repurpose standalone `VerifyBelief` goal support if no longer canonical)
+- `crates/worldwake-core/src/goal.rs` (modify — remove standalone `VerifyBelief` goal support)
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — remove standalone verification emission and introduce originating-goal stale-evidence barrier derivation)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — update relevant op surfaces, payload overrides, barrier semantics, and focused tests)
-- `crates/worldwake-ai/src/search/` (modify — wire originating-goal search/root-candidate handling to the barrier substrate)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — add grounded-goal epistemic-barrier helpers and focused tests)
+- `crates/worldwake-ai/src/search/candidates.rs` (modify — synthesize originating-goal epistemic barrier root candidates)
+- `crates/worldwake-ai/src/search/transition.rs` (modify — treat grounded-goal epistemic barrier steps as explicit progress barriers)
 - `crates/worldwake-ai/src/ranking.rs` (modify — remove standalone verification ranking/provenance path)
 - `crates/worldwake-ai/src/goal_policy.rs` (modify — remove standalone verification family policy if it no longer exists)
 - `crates/worldwake-ai/tests/golden_supply_chain.rs` or another fitting `golden_*.rs` suite (modify — keep stale-prerequisite recovery coverage aligned with the new canonical path)
@@ -172,10 +178,32 @@ Rewrite the focused tests so they prove:
 
 ### Commands
 
-1. `cargo test -p worldwake-ai candidate_generation::tests::verify_belief`
-2. `cargo test -p worldwake-ai goal_model::tests::search_verify_belief`
-3. `cargo test -p worldwake-ai golden_stale_prerequisite_belief_discovery_replan -- --exact`
-4. `cargo test -p worldwake-ai`
-5. `cargo test -p worldwake-sim action_trace`
-6. `cargo test -p worldwake-systems epistemic_actions`
-7. `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai goal_model::tests::grounded_goal_epistemic_subjects_extract_stale_subjects_from_originating_goal_evidence -- --exact`
+2. `cargo test -p worldwake-ai goal_model::tests::grounded_goal_epistemic_barrier_matches_only_matching_payloads -- --exact`
+3. `cargo test -p worldwake-ai goal_model::tests::search_restock_goal_returns_travel_then_verify_belief_barrier_for_remote_stale_source -- --exact`
+4. `cargo test -p worldwake-ai goal_model::tests::search_restock_goal_returns_ask_witness_barrier_for_matching_colocated_payload -- --exact`
+5. `cargo test -p worldwake-ai candidate_generation::tests::low_confidence_evidence_keeps_originating_goal_without_standalone_verify_belief_goal -- --exact`
+6. `cargo test -p worldwake-ai candidate_generation::tests::stale_resource_source_stays_on_restock_goal_without_standalone_verify_belief_goal -- --exact`
+7. `cargo test -p worldwake-ai golden_stale_prerequisite_belief_discovery_replan -- --exact`
+8. `cargo test -p worldwake-ai`
+9. `cargo test -p worldwake-sim action_trace`
+10. `cargo test -p worldwake-systems epistemic_actions`
+11. `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings`
+
+## Outcome
+
+- Completion date: 2026-03-28
+- What actually changed:
+  - removed the standalone `GoalKind::VerifyBelief` path from `worldwake-core` and `worldwake-ai`
+  - moved deliberate verification into a grounded-goal stale-evidence barrier contract inside `worldwake-ai`
+  - kept `verify_belief` and `ask_witness` as explicit action-layer operations with unchanged typed action-trace identity
+  - removed the obsolete `verification_motive_weight` profile field and standalone verification ranking/provenance plumbing
+  - corrected `specs/S34-general-epistemic-actions.md` so it now specifies originating-goal epistemic barriers rather than a rival top-level verification goal
+- Deviations from original plan:
+  - the ticket initially framed the stale-source golden as proving a committed `verify_belief` step under the new architecture; live runtime ordering still permits same-place passive perception to refresh the belief immediately after arrival, so the updated regression proves the cleaner planner barrier contract and preserved stale-prerequisite recovery without overclaiming a guaranteed committed `verify_belief` in that golden
+- Verification results:
+  - focused grounded-goal barrier tests passed in `worldwake-ai`
+  - `cargo test -p worldwake-ai` passed
+  - `cargo test -p worldwake-sim action_trace` passed
+  - `cargo test -p worldwake-systems epistemic_actions` passed
+  - `cargo clippy -p worldwake-ai -p worldwake-sim -p worldwake-systems --all-targets -- -D warnings` passed

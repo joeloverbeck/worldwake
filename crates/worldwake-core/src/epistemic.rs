@@ -1,4 +1,4 @@
-//! Shared core types for proactive epistemic actions and goals.
+//! Shared core types for epistemic actions and grounded-goal verification barriers.
 
 use crate::{CommodityKind, Component, EntityId, Permille};
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,6 @@ pub struct VerificationDispositionProfile {
     pub belief_verification_threshold: Permille,
     pub verify_belief_duration_ticks: NonZeroU32,
     pub witness_query_duration_ticks: NonZeroU32,
-    pub verification_motive_weight: Permille,
     pub ask_memory_retention_ticks: u32,
 }
 
@@ -82,7 +81,6 @@ mod tests {
             belief_verification_threshold: Permille::new(400).unwrap(),
             verify_belief_duration_ticks: NonZeroU32::new(5).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
-            verification_motive_weight: Permille::new(200).unwrap(),
             ask_memory_retention_ticks: 17,
         };
 
