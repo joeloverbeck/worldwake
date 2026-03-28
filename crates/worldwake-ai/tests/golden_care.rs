@@ -364,9 +364,10 @@ fn assert_remote_care_tick_zero_plan(
         .as_ref()
         .expect("remote care selected plan should expose its next step");
 
-    assert_eq!(
-        tick_0_planning.selection.selected_goal(),
-        Some(GoalKey::from(GoalKind::TreatWounds { patient })),
+    assert!(
+        tick_0_planning
+            .selection
+            .selected_goal_is(GoalKey::from(GoalKind::TreatWounds { patient })),
         "remote care should select TreatWounds on tick 0"
     );
     assert_eq!(

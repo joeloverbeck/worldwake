@@ -14,7 +14,7 @@ use worldwake_core::{
     verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
     BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ComponentKind,
     ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
-    EventTag, EventView, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    EventTag, EventView, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
     JusticeDispositionProfile, KnownRecipes, MetabolismProfile, PerceptionProfile,
     PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind, RelationValue,
@@ -2265,15 +2265,15 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
         .driver
         .trace_sink()
         .expect("decision tracing should be enabled for political start-failure scenario");
-    assert_eq!(
+    assert!(
         trace_sink
             .trace_at(loser, Tick(0))
-            .and_then(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => planning.selection.selected_goal(),
-                _ => None,
-            })
-            .map(|goal| goal.kind),
-        Some(GoalKind::TreatWounds { patient: loser }),
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => planning
+                    .selection
+                    .selected_goal_is(GoalKey::from(GoalKind::TreatWounds { patient: loser })),
+                _ => false,
+            }),
         "the delayed claimant should prioritize lawful self-care first so the political request can become stale"
     );
     assert!(
@@ -4709,14 +4709,13 @@ fn run_entity_missing_triggers_investigation(
         .expect("tick 0 should generate an investigate goal for the missing entity");
     let generated_violation_id = generated_goal.0;
 
-    assert_eq!(
-        first_planning.selection.selected_goal(),
-        Some(
+    assert!(
+        first_planning.selection.selected_goal_is(
             GoalKind::InvestigateViolation {
                 violation_id: generated_violation_id,
                 place: VILLAGE_SQUARE,
             }
-            .into(),
+            .into()
         ),
         "the missing-entity violation should be selected for investigation",
     );
@@ -5090,14 +5089,13 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
             _ => None,
         })
         .expect("owner arrival should generate an investigate goal for the missing owned lot");
-    assert_eq!(
-        detection_planning.selection.selected_goal(),
-        Some(
+    assert!(
+        detection_planning.selection.selected_goal_is(
             GoalKind::InvestigateViolation {
                 violation_id: generated_violation_id,
                 place: VILLAGE_SQUARE,
             }
-            .into(),
+            .into()
         ),
         "owner should select the local investigate goal after discovering the missing lot",
     );
@@ -6536,11 +6534,10 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
                     .collect::<Vec<_>>()
             );
 
-            saw_self_care_selection |= matches!(
-                planning.selection.selected_goal().as_ref().map(|goal| goal.kind),
-                Some(GoalKind::ConsumeOwnedCommodity {
+            saw_self_care_selection |= planning.selection.selected_goal_is(
+                GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Apple,
-                })
+                }),
             );
         }
 

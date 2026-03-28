@@ -29,7 +29,7 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
     BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
+    DemandObservationReason, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
     ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
 };
@@ -904,6 +904,9 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         DecisionOutcome::Planning(planning) => planning,
         other => panic!("expected planning trace at tick 0, got {other:?}"),
     };
+    let restock_bread_goal = GoalKey::from(GoalKind::RestockCommodity {
+        commodity: CommodityKind::Bread,
+    });
     let selected_tick_zero_plan = tick_zero_planning
         .selection
         .selected_plan
@@ -914,10 +917,11 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         Some(SelectedPlanSource::SearchSelection),
         "stale-belief scenario should start from a fresh search result"
     );
-    assert!(matches!(
-        tick_zero_planning.selection.selected_goal().as_ref().map(|goal| &goal.kind),
-        Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
-    ));
+    assert!(
+        tick_zero_planning
+            .selection
+            .selected_goal_is(restock_bread_goal)
+    );
     assert_eq!(
         selected_tick_zero_plan
             .next_step
@@ -959,14 +963,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
                     trace.tick > Tick(0)
                         && planning.selection.selected_plan_source
                             == Some(SelectedPlanSource::SearchSelection)
-                        && planning.selection.selected_goal().is_some_and(|goal| {
-                            matches!(
-                                goal.kind,
-                                GoalKind::RestockCommodity {
-                                    commodity: CommodityKind::Bread
-                                }
-                            )
-                        })
+                        && planning.selection.selected_goal_is(restock_bread_goal)
                         && planning
                             .selection
                             .selected_plan
@@ -992,10 +989,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .selected_plan
         .as_ref()
         .expect("fallback planning should select a bandit-camp plan");
-    assert!(matches!(
-        replan_planning.selection.selected_goal().as_ref().map(|goal| &goal.kind),
-        Some(GoalKind::RestockCommodity { commodity }) if *commodity == CommodityKind::Bread
-    ));
+    assert!(replan_planning.selection.selected_goal_is(restock_bread_goal));
     let replacement = replan_planning
         .selection
         .plan_replacement

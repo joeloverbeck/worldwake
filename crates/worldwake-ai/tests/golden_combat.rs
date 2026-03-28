@@ -11,7 +11,7 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
-    CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKind, HomeostaticNeeds,
+    CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKey, GoalKind, HomeostaticNeeds,
     KnownRecipes, MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash,
     Tick, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
@@ -556,11 +556,12 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         wash_goal.motive_score > bread_goal.motive_score,
         "the setup should leave wash with the higher motive score so the test proves class promotion, not a motive tie; bread={bread_goal:?}, wash={wash_goal:?}"
     );
-    assert_eq!(
-        planning_tick_0.selection.selected_goal().map(|goal| goal.kind),
-        Some(GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        }),
+    assert!(
+        planning_tick_0.selection.selected_goal_is(GoalKey::from(
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            },
+        )),
         "tick 0 should select eating bread over washing because the recovery-aware boost elevates it above wash"
     );
     match bread_goal
@@ -1437,8 +1438,7 @@ fn golden_reduce_danger_defensive_mitigation() {
             .is_some_and(|trace| match &trace.outcome {
                 DecisionOutcome::Planning(planning) => planning
                     .selection
-                    .selected_goal()
-                    .is_some_and(|goal| goal.kind == GoalKind::ReduceDanger),
+                    .selected_goal_is(GoalKey::from(GoalKind::ReduceDanger)),
                 _ => false,
             });
 
