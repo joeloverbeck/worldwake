@@ -124,23 +124,25 @@ Change `exhaustion_cache: BTreeMap<GoalKey, ExhaustionEntry>` to `BTreeMap<Oppor
 - `is_exhausted()` checks the specific `OpportunityKey`, not the `GoalKey`.
 - Cooldown/retry logic (unchanged from S31 semantics) scopes to opportunity.
 
-### 6. Post-rank deduplication with exhaustion fallthrough (worldwake-ai)
+### 6. Ranked opportunity admission with exhaustion fallthrough (worldwake-ai)
 
-Ranking continues to operate at `GoalKey` level for priority class and motive score. All opportunities for the same `GoalKey` receive the same priority/motive (since those are desire-level properties). After ranking:
+Ranking continues to operate over `RankedGoal` entries whose identity is already opportunity-scoped through `GroundedGoal { key, anchor }`. Priority class and motive remain desire-driven, so sibling opportunities for one `GoalKey` can legitimately rank near each other, but they must not be collapsed back to desire identity before search. After ranking:
 
-1. Sort all `RankedGoal` entries by (priority_class, motive_score, stable ordering).
-2. Group by `GoalKey`.
-3. Within each group, iterate in rank order. Skip opportunities whose `OpportunityKey` is exhausted (suppresses planning). Select the first non-exhausted opportunity.
-4. If all opportunities for a `GoalKey` are exhausted, the `GoalKey` gets no candidate for plan search.
+1. Sort all `RankedGoal` entries by the live ranking order.
+2. Iterate ranked entries directly in that order.
+3. Skip opportunities whose `OpportunityKey` is exhausted and currently suppresses planning.
+4. Attempt plan search for each remaining opportunity in order until one yields a found plan or the planning budget candidate cap is reached.
+5. If all ranked opportunities for a `GoalKey` are exhausted or fail search, later sibling opportunities must still be allowed to fall through within the same planning pass.
 
-This dedup step replaces the implicit deduplication that previously happened during generation (via `BTreeMap<GoalKey, ...>`). Only the winning opportunity per `GoalKey` proceeds to plan search, preventing budget waste.
+This replaces the temporary first-per-`GoalKey` planning gate that survived the initial S33 rollout. Canonical identity from ranking into admission is now the ranked opportunity stream itself, not a second post-rank dedup structure.
 
 ### 7. `build_candidate_plans()` iteration (worldwake-ai)
 
-After dedup, the plan search iteration in `build_candidate_plans()` (agent_tick/planning.rs) proceeds with one `GroundedGoal` per `GoalKey` as before. The key changes:
+`build_candidate_plans()` in `agent_tick/planning.rs` iterates ranked opportunities directly. The key changes:
 
-- `build_planning_snapshot()` receives the per-opportunity `evidence_entities` and `evidence_places` from the winning `GroundedGoal` — no changes to snapshot builder logic needed.
+- `build_planning_snapshot()` receives the per-opportunity `evidence_entities` and `evidence_places` from each searched `GroundedGoal` — no changes to snapshot builder logic needed.
 - `record_exhausted_goals()` records exhaustion under the `OpportunityKey` (goal_key + anchor) instead of bare `GoalKey`.
+- traced planning attempts preserve ranked per-opportunity ordering so the debugging contract exposes which sibling opportunities were tried before search terminated
 - When a plan is found, the resulting `PlannedPlan` carries the `OpportunityKey`.
 
 ### 8. IntentionFrame interaction
@@ -182,14 +184,14 @@ With two-pass generation (Deliverable 4), desire-level escalation is a post-filt
 No new information paths. Opportunity anchors are derived from existing belief-view queries (which places have commodity sources, which entities are merchants). The belief-view trait is not modified. Evidence sets continue to flow from belief queries through candidate generation into the planning snapshot builder — the path is unchanged, only the granularity changes (per-opportunity instead of merged).
 
 ### Positive-feedback analysis
-No amplifying loops introduced. Opportunity-level exhaustion is strictly a restriction mechanism. The two-pass generation and post-rank dedup are stateless per-tick computations.
+No amplifying loops introduced. Opportunity-level exhaustion is strictly a restriction mechanism. The two-pass generation and ranked opportunity admission are stateless per-tick computations.
 
 ### Concrete dampeners
 N/A — no positive feedback loops.
 
 ### Stored state vs. derived read-model list
 - **Stored**: `OpportunityKey` on `ExhaustionEntry` (runtime cache, not authoritative world state). `OpportunityKey` on `PlannedPlan` (runtime state).
-- **Derived**: `OpportunityAnchor` on `GroundedGoal` (recomputed each tick from beliefs). Evidence sets on `GroundedGoal` (recomputed each tick). Desire-level blocker escalation (recomputed from current blocker set + candidate set). Post-rank deduplication result (recomputed each tick).
+- **Derived**: `OpportunityAnchor` on `GroundedGoal` (recomputed each tick from beliefs). Evidence sets on `GroundedGoal` (recomputed each tick). Desire-level blocker escalation (recomputed from current blocker set + candidate set). Ranked admission order and per-pass fallthrough result (recomputed each tick).
 
 ## Tests
 
@@ -203,8 +205,8 @@ N/A — no positive feedback loops.
 - [ ] `PlannedPlan.opportunity` correctly reflects the searched opportunity
 - [ ] Save/load round-trip preserves `OpportunityKey` in exhaustion cache
 - [ ] Post-load pruning removes exhaustion entries with dead-entity anchors
-- [ ] Post-rank dedup selects top non-exhausted opportunity per `GoalKey`
-- [ ] Post-rank dedup falls through to next opportunity when top is exhausted
+- [ ] Ranked admission searches same-goal sibling opportunities in order without collapsing them before search
+- [ ] Ranked admission falls through to the next same-goal opportunity when a higher-ranked sibling is exhausted
 - [ ] When all opportunities for a `GoalKey` are exhausted, no candidate proceeds to plan search
 - [ ] `build_planning_snapshot()` receives per-opportunity evidence and scopes correctly
 - [ ] Decision trace records `DesireFullyBlocked` when all opportunities for a GoalKey are blocked
@@ -223,5 +225,5 @@ N/A — no positive feedback loops.
 5. All existing golden tests pass (behavioral equivalence for single-source scenarios).
 6. Save/load round-trip preserves opportunity-scoped exhaustion state.
 7. Two-pass candidate generation correctly separates emission from blocker filtering.
-8. Post-rank dedup with exhaustion fallthrough selects best available opportunity per GoalKey.
+8. Ranked opportunity admission with exhaustion fallthrough preserves same-pass sibling search rather than re-collapsing to desire identity before planning.
 9. `build_planning_snapshot()` continues to receive per-opportunity evidence for belief scoping.

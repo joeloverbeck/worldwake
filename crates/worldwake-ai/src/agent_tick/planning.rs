@@ -11,7 +11,7 @@ use crate::{
     search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
     OpportunityKey, PlannedPlan, PlannedStep, PlannerOpSemantics, PlanningBudget, RankedGoal,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, Tick,
 };
@@ -65,7 +65,6 @@ pub(super) fn summarize_selected_plan(
 }
 
 pub(super) fn summarize_search_provenance(
-    selected_goal: worldwake_core::GoalKey,
     plans: &[(
         OpportunityKey,
         PlanSearchResult,
@@ -75,7 +74,7 @@ pub(super) fn summarize_search_provenance(
 ) -> Option<SelectedPlanSearchProvenance> {
     let (_, result, _, expansions) = plans
         .iter()
-        .find(|(opportunity, _, _, _)| opportunity.goal_key == selected_goal)?;
+        .find(|(_, result, _, _)| matches!(result, PlanSearchResult::Found(_)))?;
     if !matches!(result, PlanSearchResult::Found(_)) {
         return None;
     }
@@ -165,10 +164,8 @@ pub(super) fn build_candidate_plans(
     Vec<crate::decision_trace::SearchExpansionSummary>,
 )> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
-    let mut seen_goals = BTreeSet::new();
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
-        .filter(|c| seen_goals.insert(c.grounded.key))
         .filter(|c| {
             let key = OpportunityKey {
                 goal_key: c.grounded.key,
@@ -683,7 +680,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             );
             let search_provenance =
                 matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
-                    .then(|| summarize_search_provenance(selected_goal, &plans))
+                    .then(|| summarize_search_provenance(&plans))
                     .flatten();
             selection_trace.selected = Some(selected_goal);
             selection_trace.selected_plan = Some(summarize_selected_plan(
@@ -817,7 +814,7 @@ pub(super) fn plan_search_result_to_trace(
 mod tests {
     use super::{has_pending_budget_retry, record_exhausted_goals};
     use crate::{
-        build_semantics_table, feasibility::FeasibilityHint, AgentDecisionRuntime,
+        build_semantics_table, feasibility::FeasibilityHint, AgentDecisionRuntime, DirtySet,
         ExhaustionEntry, ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
         GoalPriorityClass, GroundedGoal, OpportunityAnchor, OpportunityKey, PlanSearchResult,
         PlanTerminalKind, PlannedPlan, PlanningBudget, RankedGoal,
@@ -854,6 +851,23 @@ mod tests {
 
     fn found_plan(goal: GoalKey) -> PlannedPlan {
         PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
+    }
+
+    fn acquire_goal(
+        commodity: CommodityKind,
+        anchor: OpportunityAnchor,
+        evidence_entities: BTreeSet<worldwake_core::EntityId>,
+        evidence_places: BTreeSet<worldwake_core::EntityId>,
+    ) -> GroundedGoal {
+        GroundedGoal {
+            key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            anchor,
+            evidence_entities,
+            evidence_places,
+        }
     }
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -1040,6 +1054,277 @@ mod tests {
         assert!(
             !result.is_found(),
             "AcquireCommodity(Bread) search should not be able to use the remote seller evidence attached only to a different admitted candidate"
+        );
+    }
+
+    #[test]
+    fn same_goal_ranked_opportunities_are_attempted_in_order() {
+        let origin = entity(21);
+        let market = entity(22);
+        let mut world = World::new(cargo_topology(origin, market)).unwrap();
+        let (agent, bread) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_ground_location(bread, origin).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, bread)
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(origin),
+                BTreeSet::from([bread]),
+                BTreeSet::from([origin]),
+            )),
+        ];
+        let budget = PlanningBudget {
+            snapshot_travel_horizon: 4,
+            max_candidates_to_plan: 2,
+            ..PlanningBudget::default()
+        };
+
+        let plans = super::build_candidate_plans(
+            &world,
+            &scheduler,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            Tick(1),
+            &budget,
+            &semantics,
+            &defs,
+            &handlers,
+            &recipes,
+            false,
+            false,
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(
+            plans.len(),
+            2,
+            "same-goal sibling opportunities should both be admitted in ranked order"
+        );
+        assert_eq!(plans[0].0.anchor, OpportunityAnchor::Place(market));
+        assert!(
+            !plans[0].1.is_found(),
+            "the first sibling opportunity should fail with its own isolated evidence"
+        );
+        assert_eq!(plans[1].0.anchor, OpportunityAnchor::Place(origin));
+        assert!(
+            !matches!(plans[1].1, PlanSearchResult::Unsupported),
+            "the later sibling opportunity should still be searched rather than suppressed before search"
+        );
+    }
+
+    #[test]
+    fn exhausted_same_goal_opportunity_does_not_block_later_sibling() {
+        let origin = entity(31);
+        let market = entity(32);
+        let mut world = World::new(cargo_topology(origin, market)).unwrap();
+        let (agent, bread) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_ground_location(bread, origin).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, bread)
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(origin),
+                BTreeSet::from([bread]),
+                BTreeSet::from([origin]),
+            )),
+        ];
+        let budget = PlanningBudget {
+            snapshot_travel_horizon: 4,
+            max_candidates_to_plan: 2,
+            ..PlanningBudget::default()
+        };
+        let exhausted = OpportunityKey {
+            goal_key: ranked_candidates[0].grounded.key,
+            anchor: ranked_candidates[0].grounded.anchor,
+        };
+        let exhaustion_cache = BTreeMap::from([(
+            exhausted,
+            ExhaustionEntry::frontier_exhausted(
+                Vec::new(),
+                crate::ExhaustionBaseline::default(),
+            ),
+        )]);
+
+        let plans = super::build_candidate_plans(
+            &world,
+            &scheduler,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            Tick(1),
+            &budget,
+            &semantics,
+            &defs,
+            &handlers,
+            &recipes,
+            false,
+            false,
+            &exhaustion_cache,
+        );
+
+        assert_eq!(
+            plans.len(),
+            1,
+            "an exhausted sibling should be skipped without suppressing later same-goal opportunities"
+        );
+        assert_eq!(plans[0].0.anchor, OpportunityAnchor::Place(origin));
+        assert!(
+            !matches!(plans[0].1, PlanSearchResult::Unsupported),
+            "the non-exhausted sibling should still reach search"
+        );
+    }
+
+    #[test]
+    fn traced_planning_records_same_goal_opportunity_attempt_order() {
+        let origin = entity(41);
+        let market = entity(42);
+        let mut world = World::new(cargo_topology(origin, market)).unwrap();
+        let (agent, bread) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_ground_location(bread, origin).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, bread)
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(origin),
+                BTreeSet::from([bread]),
+                BTreeSet::from([origin]),
+            )),
+        ];
+        let budget = PlanningBudget {
+            snapshot_travel_horizon: 4,
+            max_candidates_to_plan: 2,
+            ..PlanningBudget::default()
+        };
+        let mut runtime = AgentDecisionRuntime::default();
+        runtime.dirty = DirtySet::NO_PLAN;
+        let mut active_goal = None;
+        let mut frame = None;
+
+        let (_, _, _, plan_search_trace, _) = super::plan_and_validate_next_step_traced(
+            &world,
+            &scheduler,
+            &mut runtime,
+            &mut active_goal,
+            &mut frame,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            worldwake_core::Permille::new(0).unwrap(),
+            worldwake_core::Permille::new(0).unwrap(),
+            Tick(1),
+            &budget,
+            &semantics,
+            &defs,
+            &handlers,
+            true,
+            None,
+            &recipes,
+        );
+
+        let attempts = &plan_search_trace
+            .expect("traced planning should record attempt order")
+            .attempts;
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].opportunity_anchor, OpportunityAnchor::Place(market));
+        assert_eq!(attempts[1].opportunity_anchor, OpportunityAnchor::Place(origin));
+        assert!(
+            !matches!(
+                attempts[0].outcome,
+                crate::decision_trace::PlanSearchOutcome::Found { .. }
+            ),
+            "the first same-goal opportunity should be traced as a failed search attempt"
+        );
+        assert!(
+            !matches!(
+                attempts[1].outcome,
+                crate::decision_trace::PlanSearchOutcome::Unsupported
+            ),
+            "the later same-goal opportunity should appear as a real search attempt in the trace"
         );
     }
 

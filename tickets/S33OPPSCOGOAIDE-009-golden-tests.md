@@ -18,7 +18,7 @@ The remaining S33 end-to-end proof is not generic "opportunity behavior"; it is 
 4. `PerceptionProfile` still matters anywhere the agent must observe produced or stocked output before replanning.
 5. Candidate-local planning scope is already live after archived `S33OPPSCOGOAIDE-010`, so these goldens should treat leaked shared-snapshot explanations as excluded branches rather than an open implementation variable.
 6. The live desire under test is still `AcquireCommodity` for a concrete commodity with at least two lawful sources.
-7. The main architectural blocker for the exhausted-source golden is still `S33OPPSCOGOAIDE-005`: live code exhausts per opportunity now, but same-pass fallthrough between sibling opportunities is not yet the canonical planning-admission behavior.
+7. Archived `S33OPPSCOGOAIDE-005` already removed the temporary first-per-`GoalKey` planning gate, so the remaining architectural seam for these goldens is no longer admission fallthrough. The live unresolved boundary is carrying canonical selected-opportunity identity on `PlannedPlan` (`S33OPPSCOGOAIDE-006`) so the end-to-end proof can assert the winning concrete source without relying only on indirect traces.
 
 ## Architecture Check
 
