@@ -45,6 +45,9 @@ pub(crate) struct ReadPhaseResult {
     pub(super) generated_keys: Vec<worldwake_core::GoalKey>,
     /// Typed candidate-evidence provenance keyed by generated goal.
     pub(super) candidate_evidence: Vec<crate::CandidateEvidenceTrace>,
+    /// Desire-level diagnostics for goals whose emitted sibling opportunities
+    /// were all filtered out as blocked before ranking.
+    pub(super) fully_blocked_desires: Vec<crate::DesireFullyBlocked>,
     /// Goals suppressed by situational conditions.
     pub(super) suppressed: Vec<worldwake_core::GoalKey>,
     /// Goals with zero motive score.
@@ -146,6 +149,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         ranked: outcome.ranked,
         generated_keys,
         candidate_evidence,
+        fully_blocked_desires: candidates.diagnostics.fully_blocked_desires,
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,

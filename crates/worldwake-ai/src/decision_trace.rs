@@ -7,7 +7,8 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
-    PerceptionSource, PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
+    OpportunityKey, PerceptionSource, PunishmentFineSelectionTrace, SuspensionReason, TellTopic,
+    Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
@@ -216,6 +217,9 @@ pub struct CandidateTrace {
     pub generated: Vec<GoalKey>,
     /// Typed candidate-evidence provenance keyed by grounded goal.
     pub evidence: Vec<CandidateEvidenceTrace>,
+    /// Desire-level diagnostic emitted when every concrete opportunity for a
+    /// generated `GoalKey` was filtered out as blocked before ranking.
+    pub fully_blocked_desires: Vec<DesireFullyBlocked>,
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoalSummary>,
     /// Why the highest-ranked goal beat the immediate runner-up, when at least
@@ -229,6 +233,13 @@ pub struct CandidateTrace {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     /// Social goals omitted before generation due to resend suppression.
     pub omitted_social: Vec<SocialCandidateOmission>,
+}
+
+/// Desire-level blocking summary for opportunity-scoped candidate filtering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesireFullyBlocked {
+    pub goal_key: GoalKey,
+    pub blocked_opportunities: Vec<OpportunityKey>,
 }
 
 /// Political goal families that can be omitted before candidate emission.
@@ -986,6 +997,13 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let mut out = format!(
                 "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking}"
             );
+            for blocked in &planning.candidates.fully_blocked_desires {
+                let _ = write!(
+                    out,
+                    "\n  fully blocked desire: goal={:?}, opportunities={:?}",
+                    blocked.goal_key.kind, blocked.blocked_opportunities
+                );
+            }
             for attempt in &planning.planning.attempts {
                 let _ = write!(
                     out,
@@ -1454,6 +1472,7 @@ mod tests {
                 candidates: CandidateTrace {
                     generated,
                     evidence: Vec::new(),
+                    fully_blocked_desires: Vec::new(),
                     ranked,
                     top_ranked_comparison: None,
                     suppressed,
@@ -1853,6 +1872,7 @@ mod tests {
             candidates: CandidateTrace {
                 generated: vec![],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::Sleep),
                     priority_class: GoalPriorityClass::Critical,
@@ -1940,6 +1960,7 @@ mod tests {
             candidates: CandidateTrace {
                 generated: vec![],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -1979,6 +2000,65 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_includes_desire_fully_blocked() {
+        use worldwake_core::{CommodityKind, CommodityPurpose, GoalKind, OpportunityAnchor};
+
+        let goal = GoalKey::new(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![goal],
+                evidence: vec![],
+                fully_blocked_desires: vec![DesireFullyBlocked {
+                    goal_key: goal,
+                    blocked_opportunities: vec![
+                        OpportunityKey {
+                            goal_key: goal,
+                            anchor: OpportunityAnchor::Place(entity(11)),
+                        },
+                        OpportunityKey {
+                            goal_key: goal,
+                            anchor: OpportunityAnchor::Place(entity(12)),
+                        },
+                    ],
+                }],
+                ranked: vec![],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected: None,
+                selected_plan: None,
+                selected_plan_source: None,
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = format_outcome(&outcome, &ActionDefRegistry::new());
+        assert!(summary.contains("fully blocked desire"));
+        assert!(summary.contains("AcquireCommodity"));
+        assert!(summary.contains("Place("));
+    }
+
+    #[test]
     fn summary_planning_includes_ranking_comparison() {
         use crate::ranking::{RankedGoalComparison, RankedGoalComparisonDimension};
         use worldwake_core::GoalKind;
@@ -1991,6 +2071,7 @@ mod tests {
             candidates: CandidateTrace {
                 generated: vec![winner, loser],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![
                     RankedGoalSummary {
                         goal: winner,
@@ -2053,6 +2134,7 @@ mod tests {
             candidates: CandidateTrace {
                 generated: vec![GoalKey::new(GoalKind::ReduceDanger)],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::ReduceDanger),
                     priority_class: GoalPriorityClass::High,
@@ -2111,6 +2193,7 @@ mod tests {
                     commodity: worldwake_core::CommodityKind::Bread,
                 })],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::ConsumeOwnedCommodity {
                         commodity: worldwake_core::CommodityKind::Bread,
@@ -2180,6 +2263,7 @@ mod tests {
             candidates: CandidateTrace {
                 generated: vec![GoalKey::new(GoalKind::ClaimOffice { office: entity(4) })],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![RankedGoalSummary {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
                     priority_class: GoalPriorityClass::High,
@@ -2503,6 +2587,7 @@ mod tests {
             candidates: CandidateTrace {
                 generated: vec![],
                 evidence: vec![],
+                fully_blocked_desires: vec![],
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -2669,6 +2754,7 @@ mod tests {
                 candidates: CandidateTrace {
                     generated: vec![goal_key],
                     evidence: vec![evidence],
+                    fully_blocked_desires: vec![],
                     ranked: vec![RankedGoalSummary {
                         goal: goal_key,
                         priority_class: GoalPriorityClass::Medium,

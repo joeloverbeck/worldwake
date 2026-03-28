@@ -19,12 +19,14 @@ The remaining S33 end-to-end proof is not generic "opportunity behavior"; it is 
 5. Candidate-local planning scope is already live after archived `S33OPPSCOGOAIDE-010`, so these goldens should treat leaked shared-snapshot explanations as excluded branches rather than an open implementation variable.
 6. The live desire under test is still `AcquireCommodity` for a concrete commodity with at least two lawful sources.
 7. Archived `S33OPPSCOGOAIDE-005` already removed the temporary first-per-`GoalKey` planning gate, so the remaining architectural seam for these goldens is no longer admission fallthrough. The live unresolved boundary is carrying canonical selected-opportunity identity on `PlannedPlan` (`S33OPPSCOGOAIDE-006`) so the end-to-end proof can assert the winning concrete source without relying only on indirect traces.
+8. Stage-1 candidate/ranking trace identity still has a separate follow-up architecture gap after completed `S33OPPSCOGOAIDE-007`. That gap should be handled by a dedicated trace ticket, not absorbed here. These goldens can still prove the intended invariant with current lower-layer surfaces (`PlannedPlan.opportunity`, `PlanAttemptTrace.opportunity_anchor`, `DesireFullyBlocked`, and authoritative/action outcomes).
 
 ## Architecture Check
 
 1. Golden tests are the correct verification surface because the final risk is cross-layer: candidate emission, blocking/exhaustion memory, admission ordering, planning scope, and execution must all cooperate.
 2. These goldens should prove the final canonical path after `005`, not preserve temporary first-per-`GoalKey` behavior via bespoke harness setup.
-3. No backward-compatibility shims.
+3. This ticket should not expand into stage-1 trace-identity refactoring. If richer opportunity-scoped candidate/ranking trace data lands first, these goldens should consume it, but they do not own that architecture.
+4. No backward-compatibility shims.
 
 ## Verification Layers
 
@@ -74,6 +76,7 @@ For each golden, add a deterministic replay round-trip test that re-derives the 
 ## Out of Scope
 
 - Focused unit tests for individual components
+- Stage-1 candidate/ranking trace-identity refactors
 - Production-code behavior changes unless the golden exposes a genuine bug that must be fixed in the same implementation sequence
 - New action types or new commodity types — use existing Apple/harvest/trade infrastructure
 - Performance optimization

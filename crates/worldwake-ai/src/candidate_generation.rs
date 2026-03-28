@@ -2,8 +2,8 @@ use crate::{
     decision_trace::{
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
         CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace,
-        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-        SocialCandidateOmission,
+        DesireFullyBlocked, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
+        PoliticalGoalFamily, SocialCandidateOmission,
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
@@ -23,9 +23,10 @@ use worldwake_core::{
     CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, PerceptionSource,
-    OpportunityAnchor, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
-    Quantity, RecordData, RecordKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
+    OpportunityAnchor, OpportunityKey, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+    PunishmentKind, Quantity, RecordData, RecordKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, ViolationId, ViolationKind,
+    ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -148,6 +149,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
     pub evidence: BTreeMap<GoalKey, CandidateEvidenceTrace>,
+    pub fully_blocked_desires: Vec<DesireFullyBlocked>,
 }
 
 pub(crate) struct CandidateGenerationResult {
@@ -239,8 +241,10 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
+    let candidates = filter_blocked_candidates(candidates, blocked, current_tick, &mut diagnostics);
+
     CandidateGenerationResult {
-        candidates: filter_blocked_candidates(candidates, blocked, current_tick),
+        candidates,
         diagnostics,
         pending_violations,
     }
@@ -250,11 +254,43 @@ fn filter_blocked_candidates(
     candidates: Vec<GroundedGoal>,
     blocked: &BlockedIntentMemory,
     current_tick: Tick,
+    diagnostics: &mut CandidateGenerationDiagnostics,
 ) -> Vec<GroundedGoal> {
-    candidates
+    let mut blocked_by_goal: BTreeMap<GoalKey, Vec<OpportunityKey>> = BTreeMap::new();
+    let mut emitted_counts: BTreeMap<GoalKey, usize> = BTreeMap::new();
+    let mut surviving = Vec::new();
+
+    for candidate in candidates {
+        *emitted_counts.entry(candidate.key).or_default() += 1;
+        if is_candidate_blocked(&candidate, blocked, current_tick) {
+            blocked_by_goal
+                .entry(candidate.key)
+                .or_default()
+                .push(OpportunityKey {
+                    goal_key: candidate.key,
+                    anchor: candidate.anchor,
+                });
+            continue;
+        }
+        surviving.push(candidate);
+    }
+
+    diagnostics.fully_blocked_desires = blocked_by_goal
         .into_iter()
-        .filter(|candidate| !is_candidate_blocked(candidate, blocked, current_tick))
-        .collect()
+        .filter_map(|(goal_key, mut blocked_opportunities)| {
+            let emitted = emitted_counts.get(&goal_key).copied().unwrap_or_default();
+            if emitted == 0 || blocked_opportunities.len() != emitted {
+                return None;
+            }
+            blocked_opportunities.sort();
+            Some(DesireFullyBlocked {
+                goal_key,
+                blocked_opportunities,
+            })
+        })
+        .collect();
+
+    surviving
 }
 
 fn is_candidate_blocked(
@@ -4244,6 +4280,141 @@ mod tests {
         assert_eq!(
             acquire_goals[0].anchor,
             worldwake_core::OpportunityAnchor::Place(market)
+        );
+    }
+
+    #[test]
+    fn diagnostics_record_desire_fully_blocked_when_all_opportunities_are_filtered() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let market = entity(12);
+        let orchard_seller = entity(2);
+        let market_seller = entity(3);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let key = GoalKey::from(goal);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, orchard_seller, market_seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(orchard_seller, orchard);
+        view.effective_places.insert(market_seller, market);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard, market]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.sellers.insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
+        view.sellers.insert((market, CommodityKind::Bread), vec![market_seller]);
+
+        let mut blocked = BlockedIntentMemory::default();
+        for place in [orchard, market] {
+            blocked.record(BlockedIntent {
+                blocker_key: BlockerKey {
+                    goal_key: key,
+                    place: Some(place),
+                    target: None,
+                    action_def: None,
+                },
+                blocking_fact: BlockingFact::NoKnownSeller,
+                diagnostic_context: None,
+                observed_tick: Tick(1),
+                expires_tick: Tick(10),
+            });
+        }
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            goals_for(&result.candidates, &goal).is_empty(),
+            "all acquire opportunities should be filtered out"
+        );
+        assert_eq!(result.diagnostics.fully_blocked_desires.len(), 1);
+        let diagnostic = &result.diagnostics.fully_blocked_desires[0];
+        assert_eq!(diagnostic.goal_key, key);
+        assert_eq!(
+            diagnostic.blocked_opportunities,
+            vec![
+                worldwake_core::OpportunityKey {
+                    goal_key: key,
+                    anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+                },
+                worldwake_core::OpportunityKey {
+                    goal_key: key,
+                    anchor: worldwake_core::OpportunityAnchor::Place(market),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn diagnostics_omit_desire_fully_blocked_when_one_opportunity_survives() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let market = entity(12);
+        let orchard_seller = entity(2);
+        let market_seller = entity(3);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let key = GoalKey::from(goal);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, orchard_seller, market_seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(orchard_seller, orchard);
+        view.effective_places.insert(market_seller, market);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard, market]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.sellers.insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
+        view.sellers.insert((market, CommodityKind::Bread), vec![market_seller]);
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert_eq!(goals_for(&result.candidates, &goal).len(), 1);
+        assert!(
+            result.diagnostics.fully_blocked_desires.is_empty(),
+            "a surviving sibling opportunity must suppress the desire-level diagnostic"
         );
     }
 

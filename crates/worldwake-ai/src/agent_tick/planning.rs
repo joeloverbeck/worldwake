@@ -1292,8 +1292,10 @@ mod tests {
             max_candidates_to_plan: 2,
             ..PlanningBudget::default()
         };
-        let mut runtime = AgentDecisionRuntime::default();
-        runtime.dirty = DirtySet::NO_PLAN;
+        let mut runtime = AgentDecisionRuntime {
+            dirty: DirtySet::NO_PLAN,
+            ..AgentDecisionRuntime::default()
+        };
         let mut active_goal = None;
         let mut frame = None;
 
