@@ -842,6 +842,13 @@ mod tests {
         }
     }
 
+    fn opportunity(goal: GoalKey) -> OpportunityKey {
+        OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::None,
+        }
+    }
+
     fn place_entity(slot: u32) -> worldwake_core::EntityId {
         worldwake_core::EntityId {
             slot,
@@ -850,7 +857,12 @@ mod tests {
     }
 
     fn found_plan(goal: GoalKey) -> PlannedPlan {
-        PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
+        PlannedPlan::new(
+            opportunity(goal),
+            goal,
+            Vec::new(),
+            PlanTerminalKind::GoalSatisfied,
+        )
     }
 
     fn acquire_goal(
@@ -1446,7 +1458,7 @@ mod tests {
 
         let plans = vec![(
             solved_goal,
-            PlanSearchResult::Found(found_plan(solved_goal.goal_key)),
+            PlanSearchResult::Found(Box::new(found_plan(solved_goal.goal_key))),
             Vec::new(),
             Vec::new(),
         )];

@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BinaryHeap};
 #[cfg(test)]
 use transition::build_successor;
 use transition::build_successor_detailed;
-use worldwake_core::{ActionDefId, BlockedIntentMemory, Tick};
+use worldwake_core::{ActionDefId, BlockedIntentMemory, OpportunityKey, Tick};
 use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry};
 
 #[derive(Clone)]
@@ -43,7 +43,7 @@ struct SearchNode<'snapshot> {
 #[derive(Clone, Debug)]
 pub enum PlanSearchResult {
     /// A valid plan was found.
-    Found(PlannedPlan),
+    Found(Box<PlannedPlan>),
     /// Goal kind is not supported by the planner.
     Unsupported,
     /// Node expansion budget was exhausted before finding a plan.
@@ -57,7 +57,7 @@ impl PlanSearchResult {
     #[must_use]
     pub fn into_plan(self) -> Option<PlannedPlan> {
         match self {
-            Self::Found(plan) => Some(plan),
+            Self::Found(plan) => Some(*plan),
             _ => None,
         }
     }
@@ -86,6 +86,10 @@ pub fn search_plan(
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
     }
+    let opportunity = OpportunityKey {
+        goal_key: goal.key,
+        anchor: goal.anchor,
+    };
 
     // Pre-compute goal-relevant action defs once — invariant across expansions.
     let relevant_defs = candidates::relevant_action_defs(goal, semantics_table);
@@ -100,17 +104,18 @@ pub fn search_plan(
     while let Some(node) = frontier.pop().map(FrontierEntry::into_node) {
         if goal.key.kind.is_satisfied(&node.state) {
             return PlanSearchResult::Found(PlannedPlan::new(
+                opportunity,
                 goal.key,
                 node.steps.into_vec(),
                 PlanTerminalKind::GoalSatisfied,
-            ));
+            ).into());
         }
         if node.steps.len() >= usize::from(budget.max_plan_depth) {
             continue;
         }
         if expansions >= budget.max_node_expansions {
             if let Some(barrier_plan) = best_barrier {
-                return PlanSearchResult::Found(barrier_plan);
+                return PlanSearchResult::Found(Box::new(barrier_plan));
             }
             return PlanSearchResult::BudgetExhausted {
                 expansions_used: expansions,
@@ -234,16 +239,18 @@ pub fn search_plan(
                             });
                         }
                         return PlanSearchResult::Found(PlannedPlan::new(
+                            opportunity,
                             goal.key,
                             successor.steps.into_vec(),
                             terminal_kind,
-                        ));
+                        ).into());
                     }
                     // ProgressBarrier is stored as a fallback — keep searching
                     // for a GoalSatisfied plan across deeper expansion levels.
                     PlanTerminalKind::ProgressBarrier => {
                         if best_barrier.is_none() {
                             best_barrier = Some(PlannedPlan::new(
+                                opportunity,
                                 goal.key,
                                 successor.steps.into_vec(),
                                 terminal_kind,
@@ -280,17 +287,18 @@ pub fn search_plan(
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
                 return PlanSearchResult::Found(PlannedPlan::new(
+                    opportunity,
                     goal.key,
                     successor.steps.into_vec(),
                     terminal_kind,
-                ));
+                ).into());
             }
             frontier.push(FrontierEntry::new(successor));
         }
     }
 
     if let Some(barrier_plan) = best_barrier {
-        return PlanSearchResult::Found(barrier_plan);
+        return PlanSearchResult::Found(Box::new(barrier_plan));
     }
     PlanSearchResult::FrontierExhausted {
         expansions_used: expansions,

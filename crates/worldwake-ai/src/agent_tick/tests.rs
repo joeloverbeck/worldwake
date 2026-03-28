@@ -66,6 +66,13 @@ fn exhaustion_key(goal_key: GoalKey, anchor: OpportunityAnchor) -> OpportunityKe
     OpportunityKey { goal_key, anchor }
 }
 
+fn default_opportunity(goal_key: GoalKey) -> OpportunityKey {
+    OpportunityKey {
+        goal_key,
+        anchor: OpportunityAnchor::None,
+    }
+}
+
 impl Harness {
     fn new(control_source: ControlSource) -> Self {
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -186,6 +193,28 @@ fn save_runtime_state_serializes_persisted_driver_state() {
         last_frame_clear_reason: Some(worldwake_core::FrameClearReason::LostPlan),
         ..AgentDecisionRuntime::default()
     };
+    let current_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let current_opportunity = OpportunityKey {
+        goal_key: current_goal,
+        anchor: OpportunityAnchor::Place(place),
+    };
+    runtime.current_plan = Some(PlannedPlan::new(
+        current_opportunity,
+        current_goal,
+        vec![PlannedStep {
+            def_id: ActionDefId(9),
+            targets: vec![PlanningEntityRef::Authoritative(place)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 3,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }],
+        PlanTerminalKind::GoalSatisfied,
+    ));
     runtime
         .materialization_bindings
         .bind(HypotheticalEntityId(11), authoritative);
@@ -230,6 +259,14 @@ fn save_runtime_state_serializes_persisted_driver_state() {
     assert_eq!(restored_runtime.current_step_index, 2);
     assert!(restored_runtime.step_in_flight);
     assert_eq!(restored_runtime.last_effective_place, Some(place));
+    assert_eq!(
+        restored_runtime
+            .current_plan
+            .as_ref()
+            .expect("current plan should roundtrip")
+            .opportunity,
+        current_opportunity
+    );
     assert_eq!(
         restored_runtime.last_facility_access_signature,
         vec![(facility, true, Some(ActionDefId(4)))]
@@ -1228,6 +1265,7 @@ fn active_runtime(goal: GoalKind) -> crate::AgentDecisionRuntime {
     let goal = GoalKey::from(goal);
     crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
+            default_opportunity(goal),
             goal,
             vec![barrier_step()],
             PlanTerminalKind::GoalSatisfied,
@@ -1977,6 +2015,7 @@ fn frame_snapshot_reports_profile_margin_source_for_active_journey() {
         actor,
         crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                default_opportunity(GoalKey::from(GoalKind::Sleep)),
                 GoalKey::from(GoalKind::Sleep),
                 vec![travel_step(1, place)],
                 PlanTerminalKind::GoalSatisfied,
@@ -2017,6 +2056,7 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
         actor,
         crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                default_opportunity(GoalKey::from(GoalKind::Sleep)),
                 GoalKey::from(GoalKind::Sleep),
                 vec![barrier_step()],
                 PlanTerminalKind::GoalSatisfied,
@@ -2045,6 +2085,7 @@ fn travel_led_plan_adoption_sets_intention_frame_anchor() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let destination = entity(11);
     let plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![travel_step(1, destination), barrier_step()],
         PlanTerminalKind::GoalSatisfied,
@@ -2064,7 +2105,12 @@ fn travel_led_plan_adoption_sets_intention_frame_anchor() {
 #[test]
 fn non_travel_plan_adoption_suspends_intention_frame() {
     let goal = GoalKey::from(GoalKind::Sleep);
-    let plan = PlannedPlan::new(goal, vec![barrier_step()], PlanTerminalKind::GoalSatisfied);
+    let plan = PlannedPlan::new(
+        default_opportunity(goal),
+        goal,
+        vec![barrier_step()],
+        PlanTerminalKind::GoalSatisfied,
+    );
     let existing_jc = Some(IntentionFrame {
         goal,
         domain: IntentionDomain::Travel {
@@ -2095,7 +2141,12 @@ fn non_travel_plan_adoption_suspends_intention_frame() {
 fn same_goal_same_destination_replan_preserves_intention_frame() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let destination = entity(11);
+    let opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Place(destination),
+    };
     let plan = PlannedPlan::new(
+        opportunity,
         goal,
         vec![travel_step(1, destination), barrier_step()],
         PlanTerminalKind::GoalSatisfied,
@@ -2118,6 +2169,7 @@ fn same_goal_same_destination_replan_preserves_intention_frame() {
 
     let jc = jc.expect("should preserve frame");
     assert_eq!(jc.goal, goal);
+    assert_eq!(plan.opportunity, opportunity);
     assert!(matches!(jc.domain, IntentionDomain::Travel { destination: d } if d == destination));
     assert_eq!(jc.state, FrameState::Active);
     assert_eq!(jc.established_at, Tick(4));
@@ -2131,6 +2183,7 @@ fn same_goal_different_destination_replan_restarts_intention_frame() {
     let original_destination = entity(11);
     let new_destination = entity(22);
     let plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![travel_step(1, new_destination), barrier_step()],
         PlanTerminalKind::GoalSatisfied,
@@ -2181,6 +2234,7 @@ fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
+            default_opportunity(goal),
             goal,
             vec![travel_step(1, entity(11)), barrier_step()],
             PlanTerminalKind::GoalSatisfied,
@@ -2207,6 +2261,7 @@ fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
 fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forces_replan() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![travel_step(1, entity(11)), barrier_step()],
         PlanTerminalKind::GoalSatisfied,
@@ -2284,6 +2339,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let destination = entity(11);
     let plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![travel_step(1, destination), barrier_step()],
         PlanTerminalKind::GoalSatisfied,
@@ -2480,6 +2536,7 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
+            default_opportunity(goal),
             goal,
             vec![travel_step(1, destination)],
             PlanTerminalKind::ProgressBarrier,
@@ -2543,6 +2600,7 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
+            default_opportunity(detour_goal),
             detour_goal,
             vec![PlannedStep {
                 def_id: ActionDefId(9),
@@ -2604,6 +2662,7 @@ fn goal_completion_records_goal_satisfied_clear_reason() {
     });
     let mut runtime = crate::AgentDecisionRuntime {
         current_plan: Some(PlannedPlan::new(
+            default_opportunity(goal),
             goal,
             vec![travel_step(1, destination)],
             PlanTerminalKind::GoalSatisfied,
@@ -2719,6 +2778,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
         destination: entity(22),
     });
     let plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![
             PlannedStep {
@@ -3621,11 +3681,13 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
         commodity: CommodityKind::Bread,
     });
     let current_plan = PlannedPlan::new(
+        default_opportunity(current_goal),
         current_goal,
         vec![barrier_step()],
         PlanTerminalKind::GoalSatisfied,
     );
     let challenger_plan = PlannedPlan::new(
+        default_opportunity(challenger_goal),
         challenger_goal,
         vec![barrier_step()],
         PlanTerminalKind::ProgressBarrier,
@@ -3930,6 +3992,7 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
         harness.actor,
         crate::AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                default_opportunity(goal),
                 goal,
                 vec![heal_step],
                 PlanTerminalKind::GoalSatisfied,
@@ -4207,6 +4270,7 @@ fn summarize_plan_replacement_records_same_goal_branch_replan() {
     let orchard_source = entity(12);
     let bandit_camp = entity(22);
     let current_plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![
             travel_step(1, entity(11)),
@@ -4223,6 +4287,7 @@ fn summarize_plan_replacement_records_same_goal_branch_replan() {
         PlanTerminalKind::GoalSatisfied,
     );
     let selected_plan = PlannedPlan::new(
+        default_opportunity(goal),
         goal,
         vec![travel_step(3, bandit_camp)],
         PlanTerminalKind::GoalSatisfied,

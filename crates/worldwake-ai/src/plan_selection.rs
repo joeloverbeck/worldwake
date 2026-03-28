@@ -133,8 +133,16 @@ mod tests {
         }
     }
 
+    fn opportunity(goal: GoalKey) -> worldwake_core::OpportunityKey {
+        worldwake_core::OpportunityKey {
+            goal_key: goal,
+            anchor: worldwake_core::OpportunityAnchor::None,
+        }
+    }
+
     fn plan(goal: GoalKey, def_id: u32, ticks: u32) -> PlannedPlan {
         PlannedPlan::new(
+            opportunity(goal),
             goal,
             vec![PlannedStep {
                 def_id: ActionDefId(def_id),
@@ -306,6 +314,7 @@ mod tests {
             purpose: CommodityPurpose::SelfConsume,
         });
         let stale_plan = PlannedPlan::new(
+            opportunity(goal),
             goal,
             vec![
                 PlannedStep {
@@ -362,7 +371,12 @@ mod tests {
     }
 
     fn empty_plan(goal: GoalKey) -> PlannedPlan {
-        PlannedPlan::new(goal, Vec::new(), PlanTerminalKind::GoalSatisfied)
+        PlannedPlan::new(
+            opportunity(goal),
+            goal,
+            Vec::new(),
+            PlanTerminalKind::GoalSatisfied,
+        )
     }
 
     #[test]
@@ -627,6 +641,7 @@ mod tests {
         });
         let destination = entity(44);
         let current_plan = PlannedPlan::new(
+            opportunity(committed_goal),
             committed_goal,
             vec![PlannedStep {
                 targets: vec![PlanningEntityRef::Authoritative(destination)],
@@ -643,6 +658,7 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
         let detour_plan = PlannedPlan::new(
+            opportunity(detour_goal),
             detour_goal,
             vec![PlannedStep {
                 def_id: ActionDefId(2),

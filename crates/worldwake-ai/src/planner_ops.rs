@@ -781,6 +781,7 @@ pub enum PlanTerminalKind {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PlannedPlan {
     pub goal: GoalKey,
+    pub opportunity: worldwake_core::OpportunityKey,
     pub steps: Vec<PlannedStep>,
     pub total_estimated_ticks: u32,
     pub terminal_kind: PlanTerminalKind,
@@ -788,9 +789,15 @@ pub struct PlannedPlan {
 
 impl PlannedPlan {
     #[must_use]
-    pub fn new(goal: GoalKey, steps: Vec<PlannedStep>, terminal_kind: PlanTerminalKind) -> Self {
+    pub fn new(
+        opportunity: worldwake_core::OpportunityKey,
+        goal: GoalKey,
+        steps: Vec<PlannedStep>,
+        terminal_kind: PlanTerminalKind,
+    ) -> Self {
         Self {
             goal,
+            opportunity,
             total_estimated_ticks: total_estimated_ticks(&steps),
             steps,
             terminal_kind,
@@ -925,8 +932,13 @@ mod tests {
 
     #[test]
     fn planned_plan_remaining_travel_steps_counts_from_index() {
+        let goal = GoalKey::from(GoalKind::Sleep);
         let plan = PlannedPlan::new(
-            GoalKey::from(GoalKind::Sleep),
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: worldwake_core::OpportunityAnchor::Place(entity(11)),
+            },
+            goal,
             vec![
                 travel_step(entity(11)),
                 sample_step(),
@@ -946,8 +958,13 @@ mod tests {
     #[test]
     fn planned_plan_terminal_travel_destination_uses_last_travel_step() {
         let last_target = entity(13);
+        let goal = GoalKey::from(GoalKind::Sleep);
         let plan = PlannedPlan::new(
-            GoalKey::from(GoalKind::Sleep),
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: worldwake_core::OpportunityAnchor::Place(last_target),
+            },
+            goal,
             vec![
                 travel_step(entity(11)),
                 sample_step(),
@@ -959,7 +976,11 @@ mod tests {
         assert_eq!(plan.terminal_travel_destination(), Some(last_target));
 
         let non_travel_plan = PlannedPlan::new(
-            GoalKey::from(GoalKind::Sleep),
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+            goal,
             vec![sample_step()],
             PlanTerminalKind::GoalSatisfied,
         );
@@ -1358,6 +1379,10 @@ mod tests {
         second.is_materialization_barrier = true;
 
         let plan = PlannedPlan::new(
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: worldwake_core::OpportunityAnchor::Place(entity(21)),
+            },
             goal,
             vec![sample_step(), second],
             PlanTerminalKind::ProgressBarrier,
@@ -1368,8 +1393,13 @@ mod tests {
 
     #[test]
     fn planned_plan_new_uses_zero_ticks_for_empty_steps() {
+        let goal = GoalKey::from(GoalKind::ReduceDanger);
         let plan = PlannedPlan::new(
-            GoalKey::from(GoalKind::ReduceDanger),
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: worldwake_core::OpportunityAnchor::Entity(entity(77)),
+            },
+            goal,
             Vec::new(),
             PlanTerminalKind::ProgressBarrier,
         );
@@ -1378,9 +1408,37 @@ mod tests {
     }
 
     #[test]
-    fn planned_plan_roundtrips_through_bincode() {
+    fn planned_plan_new_preserves_concrete_opportunity_identity() {
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let opportunity = worldwake_core::OpportunityKey {
+            goal_key: goal,
+            anchor: worldwake_core::OpportunityAnchor::Place(entity(55)),
+        };
+
         let plan = PlannedPlan::new(
-            GoalKey::from(GoalKind::Sleep),
+            opportunity,
+            goal,
+            vec![sample_step()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        assert_eq!(plan.goal, goal);
+        assert_eq!(plan.opportunity, opportunity);
+        assert_eq!(plan.opportunity.goal_key, plan.goal);
+    }
+
+    #[test]
+    fn planned_plan_roundtrips_through_bincode() {
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let plan = PlannedPlan::new(
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: worldwake_core::OpportunityAnchor::Place(entity(6)),
+            },
+            goal,
             vec![PlannedStep {
                 def_id: ActionDefId(2),
                 targets: vec![PlanningEntityRef::Authoritative(entity(6))],

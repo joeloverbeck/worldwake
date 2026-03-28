@@ -1139,6 +1139,10 @@ mod tests {
     fn runtime_with_plan(goal: GoalKey, step: PlannedStep) -> AgentDecisionRuntime {
         AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                worldwake_core::OpportunityKey {
+                    goal_key: goal,
+                    anchor: worldwake_core::OpportunityAnchor::None,
+                },
                 goal,
                 vec![step],
                 PlanTerminalKind::ProgressBarrier,

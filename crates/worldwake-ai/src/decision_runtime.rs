@@ -290,12 +290,21 @@ mod tests {
         }
     }
 
+    fn opportunity(goal: GoalKey) -> OpportunityKey {
+        OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::None,
+        }
+    }
+
     fn sample_plan(steps: Vec<PlannedStep>) -> PlannedPlan {
+        let goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
         PlannedPlan::new(
-            GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Bread,
-                purpose: CommodityPurpose::SelfConsume,
-            }),
+            opportunity(goal),
+            goal,
             steps,
             PlanTerminalKind::GoalSatisfied,
         )
@@ -668,6 +677,10 @@ mod tests {
         let committed_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
         let committed_destination = entity(77);
         let refresh = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: committed_goal,
+                anchor: OpportunityAnchor::Place(committed_destination),
+            },
             committed_goal,
             vec![PlannedStep {
                 targets: vec![PlanningEntityRef::Authoritative(committed_destination)],
@@ -675,16 +688,23 @@ mod tests {
             }],
             PlanTerminalKind::GoalSatisfied,
         );
+        let suspend_goal = GoalKey::from(worldwake_core::GoalKind::Relieve);
         let suspend = PlannedPlan::new(
-            GoalKey::from(worldwake_core::GoalKind::Relieve),
+            opportunity(suspend_goal),
+            suspend_goal,
             vec![sample_step(2, PlannerOpKind::Relieve)],
             PlanTerminalKind::GoalSatisfied,
         );
+        let abandon_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
         let abandon = PlannedPlan::new(
-            GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-            }),
+            OpportunityKey {
+                goal_key: abandon_goal,
+                anchor: OpportunityAnchor::Place(entity(88)),
+            },
+            abandon_goal,
             vec![PlannedStep {
                 targets: vec![PlanningEntityRef::Authoritative(entity(88))],
                 ..sample_step(3, PlannerOpKind::Travel)

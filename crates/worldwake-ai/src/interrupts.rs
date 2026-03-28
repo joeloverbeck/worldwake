@@ -293,6 +293,13 @@ mod tests {
         }
     }
 
+    fn opportunity(goal: GoalKey) -> worldwake_core::OpportunityKey {
+        worldwake_core::OpportunityKey {
+            goal_key: goal,
+            anchor: worldwake_core::OpportunityAnchor::None,
+        }
+    }
+
     fn default_switch_margin() -> Permille {
         Permille::new(100).unwrap()
     }
@@ -509,6 +516,7 @@ mod tests {
         let active_goal = Some(GoalKey::from(current_goal));
         let runtime = AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                opportunity(GoalKey::from(current_goal)),
                 GoalKey::from(current_goal),
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
@@ -721,6 +729,7 @@ mod tests {
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                opportunity(current_goal_key),
                 current_goal_key,
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
@@ -751,6 +760,7 @@ mod tests {
         let planned_candidates = vec![(
             challenger_goal,
             Some(PlannedPlan::new(
+                opportunity(challenger_goal),
                 challenger_goal,
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(2),
@@ -916,6 +926,7 @@ mod tests {
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(
+                opportunity(committed_goal),
                 committed_goal,
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
@@ -960,6 +971,7 @@ mod tests {
             (
                 abandon_goal,
                 Some(PlannedPlan::new(
+                    opportunity(abandon_goal),
                     abandon_goal,
                     vec![crate::PlannedStep {
                         def_id: ActionDefId(2),
@@ -976,6 +988,7 @@ mod tests {
             (
                 detour_goal,
                 Some(PlannedPlan::new(
+                    opportunity(detour_goal),
                     detour_goal,
                     vec![crate::PlannedStep {
                         def_id: ActionDefId(3),

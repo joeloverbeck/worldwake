@@ -5361,6 +5361,81 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
 }
 
 #[test]
+fn planned_plan_carries_searched_opportunity_key() {
+    let actor = entity(1);
+    let office = entity(3);
+    let hall = entity(12);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, office, hall]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(office, EntityKind::Office);
+    view.kinds.insert(hall, EntityKind::Place);
+    view.effective_places.insert(actor, hall);
+    view.effective_places.insert(office, hall);
+    view.entities_at.insert(hall, vec![actor, office]);
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.office_holder_beliefs.insert(
+        office,
+        worldwake_core::InstitutionalBeliefRead::Certain(None),
+    );
+    view.office_data.insert(
+        office,
+        worldwake_core::OfficeData {
+            title: "War Chief".to_string(),
+            jurisdiction: hall,
+            succession_law: worldwake_core::SuccessionLaw::Force,
+            eligibility_rules: Vec::new(),
+            succession_period_ticks: 10,
+            vacancy_since: Some(Tick(2)),
+        },
+    );
+
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([office]),
+        &BTreeSet::from([hall]),
+        0,
+    );
+    let goal_key = GoalKey::from(GoalKind::ClaimOffice { office });
+    let opportunity = worldwake_core::OpportunityKey {
+        goal_key,
+        anchor: worldwake_core::OpportunityAnchor::Place(hall),
+    };
+    let goal = GroundedGoal {
+        anchor: opportunity.anchor,
+        key: goal_key,
+        evidence_entities: BTreeSet::from([office]),
+        evidence_places: BTreeSet::from([hall]),
+    };
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    );
+
+    let plan = match result {
+        PlanSearchResult::Found(plan) => plan,
+        other => panic!("expected plan, got {other:?}"),
+    };
+
+    assert_eq!(plan.goal, goal_key);
+    assert_eq!(plan.opportunity, opportunity);
+}
+
+#[test]
 fn search_trace_records_force_claim_root_candidate_outcomes() {
     let actor = entity(1);
     let office = entity(3);
