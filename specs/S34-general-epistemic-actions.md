@@ -35,8 +35,7 @@ Phase 3+: AI Architecture Overhaul, Step 13.5 Wave 5
 - **P5** (Carriers of Consequence): Deliberate verification is targeted -- the agent checks a specific belief it cares about, not "everything at a place." Passive perception handles broad discovery. This avoids decorative realism (broad scans that produce noise without consequence).
 - **P8** (Every Action Has Cost): Both epistemic actions have duration, preconditions, and occupancy. Information is not free. Time spent verifying is time not spent producing, trading, or fighting.
 - **P18** (Resource-Bounded Reasoning): Agents verify beliefs relevant to their current priorities. A farmer does not verify whether a distant dragon is still at its cave unless planning to go there. Candidate generation ties verification to goal-relevant beliefs.
-- **P20** (Agent Diversity): Per-agent `VerificationDispositionProfile` controls verification thresholds and durations. Agents without the profile rely on passive perception only.
-- **P20** (Agent Diversity): Per-agent `VerificationDispositionProfile` controls stale-evidence thresholds and `ask_witness` duration. Agents without the profile rely on passive perception only.
+- **P20** (Agent Diversity): Per-agent `EpistemicDispositionProfile` controls stale-evidence thresholds and `ask_witness` duration. Agents without the profile rely on passive perception only.
 - **Scenario D**: Rumor -> Travel -> Empty Source -> Discovery -> Belief Correction -> Replan. In the live contract, the discovery step is the lawful arrival observation itself; the planner barrier is the travel step to the believed place.
 
 ## Design Goals
@@ -50,12 +49,12 @@ Phase 3+: AI Architecture Overhaul, Step 13.5 Wave 5
 
 ## Deliverables
 
-### 1. `VerificationSubject` enum (worldwake-core)
+### 1. `EpistemicSubject` enum (worldwake-core)
 
 ```rust
 /// Subject of a proactive belief verification.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum VerificationSubject {
+pub enum EpistemicSubject {
     /// Verify whether a specific entity is at the believed place.
     EntityLocation {
         entity: EntityId,
@@ -70,15 +69,15 @@ pub enum VerificationSubject {
 }
 ```
 
-### 2. `VerificationDispositionProfile` component (worldwake-core)
+### 2. `EpistemicDispositionProfile` component (worldwake-core)
 
 ```rust
 /// Per-agent parameters controlling epistemic action behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VerificationDispositionProfile {
+pub struct EpistemicDispositionProfile {
     /// Beliefs below this confidence trigger grounded-goal epistemic barriers.
     /// Permille(400) = 40% confidence threshold.
-    pub belief_verification_threshold: Permille,
+    pub stale_evidence_barrier_threshold: Permille,
     /// Duration in ticks for the ask_witness action.
     pub witness_query_duration_ticks: NonZeroU32,
     /// Ticks before an ask-memory entry expires (deduplication window for ask_witness).
@@ -93,7 +92,7 @@ Registered on agents via component schema. Agents without this profile do not de
 #### `ask_witness`
 
 - **Preconditions**: Actor alive, not incapacitated. Target agent alive, co-located, not incapacitated.
-- **Duration**: `VerificationDispositionProfile::witness_query_duration_ticks`.
+- **Duration**: `EpistemicDispositionProfile::witness_query_duration_ticks`.
 - **Interruptibility**: FreelyInterruptible.
 - **On commit**: Transfer a subset of the target's `AgentBeliefStore.known_entities` entries to the actor, filtered by topic (the entity or commodity the actor is asking about). Transferred beliefs carry `PerceptionSource::Report { from: target, chain_len: 1 }`. If the target has no relevant beliefs, the commit still succeeds (the absence of information is a result -- the agent learns "this witness does not know"). Respects E15c conversation memory -- suppresses re-asking the same target about the same topic within the retention window.
 - **Visibility**: SamePlace (other co-located agents can observe the asking).
@@ -144,13 +143,13 @@ The relevant op set is grounded-goal-specific rather than a separate `GoalKind` 
 
 No standalone explicit-verification goal pass remains. Instead, after ordinary goal candidates are emitted, the AI derives stale-evidence barrier requirements from each grounded goal's evidence:
 
-1. **Guard**: Return immediately if agent lacks `VerificationDispositionProfile`.
+1. **Guard**: Return immediately if agent lacks `EpistemicDispositionProfile`.
 
 2. **Scan existing candidates**: For each already-emitted `GroundedGoal` in the candidate list, identify belief dependencies:
    - Extract `evidence_entities` and `evidence_places` from the candidate.
-   - For each entity in `evidence_entities`, look up the agent's `BelievedEntityState`. If the belief's `belief_confidence(source, staleness_ticks, policy) < profile.belief_verification_threshold`, this entity becomes a stale-subject barrier candidate for that grounded goal.
+   - For each entity in `evidence_entities`, look up the agent's `BelievedEntityState`. If the belief's `belief_confidence(source, staleness_ticks, policy) < profile.stale_evidence_barrier_threshold`, this entity becomes a stale-subject barrier candidate for that grounded goal.
 
-3. **Determine `VerificationSubject`**:
+3. **Determine `EpistemicSubject`**:
    - If the low-confidence belief concerns an entity's location (entity has `last_known_place: Some(place)`), derive `EntityLocation { entity, place }`.
    - If the low-confidence belief concerns a resource source (entity has `resource_source: Some(_)` in the believed state), derive `SupplyAvailability { commodity, source: entity, place }` where `commodity` is the source's commodity and `place` is the source's `last_known_place`.
 
@@ -170,8 +169,8 @@ Add `ActionDomain::Epistemic` to categorize `ask_witness`.
 
 ## Component Registration
 
-- `VerificationDispositionProfile`: Register on `EntityKind::Agent` in component schema (same pattern as `ViolationDispositionProfile`).
-- `VerificationSubject`: No registration needed (embedded in `GoalKind` and `ActionPayload`).
+- `EpistemicDispositionProfile`: Register on `EntityKind::Agent` in component schema (same pattern as `ViolationDispositionProfile`).
+- `EpistemicSubject`: No registration needed (embedded in goal-planning barrier logic and `ActionPayload` matching).
 - Action defs: Register `ask_witness` in `ActionDefRegistry` via `register_ask_witness_action()` in worldwake-systems, called from `register_all_actions()` in `action_registry.rs`.
 - Handlers: Register in `ActionHandlerRegistry` with `start_*/tick_*/commit_*/abort_*` functions plus `enumerate_*_payloads` and `validate_*_payload_authoritatively` validators (same pattern as Tell and Investigate actions).
 - Payload variants: Add `AskWitness(AskWitnessPayload)` to the `ActionPayload` enum with corresponding accessor methods.
@@ -201,11 +200,11 @@ No amplifying loops. Epistemic actions consume time (duration-bearing), which li
 
 ### Concrete dampeners
 
-Time cost of epistemic actions is the physical dampener. Agents who verify everything accomplish nothing else. `belief_verification_threshold` controls when stale evidence becomes barrier-worthy, and action durations control how expensive verification is. Because verification is a prerequisite barrier inside an originating goal rather than a rival top-level goal, no extra ranking dampener is needed.
+Time cost of epistemic actions is the physical dampener. Agents who verify everything accomplish nothing else. `stale_evidence_barrier_threshold` controls when stale evidence becomes barrier-worthy, and action durations control how expensive verification is. Because verification is a prerequisite barrier inside an originating goal rather than a rival top-level goal, no extra ranking dampener is needed.
 
 ### Stored state vs. derived read-model list
 
-- **Stored**: `VerificationDispositionProfile` (component). Action defs (registry). Updated `BelievedEntityState` entries (existing belief store). `AskWitnessMemory` entries (existing belief-store deduplication lane).
+- **Stored**: `EpistemicDispositionProfile` (component). Action defs (registry). Updated `BelievedEntityState` entries (existing belief store). `AskWitnessMemory` entries (existing belief-store deduplication lane).
 - **Derived**: grounded-goal stale-subject barrier requirements (recomputed from current belief confidence and grounded-goal evidence). Confidence scores (computed from provenance + age via `belief_confidence()`, never stored).
 
 ### Contention and scarcity (P28 item 5)
@@ -219,7 +218,7 @@ Epistemic actions do not introduce new scarce capacities, exclusive affordances,
 
 ### Save/load and replay (P28 item 11)
 
-`VerificationDispositionProfile` is a standard serde-compatible component. `VerificationSubject` and `AskWitnessPayload` derive `Serialize`/`Deserialize`. All new types compose with the existing bincode pipeline. Ask-deduplication uses `AskWitnessMemoryKey` / `AskWitnessMemory`, which are already save/load compatible. No new persistence requirements beyond component registration. Deterministic replay is preserved because all new actions use `DeterministicRng` and `BTreeMap`-based storage.
+`EpistemicDispositionProfile` is a standard serde-compatible component. `EpistemicSubject` and `AskWitnessPayload` derive `Serialize`/`Deserialize`. All new types compose with the existing bincode pipeline. Ask-deduplication uses `AskWitnessMemoryKey` / `AskWitnessMemory`, which are already save/load compatible. No new persistence requirements beyond component registration. Deterministic replay is preserved because all new actions use `DeterministicRng` and `BTreeMap`-based storage.
 
 ## Tests
 
@@ -232,7 +231,7 @@ Epistemic actions do not introduce new scarce capacities, exclusive affordances,
 - [ ] `ask_witness` aborts if target moves away during action; no beliefs transferred, no memory recorded
 - [ ] `ask_witness` records `AskWitnessMemory` for deduplication on commit
 - [ ] Grounded goal with stale evidence derives epistemic barrier subjects only when belief confidence is below threshold
-- [ ] Agents lacking `VerificationDispositionProfile` do not derive deliberate epistemic barriers
+- [ ] Agents lacking `EpistemicDispositionProfile` do not derive deliberate epistemic barriers
 - [ ] Barrier derivation scans already-emitted grounded goals for belief dependencies
 - [ ] Barrier derivation deduplicates repeated stale subjects within one grounded goal
 - [ ] Resource-source stale evidence derives `SupplyAvailability` barrier subjects
@@ -256,6 +255,6 @@ Epistemic actions do not introduce new scarce capacities, exclusive affordances,
 5. Barrier requirements are generated by scanning already-emitted grounded goals for low-confidence belief dependencies (goal-relevant, not tick-based scan).
 6. Epistemic action results update belief stores with proper provenance, not authoritative world state (P12).
 7. `ask_witness` validates that at least one topic field (`topic_entity` or `topic_commodity`) is populated.
-8. Agents without `VerificationDispositionProfile` do not derive deliberate verification barriers (P20 diversity).
+8. Agents without `EpistemicDispositionProfile` do not derive deliberate verification barriers (P20 diversity).
 9. Canonical Scenario D can emerge through lawful arrival refresh without any duplicate post-arrival verification step.
 10. All new types are serde-compatible and survive save/load/replay without changing world meaning (P11).

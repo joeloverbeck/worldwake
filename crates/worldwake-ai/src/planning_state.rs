@@ -1300,12 +1300,12 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
     }
 
-    fn verification_disposition_profile(
+    fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
-    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+    ) -> Option<worldwake_core::EpistemicDispositionProfile> {
         (agent == self.snapshot.actor())
-            .then_some(self.snapshot.actor_verification_profile.clone())
+            .then_some(self.snapshot.actor_epistemic_profile.clone())
             .flatten()
     }
 
@@ -1734,8 +1734,8 @@ mod tests {
         MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
         SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        VerificationDispositionProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+        EpistemicDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
         WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -1768,7 +1768,7 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
-        verification_profiles: BTreeMap<EntityId, VerificationDispositionProfile>,
+        epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
         violation_profiles: BTreeMap<EntityId, ViolationDispositionProfile>,
@@ -1816,7 +1816,7 @@ mod tests {
                 thresholds: BTreeMap::new(),
                 metabolism_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
-                verification_profiles: BTreeMap::new(),
+                epistemic_profiles: BTreeMap::new(),
                 theft_profiles: BTreeMap::new(),
                 justice_profiles: BTreeMap::new(),
                 violation_profiles: BTreeMap::new(),
@@ -2045,11 +2045,11 @@ mod tests {
             self.trade_profiles.get(&agent).cloned()
         }
 
-        fn verification_disposition_profile(
+        fn epistemic_disposition_profile(
             &self,
             agent: EntityId,
-        ) -> Option<VerificationDispositionProfile> {
-            self.verification_profiles.get(&agent).cloned()
+        ) -> Option<EpistemicDispositionProfile> {
+            self.epistemic_profiles.get(&agent).cloned()
         }
 
         fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
@@ -3629,10 +3629,10 @@ mod tests {
                 demand_memory_retention_ticks: 12,
             },
         );
-        view.verification_profiles.insert(
+        view.epistemic_profiles.insert(
             actor,
-            VerificationDispositionProfile {
-                belief_verification_threshold: pm(400),
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(400),
                 witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
                 ask_memory_retention_ticks: 10,
             },
@@ -3717,8 +3717,8 @@ mod tests {
             view.trade_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::verification_disposition_profile(&state, actor),
-            view.verification_profiles.get(&actor).cloned()
+            RuntimeBeliefView::epistemic_disposition_profile(&state, actor),
+            view.epistemic_profiles.get(&actor).cloned()
         );
         assert_eq!(
             RuntimeBeliefView::theft_disposition_profile(&state, actor),

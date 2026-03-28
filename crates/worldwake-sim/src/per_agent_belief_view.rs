@@ -625,14 +625,14 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn verification_disposition_profile(
+    fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
-    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+    ) -> Option<worldwake_core::EpistemicDispositionProfile> {
         (agent == self.agent)
             .then(|| {
                 self.world
-                    .get_component_verification_disposition_profile(agent)
+                    .get_component_epistemic_disposition_profile(agent)
                     .cloned()
             })
             .flatten()
@@ -753,7 +753,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             return None;
         }
 
-        let profile = self.verification_disposition_profile(actor)?;
+        let profile = self.epistemic_disposition_profile(actor)?;
         self.belief_store
             .ask_witness_memory(
                 key,

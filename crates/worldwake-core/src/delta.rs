@@ -10,7 +10,7 @@ use crate::{
     MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile,
     Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity, RecordData,
     ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UniqueItem, UtilityProfile, VerificationDispositionProfile,
+    EpistemicDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -251,7 +251,7 @@ mod tests {
         ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry,
         Quantity, QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource, TellProfile, TheftDispositionProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, VerificationDispositionProfile,
+        EpistemicDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
         ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
         WoundCause, WoundList,
     };
@@ -507,8 +507,8 @@ mod tests {
                 investigation_motive_weight: Permille::new(500).unwrap(),
                 ownership_motive_bonus: Permille::new(200).unwrap(),
             }),
-            ComponentValue::VerificationDispositionProfile(VerificationDispositionProfile {
-                belief_verification_threshold: Permille::new(400).unwrap(),
+            ComponentValue::EpistemicDispositionProfile(EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
                 witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
                 ask_memory_retention_ticks: 12,
             }),
@@ -659,7 +659,7 @@ mod tests {
                 ComponentKind::IntentionDispositionProfile,
                 ComponentKind::ViolationMemory,
                 ComponentKind::ViolationDispositionProfile,
-                ComponentKind::VerificationDispositionProfile,
+                ComponentKind::EpistemicDispositionProfile,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,

@@ -104,10 +104,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         Permille::new_unchecked(1000)
     }
-    fn verification_disposition_profile(
+    fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
-    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+    ) -> Option<worldwake_core::EpistemicDispositionProfile> {
         let _ = agent;
         None
     }
@@ -353,10 +353,10 @@ pub trait RuntimeBeliefView {
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
-    fn verification_disposition_profile(
+    fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
-    ) -> Option<worldwake_core::VerificationDispositionProfile> {
+    ) -> Option<worldwake_core::EpistemicDispositionProfile> {
         let _ = agent;
         None
     }
@@ -793,11 +793,11 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::observation_fidelity(self, agent)
             }
 
-            fn verification_disposition_profile(
+            fn epistemic_disposition_profile(
                 &self,
                 agent: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::VerificationDispositionProfile> {
-                $crate::RuntimeBeliefView::verification_disposition_profile(self, agent)
+            ) -> Option<worldwake_core::EpistemicDispositionProfile> {
+                $crate::RuntimeBeliefView::epistemic_disposition_profile(self, agent)
             }
 
             fn theft_disposition_profile(
@@ -1054,7 +1054,7 @@ pub fn estimate_duration_from_beliefs(
             .violation_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.investigation_duration_ticks.get())),
         DurationExpr::ActorWitnessQueryDisposition => view
-            .verification_disposition_profile(actor)
+            .epistemic_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get())),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)

@@ -12,7 +12,7 @@ use crate::{
     PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
     Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile,
     TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, VerificationDispositionProfile, ViolationDispositionProfile, ViolationMemory,
+    EpistemicDispositionProfile, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
     WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -601,8 +601,8 @@ mod tests {
         Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData,
         RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
         SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile, Tick,
-        TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind,
-        VerificationDispositionProfile, WorkstationMarker, WorkstationTag, WorldError, Wound,
+        EpistemicDispositionProfile, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
         WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -4414,37 +4414,37 @@ mod tests {
     }
 
     #[test]
-    fn verification_disposition_profile_component_roundtrip_on_agent() {
+    fn epistemic_disposition_profile_component_roundtrip_on_agent() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
-        let profile = VerificationDispositionProfile {
-            belief_verification_threshold: Permille::new(400).unwrap(),
+        let profile = EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
         };
 
         world
-            .insert_component_verification_disposition_profile(id, profile.clone())
+            .insert_component_epistemic_disposition_profile(id, profile.clone())
             .unwrap();
 
         assert_eq!(
-            world.get_component_verification_disposition_profile(id),
+            world.get_component_epistemic_disposition_profile(id),
             Some(&profile)
         );
     }
 
     #[test]
-    fn insert_verification_disposition_profile_on_non_agent_errors() {
+    fn insert_epistemic_disposition_profile_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let office = world.create_entity(EntityKind::Office, Tick(1));
-        let profile = VerificationDispositionProfile {
-            belief_verification_threshold: Permille::new(400).unwrap(),
+        let profile = EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
         };
 
         let err = world
-            .insert_component_verification_disposition_profile(office, profile)
+            .insert_component_epistemic_disposition_profile(office, profile)
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

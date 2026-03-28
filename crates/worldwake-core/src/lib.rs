@@ -112,7 +112,7 @@ pub use delta::{
 };
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
-pub use epistemic::{VerificationDispositionProfile, VerificationSubject};
+pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};

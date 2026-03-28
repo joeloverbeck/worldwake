@@ -114,7 +114,7 @@ fn enumerate_ask_witness_payloads(
     let Some(target) = targets.first().copied() else {
         return Vec::new();
     };
-    if target == actor || view.verification_disposition_profile(actor).is_none() {
+    if target == actor || view.epistemic_disposition_profile(actor).is_none() {
         return Vec::new();
     }
 
@@ -146,7 +146,7 @@ fn validate_ask_witness_payload_override(
     let Some(target) = targets.first().copied() else {
         return false;
     };
-    if view.verification_disposition_profile(actor).is_none() {
+    if view.epistemic_disposition_profile(actor).is_none() {
         return false;
     }
     let Some(payload) = payload.as_ask_witness() else {
@@ -175,11 +175,11 @@ fn validate_ask_witness_payload_authoritatively(
         return Err(ActionError::InvalidTarget(actor));
     };
     if world
-        .get_component_verification_disposition_profile(actor)
+        .get_component_epistemic_disposition_profile(actor)
         .is_none()
     {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} lacks VerificationDispositionProfile"
+            "actor {actor} lacks EpistemicDispositionProfile"
         )));
     }
 
@@ -308,10 +308,10 @@ fn commit_ask_witness(
         .cloned()
         .unwrap_or_default();
     let actor_profile = txn
-        .get_component_verification_disposition_profile(instance.actor)
+        .get_component_epistemic_disposition_profile(instance.actor)
         .ok_or_else(|| {
             ActionError::PreconditionFailed(format!(
-                "actor {} lacks VerificationDispositionProfile",
+                "actor {} lacks EpistemicDispositionProfile",
                 instance.actor
             ))
         })?;
@@ -374,7 +374,7 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, BodyPart, CauseRef, CombatProfile,
         CombatWeaponRef, ControlSource, DeadAt, EventLog, Permille, Seed, Tick,
-        VerificationDispositionProfile, WitnessData, Wound, WoundCause, WoundId, WoundList,
+        EpistemicDispositionProfile, WitnessData, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -423,12 +423,12 @@ mod tests {
         actor
     }
 
-    fn set_verification_profile(world: &mut World, actor: EntityId, duration: u32) {
+    fn set_epistemic_profile(world: &mut World, actor: EntityId, duration: u32) {
         let mut txn = new_txn(world, 1);
-        txn.set_component_verification_disposition_profile(
+        txn.set_component_epistemic_disposition_profile(
             actor,
-            VerificationDispositionProfile {
-                belief_verification_threshold: pm(400),
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(400),
                 witness_query_duration_ticks: nz(duration),
                 ask_memory_retention_ticks: 12,
             },
@@ -639,7 +639,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
         let subject = spawn_actor(&mut world, other_place, "Cyra");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
         seed_entity_belief(&mut world, actor, subject, 1);
         seed_entity_belief_with_source(
             &mut world,
@@ -688,7 +688,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
         let subject = spawn_actor(&mut world, other_place, "Cyra");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
         seed_entity_belief(&mut world, actor, subject, 1);
 
         let payload = AskWitnessPayload {
@@ -724,7 +724,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
         let subject = spawn_actor(&mut world, other_place, "Cyra");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
         seed_entity_belief(&mut world, actor, subject, 1);
 
         let payload = AskWitnessPayload {
@@ -769,7 +769,7 @@ mod tests {
         let (place, _) = first_two_places(&world);
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
 
         let (defs, handlers, ask_id) = setup_registries_with_ask();
         let def = defs.get(ask_id).unwrap();
@@ -799,7 +799,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
         let subject = spawn_actor(&mut world, other_place, "Cyra");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
         seed_entity_belief(&mut world, actor, subject, 1);
 
         let payload = AskWitnessPayload {
@@ -896,7 +896,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
         let subject = spawn_actor(&mut world, other_place, "Cyra");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
         seed_entity_belief(&mut world, actor, subject, 1);
 
         let payload = AskWitnessPayload {
@@ -981,7 +981,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place, "Aster");
         let witness = spawn_actor(&mut world, place, "Bram");
         let subject = spawn_actor(&mut world, other_place, "Cyra");
-        set_verification_profile(&mut world, actor, 2);
+        set_epistemic_profile(&mut world, actor, 2);
         seed_entity_belief(&mut world, actor, subject, 1);
 
         let payload = AskWitnessPayload {

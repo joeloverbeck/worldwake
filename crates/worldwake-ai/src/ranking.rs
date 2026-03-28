@@ -1055,7 +1055,7 @@ mod tests {
         EntityKind, HomeostaticNeeds, InTransitOnEdge, JusticeDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, PunishmentKind,
         Quantity, RecipeId, ResourceSource, TellTopic, TheftDispositionProfile, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, VerificationDispositionProfile,
+        EpistemicDispositionProfile, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
         ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -1078,7 +1078,7 @@ mod tests {
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
-        verification_profiles: BTreeMap<EntityId, VerificationDispositionProfile>,
+        epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
@@ -1218,11 +1218,11 @@ mod tests {
         fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
             self.theft_profiles.get(&agent).cloned()
         }
-        fn verification_disposition_profile(
+        fn epistemic_disposition_profile(
             &self,
             agent: EntityId,
-        ) -> Option<VerificationDispositionProfile> {
-            self.verification_profiles.get(&agent).cloned()
+        ) -> Option<EpistemicDispositionProfile> {
+            self.epistemic_profiles.get(&agent).cloned()
         }
         fn justice_disposition_profile(
             &self,

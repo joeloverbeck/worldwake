@@ -208,9 +208,9 @@ impl DurationExpr {
                 .map(|profile| ActionDuration::new(profile.investigation_duration_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks violation disposition profile")),
             Self::ActorWitnessQueryDisposition => world
-                .get_component_verification_disposition_profile(actor)
+                .get_component_epistemic_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get()))
-                .ok_or_else(|| format!("actor {actor} lacks verification disposition profile")),
+                .ok_or_else(|| format!("actor {actor} lacks epistemic disposition profile")),
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
                 .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
@@ -750,10 +750,10 @@ mod tests {
                 },
             )
             .unwrap();
-            txn.set_component_verification_disposition_profile(
+            txn.set_component_epistemic_disposition_profile(
                 actor,
-                worldwake_core::VerificationDispositionProfile {
-                    belief_verification_threshold: Permille::new(400).unwrap(),
+                worldwake_core::EpistemicDispositionProfile {
+                    stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
                     witness_query_duration_ticks: nz(5),
                     ask_memory_retention_ticks: 10,
                 },
@@ -867,7 +867,7 @@ mod tests {
             DurationExpr::ActorWitnessQueryDisposition
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap_err(),
-            format!("actor {actor} lacks verification disposition profile")
+            format!("actor {actor} lacks epistemic disposition profile")
         );
         assert_eq!(
             DurationExpr::ActorDefendStance

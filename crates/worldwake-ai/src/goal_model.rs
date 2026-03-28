@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     belief_confidence, CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind,
     InstitutionalBeliefRead,
-    Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw, VerificationSubject,
+    EpistemicSubject, Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw,
     WorkstationTag,
 };
 use worldwake_sim::{
@@ -194,11 +194,11 @@ pub enum GoalPayloadOverrideError {
 
 fn ask_witness_payload_matches_subject(
     payload: &AskWitnessPayload,
-    subject: VerificationSubject,
+    subject: EpistemicSubject,
 ) -> bool {
     match subject {
-        VerificationSubject::EntityLocation { entity, .. } => payload.topic_entity == Some(entity),
-        VerificationSubject::SupplyAvailability {
+        EpistemicSubject::EntityLocation { entity, .. } => payload.topic_entity == Some(entity),
+        EpistemicSubject::SupplyAvailability {
             commodity, source, ..
         } => {
             payload.topic_entity == Some(source) && payload.topic_commodity == Some(commodity)
@@ -206,28 +206,28 @@ fn ask_witness_payload_matches_subject(
     }
 }
 
-pub(crate) fn verification_subject_for_belief(
+pub(crate) fn epistemic_subject_for_belief(
     entity: EntityId,
     belief: &worldwake_core::BelievedEntityState,
-) -> Option<VerificationSubject> {
+) -> Option<EpistemicSubject> {
     let place = belief.last_known_place?;
     belief
         .resource_source
         .as_ref()
-        .map(|resource| VerificationSubject::SupplyAvailability {
+        .map(|resource| EpistemicSubject::SupplyAvailability {
             commodity: resource.commodity,
             source: entity,
             place,
         })
-        .or(Some(VerificationSubject::EntityLocation { entity, place }))
+        .or(Some(EpistemicSubject::EntityLocation { entity, place }))
 }
 
 pub(crate) fn grounded_goal_epistemic_subjects(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
-) -> Vec<VerificationSubject> {
+) -> Vec<EpistemicSubject> {
     let actor = state.snapshot().actor();
-    let Some(profile) = state.verification_disposition_profile(actor) else {
+    let Some(profile) = state.epistemic_disposition_profile(actor) else {
         return Vec::new();
     };
     let policy = state.belief_confidence_policy(actor);
@@ -242,14 +242,14 @@ pub(crate) fn grounded_goal_epistemic_subjects(
                 .find_map(|(known, belief)| (known == *entity).then_some(belief))?;
             let staleness_ticks = current_tick.0.saturating_sub(belief.observed_tick.0);
             if belief_confidence(&belief.source, staleness_ticks, &policy)
-                >= profile.belief_verification_threshold
+                >= profile.stale_evidence_barrier_threshold
             {
                 return None;
             }
-            let subject = verification_subject_for_belief(*entity, &belief)?;
+            let subject = epistemic_subject_for_belief(*entity, &belief)?;
             let place = match subject {
-                VerificationSubject::EntityLocation { place, .. }
-                | VerificationSubject::SupplyAvailability { place, .. } => place,
+                EpistemicSubject::EntityLocation { place, .. }
+                | EpistemicSubject::SupplyAvailability { place, .. } => place,
             };
             let anchored_here = matches!(
                 goal.anchor,
@@ -276,8 +276,8 @@ pub(crate) fn grounded_goal_matches_epistemic_barrier(
 
     match (op_kind, payload) {
         (PlannerOpKind::Travel, _) => subjects.into_iter().any(|subject| match subject {
-            VerificationSubject::EntityLocation { place, .. }
-            | VerificationSubject::SupplyAvailability { place, .. } => {
+            EpistemicSubject::EntityLocation { place, .. }
+            | EpistemicSubject::SupplyAvailability { place, .. } => {
                 authoritative_targets.contains(&place)
             }
         }),
@@ -1876,8 +1876,8 @@ mod tests {
         EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits,
         MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PunishmentKind, Quantity,
         RecipeId, RecordEntryId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, VerificationDispositionProfile,
-        VerificationSubject, ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        EpistemicDispositionProfile, EpistemicSubject, TickRange, TradeDispositionProfile,
+        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -2417,7 +2417,7 @@ mod tests {
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
         known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
-        verification_profiles: BTreeMap<EntityId, VerificationDispositionProfile>,
+        epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         ask_witness_memories: BTreeMap<(EntityId, AskWitnessMemoryKey), AskWitnessMemory>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         force_controller_beliefs:
@@ -2459,7 +2459,7 @@ mod tests {
                 consultation_speed_factors: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 known_entity_beliefs: BTreeMap::new(),
-                verification_profiles: BTreeMap::new(),
+                epistemic_profiles: BTreeMap::new(),
                 ask_witness_memories: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 force_controller_beliefs: BTreeMap::new(),
@@ -2646,11 +2646,11 @@ mod tests {
             self.trade_profiles.get(&agent).cloned()
         }
 
-        fn verification_disposition_profile(
+        fn epistemic_disposition_profile(
             &self,
             agent: EntityId,
-        ) -> Option<VerificationDispositionProfile> {
-            self.verification_profiles.get(&agent).cloned()
+        ) -> Option<EpistemicDispositionProfile> {
+            self.epistemic_profiles.get(&agent).cloned()
         }
 
         fn intention_disposition_profile(
@@ -3770,8 +3770,7 @@ mod tests {
         view.effective_places.insert(source, remote);
         view.entities_at.insert(town, vec![actor]);
         view.entities_at.insert(remote, vec![source]);
-        view.verification_profiles
-            .insert(actor, verification_profile());
+        view.epistemic_profiles.insert(actor, epistemic_profile());
         view.known_entity_beliefs.insert(
             actor,
             vec![(
@@ -3809,7 +3808,7 @@ mod tests {
 
         assert_eq!(
             grounded_goal_epistemic_subjects(&goal, &state),
-            vec![VerificationSubject::SupplyAvailability {
+            vec![EpistemicSubject::SupplyAvailability {
                 commodity: CommodityKind::Bread,
                 source,
                 place: remote,
@@ -3837,8 +3836,7 @@ mod tests {
         view.effective_places.insert(source, remote);
         view.entities_at.insert(town, vec![actor, witness]);
         view.entities_at.insert(remote, vec![source]);
-        view.verification_profiles
-            .insert(actor, verification_profile());
+        view.epistemic_profiles.insert(actor, epistemic_profile());
         view.known_entity_beliefs.insert(
             actor,
             vec![(
@@ -6222,9 +6220,9 @@ mod tests {
         (registries.defs, registries.handlers)
     }
 
-    fn verification_profile() -> VerificationDispositionProfile {
-        VerificationDispositionProfile {
-            belief_verification_threshold: Permille::new(400).unwrap(),
+    fn epistemic_profile() -> EpistemicDispositionProfile {
+        EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
             ask_memory_retention_ticks: 10,
         }
@@ -6297,8 +6295,7 @@ mod tests {
             .insert(town, vec![(remote, NonZeroU32::new(3).unwrap())]);
         view.adjacent
             .insert(remote, vec![(town, NonZeroU32::new(3).unwrap())]);
-        view.verification_profiles
-            .insert(actor, verification_profile());
+        view.epistemic_profiles.insert(actor, epistemic_profile());
         view.known_entity_beliefs.insert(
             actor,
             vec![(
@@ -6380,8 +6377,7 @@ mod tests {
         view.effective_places.insert(subject_entity, remote);
         view.entities_at.insert(town, vec![actor, witness]);
         view.entities_at.insert(remote, vec![subject_entity]);
-        view.verification_profiles
-            .insert(actor, verification_profile());
+        view.epistemic_profiles.insert(actor, epistemic_profile());
         view.known_entity_beliefs.insert(
             actor,
             vec![(

@@ -3035,7 +3035,7 @@ mod tests {
         RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
         SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile,
         TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, VerificationDispositionProfile, ViolationKind, ViolationMemory,
+        EpistemicDispositionProfile, UniqueItemKind, ViolationKind, ViolationMemory,
         WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -3097,7 +3097,7 @@ mod tests {
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         institutional_claims:
             BTreeMap<(EntityId, InstitutionalBeliefKey), Vec<BelievedInstitutionalClaim>>,
-        verification_disposition_profiles: BTreeMap<EntityId, VerificationDispositionProfile>,
+        epistemic_disposition_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         violation_disposition_profiles:
             BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
         theft_disposition_profiles: BTreeMap<EntityId, worldwake_core::TheftDispositionProfile>,
@@ -3159,7 +3159,7 @@ mod tests {
                 support_declarations: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 institutional_claims: BTreeMap::new(),
-                verification_disposition_profiles: BTreeMap::new(),
+                epistemic_disposition_profiles: BTreeMap::new(),
                 violation_disposition_profiles: BTreeMap::new(),
                 theft_disposition_profiles: BTreeMap::new(),
                 justice_disposition_profiles: BTreeMap::new(),
@@ -3390,11 +3390,11 @@ mod tests {
             None
         }
 
-        fn verification_disposition_profile(
+        fn epistemic_disposition_profile(
             &self,
             agent: EntityId,
-        ) -> Option<VerificationDispositionProfile> {
-            self.verification_disposition_profiles.get(&agent).cloned()
+        ) -> Option<EpistemicDispositionProfile> {
+            self.epistemic_disposition_profiles.get(&agent).cloned()
         }
 
         fn theft_disposition_profile(
@@ -3905,9 +3905,9 @@ mod tests {
         }
     }
 
-    fn default_verification_profile() -> VerificationDispositionProfile {
-        VerificationDispositionProfile {
-            belief_verification_threshold: pm(500),
+    fn default_epistemic_profile() -> EpistemicDispositionProfile {
+        EpistemicDispositionProfile {
+            stale_evidence_barrier_threshold: pm(500),
             witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
         }
@@ -4118,8 +4118,8 @@ mod tests {
             .insert((place, CommodityKind::Bread), vec![seller]);
         view.beliefs
             .insert(agent, vec![known_entity(seller, place)]);
-        view.verification_disposition_profiles
-            .insert(agent, default_verification_profile());
+        view.epistemic_disposition_profiles
+            .insert(agent, default_epistemic_profile());
 
         let candidates = generate_candidates(
             &view,
@@ -4189,8 +4189,8 @@ mod tests {
                 },
             )],
         );
-        view.verification_disposition_profiles
-            .insert(agent, default_verification_profile());
+        view.epistemic_disposition_profiles
+            .insert(agent, default_epistemic_profile());
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(sample_recipe(
