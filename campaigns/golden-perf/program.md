@@ -2,18 +2,11 @@
 
 ## Objective
 
-Minimize the combined wall-clock time of the 5 slowest golden test suites in `crates/worldwake-ai/tests/`:
+Minimize the combined wall-clock time of the 5 slowest golden test suites in `crates/worldwake-ai/tests/`.
 
-| Suite | Baseline (ms) | Tests |
-|-------|--------------|-------|
-| `golden_determinism` | 88270 | 23 |
-| `golden_trade` | 17250 | 21 |
-| `golden_care` | 16020 | 32 |
-| `golden_supply_chain` | 10820 | 22 |
-| `golden_production` | 9980 | 35 |
-| **Total** | **142340** | **133** |
+The harness **dynamically discovers** all `golden_*.rs` test files, times each suite, and reports the combined duration of the 5 slowest. This ensures the metric tracks the actual slowest suites as the codebase evolves (new suites added, existing suites change relative cost).
 
-**Metric**: `combined_duration_ms` — sum of wall times for the 5 suites, each run with `--test-threads=1`.
+**Metric**: `combined_duration_ms` — sum of wall times for the 5 slowest suites (dynamically selected), each run with `--test-threads=1`.
 
 **Metric direction**: `lower-is-better`
 

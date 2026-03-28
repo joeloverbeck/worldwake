@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
-# Golden test performance harness — measures combined wall time of 5 slowest suites.
+# Golden test performance harness — dynamically discovers and measures the 5 slowest suites.
 # Output format: combined_duration_ms=XXXXX pass=YY tests=ZZ
-# Intermediate output per suite for partial signal tracking and early abort.
+# Intermediate output per suite for partial signal tracking.
 set -euo pipefail
 
-SUITES=(
-    golden_determinism
-    golden_trade
-    golden_care
-    golden_supply_chain
-    golden_production
+TOP_N=5
+
+# Discover all golden test suites by listing test binaries.
+mapfile -t ALL_SUITES < <(
+    find crates/worldwake-ai/tests -maxdepth 1 -name 'golden_*.rs' -printf '%f\n' \
+        | sed 's/\.rs$//' \
+        | sort
 )
 
-total_ms=0
+if [ "${#ALL_SUITES[@]}" -eq 0 ]; then
+    echo "HARNESS_ERROR: no golden_*.rs test files found"
+    exit 1
+fi
+
+# Run every suite once and record per-suite timing.
+declare -A suite_ms suite_pass suite_tests
 total_pass=0
 total_tests=0
-best_ms="${BEST_MS:-999999999}"
-abort_threshold="${ABORT_THRESHOLD:-0.05}"
 
-for suite in "${SUITES[@]}"; do
-    # Run suite and capture output + timing
+for suite in "${ALL_SUITES[@]}"; do
     start_ns=$(date +%s%N)
     output=$(cargo test -p worldwake-ai --test "$suite" -- --test-threads=1 2>&1) || {
         echo "HARNESS_ERROR: $suite failed"
@@ -27,29 +31,40 @@ for suite in "${SUITES[@]}"; do
     }
     end_ns=$(date +%s%N)
 
-    # Compute wall time in milliseconds
     elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
 
-    # Parse test counts from "test result: ok. X passed; Y failed; ..."
     passed=$(echo "$output" | grep -oP '\d+ passed' | grep -oP '\d+' || echo 0)
-    tests_run=$(echo "$output" | grep -oP 'filtered out; finished' | wc -l || echo 0)
-    # Total tests = passed (since we exit on failure)
-    suite_tests=$passed
+    suite_t=$passed
 
-    total_ms=$((total_ms + elapsed_ms))
+    suite_ms[$suite]=$elapsed_ms
+    suite_pass[$suite]=$passed
+    suite_tests[$suite]=$suite_t
+
     total_pass=$((total_pass + passed))
-    total_tests=$((total_tests + suite_tests))
+    total_tests=$((total_tests + suite_t))
 
-    # Intermediate output for partial signal tracking
-    echo "intermediate: suite=$suite duration_ms=$elapsed_ms pass=$passed tests=$suite_tests"
-
-    # Early abort check: if running total already exceeds best by abort_threshold
-    abort_limit=$(echo "$best_ms * (1 + $abort_threshold)" | bc -l | cut -d. -f1)
-    if [ "$total_ms" -gt "$abort_limit" ] 2>/dev/null; then
-        echo "EARLY_ABORT: running total ${total_ms}ms exceeds abort limit ${abort_limit}ms after $suite"
-        echo "combined_duration_ms=$total_ms pass=$total_pass tests=$total_tests"
-        exit 0
-    fi
+    echo "intermediate: suite=$suite duration_ms=$elapsed_ms pass=$passed tests=$suite_t"
 done
 
-echo "combined_duration_ms=$total_ms pass=$total_pass tests=$total_tests"
+# Rank suites by duration descending and pick the top N.
+mapfile -t ranked < <(
+    for suite in "${ALL_SUITES[@]}"; do
+        echo "${suite_ms[$suite]} $suite"
+    done | sort -rn | head -n "$TOP_N"
+)
+
+combined_ms=0
+combined_pass=0
+combined_tests=0
+top_suites=()
+for entry in "${ranked[@]}"; do
+    ms=${entry%% *}
+    suite=${entry#* }
+    combined_ms=$((combined_ms + ms))
+    combined_pass=$((combined_pass + suite_pass[$suite]))
+    combined_tests=$((combined_tests + suite_tests[$suite]))
+    top_suites+=("$suite")
+done
+
+echo "top_${TOP_N}_suites=${top_suites[*]}"
+echo "combined_duration_ms=$combined_ms pass=$combined_pass tests=$combined_tests"
