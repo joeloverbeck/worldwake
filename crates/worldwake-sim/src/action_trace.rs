@@ -10,9 +10,8 @@ use crate::{
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, InstitutionalClaim,
-    PunishmentFineStartFailureTrace, PunishmentFineTraceFacts, PunishmentKind, RecordKind,
-    TellTopic, Tick, ViolationId, World,
+    ActionDefId, CommodityKind, EntityId, InstitutionalClaim, PunishmentFineStartFailureTrace,
+    PunishmentFineTraceFacts, PunishmentKind, RecordKind, TellTopic, Tick, ViolationId, World,
 };
 
 /// A single action lifecycle event recorded during `step_tick()`.

@@ -112,16 +112,12 @@ pub(super) fn search_candidates(
     let epistemic_subjects = grounded_goal_epistemic_subjects(goal, &node.state);
     let mut affordance_defs = relevant_defs.clone();
     if !epistemic_subjects.is_empty() {
-        affordance_defs.extend(
-            semantics_table
-                .iter()
-                .filter_map(|(def_id, semantics)| {
-                    (semantics.op_kind == PlannerOpKind::AskWitness).then_some(*def_id)
-                }),
-        );
+        affordance_defs.extend(semantics_table.iter().filter_map(|(def_id, semantics)| {
+            (semantics.op_kind == PlannerOpKind::AskWitness).then_some(*def_id)
+        }));
     }
 
-    let affordance_candidates = get_affordances_for_defs(
+    let raw_affordance_candidates = get_affordances_for_defs(
         &node.state,
         node.state.snapshot().actor(),
         registry,
@@ -132,24 +128,33 @@ pub(super) fn search_candidates(
     .flat_map(|affordance| {
         search_candidates_from_affordance(goal, &node.state, registry, &affordance)
     })
-    .filter(|candidate| {
-        semantics_table
-            .get(&candidate.def_id)
-            .is_none_or(|semantics| {
-                if epistemic_subjects.is_empty() {
-                    return true;
-                }
-                semantics.op_kind == PlannerOpKind::Travel
-                    || grounded_goal_matches_epistemic_barrier(
-                        goal,
-                        &node.state,
-                        semantics.op_kind,
-                        &candidate.authoritative_targets,
-                        candidate.payload_override.as_ref(),
-                    )
-            })
-    })
     .collect::<Vec<_>>();
+    let ask_witness_omission = conditional_ask_witness_omission_trace(
+        goal,
+        &node.state,
+        semantics_table,
+        &raw_affordance_candidates,
+    );
+    let affordance_candidates = raw_affordance_candidates
+        .into_iter()
+        .filter(|candidate| {
+            semantics_table
+                .get(&candidate.def_id)
+                .is_none_or(|semantics| {
+                    if epistemic_subjects.is_empty() {
+                        return true;
+                    }
+                    semantics.op_kind == PlannerOpKind::Travel
+                        || grounded_goal_matches_epistemic_barrier(
+                            goal,
+                            &node.state,
+                            semantics.op_kind,
+                            &candidate.authoritative_targets,
+                            candidate.payload_override.as_ref(),
+                        )
+                })
+        })
+        .collect::<Vec<_>>();
     let mut candidates = affordance_candidates;
     candidates.extend(
         planner_only_candidates(&node.state, semantics_table)
@@ -163,7 +168,21 @@ pub(super) fn search_candidates(
         relevant_defs,
         &candidates,
     ));
-    record_root_operator_omissions(goal, registry, semantics_table, &candidates, root_omissions);
+    let mut root_omissions = root_omissions;
+    if let Some(root_omissions) = root_omissions.as_mut() {
+        record_root_operator_omissions(
+            goal,
+            registry,
+            semantics_table,
+            &candidates,
+            Some(&mut **root_omissions),
+        );
+        if let Some(trace) = ask_witness_omission {
+            root_omissions.push(trace);
+        }
+    } else {
+        record_root_operator_omissions(goal, registry, semantics_table, &candidates, None);
+    }
     let mut root_candidates = root_candidates;
     let mut binding_rejections = binding_rejections;
     let mut filtered = Vec::with_capacity(candidates.len());
@@ -315,6 +334,7 @@ fn record_root_operator_omissions(
             sink.push(crate::decision_trace::RootOperatorOmissionTrace {
                 op_kind: *op_kind,
                 reason: crate::decision_trace::RootOperatorOmissionReason::NoMatchingActionDef,
+                detail: None,
             });
             continue;
         }
@@ -349,8 +369,73 @@ fn record_root_operator_omissions(
         sink.push(crate::decision_trace::RootOperatorOmissionTrace {
             op_kind: *op_kind,
             reason,
+            detail: None,
         });
     }
+}
+
+fn conditional_ask_witness_omission_trace(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    affordance_candidates: &[SearchCandidate],
+) -> Option<crate::decision_trace::RootOperatorOmissionTrace> {
+    if goal
+        .key
+        .kind
+        .relevant_op_kinds()
+        .contains(&PlannerOpKind::AskWitness)
+    {
+        return None;
+    }
+
+    let ask_witness_defs_exist = semantics_table
+        .values()
+        .any(|semantics| semantics.op_kind == PlannerOpKind::AskWitness);
+    if !ask_witness_defs_exist {
+        return Some(crate::decision_trace::RootOperatorOmissionTrace {
+            op_kind: PlannerOpKind::AskWitness,
+            reason: crate::decision_trace::RootOperatorOmissionReason::NoMatchingActionDef,
+            detail: None,
+        });
+    }
+
+    let epistemic_subjects = grounded_goal_epistemic_subjects(goal, state);
+    if epistemic_subjects.is_empty() {
+        return Some(crate::decision_trace::RootOperatorOmissionTrace {
+            op_kind: PlannerOpKind::AskWitness,
+            reason:
+                crate::decision_trace::RootOperatorOmissionReason::ConditionalBarrierUnavailable,
+            detail: Some(
+                crate::decision_trace::RootOperatorOmissionDetail::AskWitness(
+                    crate::decision_trace::AskWitnessOmissionDetail::NoStaleEpistemicSubjects,
+                ),
+            ),
+        });
+    }
+
+    let ask_witness_candidates = affordance_candidates
+        .iter()
+        .filter(|candidate| {
+            semantics_table
+                .get(&candidate.def_id)
+                .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::AskWitness)
+        })
+        .collect::<Vec<_>>();
+    if ask_witness_candidates.is_empty() {
+        return Some(crate::decision_trace::RootOperatorOmissionTrace {
+            op_kind: PlannerOpKind::AskWitness,
+            reason:
+                crate::decision_trace::RootOperatorOmissionReason::ConditionalBarrierUnavailable,
+            detail: Some(
+                crate::decision_trace::RootOperatorOmissionDetail::AskWitness(
+                    crate::decision_trace::AskWitnessOmissionDetail::NoWitnessAffordance,
+                ),
+            ),
+        });
+    }
+
+    None
 }
 
 fn candidate_blocked_facility_use(

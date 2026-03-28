@@ -187,8 +187,7 @@ pub(super) fn terminal_kind(
             })
             .collect::<Vec<_>>(),
         step.payload_override.as_ref(),
-    )
-    {
+    ) {
         return Some(PlanTerminalKind::ProgressBarrier);
     }
     goal.key

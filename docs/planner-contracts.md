@@ -114,6 +114,20 @@ When a relevant operator never becomes a root candidate, the planner records a `
 
 Use these when the question is "why did this relevant operator never show up at all?"
 
+### Omitted conditional epistemic barriers
+
+`PlannerOpKind::AskWitness` is not part of `GoalKind::RestockCommodity`'s `relevant_op_kinds()` surface. It is a conditional epistemic barrier candidate injected at root search only when `grounded_goal_epistemic_subjects()` derives stale subjects.
+
+When that conditional barrier is absent at the root, the planner still records `RootOperatorOmissionTrace`, but with:
+
+- `RootOperatorOmissionReason::ConditionalBarrierUnavailable`
+- `RootOperatorOmissionDetail::AskWitness(AskWitnessOmissionDetail::NoStaleEpistemicSubjects)` when the stale-subject derivation is empty
+- `RootOperatorOmissionDetail::AskWitness(AskWitnessOmissionDetail::NoWitnessAffordance)` when stale subjects exist but no co-located `ask_witness` affordance target exists
+
+Do not infer this from missing `AskWitness` root candidates in end-to-end traces. Use the omission detail directly.
+
+Do not overstate this contract: the current planner snapshot path does not preserve `ask_witness_memory`, so planner-search-visible payload-suppression distinctions are not live at this boundary.
+
 ### Surfaced root candidates that still fail
 
 When a root candidate exists but is filtered or skipped later, the planner records `RootCandidateTrace` with `RootCandidateOutcome`.

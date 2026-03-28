@@ -3,13 +3,13 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity,
-    RecipeId, RecordData, ResourceSource, SocialObservation, SuccessionLaw, TellMemoryKey,
-    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-    EpistemicDispositionProfile, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SocialObservation,
+    SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 

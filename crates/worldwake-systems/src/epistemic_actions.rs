@@ -7,8 +7,8 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, CommitOutcome, Constraint, DeterministicRng, DurationExpr,
-    Interruptibility, Precondition, RuntimeBeliefView, TargetSpec, AskWitnessPayload,
+    ActionProgress, ActionState, AskWitnessPayload, CommitOutcome, Constraint, DeterministicRng,
+    DurationExpr, Interruptibility, Precondition, RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_ask_witness_action(
@@ -95,7 +95,9 @@ fn matches_ask_topic(
     state: &BelievedEntityState,
     payload: &AskWitnessPayload,
 ) -> bool {
-    let entity_match = payload.topic_entity.is_none_or(|topic_entity| entity == topic_entity);
+    let entity_match = payload
+        .topic_entity
+        .is_none_or(|topic_entity| entity == topic_entity);
     let commodity_match = payload.topic_commodity.is_none_or(|commodity| {
         state
             .resource_source
@@ -123,7 +125,10 @@ fn enumerate_ask_witness_payloads(
         let payload = AskWitnessPayload {
             target,
             topic_entity: Some(entity),
-            topic_commodity: state.resource_source.as_ref().map(|resource| resource.commodity),
+            topic_commodity: state
+                .resource_source
+                .as_ref()
+                .map(|resource| resource.commodity),
         };
         if view
             .ask_witness_memory(actor, &ask_witness_memory_key(&payload))
@@ -373,8 +378,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, BodyPart, CauseRef, CombatProfile,
-        CombatWeaponRef, ControlSource, DeadAt, EventLog, Permille, Seed, Tick,
-        EpistemicDispositionProfile, WitnessData, Wound, WoundCause, WoundId, WoundList,
+        CombatWeaponRef, ControlSource, DeadAt, EpistemicDispositionProfile, EventLog, Permille,
+        Seed, Tick, WitnessData, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -459,13 +464,8 @@ mod tests {
         observed_tick: u64,
         source: PerceptionSource,
     ) {
-        let state = build_believed_entity_state(
-            world,
-            subject,
-            Tick(observed_tick),
-            source,
-        )
-        .unwrap();
+        let state =
+            build_believed_entity_state(world, subject, Tick(observed_tick), source).unwrap();
         let mut txn = new_txn(world, observed_tick);
         let mut store = txn
             .get_component_agent_belief_store(actor)
@@ -482,8 +482,7 @@ mod tests {
         commit_txn(txn);
     }
 
-    fn setup_registries_with_ask(
-    ) -> (ActionDefRegistry, ActionHandlerRegistry, ActionDefId) {
+    fn setup_registries_with_ask() -> (ActionDefRegistry, ActionHandlerRegistry, ActionDefId) {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let ask_id = register_ask_witness_action(&mut defs, &mut handlers);
@@ -699,8 +698,7 @@ mod tests {
         let (defs, handlers, ask_id) = setup_registries_with_ask();
         let affordance = manual_ask_affordance(actor, ask_id, witness, payload.clone());
 
-        match run_action_to_completion(&mut world, &defs, &handlers, &affordance, [10; 32], 2, 4)
-        {
+        match run_action_to_completion(&mut world, &defs, &handlers, &affordance, [10; 32], 2, 4) {
             TickOutcome::Committed { .. } => {}
             other => panic!("expected ask_witness commit, got {other:?}"),
         }
@@ -1066,5 +1064,4 @@ mod tests {
             None
         );
     }
-
 }

@@ -42,20 +42,21 @@ pub use decision_runtime::{
     ExhaustionRetryState, FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings,
 };
 pub use decision_trace::{
-    ActionStartFailureSummary, AgentDecisionTrace, BindingRejection, CandidateEvidenceContributor,
-    CandidateEvidenceExclusion, CandidateEvidenceExclusionReason, CandidateEvidenceKind,
-    CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace, DecisionOutcome,
-    DecisionTraceSink, DesireFullyBlocked, ExecutionFailureReason, ExecutionTrace,
+    ActionStartFailureSummary, AgentDecisionTrace, AskWitnessOmissionDetail, BindingRejection,
+    CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
+    CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
+    DecisionOutcome, DecisionTraceSink, DesireFullyBlocked, ExecutionFailureReason, ExecutionTrace,
     GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace,
     PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
     PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
     PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
     RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
-    RootCandidateSkipReason, RootCandidateTrace, RootOperatorOmissionReason,
-    RootOperatorOmissionTrace, SelectedPlanReplacementKind, SelectedPlanReplacementTrace,
-    SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
-    SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace,
+    RootCandidateSkipReason, RootCandidateTrace, RootOperatorOmissionDetail,
+    RootOperatorOmissionReason, RootOperatorOmissionTrace, SelectedPlanReplacementKind,
+    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
+    SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
+    TravelSuccessorTrace,
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};

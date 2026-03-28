@@ -495,6 +495,18 @@ pub enum RootOperatorOmissionReason {
     NoAffordanceOrSynthesisPath,
     SynthesisUnsupportedGoalOp,
     SynthesisTargetDerivationFailed,
+    ConditionalBarrierUnavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AskWitnessOmissionDetail {
+    NoStaleEpistemicSubjects,
+    NoWitnessAffordance,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootOperatorOmissionDetail {
+    AskWitness(AskWitnessOmissionDetail),
 }
 
 /// Structured omission provenance for one relevant operator at the root boundary.
@@ -502,6 +514,7 @@ pub enum RootOperatorOmissionReason {
 pub struct RootOperatorOmissionTrace {
     pub op_kind: PlannerOpKind,
     pub reason: RootOperatorOmissionReason,
+    pub detail: Option<RootOperatorOmissionDetail>,
 }
 
 /// Per-expansion summary recorded during plan search.
@@ -2565,6 +2578,7 @@ mod tests {
                         root_omissions: vec![RootOperatorOmissionTrace {
                             op_kind: PlannerOpKind::PressForceClaim,
                             reason: RootOperatorOmissionReason::NoMatchingActionDef,
+                            detail: None,
                         }],
                     }],
                 }],

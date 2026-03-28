@@ -1052,11 +1052,11 @@ mod tests {
         belief_confidence, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, JusticeDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, PerceptionSource, Permille, PunishmentKind,
-        Quantity, RecipeId, ResourceSource, TellTopic, TheftDispositionProfile, Tick, TickRange,
-        EpistemicDispositionProfile, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
+        EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId, ResourceSource, TellTopic,
+        TheftDispositionProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,

@@ -83,8 +83,8 @@ pub use belief::{
     BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
     MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
     RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
-    TellProfile, TellTopic, ToldBeliefMemory,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
+    TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,

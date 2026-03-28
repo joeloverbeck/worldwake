@@ -755,11 +755,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
         let profile = self.epistemic_disposition_profile(actor)?;
         self.belief_store
-            .ask_witness_memory(
-                key,
-                self.current_tick,
-                profile.ask_memory_retention_ticks,
-            )
+            .ask_witness_memory(key, self.current_tick, profile.ask_memory_retention_ticks)
             .cloned()
     }
 

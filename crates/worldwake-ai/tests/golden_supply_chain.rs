@@ -29,11 +29,11 @@ use worldwake_core::{
     build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
     total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, BeliefConfidencePolicy,
-    BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds,
-    KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
-    UtilityProfile, WorkstationTag,
+    BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation, DemandObservationReason,
+    EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
+    Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
+    WorkstationTag,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
@@ -1343,7 +1343,8 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         visited_bandit |= h.world.effective_place(merchant) == Some(believed_stale_place);
         acquired_apples |= h.agent_commodity_qty(merchant, CommodityKind::Apple) > Quantity(0);
 
-        let apple_authority = total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        let apple_authority =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
         let live_apples = total_live_lot_quantity(&h.world, CommodityKind::Apple);
         verify_authoritative_conservation(&h.world, CommodityKind::Apple, apple_authority).unwrap();
         verify_live_lot_conservation(&h.world, CommodityKind::Apple, live_apples).unwrap();
@@ -1377,12 +1378,14 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         .planning
         .attempts
         .iter()
-        .find(|attempt| matches!(
-            attempt.goal.kind,
-            GoalKind::RestockCommodity {
-                commodity: CommodityKind::Apple
-            }
-        ))
+        .find(|attempt| {
+            matches!(
+                attempt.goal.kind,
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Apple
+                }
+            )
+        })
         .expect("ask_witness scenario should record the selected restock search attempt");
     let tick_zero_root = tick_zero_attempt
         .expansion_summaries
@@ -1409,8 +1412,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
     );
     assert!(
         selected_tick_zero_plan.steps.iter().any(|step| {
-            step.op_kind == PlannerOpKind::AskWitness
-                && step.targets == vec![witness]
+            step.op_kind == PlannerOpKind::AskWitness && step.targets == vec![witness]
         }),
         "tick 50 plan should select ask_witness against the matching witness target"
     );

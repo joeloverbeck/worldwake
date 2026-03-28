@@ -18,16 +18,17 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile, ActionDefId, BlockedIntent, BlockedIntentMemory,
-    BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-    DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-    EntityKind, EventLog, ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId,
-    ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
-    TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    test_utils::sample_trade_disposition_profile, ActionDefId, BelievedEntityState, BlockedIntent,
+    BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
+    CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
+    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
+    ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
+    InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
+    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn, Wound, WoundCause, WoundId,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
@@ -36,8 +37,8 @@ use worldwake_sim::{
 };
 use worldwake_systems::build_full_action_registries;
 
-#[derive(Default)]
 struct TestBeliefView {
+    current_tick: Tick,
     alive: BTreeSet<EntityId>,
     kinds: BTreeMap<EntityId, EntityKind>,
     effective_places: BTreeMap<EntityId, EntityId>,
@@ -66,9 +67,51 @@ struct TestBeliefView {
         BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
     consultation_speed_factors: BTreeMap<EntityId, Permille>,
     record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
+    known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+    epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
+}
+
+impl Default for TestBeliefView {
+    fn default() -> Self {
+        Self {
+            current_tick: Tick(0),
+            alive: BTreeSet::new(),
+            kinds: BTreeMap::new(),
+            effective_places: BTreeMap::new(),
+            entities_at: BTreeMap::new(),
+            direct_possessions: BTreeMap::new(),
+            direct_possessors: BTreeMap::new(),
+            owners: BTreeMap::new(),
+            controllable: BTreeSet::new(),
+            adjacent: BTreeMap::new(),
+            lot_commodities: BTreeMap::new(),
+            consumable_profiles: BTreeMap::new(),
+            commodity_quantities: BTreeMap::new(),
+            carry_capacities: BTreeMap::new(),
+            entity_loads: BTreeMap::new(),
+            needs: BTreeMap::new(),
+            thresholds: BTreeMap::new(),
+            trade_profiles: BTreeMap::new(),
+            theft_profiles: BTreeMap::new(),
+            merchandise_profiles: BTreeMap::new(),
+            demand_memory: BTreeMap::new(),
+            hostiles: BTreeMap::new(),
+            attackers: BTreeMap::new(),
+            wounds: BTreeMap::new(),
+            office_data: BTreeMap::new(),
+            office_holder_beliefs: BTreeMap::new(),
+            consultation_speed_factors: BTreeMap::new(),
+            record_data: BTreeMap::new(),
+            known_entity_beliefs: BTreeMap::new(),
+            epistemic_profiles: BTreeMap::new(),
+        }
+    }
 }
 
 impl RuntimeBeliefView for TestBeliefView {
+    fn current_tick(&self) -> Tick {
+        self.current_tick
+    }
     fn is_alive(&self, entity: EntityId) -> bool {
         self.alive.contains(&entity)
     }
@@ -83,6 +126,12 @@ impl RuntimeBeliefView for TestBeliefView {
     }
     fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
         self.entities_at.get(&place).cloned().unwrap_or_default()
+    }
+    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+        self.known_entity_beliefs
+            .get(&agent)
+            .cloned()
+            .unwrap_or_default()
     }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         self.direct_possessions
@@ -208,6 +257,12 @@ impl RuntimeBeliefView for TestBeliefView {
     }
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
         self.trade_profiles.get(&agent).cloned()
+    }
+    fn epistemic_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<EpistemicDispositionProfile> {
+        self.epistemic_profiles.get(&agent).cloned()
     }
     fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
         self.theft_profiles.get(&agent).cloned()
@@ -378,6 +433,32 @@ fn build_registry_with_recipes(
 ) -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
     let registries = build_full_action_registries(recipes).unwrap();
     (registries.defs, registries.handlers)
+}
+
+fn epistemic_profile() -> EpistemicDispositionProfile {
+    EpistemicDispositionProfile {
+        stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
+        witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
+        ask_memory_retention_ticks: 10,
+    }
+}
+
+fn believed_entity_state_at(
+    place: EntityId,
+    observed_tick: Tick,
+    resource_source: Option<ResourceSource>,
+) -> BelievedEntityState {
+    BelievedEntityState {
+        last_known_place: Some(place),
+        last_known_inventory: BTreeMap::new(),
+        workstation_tag: None,
+        resource_source,
+        alive: true,
+        wounds: Vec::new(),
+        last_known_courage: None,
+        observed_tick,
+        source: PerceptionSource::DirectObservation,
+    }
 }
 
 fn harvest_apple_recipe() -> RecipeDefinition {
@@ -4338,7 +4419,7 @@ fn test_binding_two_corpses_same_place() {
         0,
     );
     let mut rejections = Vec::new();
-    let result = search_plan(
+    let _result = search_plan(
         &snapshot,
         &goal,
         &build_semantics_table(&registry),
@@ -4422,7 +4503,7 @@ fn test_binding_two_hostiles_same_place() {
         0,
     );
     let mut rejections = Vec::new();
-    let result = search_plan(
+    let _result = search_plan(
         &snapshot,
         &goal,
         &build_semantics_table(&registry),
@@ -5577,11 +5658,14 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
         Some(&mut expansions),
     );
 
-    assert!(!result.is_found());
     let root = expansions
         .iter()
         .find(|summary| summary.depth == 0)
         .expect("root expansion summary should be recorded");
+    assert!(!root
+        .root_candidates
+        .iter()
+        .any(|candidate| { candidate.op_kind == Some(PlannerOpKind::AskWitness) }));
     assert!(root.root_candidates.is_empty());
     assert!(root.root_omissions.iter().any(|omission| {
         omission.op_kind == PlannerOpKind::PressForceClaim
@@ -5643,16 +5727,185 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         Some(&mut expansions),
     );
 
-    assert!(!result.is_found());
     let root = expansions
         .iter()
         .find(|summary| summary.depth == 0)
         .expect("root expansion summary should be recorded");
+    assert!(!root
+        .root_candidates
+        .iter()
+        .any(|candidate| { candidate.op_kind == Some(PlannerOpKind::AskWitness) }));
     assert!(root.root_candidates.is_empty());
     assert!(root.root_omissions.iter().any(|omission| {
         omission.op_kind == PlannerOpKind::Trade
             && omission.reason
                 == crate::decision_trace::RootOperatorOmissionReason::SynthesisTargetDerivationFailed
+    }));
+}
+
+#[test]
+fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_exist() {
+    let actor = entity(1);
+    let town = entity(10);
+    let remote = entity(11);
+    let subject = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, remote, subject]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(remote, EntityKind::Place);
+    view.kinds.insert(subject, EntityKind::Facility);
+    view.current_tick = Tick(50);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.epistemic_profiles.insert(actor, epistemic_profile());
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            subject,
+            believed_entity_state_at(
+                remote,
+                Tick(50),
+                Some(ResourceSource {
+                    commodity: CommodityKind::Bread,
+                    available_quantity: Quantity(4),
+                    max_quantity: Quantity(4),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                }),
+            ),
+        )],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(remote),
+        key: GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        evidence_entities: BTreeSet::from([subject]),
+        evidence_places: BTreeSet::from([remote]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([subject]),
+        &BTreeSet::from([town, remote]),
+        2,
+    );
+    let mut expansions = Vec::new();
+
+    let _result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(50),
+        None,
+        Some(&mut expansions),
+    );
+
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    assert!(root.root_omissions.iter().any(|omission| {
+        omission.op_kind == PlannerOpKind::AskWitness
+            && omission.reason
+                == crate::decision_trace::RootOperatorOmissionReason::ConditionalBarrierUnavailable
+            && omission.detail
+                == Some(
+                    crate::decision_trace::RootOperatorOmissionDetail::AskWitness(
+                        crate::decision_trace::AskWitnessOmissionDetail::NoStaleEpistemicSubjects,
+                    ),
+                )
+    }));
+}
+
+#[test]
+fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists() {
+    let actor = entity(1);
+    let town = entity(10);
+    let remote = entity(11);
+    let subject = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, remote, subject]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(remote, EntityKind::Place);
+    view.kinds.insert(subject, EntityKind::Facility);
+    view.current_tick = Tick(50);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.epistemic_profiles.insert(actor, epistemic_profile());
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            subject,
+            believed_entity_state_at(
+                remote,
+                Tick(0),
+                Some(ResourceSource {
+                    commodity: CommodityKind::Bread,
+                    available_quantity: Quantity(4),
+                    max_quantity: Quantity(4),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                }),
+            ),
+        )],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(remote),
+        key: GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        evidence_entities: BTreeSet::from([subject]),
+        evidence_places: BTreeSet::from([remote]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([subject]),
+        &BTreeSet::from([town, remote]),
+        2,
+    );
+    let mut expansions = Vec::new();
+
+    let _result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(50),
+        None,
+        Some(&mut expansions),
+    );
+
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    assert!(root.root_omissions.iter().any(|omission| {
+        omission.op_kind == PlannerOpKind::AskWitness
+            && omission.reason
+                == crate::decision_trace::RootOperatorOmissionReason::ConditionalBarrierUnavailable
+            && omission.detail
+                == Some(
+                    crate::decision_trace::RootOperatorOmissionDetail::AskWitness(
+                        crate::decision_trace::AskWitnessOmissionDetail::NoWitnessAffordance,
+                    ),
+                )
     }));
 }
 

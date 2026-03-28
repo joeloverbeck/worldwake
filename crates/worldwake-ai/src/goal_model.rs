@@ -12,10 +12,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    belief_confidence, CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind,
-    InstitutionalBeliefRead,
-    EpistemicSubject, Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw,
-    WorkstationTag,
+    belief_confidence, CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, GoalKey,
+    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, PunishmentKind, Quantity, RecordKind,
+    SuccessionLaw, WorkstationTag,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -200,9 +199,7 @@ fn ask_witness_payload_matches_subject(
         EpistemicSubject::EntityLocation { entity, .. } => payload.topic_entity == Some(entity),
         EpistemicSubject::SupplyAvailability {
             commodity, source, ..
-        } => {
-            payload.topic_entity == Some(source) && payload.topic_commodity == Some(commodity)
-        }
+        } => payload.topic_entity == Some(source) && payload.topic_commodity == Some(commodity),
     }
 }
 
@@ -1873,10 +1870,10 @@ mod tests {
         ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState,
         BlockedIntentMemory, BodyCostPerTick, CombatProfile, CommodityConsumableProfile,
         CommodityKind, DemandObservation, DemandObservationReason, DriveThresholds, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PunishmentKind, Quantity,
-        RecipeId, RecordEntryId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
-        EpistemicDispositionProfile, EpistemicSubject, TickRange, TradeDispositionProfile,
+        EntityKind, EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        OfficeData, Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
+        ResourceSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -6365,7 +6362,8 @@ mod tests {
         let remote = entity(11);
 
         let mut view = TestBeliefView::default();
-        view.alive.extend([actor, witness, subject_entity, town, remote]);
+        view.alive
+            .extend([actor, witness, subject_entity, town, remote]);
         view.kinds.insert(actor, EntityKind::Agent);
         view.kinds.insert(witness, EntityKind::Agent);
         view.kinds.insert(subject_entity, EntityKind::Facility);

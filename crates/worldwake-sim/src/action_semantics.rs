@@ -488,7 +488,10 @@ mod tests {
             DurationExpr::ActorInvestigationDisposition.fixed_ticks(),
             None
         );
-        assert_eq!(DurationExpr::ActorWitnessQueryDisposition.fixed_ticks(), None);
+        assert_eq!(
+            DurationExpr::ActorWitnessQueryDisposition.fixed_ticks(),
+            None
+        );
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(

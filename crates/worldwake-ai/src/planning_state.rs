@@ -1729,14 +1729,13 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
-        DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
+        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, GrantedFacilityUse,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
         SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
-        EpistemicDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,

@@ -73,11 +73,7 @@ impl AgentBeliefStore {
         self.heard_beliefs.insert(key, memory);
     }
 
-    pub fn record_asked_witness(
-        &mut self,
-        key: AskWitnessMemoryKey,
-        memory: AskWitnessMemory,
-    ) {
+    pub fn record_asked_witness(&mut self, key: AskWitnessMemoryKey, memory: AskWitnessMemory) {
         self.asked_witnesses.insert(key, memory);
     }
 
@@ -1330,12 +1326,12 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 mod tests {
     use super::{
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot,
-        AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
-        BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
-        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
+        AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BelievedEntityState,
+        HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
+        PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedInstitutionalBelief,
+        SharedTellState, SocialObservation, SocialObservationDetail, SocialObservationKind,
+        TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, current_institutional_belief_topics,
