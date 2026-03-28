@@ -8,6 +8,7 @@ use crate::{
     components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
+    epistemic::VerificationDispositionProfile,
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
     institutional::RecordData,

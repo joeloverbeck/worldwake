@@ -1055,6 +1055,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                verification_disposition_profiles,
+                VerificationDispositionProfile,
+                insert_verification_disposition_profile,
+                get_verification_disposition_profile,
+                get_verification_disposition_profile_mut,
+                remove_verification_disposition_profile,
+                has_verification_disposition_profile,
+                iter_verification_disposition_profiles,
+                insert_component_verification_disposition_profile,
+                get_component_verification_disposition_profile,
+                get_component_verification_disposition_profile_mut,
+                remove_component_verification_disposition_profile,
+                has_component_verification_disposition_profile,
+                entities_with_verification_disposition_profile,
+                query_verification_disposition_profile,
+                count_with_verification_disposition_profile,
+                "VerificationDispositionProfile",
+                |kind| kind == EntityKind::Agent,
+                VerificationDispositionProfile,
+                crate::VerificationDispositionProfile,
+                set_component_verification_disposition_profile,
+                clear_component_verification_disposition_profile,
+                txn_simple_set
+            }
+            {
                 item_lots,
                 ItemLot,
                 insert_item_lot,

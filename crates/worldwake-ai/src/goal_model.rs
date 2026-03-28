@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     CommodityKind, CommodityPurpose, EntityId, GoalKey, GoalKind, InstitutionalBeliefRead,
-    Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
+    Permille, PlaceTag, PunishmentKind, Quantity, RecordKind, SuccessionLaw,
+    VerificationSubject, WorkstationTag,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, CombatActionPayload, ConsultRecordActionPayload,
@@ -42,6 +43,7 @@ pub enum GoalKindTag {
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
+    VerifyBelief,
     StealItem,
     Accuse,
     PunishAccused,
@@ -168,6 +170,7 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::DeclareSupport,
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
+const VERIFY_BELIEF_OPS: &[PlannerOpKind] = &[];
 const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
 const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
 const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
@@ -405,6 +408,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => GoalKindTag::InvestigateViolation,
+            GoalKind::VerifyBelief { .. } => GoalKindTag::VerifyBelief,
             GoalKind::StealItem { .. } => GoalKindTag::StealItem,
             GoalKind::Accuse { .. } => GoalKindTag::Accuse,
             GoalKind::PunishAccused { .. } => GoalKindTag::PunishAccused,
@@ -431,6 +435,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
             GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
             GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
+            GoalKind::VerifyBelief { .. } => VERIFY_BELIEF_OPS,
             GoalKind::Accuse { .. } => ACCUSE_OPS,
             GoalKind::PunishAccused { punishment, .. } => match punishment {
                 PunishmentKind::Fine { .. } => FINE_OPS,
@@ -449,6 +454,12 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SellCommodity { commodity }
             | GoalKind::RestockCommodity { commodity }
             | GoalKind::MoveCargo { commodity, .. } => Some([*commodity].into_iter().collect()),
+            GoalKind::VerifyBelief { subject, .. } => Some(match subject {
+                VerificationSubject::EntityLocation { .. } => BTreeSet::new(),
+                VerificationSubject::SupplyAvailability { commodity, .. } => {
+                    [*commodity].into_iter().collect()
+                }
+            }),
             GoalKind::ProduceCommodity { recipe_id } => recipes.get(*recipe_id).map(|recipe| {
                 recipe
                     .inputs
@@ -960,6 +971,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::InvestigateViolation { .. }
+            | GoalKind::VerifyBelief { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => false,
         }
@@ -1024,6 +1036,10 @@ impl GoalKindPlannerExt for GoalKind {
                 state.effective_place(*listener).into_iter().collect()
             }
             GoalKind::InvestigateViolation { place, .. } => vec![*place],
+            GoalKind::VerifyBelief { subject, .. } => match subject {
+                VerificationSubject::EntityLocation { place, .. }
+                | VerificationSubject::SupplyAvailability { place, .. } => vec![*place],
+            },
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
@@ -1157,6 +1173,12 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SupportCandidateForOffice { .. } => true,
 
             GoalKind::InvestigateViolation { place, .. } => authoritative_targets.contains(place),
+            GoalKind::VerifyBelief { subject, .. } => match subject {
+                VerificationSubject::EntityLocation { place, .. }
+                | VerificationSubject::SupplyAvailability { place, .. } => {
+                    authoritative_targets.contains(place)
+                }
+            },
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target }

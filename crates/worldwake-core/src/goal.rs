@@ -1,7 +1,8 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
 use crate::{
-    CommodityKind, EntityId, PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
+    CommodityKind, EntityId, PunishmentKind, RecipeId, RecordEntryId, TellTopic, Tick,
+    VerificationSubject, ViolationId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +67,10 @@ pub enum GoalKind {
     InvestigateViolation {
         violation_id: ViolationId,
         place: EntityId,
+    },
+    VerifyBelief {
+        subject: VerificationSubject,
+        generation_tick: Tick,
     },
     StealItem {
         target_item: EntityId,
@@ -154,6 +159,16 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::ReduceDanger
             | GoalKind::ProduceCommodity { .. } => (None, None, None),
             GoalKind::InvestigateViolation { place, .. } => (None, None, Some(place)),
+            GoalKind::VerifyBelief { subject, .. } => match subject {
+                VerificationSubject::EntityLocation { entity, place } => {
+                    (None, Some(entity), Some(place))
+                }
+                VerificationSubject::SupplyAvailability {
+                    commodity,
+                    source,
+                    place,
+                } => (Some(commodity), Some(source), Some(place)),
+            },
         };
 
         Self {
@@ -175,12 +190,12 @@ impl From<&GoalKind> for GoalKey {
 mod tests {
     use super::{
         CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, TellTopic,
-        ViolationId,
+        VerificationSubject, ViolationId,
     };
-    use crate::{test_utils::entity_id, CommodityKind, PunishmentKind, Quantity, RecipeId};
-    use std::collections::BTreeMap;
+    use crate::{test_utils::entity_id, CommodityKind, PunishmentKind, Quantity, RecipeId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
+    use std::collections::BTreeMap;
 
     fn assert_value_bounds<T: Clone + Eq + Ord + Debug + Serialize + DeserializeOwned>() {}
 
@@ -483,6 +498,76 @@ mod tests {
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn verify_belief_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::VerifyBelief {
+            subject: VerificationSubject::EntityLocation {
+                entity: entity_id(30, 0),
+                place: entity_id(31, 0),
+            },
+            generation_tick: Tick(9),
+        };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_entity_and_place_for_verify_belief_entity_location() {
+        let entity = entity_id(32, 0);
+        let place = entity_id(33, 0);
+        let key = GoalKey::from(GoalKind::VerifyBelief {
+            subject: VerificationSubject::EntityLocation { entity, place },
+            generation_tick: Tick(11),
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(entity));
+        assert_eq!(key.place, Some(place));
+    }
+
+    #[test]
+    fn goal_key_extracts_supply_fields_for_verify_belief_supply_availability() {
+        let source = entity_id(34, 0);
+        let place = entity_id(35, 0);
+        let key = GoalKey::from(GoalKind::VerifyBelief {
+            subject: VerificationSubject::SupplyAvailability {
+                commodity: CommodityKind::Medicine,
+                source,
+                place,
+            },
+            generation_tick: Tick(12),
+        });
+
+        assert_eq!(key.commodity, Some(CommodityKind::Medicine));
+        assert_eq!(key.entity, Some(source));
+        assert_eq!(key.place, Some(place));
+    }
+
+    #[test]
+    fn verify_belief_goal_identity_distinguishes_subjects_at_same_place() {
+        let place = entity_id(36, 0);
+        let entity_key = GoalKey::from(GoalKind::VerifyBelief {
+            subject: VerificationSubject::EntityLocation {
+                entity: entity_id(37, 0),
+                place,
+            },
+            generation_tick: Tick(13),
+        });
+        let supply_key = GoalKey::from(GoalKind::VerifyBelief {
+            subject: VerificationSubject::SupplyAvailability {
+                commodity: CommodityKind::Bread,
+                source: entity_id(38, 0),
+                place,
+            },
+            generation_tick: Tick(13),
+        });
+
+        assert_ne!(entity_key, supply_key);
     }
 
     #[test]

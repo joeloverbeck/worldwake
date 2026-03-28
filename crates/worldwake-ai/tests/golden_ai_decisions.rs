@@ -337,12 +337,22 @@ fn golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deter
 //   opportunity selected -> remote pick-up -> eat -> hunger relief.
 
 #[derive(Debug, Eq, PartialEq)]
+struct OpportunityPairObservation {
+    local: bool,
+    remote: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum ExhaustedOpportunitySelection {
+    Remote,
+    Other,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 struct ExhaustedOpportunitySwitchObservation {
-    local_generated: bool,
-    remote_generated: bool,
-    local_attempted: bool,
-    remote_attempted: bool,
-    selected_remote: bool,
+    generated: OpportunityPairObservation,
+    attempted: OpportunityPairObservation,
+    selection: ExhaustedOpportunitySelection,
 }
 
 fn run_exhausted_opportunity_switches_to_sibling_source(
@@ -376,10 +386,10 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
         },
     );
     let mut txn = new_txn(&mut h.world, 0);
-    let _local_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
-    txn.set_ground_location(_local_lot, VILLAGE_SQUARE).unwrap();
-    let _remote_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
-    txn.set_ground_location(_remote_lot, remote_place).unwrap();
+    let local_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+    txn.set_ground_location(local_lot, VILLAGE_SQUARE).unwrap();
+    let remote_lot = txn.create_item_lot(CommodityKind::Bread, Quantity(1)).unwrap();
+    txn.set_ground_location(remote_lot, remote_place).unwrap();
     commit_txn(txn, &mut h.event_log);
 
     seed_actor_world_beliefs(
@@ -455,9 +465,14 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
     let remote_generated = planning_tick_0
         .candidates
         .generated_contains_opportunity(remote_opportunity);
-    let selected_remote = planning_tick_0
+    let selection = if planning_tick_0
         .selection
-        .selected_opportunity_is(remote_opportunity);
+        .selected_opportunity_is(remote_opportunity)
+    {
+        ExhaustedOpportunitySelection::Remote
+    } else {
+        ExhaustedOpportunitySelection::Other
+    };
     let local_attempted = planning_tick_0
         .planning
         .attempts
@@ -470,11 +485,15 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
         .any(|attempt| attempt.opportunity_anchor == OpportunityAnchor::Place(remote_place));
 
     ExhaustedOpportunitySwitchObservation {
-        local_generated,
-        remote_generated,
-        local_attempted,
-        remote_attempted,
-        selected_remote,
+        generated: OpportunityPairObservation {
+            local: local_generated,
+            remote: remote_generated,
+        },
+        attempted: OpportunityPairObservation {
+            local: local_attempted,
+            remote: remote_attempted,
+        },
+        selection,
     }
 }
 
@@ -483,23 +502,23 @@ fn golden_exhausted_opportunity_switches_to_sibling_source() {
     let observation = run_exhausted_opportunity_switches_to_sibling_source(Seed([202; 32]));
 
     assert!(
-        observation.local_generated,
+        observation.generated.local,
         "the exhausted local opportunity should still exist at candidate generation time"
     );
     assert!(
-        observation.remote_generated,
+        observation.generated.remote,
         "the sibling remote opportunity should still be generated for the same desire"
     );
     assert!(
-        !observation.local_attempted,
+        !observation.attempted.local,
         "the exhausted local opportunity should be suppressed before plan search"
     );
     assert!(
-        observation.remote_attempted,
+        observation.attempted.remote,
         "the live sibling opportunity should remain admissible to search"
     );
     assert!(
-        observation.selected_remote,
+        observation.selection == ExhaustedOpportunitySelection::Remote,
         "the remote sibling opportunity should be the selected concrete source"
     );
 }

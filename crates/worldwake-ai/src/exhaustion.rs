@@ -135,7 +135,7 @@ pub(crate) fn derive_invalidation_conditions(
             conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
             conditions.insert(ExhaustionInvalidationCondition::TargetDead(candidate));
         }
-        GoalKind::InvestigateViolation { .. } => {
+        GoalKind::InvestigateViolation { .. } | GoalKind::VerifyBelief { .. } => {
             conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
         }
         GoalKind::StealItem { target_item } => {

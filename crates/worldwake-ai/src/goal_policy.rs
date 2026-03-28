@@ -170,6 +170,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
         | GoalKind::InvestigateViolation { .. }
+        | GoalKind::VerifyBelief { .. }
         | GoalKind::StealItem { .. }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalFamilyPolicy {

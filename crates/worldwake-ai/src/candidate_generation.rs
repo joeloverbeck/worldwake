@@ -3770,10 +3770,10 @@ mod tests {
         })
     }
 
-    fn evidence_trace_for_goal<'a>(
-        diagnostics: &'a CandidateGenerationDiagnostics,
+    fn evidence_trace_for_goal(
+        diagnostics: &CandidateGenerationDiagnostics,
         goal: GoalKey,
-    ) -> &'a CandidateEvidenceTrace {
+    ) -> &CandidateEvidenceTrace {
         diagnostics
             .evidence
             .values()

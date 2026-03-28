@@ -4,6 +4,7 @@ use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind, Container,
     DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
+    VerificationDispositionProfile,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
     FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
     IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
@@ -251,8 +252,9 @@ mod tests {
         ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry,
         Quantity, QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource, TellProfile, TheftDispositionProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile, ViolationMemory,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        TravelEdgeId, UniqueItem, UniqueItemKind, VerificationDispositionProfile,
+        ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -505,6 +507,13 @@ mod tests {
                 investigation_motive_weight: Permille::new(500).unwrap(),
                 ownership_motive_bonus: Permille::new(200).unwrap(),
             }),
+            ComponentValue::VerificationDispositionProfile(VerificationDispositionProfile {
+                belief_verification_threshold: Permille::new(400).unwrap(),
+                verify_belief_duration_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
+                verification_motive_weight: Permille::new(250).unwrap(),
+                ask_memory_retention_ticks: 12,
+            }),
             ComponentValue::ItemLot(ItemLot {
                 commodity: CommodityKind::Grain,
                 quantity: Quantity(11),
@@ -652,6 +661,7 @@ mod tests {
                 ComponentKind::IntentionDispositionProfile,
                 ComponentKind::ViolationMemory,
                 ComponentKind::ViolationDispositionProfile,
+                ComponentKind::VerificationDispositionProfile,
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,
