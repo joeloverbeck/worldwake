@@ -206,6 +206,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
                 wound_count: 2,
                 hostile_count: 1,
             },
+            consecutive_budget_exhaustions: 0,
         },
     );
     driver.runtime_by_agent.insert(agent, runtime);
@@ -256,6 +257,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
                 wound_count: 2,
                 hostile_count: 1,
             },
+            consecutive_budget_exhaustions: 0,
         })
     );
     assert_eq!(restored_runtime.dirty, DirtySet::default());
@@ -301,6 +303,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 wound_count: 0,
                 hostile_count: 0,
             },
+            consecutive_budget_exhaustions: 0,
         },
     );
     runtime.exhaustion_cache.insert(
@@ -325,6 +328,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 wound_count: 1,
                 hostile_count: 0,
             },
+            consecutive_budget_exhaustions: 0,
         },
     );
     driver.runtime_by_agent.insert(h.actor, runtime);
@@ -384,6 +388,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 wound_count: 1,
                 hostile_count: 0,
             },
+            consecutive_budget_exhaustions: 0,
         })
     );
     assert_eq!(
@@ -432,6 +437,7 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
             retry_state: crate::ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
+            consecutive_budget_exhaustions: 0,
         },
     );
     runtime.exhaustion_cache.insert(
@@ -440,6 +446,7 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
+            consecutive_budget_exhaustions: 0,
         },
     );
     h.driver.runtime_by_agent.insert(h.actor, runtime);

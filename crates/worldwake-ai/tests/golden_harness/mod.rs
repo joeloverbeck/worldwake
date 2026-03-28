@@ -1352,6 +1352,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
         runtime.exhaustion_cache.insert(
@@ -1360,6 +1361,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
         let runtime_bytes = bincode::serialize(&DriverStateMirror {

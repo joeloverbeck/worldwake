@@ -66,6 +66,11 @@ pub struct ExhaustionEntry {
     pub retry_state: ExhaustionRetryState,
     pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
     pub baseline: ExhaustionBaseline,
+    /// How many consecutive times this goal has exhausted the search budget.
+    /// Used for exponential backoff: retry budget = base / 2^count (floor 32).
+    /// Reset to 0 when the goal finds a plan or invalidation fires.
+    #[serde(default)]
+    pub consecutive_budget_exhaustions: u8,
 }
 
 impl ExhaustionEntry {
@@ -78,6 +83,7 @@ impl ExhaustionEntry {
             retry_state: ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions,
             baseline,
+            consecutive_budget_exhaustions: 0,
         }
     }
 
@@ -90,7 +96,16 @@ impl ExhaustionEntry {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions,
             baseline,
+            consecutive_budget_exhaustions: 1,
         }
+    }
+
+    /// Compute the effective `max_node_expansions` for a budget-retry search.
+    /// Base budget is halved per consecutive exhaustion, with a floor of 16.
+    #[must_use]
+    pub fn effective_max_expansions(&self, base: u16) -> u16 {
+        let shift = self.consecutive_budget_exhaustions.min(4);
+        (base >> shift).max(16)
     }
 
     #[must_use]
@@ -425,6 +440,7 @@ mod tests {
                         wound_count: 1,
                         hostile_count: 0,
                     },
+                    consecutive_budget_exhaustions: 0,
                 },
             )]),
         };

@@ -203,13 +203,26 @@ pub(super) fn build_candidate_plans(
     for ranked in candidates_to_plan {
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
+        // Exponential backoff on search budget for goals that previously
+        // exhausted the budget. Each consecutive exhaustion halves the
+        // retry budget (256→128→64→32 floor), cutting retry cost by
+        // 50-87.5% while still allowing plan discovery.
+        let effective_budget = match exhaustion_cache.get(&ranked.grounded.key) {
+            Some(entry) if entry.is_budget_retry_pending() => {
+                let mut reduced = budget.clone();
+                reduced.max_node_expansions =
+                    entry.effective_max_expansions(budget.max_node_expansions);
+                reduced
+            }
+            _ => budget.clone(),
+        };
         let result = search_plan(
             &snapshot,
             &ranked.grounded,
             semantics_table,
             action_defs,
             action_handlers,
-            budget,
+            &effective_budget,
             recipe_registry,
             blocked_memory,
             current_tick,
@@ -309,9 +322,16 @@ fn record_exhausted_goals(
             | crate::PlanSearchResult::FrontierExhausted { .. } => {
                 let (invalidation_conditions, baseline) =
                     derive_invalidation_conditions(&key.kind, agent, view, recipe_registry);
+                let prev_count = runtime
+                    .exhaustion_cache
+                    .get(key)
+                    .map_or(0, |e| e.consecutive_budget_exhaustions);
                 let entry = match result {
                     crate::PlanSearchResult::BudgetExhausted { .. } => {
-                        ExhaustionEntry::budget_retry_pending(invalidation_conditions, baseline)
+                        let mut e =
+                            ExhaustionEntry::budget_retry_pending(invalidation_conditions, baseline);
+                        e.consecutive_budget_exhaustions = prev_count.saturating_add(1);
+                        e
                     }
                     crate::PlanSearchResult::FrontierExhausted { .. } => {
                         ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
@@ -854,6 +874,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
 
@@ -944,6 +965,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
         runtime.exhaustion_cache.insert(
@@ -952,6 +974,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
 
@@ -980,6 +1003,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             })
         );
     }
@@ -1017,11 +1041,13 @@ mod tests {
             retry_state: ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
+            consecutive_budget_exhaustions: 0,
         };
         let entry = ExhaustionEntry {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: Vec::new(),
             baseline: crate::ExhaustionBaseline::default(),
+            consecutive_budget_exhaustions: 0,
         };
 
         assert!(frontier_entry.suppresses_planning());
@@ -1038,6 +1064,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
         runtime.exhaustion_cache.insert(
@@ -1046,6 +1073,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
 
@@ -1057,6 +1085,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             },
         );
         runtime

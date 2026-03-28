@@ -1435,6 +1435,7 @@ mod tests {
                         position: Some(entity(10)),
                         ..ExhaustionBaseline::default()
                     },
+                    consecutive_budget_exhaustions: 0,
                 },
             ),
             (
@@ -1443,6 +1444,7 @@ mod tests {
                     retry_state: ExhaustionRetryState::FrontierExhausted,
                     invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
                     baseline: ExhaustionBaseline::default(),
+                    consecutive_budget_exhaustions: 0,
                 },
             ),
             (
@@ -1451,6 +1453,7 @@ mod tests {
                     retry_state: ExhaustionRetryState::FrontierExhausted,
                     invalidation_conditions: Vec::new(),
                     baseline: ExhaustionBaseline::default(),
+                    consecutive_budget_exhaustions: 0,
                 },
             ),
         ]);
@@ -1468,6 +1471,7 @@ mod tests {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
                 baseline: ExhaustionBaseline::default(),
+                consecutive_budget_exhaustions: 0,
             })
         );
         assert!(!cache.contains_key(&legacy_goal));
@@ -1486,6 +1490,7 @@ mod tests {
                     position: Some(entity(2)),
                     ..ExhaustionBaseline::default()
                 },
+                consecutive_budget_exhaustions: 0,
             },
         )]);
         let view = MockView {

@@ -22,7 +22,7 @@ impl Default for PlanningBudget {
             max_plan_depth: 8,
             snapshot_travel_horizon: 6,
             max_prerequisite_locations: 3,
-            max_node_expansions: 256,
+            max_node_expansions: 224,
             beam_width: 8,
             switch_margin_permille: Permille::new_unchecked(100),
             transient_block_ticks: 20,
@@ -45,7 +45,7 @@ mod tests {
         assert_eq!(budget.max_plan_depth, 8);
         assert_eq!(budget.snapshot_travel_horizon, 6);
         assert_eq!(budget.max_prerequisite_locations, 3);
-        assert_eq!(budget.max_node_expansions, 256);
+        assert_eq!(budget.max_node_expansions, 224);
         assert_eq!(budget.beam_width, 8);
         assert_eq!(budget.switch_margin_permille, Permille::new(100).unwrap());
         assert_eq!(budget.transient_block_ticks, 20);

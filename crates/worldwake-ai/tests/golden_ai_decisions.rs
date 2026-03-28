@@ -245,6 +245,7 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
                 commodity_quantities: vec![(CommodityKind::Apple, Quantity(0))],
                 ..ExhaustionBaseline::default()
             },
+            consecutive_budget_exhaustions: 0,
         },
     );
     let runtime_bytes = bincode::serialize(&DriverStateMirror {
