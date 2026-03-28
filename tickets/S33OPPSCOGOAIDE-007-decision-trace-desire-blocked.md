@@ -14,8 +14,9 @@ When all opportunities for a `GoalKey` are blocked by the live post-emission blo
 
 1. `DecisionOutcome::Planning` already carries candidate-generation diagnostics in `crates/worldwake-ai/src/decision_trace.rs`. This remains the correct layer for the new debug surface.
 2. The stale assumption that a separate two-pass filter return payload exists is no longer accurate. The blocker filter behavior shipped inside archived `S33OPPSCOGOAIDE-002`; this ticket must derive diagnostics from the live filtering path instead of assuming a separate output channel.
-3. This is diagnostic-only work. It must not change candidate selection, blocker memory, or ranking behavior.
-4. The canonical fact being surfaced is: "all known opportunities for this `GoalKey` were blocked this tick." It should be carried once in tracing, not reconstructed ad hoc in every test.
+3. Archived `S33OPPSCOGOAIDE-010` already strengthened `PlanAttemptTrace` with per-attempt `OpportunityAnchor` provenance in `crates/worldwake-ai/src/decision_trace.rs`. The remaining gap is not "which concrete opportunity was searched" but the aggregated diagnostic "all emitted opportunities for this desire were blocked before search."
+4. This is diagnostic-only work. It must not change candidate selection, blocker memory, or ranking behavior.
+5. The canonical fact being surfaced is: "all known opportunities for this `GoalKey` were blocked this tick." It should be carried once in tracing, not reconstructed ad hoc in every test.
 
 ## Architecture Check
 

@@ -18,8 +18,8 @@
 4. The exact shared abstraction boundary under audit is: `GroundedGoal { key, anchor }` -> planning attempt key -> `AgentDecisionRuntime.exhaustion_cache`.
 5. Live code currently contains a temporary first-per-`GoalKey` planning dedup to stabilize search budget after `002`. This ticket must not replace that dedup policy; it only fixes exhaustion identity.
 6. The live `GoalKind` surface most sensitive to this contradiction is multi-opportunity `AcquireCommodity`, `ProduceCommodity`, and other place-anchored acquisition/production goals where one failed source should not poison its siblings.
-7. This ticket does not own planning-snapshot isolation, which still remains merged today and is deferred to a follow-up ticket.
-8. Mismatch + correction: the old ticket assumed this was the next immediate step after `002`. In live code, `005` and the new planning-scope ticket will still be needed after this lands, but that does not reduce the necessity of re-keying exhaustion here.
+7. Planning-snapshot isolation no longer remains merged today: archived `S33OPPSCOGOAIDE-010` moved `build_candidate_plans()` in [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs) to candidate-local snapshot construction. This ticket therefore stays focused strictly on exhaustion identity.
+8. Mismatch + correction: the old ticket assumed this was the next immediate step after `002`. In live code, `005` still remains after this lands, but candidate-local snapshot scope is already complete and no longer a dependency or follow-up concern here.
 
 ## Architecture Check
 
@@ -61,7 +61,7 @@ Do not absorb post-rank selection policy here. If the current temporary first-pe
 
 - replacing temporary planning dedup with real post-rank opportunity selection
 - adding `PlannedPlan.opportunity`
-- per-opportunity planning-snapshot isolation
+- per-opportunity planning-snapshot isolation (already delivered by archived `S33OPPSCOGOAIDE-010`)
 - save/load version bump
 - decision-trace schema changes
 

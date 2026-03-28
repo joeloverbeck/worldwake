@@ -13,10 +13,11 @@ The remaining S33 end-to-end proof is not generic "opportunity behavior"; it is 
 ## Assumption Reassessment (2026-03-28)
 
 1. Golden tests live in `crates/worldwake-ai/tests/` and use the AI harness with deterministic seeds.
-2. Some nearby coverage already exists from archived `S33OPPSCOGOAIDE-002` work. This ticket should not duplicate those scenarios; it should prove the final multi-source switching invariant once `004`, `005`, `006`, and `010` land.
+2. Some nearby coverage already exists from archived `S33OPPSCOGOAIDE-002` work. This ticket should not duplicate those scenarios; it should prove the final multi-source switching invariant once `004`, `005`, and `006` land. Archived `S33OPPSCOGOAIDE-010` already delivered candidate-local planning scope.
 3. Decision tracing and action tracing remain the right debugging tools for these goldens and should be used for assertions when candidate absence/suppression is the core claim.
 4. `PerceptionProfile` still matters anywhere the agent must observe produced or stocked output before replanning.
-5. The live desire under test is still `AcquireCommodity` for a concrete commodity with at least two lawful sources.
+5. Candidate-local planning scope is already live after archived `S33OPPSCOGOAIDE-010`, so these goldens should treat leaked shared-snapshot explanations as excluded branches rather than an open implementation variable.
+6. The live desire under test is still `AcquireCommodity` for a concrete commodity with at least two lawful sources.
 
 ## Architecture Check
 
@@ -90,7 +91,7 @@ For each golden, add a deterministic replay round-trip test that re-derives the 
 1. Agents plan from beliefs only, never direct world-state inspection.
 2. Blocking one source does not suppress planning for alternative sources (core S33 invariant).
 3. Exhaustion is scoped per-opportunity, not per-desire.
-4. Planning uses candidate-local evidence scope once `S33OPPSCOGOAIDE-010` lands.
+4. Planning already uses candidate-local evidence scope.
 5. Deterministic replay produces identical outcomes from the same seed.
 
 ## Test Plan

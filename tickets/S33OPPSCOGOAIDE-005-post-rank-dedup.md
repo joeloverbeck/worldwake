@@ -22,7 +22,7 @@ Today those layers disagree on the canonical identity. Ranking is opportunity-sc
 1. `GroundedGoal.anchor` and per-opportunity candidate emission already exist in live code from archived `S33OPPSCOGOAIDE-002`. This ticket is not introducing opportunity-scoped candidates from scratch.
 2. The current planning pipeline still performs a temporary first-per-`GoalKey` collapse before or during `build_candidate_plans()` in `crates/worldwake-ai/src/agent_tick/planning.rs`. That is the actual behavior this ticket replaces.
 3. `S33OPPSCOGOAIDE-004` must land first. Post-rank opportunity selection is only correct once exhausted opportunities are tracked by `OpportunityKey`; otherwise the fallback path would still suppress all alternatives for the same desire.
-4. This ticket is about admission/selection policy, not planning snapshot isolation. Candidate-local snapshot scope remains separate work in `S33OPPSCOGOAIDE-010`.
+4. This ticket is about admission/selection policy, not planning snapshot isolation. Candidate-local snapshot scope has already landed in archived `S33OPPSCOGOAIDE-010`, so the remaining live contradiction is strictly the first-per-`GoalKey` admission gate.
 
 ## Architecture Check
 
@@ -62,7 +62,7 @@ If the current `PlanningPipelineTrace` does not clearly expose which ranked oppo
 
 ## Out of Scope
 
-- Candidate-local planning snapshot isolation (`S33OPPSCOGOAIDE-010`)
+- Candidate-local planning snapshot isolation (already delivered by archived `S33OPPSCOGOAIDE-010`)
 - `PlannedPlan.opportunity` data plumbing (`S33OPPSCOGOAIDE-006`)
 - Save/load (`S33OPPSCOGOAIDE-008`)
 - New goldens (`S33OPPSCOGOAIDE-009`)

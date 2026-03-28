@@ -6,8 +6,8 @@
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, PerceptionSource,
-    PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
+    PerceptionSource, PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
@@ -522,6 +522,7 @@ pub struct TravelPruningTrace {
 #[derive(Clone, Debug)]
 pub struct PlanAttemptTrace {
     pub goal: GoalKey,
+    pub opportunity_anchor: OpportunityAnchor,
     pub outcome: PlanSearchOutcome,
     pub binding_rejections: Vec<BindingRejection>,
     /// Per-expansion summaries. Empty when tracing is disabled.
@@ -986,6 +987,11 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking}"
             );
             for attempt in &planning.planning.attempts {
+                let _ = write!(
+                    out,
+                    "\n  plan attempt: goal={:?}, anchor={:?}, outcome={:?}",
+                    attempt.goal, attempt.opportunity_anchor, attempt.outcome
+                );
                 for rej in &attempt.binding_rejections {
                     let def_name = action_defs
                         .get(rej.def_id)
@@ -1925,6 +1931,54 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_includes_attempt_anchor() {
+        use worldwake_core::{GoalKind, OpportunityAnchor};
+
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![],
+                evidence: vec![],
+                ranked: vec![],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace {
+                attempts: vec![PlanAttemptTrace {
+                    goal: GoalKey::new(GoalKind::Sleep),
+                    opportunity_anchor: OpportunityAnchor::Place(entity(42)),
+                    outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
+                    binding_rejections: vec![],
+                    expansion_summaries: vec![],
+                }],
+            },
+            selection: SelectionTrace {
+                selected: None,
+                selected_plan: None,
+                selected_plan_source: None,
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = format_outcome(&outcome, &ActionDefRegistry::new());
+        assert!(summary.contains("anchor=Place("));
+    }
+
+    #[test]
     fn summary_planning_includes_ranking_comparison() {
         use crate::ranking::{RankedGoalComparison, RankedGoalComparisonDimension};
         use worldwake_core::GoalKind;
@@ -2142,6 +2196,7 @@ mod tests {
             planning: PlanSearchTrace {
                 attempts: vec![PlanAttemptTrace {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
+                    opportunity_anchor: OpportunityAnchor::None,
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
                     binding_rejections: vec![],
                     expansion_summaries: vec![SearchExpansionSummary {
@@ -2270,6 +2325,7 @@ mod tests {
         ];
         let trace = PlanAttemptTrace {
             goal: GoalKey::new(GoalKind::Sleep),
+            opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
             binding_rejections: rejections,
             expansion_summaries: vec![],

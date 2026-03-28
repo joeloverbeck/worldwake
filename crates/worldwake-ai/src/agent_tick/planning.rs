@@ -182,29 +182,19 @@ pub(super) fn build_candidate_plans(
         return Vec::new();
     }
 
-    // The current evidence model still relies on a merged view here for some
-    // lawful prerequisite chains. Keep snapshot construction shared until the
-    // per-opportunity evidence surface is strong enough to preserve those plans.
-    let mut merged_evidence_entities = BTreeSet::new();
-    let mut merged_evidence_places = BTreeSet::new();
-    for ranked in &candidates_to_plan {
-        merged_evidence_entities.extend(ranked.grounded.evidence_entities.iter().copied());
-        merged_evidence_places.extend(ranked.grounded.evidence_places.iter().copied());
-    }
-    let snapshot = build_planning_snapshot_with_blocked_facility_uses(
-        &view,
-        agent,
-        &merged_evidence_entities,
-        &merged_evidence_places,
-        budget.snapshot_travel_horizon,
-        blocked_memory,
-        current_tick,
-    );
-
     let mut results = Vec::with_capacity(candidates_to_plan.len());
     for ranked in candidates_to_plan {
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            agent,
+            &ranked.grounded.evidence_entities,
+            &ranked.grounded.evidence_places,
+            budget.snapshot_travel_horizon,
+            blocked_memory,
+            current_tick,
+        );
         // Exponential backoff on search budget for goals that previously
         // exhausted the budget. Each consecutive exhaustion halves the
         // retry budget (256→128→64→32 floor), cutting retry cost by
@@ -655,8 +645,15 @@ pub(super) fn plan_and_validate_next_step_traced(
         }
 
         for (goal_key, result, rejections, expansions) in &plans {
+            let opportunity_anchor = ranked_candidates
+                .iter()
+                .find(|candidate| candidate.grounded.key == *goal_key)
+                .map_or(worldwake_core::OpportunityAnchor::None, |candidate| {
+                    candidate.grounded.anchor
+                });
             plan_search_trace.attempts.push(plan_search_result_to_trace(
                 *goal_key,
+                opportunity_anchor,
                 result,
                 action_defs,
                 rejections.clone(),
@@ -778,6 +775,7 @@ pub(super) fn plan_and_validate_next_step_traced(
 /// Convert a `PlanSearchResult` into a `PlanAttemptTrace` for the trace model.
 pub(super) fn plan_search_result_to_trace(
     goal: worldwake_core::GoalKey,
+    opportunity_anchor: worldwake_core::OpportunityAnchor,
     result: &PlanSearchResult,
     action_defs: &worldwake_sim::ActionDefRegistry,
     binding_rejections: Vec<BindingRejection>,
@@ -806,6 +804,7 @@ pub(super) fn plan_search_result_to_trace(
     };
     PlanAttemptTrace {
         goal,
+        opportunity_anchor,
         outcome,
         binding_rejections,
         expansion_summaries,
@@ -816,14 +815,22 @@ pub(super) fn plan_search_result_to_trace(
 mod tests {
     use super::{has_pending_budget_retry, record_exhausted_goals};
     use crate::{
-        AgentDecisionRuntime, ExhaustionEntry, ExhaustionInvalidationCondition,
-        ExhaustionRetryState, GoalKey, GoalKind, PlanSearchResult, PlanTerminalKind, PlannedPlan,
+        build_semantics_table, feasibility::FeasibilityHint, AgentDecisionRuntime,
+        ExhaustionEntry, ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
+        GoalPriorityClass, GroundedGoal, PlanSearchResult, PlanTerminalKind, PlannedPlan,
+        PlanningBudget, RankedGoal,
     };
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ControlSource, EventLog,
-        HomeostaticNeeds, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, CauseRef, CommodityKind, CommodityPurpose, ControlSource, EventLog,
+        HomeostaticNeeds, MerchandiseProfile, Place, Quantity, Tick, Topology, TravelEdge,
+        TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
     };
-    use worldwake_sim::{PerAgentBeliefView, RecipeRegistry};
+    use worldwake_sim::{
+        ActionHandlerRegistry, ActionDefRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
+        SystemManifest,
+    };
+    use worldwake_systems::build_full_action_registries;
 
     fn consume_goal(commodity: CommodityKind) -> GoalKey {
         GoalKey::from(GoalKind::ConsumeOwnedCommodity { commodity })
@@ -850,6 +857,63 @@ mod tests {
         let _ = txn.commit(&mut event_log);
     }
 
+    fn cargo_topology(
+        origin: worldwake_core::EntityId,
+        destination: worldwake_core::EntityId,
+    ) -> Topology {
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                origin,
+                Place {
+                    name: "Origin".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::default(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                destination,
+                Place {
+                    name: "Destination".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::default(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(1), origin, destination, 2, None).unwrap())
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(2), destination, origin, 2, None).unwrap())
+            .unwrap();
+        topology
+    }
+
+    fn entity(slot: u32) -> worldwake_core::EntityId {
+        worldwake_core::EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn build_full_registries() -> (ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry) {
+        let recipes = RecipeRegistry::new();
+        let registries = build_full_action_registries(&recipes).unwrap();
+        (registries.defs, registries.handlers, recipes)
+    }
+
+    fn ranked_goal(goal: GroundedGoal) -> RankedGoal {
+        RankedGoal {
+            grounded: goal,
+            priority_class: GoalPriorityClass::High,
+            motive_score: 100,
+            provenance: None,
+            feasibility: FeasibilityHint::Likely,
+        }
+    }
+
     fn setup_agent_world() -> (World, worldwake_core::EntityId, worldwake_core::EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -864,6 +928,103 @@ mod tests {
         };
 
         (world, agent, place)
+    }
+
+    #[test]
+    fn candidate_search_does_not_use_other_admitted_candidate_evidence() {
+        let origin = entity(11);
+        let market = entity(12);
+        let mut world = World::new(cargo_topology(origin, market)).unwrap();
+        let (agent, seller) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let seller = txn.create_agent("Seller", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_ground_location(seller, market).unwrap();
+            txn.set_ground_location(bread, market).unwrap();
+            txn.set_possessor(bread, seller).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                seller,
+                MerchandiseProfile {
+                    sale_kinds: [CommodityKind::Bread].into_iter().collect(),
+                    home_market: Some(market),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, seller)
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![
+            ranked_goal(GroundedGoal {
+                key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                anchor: worldwake_core::OpportunityAnchor::None,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            }),
+            ranked_goal(GroundedGoal {
+                key: GoalKey::from(GoalKind::Sleep),
+                anchor: worldwake_core::OpportunityAnchor::Place(market),
+                evidence_entities: BTreeSet::from([seller]),
+                evidence_places: BTreeSet::from([market]),
+            }),
+        ];
+        let budget = PlanningBudget {
+            snapshot_travel_horizon: 0,
+            max_candidates_to_plan: 2,
+            ..PlanningBudget::default()
+        };
+
+        let plans = super::build_candidate_plans(
+            &world,
+            &scheduler,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            Tick(1),
+            &budget,
+            &semantics,
+            &defs,
+            &handlers,
+            &recipes,
+            false,
+            false,
+            &BTreeMap::new(),
+        );
+
+        let (goal, result, _, _) = plans
+            .first()
+            .expect("primary admitted candidate should be searched");
+        assert_eq!(
+            *goal,
+            GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            })
+        );
+        assert!(
+            !result.is_found(),
+            "AcquireCommodity(Bread) search should not be able to use the remote seller evidence attached only to a different admitted candidate"
+        );
     }
 
     #[test]

@@ -20,7 +20,7 @@ The shared abstraction boundary under audit is:
 1. `PlannedPlan` in `crates/worldwake-ai/src/planner_ops.rs` still stores desire identity but no concrete `OpportunityKey`. That remains the live gap.
 2. `IntentionFrame` in `crates/worldwake-core/src/intention_frame.rs` is intentionally desire-scoped and should stay that way. This ticket must not broaden frame identity to opportunity scope.
 3. Save/load support is not already done. Once `PlannedPlan` grows a new field, `S33OPPSCOGOAIDE-008` must own the format bump and persistence verification.
-4. This ticket should not absorb planning admission or snapshot-scope behavior. Those responsibilities belong to `S33OPPSCOGOAIDE-005` and `S33OPPSCOGOAIDE-010`.
+4. This ticket should not absorb planning admission behavior. That responsibility still belongs to `S33OPPSCOGOAIDE-005`. Candidate-local snapshot scope already landed in archived `S33OPPSCOGOAIDE-010`, and this ticket should preserve that boundary rather than revisit it.
 
 ## Architecture Check
 
@@ -70,7 +70,7 @@ Update any code that stores, clones, compares, or traces `PlannedPlan` so the ne
 - `IntentionFrame` changes (spec says none — frame persists on `GoalKey`)
 - Exhaustion re-keying (`S33OPPSCOGOAIDE-004`)
 - Post-rank opportunity selection (`S33OPPSCOGOAIDE-005`)
-- Planning snapshot isolation (`S33OPPSCOGOAIDE-010`)
+- Planning snapshot isolation (already delivered by archived `S33OPPSCOGOAIDE-010`)
 - Save/load version bump (S33OPPSCOGOAIDE-008)
 - Decision trace changes (S33OPPSCOGOAIDE-007)
 
