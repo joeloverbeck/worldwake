@@ -266,6 +266,7 @@ pub(crate) fn grounded_goal_matches_epistemic_barrier(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     op_kind: PlannerOpKind,
+    authoritative_targets: &[EntityId],
     payload: Option<&ActionPayload>,
 ) -> bool {
     let subjects = grounded_goal_epistemic_subjects(goal, state);
@@ -274,9 +275,12 @@ pub(crate) fn grounded_goal_matches_epistemic_barrier(
     }
 
     match (op_kind, payload) {
-        (PlannerOpKind::VerifyBelief, Some(ActionPayload::VerifyBelief(verify))) => {
-            subjects.contains(&verify.subject)
-        }
+        (PlannerOpKind::Travel, _) => subjects.into_iter().any(|subject| match subject {
+            VerificationSubject::EntityLocation { place, .. }
+            | VerificationSubject::SupplyAvailability { place, .. } => {
+                authoritative_targets.contains(&place)
+            }
+        }),
         (PlannerOpKind::AskWitness, Some(ActionPayload::AskWitness(ask))) => subjects
             .into_iter()
             .any(|subject| ask_witness_payload_matches_subject(ask, subject)),
@@ -1886,7 +1890,7 @@ mod tests {
         BribeActionPayload, ConsultRecordActionPayload, DurationExpr, Interruptibility,
         InvestigateActionPayload, PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry,
         RuntimeBeliefView, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, VerifyBeliefPayload,
+        TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -3877,19 +3881,15 @@ mod tests {
         assert!(grounded_goal_matches_epistemic_barrier(
             &goal,
             &state,
-            PlannerOpKind::VerifyBelief,
-            Some(&ActionPayload::VerifyBelief(worldwake_sim::VerifyBeliefPayload {
-                subject: VerificationSubject::SupplyAvailability {
-                    commodity: CommodityKind::Bread,
-                    source,
-                    place: remote,
-                },
-            })),
+            PlannerOpKind::Travel,
+            &[remote],
+            None,
         ));
         assert!(grounded_goal_matches_epistemic_barrier(
             &goal,
             &state,
             PlannerOpKind::AskWitness,
+            &[witness],
             Some(&ActionPayload::AskWitness(AskWitnessPayload {
                 target: witness,
                 topic_entity: Some(source),
@@ -3900,11 +3900,19 @@ mod tests {
             &goal,
             &state,
             PlannerOpKind::AskWitness,
+            &[witness],
             Some(&ActionPayload::AskWitness(AskWitnessPayload {
                 target: witness,
                 topic_entity: None,
                 topic_commodity: Some(CommodityKind::Apple),
             })),
+        ));
+        assert!(!grounded_goal_matches_epistemic_barrier(
+            &goal,
+            &state,
+            PlannerOpKind::Travel,
+            &[town],
+            None,
         ));
     }
 
@@ -6273,7 +6281,7 @@ mod tests {
     }
 
     #[test]
-    fn search_restock_goal_returns_travel_then_verify_belief_barrier_for_remote_stale_source() {
+    fn search_restock_goal_returns_travel_barrier_for_remote_stale_source() {
         let actor = entity(1);
         let subject_entity = entity(2);
         let town = entity(10);
@@ -6344,22 +6352,16 @@ mod tests {
             None,
         )
         .into_plan()
-        .expect("planner should find a travel + verify_belief plan");
+        .expect("planner should find a travel barrier plan");
 
         assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::ProgressBarrier);
-        assert_eq!(plan.steps.len(), 2);
+        assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
-        assert_eq!(plan.steps[1].op_kind, PlannerOpKind::VerifyBelief);
         assert_eq!(
-            plan.steps[1].payload_override,
-            Some(ActionPayload::VerifyBelief(VerifyBeliefPayload {
-                subject: VerificationSubject::SupplyAvailability {
-                    commodity: CommodityKind::Bread,
-                    source: subject_entity,
-                    place: remote,
-                },
-            }))
+            plan.steps[0].targets,
+            vec![crate::PlanningEntityRef::Authoritative(remote)]
         );
+        assert_eq!(plan.steps[0].payload_override, None);
     }
 
     #[test]

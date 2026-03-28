@@ -148,6 +148,7 @@ pub(super) fn search_candidates(
                         goal,
                         &node.state,
                         semantics.op_kind,
+                        &candidate.authoritative_targets,
                         candidate.payload_override.as_ref(),
                     )
             })

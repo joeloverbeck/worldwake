@@ -20,16 +20,16 @@ Once the epistemic barrier contract is corrected to be fact-sensitive, the repo 
    - authoritative belief / violation aftermath
    - later decision-trace proof of continuation or replan
 3. Existing adjacent goldens already cover passive discovery, stale-prerequisite recovery, and downstream sharing, but not the deliberate prerequisite path:
-   - [`/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_social.rs`](file:///home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_social.rs)
-   - [`/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs`](file:///home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs)
-   - [`/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs`](file:///home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs)
-4. In particular, `golden_stale_prerequisite_belief_discovery_replan` in [`/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs`](file:///home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs) already proves same-goal stale-branch recovery for live `GoalKind::RestockCommodity`. After S34GENEPIACT-011 reassessment, that scenario also exposed the duplicate-path contradiction: same-place arrival perception can lawfully refresh the stale source belief before a `verify_belief` commit. This ticket must not overcorrect by demanding a committed `verify_belief` there if S34GENEPIACT-012 removes that duplicate path.
+   - [golden_social.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_social.rs)
+   - [golden_supply_chain.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs)
+   - [golden_emergent.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_emergent.rs)
+4. In particular, `golden_stale_prerequisite_belief_discovery_replan` in [golden_supply_chain.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_supply_chain.rs) already proves same-goal stale-branch recovery for live `GoalKind::RestockCommodity`. After S34GENEPIACT-012, that scenario now also proves the corrected planner contract: the stale source path stops at travel-to-place and refreshes through lawful arrival perception without a committed `verify_belief` action.
 5. Typed epistemic `ActionTraceDetail` in [`/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/action_trace.rs`](file:///home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/action_trace.rs) remains the canonical action-lifecycle proof surface for committed epistemic identity, but these goldens should use it only where an explicit action commit is itself the contract.
 6. Scenario isolation must be explicit:
    - intended branch: originating goal -> canonical epistemic prerequisite barrier -> aftermath -> continuation/replan
    - competing lawful branches to control: unrelated social telling, unrelated self-care, and alternative non-epistemic satisfiers when they are outside the contract under test
    - lawful arrival perception is not a competing branch to suppress when the fact under test is arrival-observable; it is the intended carrier in that case
-7. The live focused proof surface for the stale-source planner contract is currently `goal_model::tests::search_restock_goal_returns_travel_then_verify_belief_barrier_for_remote_stale_source`, but this ticket should not assume that exact operator sequence remains canonical after S34GENEPIACT-012.
+7. The live focused proof surface for the stale-source planner contract is now `goal_model::tests::search_restock_goal_returns_travel_barrier_for_remote_stale_source`, and this ticket should treat that travel-side barrier as the lower-layer contract.
 8. Adjacent contradiction classification:
    - required consequence of this ticket: retarget golden assertions to the corrected fact-sensitive contract
    - separate architecture work: removing duplicate planner/runtime paths for arrival-observable facts belongs to S34GENEPIACT-012, not here
@@ -46,7 +46,7 @@ Once the epistemic barrier contract is corrected to be fact-sensitive, the repo 
 ## Verification Layers
 
 1. originating goal selected with the canonical epistemic prerequisite branch -> decision trace
-2. committed `ask_witness` identity, and committed `verify_belief` only for any surviving inspection-only fact class -> action trace
+2. committed `ask_witness` identity, and committed `verify_belief` only if a future inspection-only fact class is introduced -> action trace
 3. belief refresh or violation recording -> authoritative belief / violation state
 4. continuation or replan after arrival refresh or explicit epistemic outcome -> later decision trace
 5. deterministic replay -> replay companion tests

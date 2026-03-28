@@ -935,6 +935,13 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         }),
         "tick 0 plan should route through Orchard Farm from the stale prerequisite belief"
     );
+    assert!(
+        selected_tick_zero_plan
+            .steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::VerifyBelief),
+        "arrival-observable stale facts should stop at travel rather than synthesize verify_belief"
+    );
     let initial_selected_opportunity = tick_zero_planning
         .selection
         .selected_opportunity
@@ -1091,6 +1098,17 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
     assert!(
         craft_committed,
         "stale-belief recovery should still commit craft:Bake Bread"
+    );
+    assert!(
+        !h.action_trace_sink()
+            .expect("action tracing should remain enabled for stale-belief recovery")
+            .events_for(merchant)
+            .iter()
+            .any(|event| {
+                event.action_name == "verify_belief"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "arrival-observable stale-source recovery should not commit verify_belief"
     );
     assert_eq!(
         h.world

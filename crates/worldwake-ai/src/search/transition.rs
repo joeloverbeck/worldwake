@@ -3,7 +3,7 @@ use crate::goal_model::{grounded_goal_matches_epistemic_barrier, GoalPayloadOver
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
     apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep,
-    PlannerOpKind, PlannerOpSemantics, PlanningBudget,
+    PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
 };
 use heuristic::{combined_relevant_places, compute_heuristic};
 use std::collections::BTreeMap;
@@ -60,6 +60,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
                 goal,
                 &node.state,
                 semantics.op_kind,
+                &candidate.authoritative_targets,
                 candidate.payload_override.as_ref(),
             )
     } else {
@@ -173,7 +174,20 @@ pub(super) fn terminal_kind(
     if goal.key.kind.is_satisfied(state) {
         return Some(PlanTerminalKind::GoalSatisfied);
     }
-    if grounded_goal_matches_epistemic_barrier(goal, state, step.op_kind, step.payload_override.as_ref())
+    if grounded_goal_matches_epistemic_barrier(
+        goal,
+        state,
+        step.op_kind,
+        &step
+            .targets
+            .iter()
+            .filter_map(|target| match target {
+                PlanningEntityRef::Authoritative(entity) => Some(*entity),
+                PlanningEntityRef::Hypothetical(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        step.payload_override.as_ref(),
+    )
     {
         return Some(PlanTerminalKind::ProgressBarrier);
     }
