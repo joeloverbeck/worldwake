@@ -11,7 +11,7 @@ mod timeline;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-use worldwake_ai::{AgentTickDriver, PlanningBudget};
+use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey, PlanningBudget};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
@@ -1345,9 +1345,12 @@ mod tests {
             .materialization_bindings
             .bind(HypotheticalEntityId(7), dead_entity);
         runtime.exhaustion_cache.insert(
-            GoalKey::from(GoalKind::LootCorpse {
-                corpse: dead_entity,
-            }),
+            OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::LootCorpse {
+                    corpse: dead_entity,
+                }),
+                anchor: OpportunityAnchor::Entity(dead_entity),
+            },
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::FrontierExhausted,
                 invalidation_conditions: Vec::new(),
@@ -1356,7 +1359,10 @@ mod tests {
             },
         );
         runtime.exhaustion_cache.insert(
-            GoalKey::from(GoalKind::TreatWounds { patient: actor }),
+            OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::TreatWounds { patient: actor }),
+                anchor: OpportunityAnchor::Entity(actor),
+            },
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
                 invalidation_conditions: Vec::new(),
@@ -1395,12 +1401,18 @@ mod tests {
         );
         assert!(!runtime
             .exhaustion_cache
-            .contains_key(&GoalKey::from(GoalKind::LootCorpse {
-                corpse: dead_entity
-            })));
+            .contains_key(&OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::LootCorpse {
+                    corpse: dead_entity
+                }),
+                anchor: OpportunityAnchor::Entity(dead_entity),
+            }));
         assert!(runtime
             .exhaustion_cache
-            .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: actor })));
+            .contains_key(&OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::TreatWounds { patient: actor }),
+                anchor: OpportunityAnchor::Entity(actor),
+            }));
     }
 
     #[test]

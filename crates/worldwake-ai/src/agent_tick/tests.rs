@@ -17,8 +17,9 @@ use crate::{
     build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet,
     ExpectedMaterialization, ExhaustionBaseline, ExhaustionInvalidationCondition,
     FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
-    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
-    RankedGoalProvenance, SelectedPlanReplacementKind,
+    OpportunityAnchor, OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
+    SelectedPlanReplacementKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -59,6 +60,10 @@ struct Harness {
     handlers: ActionHandlerRegistry,
     driver: AgentTickDriver,
     actor: worldwake_core::EntityId,
+}
+
+fn exhaustion_key(goal_key: GoalKey, anchor: OpportunityAnchor) -> OpportunityKey {
+    OpportunityKey { goal_key, anchor }
 }
 
 impl Harness {
@@ -185,7 +190,10 @@ fn save_runtime_state_serializes_persisted_driver_state() {
         .materialization_bindings
         .bind(HypotheticalEntityId(11), authoritative);
     runtime.exhaustion_cache.insert(
-        GoalKey::from(GoalKind::TreatWounds { patient: agent }),
+        exhaustion_key(
+            GoalKey::from(GoalKind::TreatWounds { patient: agent }),
+            OpportunityAnchor::Entity(agent),
+        ),
         crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
@@ -236,7 +244,10 @@ fn save_runtime_state_serializes_persisted_driver_state() {
     assert_eq!(
         restored_runtime
             .exhaustion_cache
-            .get(&GoalKey::from(GoalKind::TreatWounds { patient: agent })),
+            .get(&exhaustion_key(
+                GoalKey::from(GoalKind::TreatWounds { patient: agent }),
+                OpportunityAnchor::Entity(agent),
+            )),
         Some(&crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
@@ -289,9 +300,12 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         .materialization_bindings
         .bind(HypotheticalEntityId(13), dead_entity);
     runtime.exhaustion_cache.insert(
-        GoalKey::from(GoalKind::LootCorpse {
-            corpse: dead_entity,
-        }),
+        exhaustion_key(
+            GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity,
+            }),
+            OpportunityAnchor::Entity(dead_entity),
+        ),
         crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: vec![ExhaustionInvalidationCondition::TargetDead(dead_entity)],
@@ -307,7 +321,10 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         },
     );
     runtime.exhaustion_cache.insert(
-        GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+        exhaustion_key(
+            GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+            OpportunityAnchor::Entity(h.actor),
+        ),
         crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
@@ -361,13 +378,19 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
     );
     assert!(!runtime
         .exhaustion_cache
-        .contains_key(&GoalKey::from(GoalKind::LootCorpse {
-            corpse: dead_entity
-        })));
+        .contains_key(&exhaustion_key(
+            GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity
+            }),
+            OpportunityAnchor::Entity(dead_entity),
+        )));
     assert_eq!(
         runtime
             .exhaustion_cache
-            .get(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })),
+            .get(&exhaustion_key(
+                GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+                OpportunityAnchor::Entity(h.actor),
+            )),
         Some(&crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: vec![
@@ -430,9 +453,12 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
         .materialization_bindings
         .bind(HypotheticalEntityId(12), dead_entity);
     runtime.exhaustion_cache.insert(
-        GoalKey::from(GoalKind::LootCorpse {
-            corpse: dead_entity,
-        }),
+        exhaustion_key(
+            GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity,
+            }),
+            OpportunityAnchor::Entity(dead_entity),
+        ),
         crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: Vec::new(),
@@ -441,7 +467,10 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
         },
     );
     runtime.exhaustion_cache.insert(
-        GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+        exhaustion_key(
+            GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+            OpportunityAnchor::Entity(h.actor),
+        ),
         crate::ExhaustionEntry {
             retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: Vec::new(),
@@ -474,12 +503,18 @@ fn post_load_validate_prunes_dead_runtime_references_and_marks_runtime_dirty() {
     );
     assert!(!runtime
         .exhaustion_cache
-        .contains_key(&GoalKey::from(GoalKind::LootCorpse {
-            corpse: dead_entity
-        })));
+        .contains_key(&exhaustion_key(
+            GoalKey::from(GoalKind::LootCorpse {
+                corpse: dead_entity
+            }),
+            OpportunityAnchor::Entity(dead_entity),
+        )));
     assert!(runtime
         .exhaustion_cache
-        .contains_key(&GoalKey::from(GoalKind::TreatWounds { patient: h.actor })));
+        .contains_key(&exhaustion_key(
+            GoalKey::from(GoalKind::TreatWounds { patient: h.actor }),
+            OpportunityAnchor::Entity(h.actor),
+        )));
     assert_eq!(
         runtime.dirty,
         DirtySet::STRUCTURAL_MASK | DirtySet::SNAPSHOT_MASK | DirtySet::FRAME_MASK

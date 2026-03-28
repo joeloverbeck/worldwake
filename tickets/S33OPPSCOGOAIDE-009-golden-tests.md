@@ -13,16 +13,18 @@ The remaining S33 end-to-end proof is not generic "opportunity behavior"; it is 
 ## Assumption Reassessment (2026-03-28)
 
 1. Golden tests live in `crates/worldwake-ai/tests/` and use the AI harness with deterministic seeds.
-2. Some nearby coverage already exists from archived `S33OPPSCOGOAIDE-002` work. This ticket should not duplicate those scenarios; it should prove the final multi-source switching invariant once `004`, `005`, and `006` land. Archived `S33OPPSCOGOAIDE-010` already delivered candidate-local planning scope.
+2. Some nearby coverage already exists from archived `S33OPPSCOGOAIDE-002` work and completed `S33OPPSCOGOAIDE-004` work, including focused opportunity-scoped exhaustion invalidation and the unrelated-commodity frontier-exhaustion golden. This ticket should not duplicate those scenarios; it should prove the final multi-source switching invariant once `005` and `006` land on top of that foundation.
 3. Decision tracing and action tracing remain the right debugging tools for these goldens and should be used for assertions when candidate absence/suppression is the core claim.
 4. `PerceptionProfile` still matters anywhere the agent must observe produced or stocked output before replanning.
 5. Candidate-local planning scope is already live after archived `S33OPPSCOGOAIDE-010`, so these goldens should treat leaked shared-snapshot explanations as excluded branches rather than an open implementation variable.
 6. The live desire under test is still `AcquireCommodity` for a concrete commodity with at least two lawful sources.
+7. The main architectural blocker for the exhausted-source golden is still `S33OPPSCOGOAIDE-005`: live code exhausts per opportunity now, but same-pass fallthrough between sibling opportunities is not yet the canonical planning-admission behavior.
 
 ## Architecture Check
 
 1. Golden tests are the correct verification surface because the final risk is cross-layer: candidate emission, blocking/exhaustion memory, admission ordering, planning scope, and execution must all cooperate.
-2. No backward-compatibility shims.
+2. These goldens should prove the final canonical path after `005`, not preserve temporary first-per-`GoalKey` behavior via bespoke harness setup.
+3. No backward-compatibility shims.
 
 ## Verification Layers
 

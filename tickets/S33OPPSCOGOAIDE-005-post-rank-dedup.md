@@ -20,21 +20,24 @@ Today those layers disagree on the canonical identity. Ranking is opportunity-sc
 ## Assumption Reassessment (2026-03-28)
 
 1. `GroundedGoal.anchor` and per-opportunity candidate emission already exist in live code from archived `S33OPPSCOGOAIDE-002`. This ticket is not introducing opportunity-scoped candidates from scratch.
-2. The current planning pipeline still performs a temporary first-per-`GoalKey` collapse before or during `build_candidate_plans()` in `crates/worldwake-ai/src/agent_tick/planning.rs`. That is the actual behavior this ticket replaces.
-3. `S33OPPSCOGOAIDE-004` must land first. Post-rank opportunity selection is only correct once exhausted opportunities are tracked by `OpportunityKey`; otherwise the fallback path would still suppress all alternatives for the same desire.
-4. This ticket is about admission/selection policy, not planning snapshot isolation. Candidate-local snapshot scope has already landed in archived `S33OPPSCOGOAIDE-010`, so the remaining live contradiction is strictly the first-per-`GoalKey` admission gate.
+2. `S33OPPSCOGOAIDE-004` is now complete and archived. Live code in [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs) and [`crates/worldwake-ai/src/decision_runtime.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_runtime.rs) already keys exhaustion by `OpportunityKey`, so the remaining limitation is no longer cache identity; it is admission ordering.
+3. The current planning pipeline still performs a temporary first-per-`GoalKey` collapse inside `build_candidate_plans()` via the `seen_goals` gate in [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs). That is the actual behavior this ticket replaces.
+4. Decision traces already carry per-attempt `OpportunityAnchor` provenance from archived `S33OPPSCOGOAIDE-010` and the live traced planning path in [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs). The remaining trace question is whether iteration/fallthrough remains explicit enough once multiple same-desire opportunities are admitted in one pass.
+5. This ticket is about admission/selection policy, not planning snapshot isolation. Candidate-local snapshot scope has already landed in archived `S33OPPSCOGOAIDE-010`, so the remaining live contradiction is strictly the first-per-`GoalKey` admission gate.
+6. Adjacent contradictions already covered elsewhere should stay split: `PlannedPlan.opportunity` remains owned by `S33OPPSCOGOAIDE-006`, persistence format bump by `S33OPPSCOGOAIDE-008`, and end-to-end autonomous switching proof by `S33OPPSCOGOAIDE-009`.
 
 ## Architecture Check
 
 1. The canonical transport path after this change is opportunity identity flowing from ranking into plan search admission. The duplicate lawful path, desire-level pre-search collapse, must be removed in scope rather than left beside the new path.
-2. The cleaner architecture is: rank opportunities, attempt them in rank order, and stop when a plannable non-exhausted opportunity succeeds. That preserves explicit competition between concrete sources instead of hiding it behind a temporary dedup heuristic.
-3. No backward compatibility, no aliasing. The old first-per-`GoalKey` gate should be deleted, not kept as a fallback.
+2. The cleaner architecture is: rank opportunities, admit them in rank order, and stop when a plannable non-exhausted opportunity succeeds. That preserves explicit competition between concrete sources instead of hiding it behind a temporary dedup heuristic.
+3. `GoalKey` still belongs in high-level motive accounting and plan selection, but not as a hidden pre-search admission key. Reusing it for both layers violates the spec’s desire/opportunity separation.
+4. No backward compatibility, no aliasing. The old first-per-`GoalKey` gate should be deleted, not kept as a fallback.
 
 ## Verification Layers
 
-1. Admission ordering: focused test proving multiple ranked opportunities for one `GoalKey` are attempted in rank order, not collapsed before search.
-2. Exhaustion fallthrough: focused test proving an exhausted higher-ranked opportunity does not suppress a lower-ranked alternative with the same `GoalKey`.
-3. Decision trace provenance: focused trace assertion showing planning attempts enumerate distinct opportunities in ranked order.
+1. Admission ordering: focused planning/runtime test proving multiple ranked opportunities for one `GoalKey` are attempted in rank order, not collapsed before search.
+2. Exhaustion fallthrough: focused planning/runtime test proving an exhausted higher-ranked opportunity does not suppress a lower-ranked alternative with the same `GoalKey`.
+3. Decision trace provenance: focused trace assertion showing planning attempts enumerate distinct opportunities in ranked order and preserve iteration provenance.
 
 ## What to Change
 
@@ -52,7 +55,7 @@ Iterate ranked candidates in rank order and attempt plan search per concrete opp
 
 ### 4. Strengthen planning traces if needed
 
-If the current `PlanningPipelineTrace` does not clearly expose which ranked opportunity was attempted and why iteration continued, extend it enough to make the new selection contract debuggable.
+If the current `PlanningPipelineTrace` does not clearly expose which ranked opportunity was attempted and why iteration continued, extend it enough to make the new selection contract debuggable. Do not add a second ad hoc debug path if the existing trace surface can be made authoritative with a small schema change.
 
 ## Files to Touch
 
@@ -87,13 +90,14 @@ If the current `PlanningPipelineTrace` does not clearly expose which ranked oppo
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/agent_tick/planning.rs` — `multiple_ranked_opportunities_are_attempted_in_rank_order`
-2. `crates/worldwake-ai/src/agent_tick/planning.rs` — `exhausted_higher_ranked_opportunity_falls_through_to_alternative`
-3. Decision-trace-focused test verifying `planning.attempts` records both opportunities distinctly.
+1. [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs) — `multiple_ranked_opportunities_are_attempted_in_rank_order`
+2. [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs) — `exhausted_higher_ranked_opportunity_falls_through_to_alternative`
+3. [`crates/worldwake-ai/src/agent_tick/tests.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/tests.rs) or [`crates/worldwake-ai/src/decision_trace.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs) — trace-focused test verifying `planning.attempts` records both opportunities distinctly and in ranked order.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- planning`
-2. `cargo test -p worldwake-ai -- decision_trace`
-3. `cargo clippy --workspace`
-4. `cargo test --workspace`
+1. `cargo test -p worldwake-ai -- --list`
+2. `cargo test -p worldwake-ai agent_tick::planning::tests::`
+3. `cargo test -p worldwake-ai decision_trace::tests::`
+4. `cargo test -p worldwake-ai`
+5. `cargo clippy --workspace`

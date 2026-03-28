@@ -9,7 +9,7 @@ use golden_harness::*;
 use worldwake_ai::{
     AgentDecisionRuntime, CommodityPurpose, DecisionOutcome, ExhaustionBaseline,
     ExhaustionEntry, ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
-    PlannerOpKind, SelectedPlanSource,
+    OpportunityAnchor, OpportunityKey, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
@@ -231,9 +231,13 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
     });
+    let apple_opportunity = OpportunityKey {
+        goal_key: apple_goal,
+        anchor: OpportunityAnchor::Place(ORCHARD_FARM),
+    };
     let mut runtime = AgentDecisionRuntime::default();
     runtime.exhaustion_cache.insert(
-        apple_goal,
+        apple_opportunity,
         ExhaustionEntry {
             retry_state: ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions: vec![
@@ -270,7 +274,7 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
     let bob_exhaustion_retained = restored_runtime
         .runtime_by_agent
         .get(&bob)
-        .is_some_and(|runtime| runtime.exhaustion_cache.contains_key(&apple_goal));
+        .is_some_and(|runtime| runtime.exhaustion_cache.contains_key(&apple_opportunity));
 
     FrontierExhaustionIsolationObservation {
         alice_ate,

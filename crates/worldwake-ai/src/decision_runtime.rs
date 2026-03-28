@@ -1,12 +1,12 @@
 use crate::{
-    DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey, GoalPriorityClass,
+    DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalPriorityClass,
     HypotheticalEntityId, PlannedPlan,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-    IntentionDomain, IntentionFrame, Quantity, Tick, UniqueItemKind, Wound,
+    IntentionDomain, IntentionFrame, OpportunityKey, Quantity, Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -143,7 +143,7 @@ pub struct AgentDecisionRuntime {
     /// `FrontierExhausted` entries suppress planning until invalidated by
     /// concrete local fact changes; `BudgetRetryPending` entries keep the goal
     /// eligible for the next compatible planning pass.
-    pub exhaustion_cache: std::collections::BTreeMap<GoalKey, ExhaustionEntry>,
+    pub exhaustion_cache: std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
 }
 
 impl AgentDecisionRuntime {
@@ -259,7 +259,8 @@ mod tests {
     };
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
-        GoalPriorityClass, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
+        GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
+        PlanTerminalKind, PlannedPlan, PlannedStep,
         PlannerOpKind, PlanningEntityRef,
     };
     use std::collections::BTreeMap;
@@ -422,10 +423,13 @@ mod tests {
                 ]),
             },
             exhaustion_cache: BTreeMap::from([(
-                GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Water,
-                    purpose: CommodityPurpose::SelfConsume,
-                }),
+                OpportunityKey {
+                    goal_key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Water,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }),
+                    anchor: OpportunityAnchor::Place(entity(44)),
+                },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::BudgetRetryPending,
                     invalidation_conditions: vec![

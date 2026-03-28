@@ -94,7 +94,7 @@ pub use ranking::{
     RankingOutcome,
 };
 pub use search::{search_plan, PlanSearchResult};
-pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind};
+pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 
 #[cfg(test)]
 mod tests {

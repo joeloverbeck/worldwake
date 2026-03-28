@@ -1,4 +1,4 @@
-use crate::{ExhaustionEntry, GoalKey};
+use crate::{ExhaustionEntry, OpportunityKey};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
@@ -159,7 +159,7 @@ pub(crate) fn derive_invalidation_conditions(
 }
 
 pub(crate) fn invalidate_exhausted_goals(
-    exhaustion_cache: &mut BTreeMap<GoalKey, ExhaustionEntry>,
+    exhaustion_cache: &mut BTreeMap<OpportunityKey, ExhaustionEntry>,
     view: &dyn GoalBeliefView,
     agent: EntityId,
     currently_in_transit: bool,
@@ -325,7 +325,7 @@ mod tests {
         invalidate_exhausted_goals, need_threshold_band, need_value,
         ExhaustionBaseline, ExhaustionInvalidationCondition,
     };
-    use crate::{ExhaustionEntry, ExhaustionRetryState, GoalKey};
+    use crate::{ExhaustionEntry, ExhaustionRetryState, GoalKey, OpportunityKey};
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1420,11 +1420,20 @@ mod tests {
     #[test]
     fn invalidate_exhausted_goals_removes_only_entries_with_fired_conditions() {
         let agent = entity(1);
-        let bread_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        });
-        let sleep_goal = GoalKey::from(GoalKind::Sleep);
-        let legacy_goal = GoalKey::from(GoalKind::ReduceDanger);
+        let bread_goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: worldwake_core::OpportunityAnchor::Place(entity(20)),
+        };
+        let sleep_goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: worldwake_core::OpportunityAnchor::Place(entity(21)),
+        };
+        let legacy_goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ReduceDanger),
+            anchor: worldwake_core::OpportunityAnchor::None,
+        };
         let mut cache = BTreeMap::from([
             (
                 bread_goal,
@@ -1478,9 +1487,67 @@ mod tests {
     }
 
     #[test]
+    fn invalidate_exhausted_goals_clears_only_matching_opportunity_for_same_goal() {
+        let agent = entity(1);
+        let shared_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        });
+        let orchard = OpportunityKey {
+            goal_key: shared_goal,
+            anchor: worldwake_core::OpportunityAnchor::Place(entity(20)),
+        };
+        let market = OpportunityKey {
+            goal_key: shared_goal,
+            anchor: worldwake_core::OpportunityAnchor::Place(entity(21)),
+        };
+        let mut cache = BTreeMap::from([
+            (
+                orchard,
+                ExhaustionEntry {
+                    retry_state: ExhaustionRetryState::FrontierExhausted,
+                    invalidation_conditions: vec![ExhaustionInvalidationCondition::PositionChanged],
+                    baseline: ExhaustionBaseline {
+                        position: Some(entity(10)),
+                        ..ExhaustionBaseline::default()
+                    },
+                    consecutive_budget_exhaustions: 0,
+                },
+            ),
+            (
+                market,
+                ExhaustionEntry {
+                    retry_state: ExhaustionRetryState::FrontierExhausted,
+                    invalidation_conditions: vec![ExhaustionInvalidationCondition::FacilitiesChanged],
+                    baseline: ExhaustionBaseline::default(),
+                    consecutive_budget_exhaustions: 0,
+                },
+            ),
+        ]);
+        let view = MockView {
+            effective_places: vec![(agent, entity(11))],
+            ..MockView::default()
+        };
+
+        invalidate_exhausted_goals(&mut cache, &view, agent, false, false, false);
+
+        assert!(
+            !cache.contains_key(&orchard),
+            "position invalidation should clear only the orchard opportunity"
+        );
+        assert!(
+            cache.contains_key(&market),
+            "a sibling opportunity for the same GoalKey should remain cached when its conditions did not fire"
+        );
+    }
+
+    #[test]
     fn invalidate_exhausted_goals_preserves_position_entries_while_still_in_transit() {
         let agent = entity(1);
-        let goal = GoalKey::from(GoalKind::ReduceDanger);
+        let goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ReduceDanger),
+            anchor: worldwake_core::OpportunityAnchor::None,
+        };
         let mut cache = BTreeMap::from([(
             goal,
             ExhaustionEntry {
