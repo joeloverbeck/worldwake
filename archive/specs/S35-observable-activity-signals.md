@@ -1,5 +1,7 @@
 # S35: Observable Activity Signals
 
+**Status**: COMPLETED
+
 ## Summary
 
 Make active actions observable through the perception system so co-located agents can see what others are doing. Currently `perception_system()` receives `active_actions` and `action_defs` via `SystemExecutionContext` but ignores both (`_active_actions`, `_action_defs`). This means agents cannot observe "Bob is harvesting at the orchard" and consequently cannot avoid dogpiling on contested resources. Introduce `BelievedActivity` on `BelievedEntityState`, a new `observe_active_actions()` perception helper, a ranking discount for observed competition in Production and Trade goal families, and decision trace support for the discount.
@@ -248,3 +250,22 @@ Mild negative feedback loop (self-correcting): observed competition -> agents av
 7. Discount applies only to Production and Trade goal families.
 8. Decision traces record competition discount details when tracing is enabled.
 9. All existing golden tests pass unchanged.
+
+## Outcome
+
+Completion date: 2026-03-29
+
+What actually changed:
+- Added `BelievedActivity` to `BelievedEntityState` and wired active-action observation into perception so co-located agents can record visible activity in belief state.
+- Extended `GoalBeliefView` / runtime belief views with activity queries and integrated observed-competition discounts plus decision-trace reporting in the AI ranking path.
+- Added `activity_awareness_weight` to `UtilityProfile` and covered the behavior with focused and golden tests, including save/load persistence proof for `BelievedActivity`.
+- Bumped `SAVE_FORMAT_VERSION` to 11 to keep persisted-schema evolution explicit.
+
+Deviations from original plan:
+- Persistence landed as an explicit save-format bump rather than any missing-field compatibility shim.
+- The archived implementation follows the repo's forward-only save contract: older same-version bytes are rejected rather than silently defaulting missing fields.
+
+Verification results:
+- `cargo test -p worldwake-sim save_load` passed.
+- `cargo test --workspace` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.

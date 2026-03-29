@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 10;
+pub const SAVE_FORMAT_VERSION: u32 = 11;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -205,10 +205,11 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventPayload, PendingEvent, Quantity, ReservationId,
-        Seed, StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity,
+        BelievedEntityState, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
+        EventLog, EventPayload, PendingEvent, PerceptionSource, Quantity, ReservationId, Seed,
+        StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn,
     };
 
     fn state_hash(byte: u8) -> StateHash {
@@ -272,13 +273,43 @@ mod tests {
         registry
     }
 
-    fn populated_state() -> (SimulationState, EntityId, EntityId) {
+    fn believed_entity_state_with_activity(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: std::collections::BTreeMap::from([(
+                CommodityKind::Apple,
+                Quantity(3),
+            )]),
+            workstation_tag: Some(WorkstationTag::Mill),
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: Some(BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: Some(place),
+                observed_tick,
+            }),
+            observed_tick,
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn populated_state() -> (SimulationState, EntityId, EntityId, EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut event_log = EventLog::new();
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
+        let belief_place = world.topology().place_ids().next().unwrap();
         let (reserved_item, reservation) =
             spawn_item_with_reservation(&mut world, &mut event_log, actor);
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(target, believed_entity_state_with_activity(belief_place, Tick(3)));
+        let mut belief_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
+        belief_txn
+            .set_component_agent_belief_store(actor, beliefs)
+            .unwrap();
+        let _ = belief_txn.commit(&mut event_log);
         let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
             tick: Tick(3),
             cause: CauseRef::SystemTick(Tick(3)),
@@ -374,6 +405,7 @@ mod tests {
                 rng,
             ),
             actor,
+            target,
             reserved_item,
         )
     }
@@ -539,7 +571,7 @@ mod tests {
 
     #[test]
     fn save_to_bytes_roundtrip_preserves_full_nondefault_state() {
-        let (state, actor, reserved_item) = populated_state();
+        let (state, actor, target, reserved_item) = populated_state();
 
         let bytes = save_to_bytes(&state, None).unwrap();
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
@@ -561,11 +593,24 @@ mod tests {
         assert_eq!(restored.replay_state().checkpoints().len(), 1);
         assert_eq!(restored.controller_state().controlled_entity(), Some(actor));
         assert!(!restored.world().reservations_for(reserved_item).is_empty());
+        let restored_belief = restored
+            .world()
+            .get_component_agent_belief_store(actor)
+            .and_then(|store| store.get_entity(&target))
+            .unwrap();
+        assert_eq!(
+            restored_belief.believed_activity,
+            Some(BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: restored_belief.last_known_place,
+                observed_tick: Tick(3),
+            })
+        );
     }
 
     #[test]
     fn save_to_bytes_writes_current_format_version() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
 
         let bytes = save_to_bytes(&state, None).unwrap();
         let version_offset = SAVE_MAGIC.len();
@@ -580,7 +625,7 @@ mod tests {
 
     #[test]
     fn file_save_roundtrip_matches_in_memory_format() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let path = temp_save_path("roundtrip");
         let expected_bytes = save_to_bytes(&state, None).unwrap();
 
@@ -597,7 +642,7 @@ mod tests {
 
     #[test]
     fn save_to_bytes_roundtrip_preserves_runtime_payload() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let runtime = MockRuntime {
             bytes: vec![9, 8, 7, 6],
         };
@@ -611,7 +656,7 @@ mod tests {
 
     #[test]
     fn load_accepts_legacy_v5_format_and_returns_no_runtime_payload() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
 
         let (restored, runtime_payload) = load_from_bytes(&legacy_v5_bytes(&state)).unwrap();
 
@@ -621,7 +666,7 @@ mod tests {
 
     #[test]
     fn load_rejects_wrong_magic() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[..SAVE_MAGIC.len()].copy_from_slice(b"NOPE");
 
@@ -632,7 +677,7 @@ mod tests {
 
     #[test]
     fn load_rejects_wrong_version() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
             .copy_from_slice(&(SAVE_FORMAT_VERSION + 1).to_le_bytes());
@@ -650,7 +695,7 @@ mod tests {
 
     #[test]
     fn load_rejects_previous_current_version_after_schema_bump() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
             .copy_from_slice(&(SAVE_FORMAT_VERSION - 1).to_le_bytes());
@@ -668,7 +713,7 @@ mod tests {
 
     #[test]
     fn load_rejects_truncated_payload() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let bytes = save_to_bytes(&state, None).unwrap();
 
         let error = load_from_bytes(&bytes[..bytes.len() - 1]).unwrap_err();
@@ -678,7 +723,7 @@ mod tests {
 
     #[test]
     fn load_rejects_trailing_bytes_after_runtime_payload() {
-        let (state, _, _) = populated_state();
+        let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes.push(0xAA);
 

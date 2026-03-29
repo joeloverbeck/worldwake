@@ -169,9 +169,9 @@ S31 ✅, S23 ✅, S22 ✅ ──→ S33 ✅ (opportunity-scoped identity complet
 S33 ✅ ──→ S36 (declarative registration needs final goal identity shape)
 S33 ✅ ──→ S37 (cooldown exhaustion needs OpportunityKey)
 S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
-S35 ──→ S38 (learned preferences needs activity observation for source reliability)
+S35 ✅ ──→ S38 (learned preferences needs activity observation for source reliability)
 S27 ✅ ──→ S34 ✅ (epistemic actions extend violation detection)
-S34 ✅, S35 (independent, can parallel with S33)
+S34 ✅, S35 ✅ (independent, can parallel with S33)
 E18, E19, E20 ──→ E22 (integration tests need everything)
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
@@ -328,9 +328,10 @@ S30 ✅ ──→ S31 ✅
   - ask_witness action + grounded-goal stale-evidence barrier contract
   - enables canonical Scenario D (rumor → travel → empty source → replan)
   - archived spec: `archive/specs/S34-general-epistemic-actions.md`
-- **S35**: Observable Activity Signals (parallel with S33, S34)
+- **S35**: Observable Activity Signals — ✅ COMPLETED
   - perception records co-located agents' active actions as `BelievedActivity`
   - ranking discounts contested resources based on observed competition
+  - archived spec: `archive/specs/S35-observable-activity-signals.md`
 - **S36**: Declarative Goal Registration (after S33)
   - `GoalKindDeclaration` struct centralizes per-goal dispatch properties
   - compile-time enforcement: missing declarations fail compilation
@@ -348,8 +349,8 @@ S33 ✅ ──→ S36
 S33 ✅ ──→ S37
 S33 ✅ ──→ S39
 S34 ✅ (independent)
-S35 (independent)
-S35 ──→ S38
+S35 ✅ (independent)
+S35 ✅ ──→ S38
 ```
 
 ---
@@ -427,7 +428,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | `S10-bilateral-trade-negotiation.md` | 4+ | 16 | E11, E14 (all met) |
 | ~~`S33-opportunity-scoped-goal-identity.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S34-general-epistemic-actions.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
-| `S35-observable-activity-signals.md` | 3+ | 13.5 W5 | E14 (met) |
+| ~~`S35-observable-activity-signals.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | `S36-declarative-goal-registration.md` | 3+ | 13.5 W5 | S33 |
 | `S37-cooldown-based-exhaustion.md` | 3+ | 13.5 W5 | S33 |
 | `S38-learned-route-source-preferences.md` | 4+ | 16 | S35, S33 |
@@ -453,6 +454,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
-| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | IN PROGRESS (S20–S31 and S33–S34 complete; S35–S37 pending) |
+| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | IN PROGRESS (S20–S35 complete; S36–S37 pending) |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |
