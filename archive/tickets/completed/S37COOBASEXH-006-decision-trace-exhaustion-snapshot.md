@@ -13,7 +13,7 @@ Decision traces do not log exhaustion cooldown state. For debuggability (P27), `
 ## Assumption Reassessment (2026-03-29)
 
 1. `PlanningPipelineTrace` is defined in `crates/worldwake-ai/src/decision_trace.rs` and currently lacks any exhaustion snapshot field. Live fields are `dirty`, `plan_continued`, `candidates`, `planning`, `selection`, `execution`, `action_start_failures`, `unknown_blockers`, and `frame_transition`.
-2. `specs/S37-cooldown-based-exhaustion.md` Section 8 still requires `ExhaustionTraceEntry` plus `PlanningPipelineTrace.exhaustion_snapshot: Vec<ExhaustionTraceEntry>`. That requirement is not yet implemented.
+2. `archive/specs/S37-cooldown-based-exhaustion.md` Section 8 still requires `ExhaustionTraceEntry` plus `PlanningPipelineTrace.exhaustion_snapshot: Vec<ExhaustionTraceEntry>`. That requirement is not yet implemented.
 3. The cooldown architecture this ticket depends on is already live in `crates/worldwake-ai/src/decision_runtime.rs`: `ExhaustionEntry` already has `next_retry_tick`, `consecutive_failures`, `is_retry_eligible(current_tick)`, and `record_budget_exhaustion(...)`.
 4. Cooldown-aware admission and retry triggering are already live in `crates/worldwake-ai/src/agent_tick/planning.rs`, including `has_pending_budget_retry(runtime, current_tick)` and candidate filtering that checks both `suppresses_planning()` and `is_retry_eligible(current_tick)`.
 5. The `PlanningPipelineTrace` construction site is `crates/worldwake-ai/src/agent_tick/mod.rs`, not `crates/worldwake-ai/src/agent_tick/planning.rs`. Scope corrected accordingly.

@@ -13,7 +13,7 @@
 ## Assumption Reassessment (2026-03-29)
 
 1. `PlanningBudget` is defined in `crates/worldwake-ai/src/budget.rs` with 10 fields today. `impl Default for PlanningBudget` and the focused tests `budget::tests::planning_budget_default_matches_ticket_values` and `budget::tests::planning_budget_roundtrips_through_bincode` already exist and were verified via `cargo test -p worldwake-ai -- --list`.
-2. `specs/S37-cooldown-based-exhaustion.md` Section "Deliverables / 1. Add cooldown parameters to PlanningBudget" still specifies `initial_cooldown_ticks: u32` with default `4` and `max_cooldown_ticks: u32` with default `64`.
+2. `archive/specs/S37-cooldown-based-exhaustion.md` Section "Deliverables / 1. Add cooldown parameters to PlanningBudget" still specifies `initial_cooldown_ticks: u32` with default `4` and `max_cooldown_ticks: u32` with default `64`.
 3. Scope remains single-layer at the profile/config boundary. No shared cross-crate contract changes are required in this ticket because the live `PlanningBudget` struct literals checked in `crates/worldwake-ai/src/agent_tick/planning.rs`, `crates/worldwake-ai/src/search/tests.rs`, `crates/worldwake-ai/src/agent_tick/tests.rs`, `crates/worldwake-ai/tests/`, and `crates/worldwake-cli/src/handlers/persistence.rs` all use `..PlanningBudget::default()`, so the new fields propagate without per-callsite edits.
 4. N/A — no golden scenario.
 5. N/A — no planner/golden-driven scope.

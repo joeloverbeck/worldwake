@@ -1,5 +1,7 @@
 # S37: Cooldown-Based Exhaustion
 
+**Status**: COMPLETED
+
 ## Summary
 
 Replace budget-halving exhaustion backoff with cooldown-based retry. Currently `effective_max_expansions()` halves the search budget on each consecutive failure (224→112→56→28→16). This makes search *shallower* on repeated failure — the wrong shape for a world where resources are temporarily blocked. Agents should retry at full search depth, just less frequently.
@@ -340,11 +342,11 @@ Populate `exhaustion_snapshot` from `runtime.exhaustion_cache` during trace cons
 
 `ExhaustionEntry` fields change (new `next_retry_tick` and `consecutive_failures`, removed `consecutive_budget_exhaustions`). Bump `SAVE_FORMAT_VERSION` in `save_load.rs`.
 
-Migration strategy: Old entries use `#[serde(default)]` on new fields:
+Within-version resilience: old runtime payload fragments that omit the new fields use `#[serde(default)]` on them:
 - `next_retry_tick: Option<Tick>` defaults to `None` (eligible immediately)
 - `consecutive_failures: u8` defaults to `0` (fresh start)
 
-The removed `consecutive_budget_exhaustions` field already has `#[serde(default)]`, so old saves that include it won't fail deserialization — `serde` ignores unknown fields with `#[serde(deny_unknown_fields)]` absent (which it is for `ExhaustionEntry`).
+Cross-version migration is still handled by the explicit save-format gate in `worldwake-sim`; stale pre-S37 current-format saves should fail cleanly at the header version boundary rather than being silently treated as compatible.
 
 ## Component Registration
 
@@ -401,3 +403,19 @@ No new positive-feedback loops. The cooldown mechanism is purely dampening — c
 6. Decision traces log cooldown state and retry eligibility per opportunity.
 7. `FrontierExhausted` behavior unchanged (suppressed until invalidation).
 8. All existing golden tests pass (behavioral equivalence at tick granularity may shift due to cooldown timing vs budget halving, but outcomes should converge).
+
+## Outcome
+
+- Completion date: 2026-03-29
+- What actually changed:
+  - Added cooldown parameters to `PlanningBudget` with defaults `4` and `64`.
+  - Replaced budget-halving exhaustion state with `next_retry_tick` and `consecutive_failures` on `ExhaustionEntry`.
+  - Updated retry eligibility, planning admission, retry triggering, repeated-exhaustion recording, decision-trace snapshots, and save/load coverage around the new cooldown model.
+  - Bumped `SAVE_FORMAT_VERSION` to `12` and preserved the clean explicit version gate in `worldwake-sim`.
+- Deviations from original plan:
+  - The spec’s original save/load wording was refined to match the repository architecture: `#[serde(default)]` remains same-version resilience, not the backward-compatibility mechanism for stale current-format saves.
+  - The delivered persistence proof spans both `worldwake-sim` save/load tests and `worldwake-ai` runtime round-trip/post-load validation coverage.
+- Verification results:
+  - Focused save/load and cooldown tests pass in `worldwake-sim` and `worldwake-ai`.
+  - Workspace `cargo test --workspace` passes.
+  - Workspace `cargo clippy --workspace --all-targets -- -D warnings` passes.

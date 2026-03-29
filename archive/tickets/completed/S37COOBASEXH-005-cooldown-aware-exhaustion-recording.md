@@ -18,7 +18,7 @@ This ticket was written against a pre-cooldown snapshot of the code. On reassess
 4. The focused tests this ticket asked for already exist in `crates/worldwake-ai/src/agent_tick/planning.rs`: `record_exhausted_goals_replaces_frontier_suppression_with_budget_retry_state`, `record_exhausted_goals_derives_goal_aware_conditions_and_baseline`, `record_exhausted_goals_doubles_cooldown_for_repeated_budget_retry_entries`, `record_exhausted_goals_removes_only_successful_opportunity_entry`, and `record_exhausted_goals_records_frontier_exhaustion_as_suppressing_retry_state`.
 5. Additional neighboring invariants are also already covered: `has_pending_budget_retry_detects_retryable_budget_entries` and `build_candidate_plans_uses_full_budget_for_retry_eligible_exhaustion_entry`.
 6. This is a stale-ticket discrepancy, not a code discrepancy. Scope correction is required; no engine edit is warranted.
-7. No adjacent contradiction was exposed that requires a follow-up ticket. The live shape remains aligned with `specs/S37-cooldown-based-exhaustion.md`.
+7. No adjacent contradiction was exposed that requires a follow-up ticket. The live shape remains aligned with `archive/specs/S37-cooldown-based-exhaustion.md`.
 
 ## Architecture Check
 

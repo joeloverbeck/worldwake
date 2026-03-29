@@ -167,7 +167,7 @@ S10 ──→ S06 (opportunity valuation benefits from variable pricing)
 E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
 S31 ✅, S23 ✅, S22 ✅ ──→ S33 ✅ (opportunity-scoped identity completed)
 S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final goal identity shape)
-S33 ✅ ──→ S37 (cooldown exhaustion needs OpportunityKey)
+S33 ✅ ──→ S37 ✅ (cooldown exhaustion shipped on opportunity-scoped identity)
 S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
 S35 ✅ ──→ S38 (learned preferences needs activity observation for source reliability)
 S27 ✅ ──→ S34 ✅ (epistemic actions extend violation detection)
@@ -336,9 +336,10 @@ S30 ✅ ──→ S31 ✅
   - `GoalDispatchKey` and `GoalDispatchDeclaration` now centralize AI dispatch identity and declaration-owned metadata/strategy routing
   - exhaustive declaration dispatch plus focused tests now guard completeness without parallel shadow identities
   - archived spec: `archive/specs/S36-declarative-goal-registration.md`
-- **S37**: Cooldown-Based Exhaustion (after S33)
-  - replaces budget-halving backoff with cooldown-based retry at full search depth
-  - extends `BlockingFact` with specific failure classifications
+- **S37**: Cooldown-Based Exhaustion — ✅ COMPLETED
+  - replaced budget-halving backoff with cooldown-based retry at full search depth
+  - persisted cooldown retry state across AI runtime save/load with explicit current-format version gating in `worldwake-sim`
+  - archived spec: `archive/specs/S37-cooldown-based-exhaustion.md`
 
 Dependency graph:
 ```
@@ -346,7 +347,7 @@ S31 ✅ ──→ S33 ✅
 S23 ✅ ──→ S33 ✅
 S22 ✅ ──→ S33 ✅
 S33 ✅ ──→ S36 ✅
-S33 ✅ ──→ S37
+S33 ✅ ──→ S37 ✅
 S33 ✅ ──→ S39
 S34 ✅ (independent)
 S35 ✅ (independent)
@@ -430,7 +431,6 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S34-general-epistemic-actions.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S35-observable-activity-signals.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S36-declarative-goal-registration.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
-| `S37-cooldown-based-exhaustion.md` | 3+ | 13.5 W5 | S33 |
 | `S38-learned-route-source-preferences.md` | 4+ | 16 | S35, S33 |
 | `S39-limited-side-benefit-plan-scoring.md` | 4+ | 16 | S33 |
 
@@ -454,6 +454,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | E21 | E21 | CLI & human control | ✅ COMPLETED |
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
-| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | IN PROGRESS (S20–S36 complete; S37 pending) |
+| 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |

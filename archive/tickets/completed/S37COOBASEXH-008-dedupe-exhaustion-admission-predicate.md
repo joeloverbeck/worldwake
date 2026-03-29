@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `agent_tick/planning.rs` helper extraction and focused regression coverage
-**Deps**: `specs/S37-cooldown-based-exhaustion.md`, S37COOBASEXH-004, S37COOBASEXH-006
+**Deps**: `archive/specs/S37-cooldown-based-exhaustion.md`, S37COOBASEXH-004, S37COOBASEXH-006
 
 ## Problem
 

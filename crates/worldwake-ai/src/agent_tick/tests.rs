@@ -5048,17 +5048,17 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
 fn exhausted_steal_goal_is_cleared_when_target_becomes_lawfully_controllable() {
     let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
     let place = harness.world.effective_place(harness.actor).unwrap();
-    let _owner;
+    let owner;
     let target;
     {
         let mut txn = new_txn(&mut harness.world, 2);
-        _owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+        owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
         target = txn
             .create_item_lot(CommodityKind::Bread, Quantity(1))
             .unwrap();
-        txn.set_ground_location(_owner, place).unwrap();
+        txn.set_ground_location(owner, place).unwrap();
         txn.set_ground_location(target, place).unwrap();
-        txn.set_owner(target, _owner).unwrap();
+        txn.set_owner(target, owner).unwrap();
         txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::new_sated())
             .unwrap();
         txn.set_component_theft_disposition_profile(
