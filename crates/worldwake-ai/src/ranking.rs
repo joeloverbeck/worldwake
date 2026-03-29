@@ -343,6 +343,7 @@ fn priority_class(
         | GoalKind::MoveCargo { .. }
         | GoalKind::RaidTarget { .. }
         | GoalKind::RegroupWithFaction { .. }
+        | GoalKind::EstablishBanditCamp { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Medium,
         GoalKind::Sleep => drive_priority(
@@ -517,7 +518,12 @@ fn motive_score(
         GoalKind::RaidTarget { .. } | GoalKind::ClaimOffice { .. } => {
             u32::from(context.utility.enterprise_weight.value())
         }
-        GoalKind::RegroupWithFaction { .. } => u32::from(context.utility.social_weight.value()),
+        GoalKind::RegroupWithFaction { .. } => {
+            u32::from(context.utility.social_weight.value())
+        }
+        GoalKind::EstablishBanditCamp { .. } => {
+            score_product(context.utility.social_weight, Permille::new_unchecked(1000))
+        }
         GoalKind::TreatWounds { patient } => {
             let patient_pain = derive_pain_pressure(context.view, patient);
             if patient == context.agent {
@@ -1083,20 +1089,21 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::RaidTarget { .. } => 6,
         GoalKind::ReduceDanger => 7,
         GoalKind::RegroupWithFaction { .. } => 8,
-        GoalKind::TreatWounds { .. } => 9,
-        GoalKind::ProduceCommodity { .. } => 10,
-        GoalKind::SellCommodity { .. } => 11,
-        GoalKind::RestockCommodity { .. } => 12,
-        GoalKind::MoveCargo { .. } => 13,
-        GoalKind::LootCorpse { .. } => 14,
-        GoalKind::BuryCorpse { .. } => 15,
-        GoalKind::ShareBelief { .. } => 16,
-        GoalKind::ClaimOffice { .. } => 17,
-        GoalKind::SupportCandidateForOffice { .. } => 18,
-        GoalKind::InvestigateViolation { .. } => 19,
-        GoalKind::StealItem { .. } => 20,
-        GoalKind::Accuse { .. } => 21,
-        GoalKind::PunishAccused { .. } => 22,
+        GoalKind::EstablishBanditCamp { .. } => 9,
+        GoalKind::TreatWounds { .. } => 10,
+        GoalKind::ProduceCommodity { .. } => 11,
+        GoalKind::SellCommodity { .. } => 12,
+        GoalKind::RestockCommodity { .. } => 13,
+        GoalKind::MoveCargo { .. } => 14,
+        GoalKind::LootCorpse { .. } => 15,
+        GoalKind::BuryCorpse { .. } => 16,
+        GoalKind::ShareBelief { .. } => 17,
+        GoalKind::ClaimOffice { .. } => 18,
+        GoalKind::SupportCandidateForOffice { .. } => 19,
+        GoalKind::InvestigateViolation { .. } => 20,
+        GoalKind::StealItem { .. } => 21,
+        GoalKind::Accuse { .. } => 22,
+        GoalKind::PunishAccused { .. } => 23,
     }
 }
 
@@ -3369,6 +3376,57 @@ mod tests {
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, u32::from(utility.social_weight.value()));
         assert!(ranked[0].provenance.is_none());
+    }
+
+    #[test]
+    fn establish_bandit_camp_uses_full_social_pressure_and_outranks_share_belief() {
+        let agent = entity(1);
+        let faction = entity(7);
+        let listener = entity(8);
+        let subject = entity(9);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                worldwake_core::BelievedEntityState {
+                    last_known_place: Some(entity(10)),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    observed_tick: current_tick(),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        let utility = UtilityProfile {
+            social_weight: pm(420),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::ShareBelief {
+                    listener,
+                    topic: TellTopic::EntityBelief { subject },
+                }),
+                goal(GoalKind::EstablishBanditCamp { faction }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].grounded.key.kind, GoalKind::EstablishBanditCamp { faction });
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, 420 * 1000);
     }
 
     #[test]

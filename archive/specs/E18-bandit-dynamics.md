@@ -1,5 +1,7 @@
 # E18: Bandit Camp Dynamics
 
+**Status**: ✅ COMPLETED
+
 ## Epic Summary
 
 Implement bandit camps as places with faction membership, supply containers, raid behavior, emergent destruction consequences, survivor regrouping through rally-point beliefs, and belief-based route danger assessment. All bandit behavior emerges from existing AI pressure/goal systems — no abstract morale scores, no stored danger values, no centralized patrol routes.
@@ -459,3 +461,20 @@ Placement after Combat ensures that combat deaths are processed before abandonme
 - `docs/FOUNDATIONS.md`: Principles 1-4, 7-10, 12, 17, 24-25, 27-28
 - `brainstorming/emergent-prototype-spec.md`: Section 1 (exemplar 3), Section 4.5, Section 7.1, Section 8, Section 9.10, Section 9.14, T22
 - `docs/precision-rules.md`: Rules 1-4, 7-8
+
+## Outcome
+
+- Completion date: 2026-03-30
+- What actually changed:
+  - Shipped faction-scoped bandit camps with authoritative abandonment, survivor regrouping through institutional rally beliefs, and belief-derived route threat feeding ordinary planner decisions.
+  - Added T22 golden coverage proving camp destruction, regroup travel, camp re-establishment, threat decay, and downstream merchant-route change.
+  - Added explicit AI support for rally-driven camp re-establishment through `GoalKind::EstablishBanditCamp { faction }` and planner/root synthesis into `establish_camp`.
+  - Hardened `establish_camp` around concrete local controlled supplies and lawful same-place camp-container reuse.
+- Deviations from original plan:
+  - The draft described a dedicated `Raid` action and an older reduced `BanditCamp` shape. The shipped architecture kept predation on the shared `attack` path and uses the live `BanditCamp`/`BanditFactionPolicy` contract already present in code.
+  - The shipped closeout preferred removing the architectural gap directly over adding any bandit-only alias or compatibility layer.
+- Verification results:
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo build --workspace`
+  - `python3 scripts/golden_inventory.py --write --check-docs`

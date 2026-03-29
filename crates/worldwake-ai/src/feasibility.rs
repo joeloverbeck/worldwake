@@ -137,6 +137,7 @@ fn goal_specific_feasibility(
             FeasibilityStrategy::NoOpinion,
             GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
+            | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::StealItem { .. },
         ) => {
             None

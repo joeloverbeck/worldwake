@@ -63,6 +63,14 @@ pub trait GoalBeliefView {
         let _ = entity;
         Vec::new()
     }
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        let _ = (agent, place);
+        None
+    }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
         None
@@ -103,6 +111,10 @@ pub trait GoalBeliefView {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId>;
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+        let _ = faction;
+        None
+    }
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
@@ -311,6 +323,14 @@ pub trait RuntimeBeliefView {
         let _ = entity;
         Vec::new()
     }
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        let _ = (agent, place);
+        None
+    }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
         None
@@ -350,6 +370,10 @@ pub trait RuntimeBeliefView {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId>;
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+        let _ = faction;
+        None
+    }
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
@@ -665,6 +689,16 @@ macro_rules! impl_goal_belief_view {
                 entity: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::bandit_factions_of(self, entity)
+            }
+
+            fn locally_observed_bandit_camp_faction_at(
+                &self,
+                agent: worldwake_core::EntityId,
+                place: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::locally_observed_bandit_camp_faction_at(
+                    self, agent, place,
+                )
             }
 
             fn believed_activity_of(
@@ -1149,7 +1183,10 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorWitnessQueryDisposition => view
             .epistemic_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get())),
-        DurationExpr::BanditCampEstablishmentProfile => None,
+        DurationExpr::BanditCampEstablishmentProfile => payload
+            .as_establish_camp()
+            .and_then(|payload| view.bandit_camp_establishment_ticks(payload.faction))
+            .map(|ticks| ActionDuration::new(ticks.get())),
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
             .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),

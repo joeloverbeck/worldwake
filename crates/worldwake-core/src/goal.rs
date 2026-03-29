@@ -34,6 +34,9 @@ pub enum GoalKind {
     RegroupWithFaction {
         faction: EntityId,
     },
+    EstablishBanditCamp {
+        faction: EntityId,
+    },
     TreatWounds {
         patient: EntityId,
     },
@@ -152,7 +155,8 @@ impl From<GoalKind> for GoalKey {
                 burial_site,
             } => (None, Some(corpse), Some(burial_site)),
             GoalKind::ShareBelief { listener, .. } => (None, Some(listener), None),
-            GoalKind::RegroupWithFaction { faction } => (None, Some(faction), None),
+            GoalKind::RegroupWithFaction { faction }
+            | GoalKind::EstablishBanditCamp { faction } => (None, Some(faction), None),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 (None, Some(office), Some(candidate))
             }

@@ -73,6 +73,7 @@ const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Heal,
 ];
 const REGROUP_WITH_FACTION_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel];
+const ESTABLISH_BANDIT_CAMP_OPS: &[PlannerOpKind] = &[PlannerOpKind::EstablishCamp];
 const TREAT_WOUNDS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Heal,
@@ -200,6 +201,13 @@ static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclarat
     invalidation_strategy: InvalidationStrategy::FactionRegroup,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
+static DECL_ESTABLISH_BANDIT_CAMP: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "EstablishBanditCamp",
+    provenance_family: None,
+    relevant_ops: ESTABLISH_BANDIT_CAMP_OPS,
+    invalidation_strategy: InvalidationStrategy::FactionRegroup,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
 static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "TreatWounds",
     provenance_family: None,
@@ -321,6 +329,7 @@ impl GoalDispatchKey {
             Self::RaidTarget => &DECL_RAID_TARGET,
             Self::ReduceDanger => &DECL_REDUCE_DANGER,
             Self::RegroupWithFaction => &DECL_REGROUP_WITH_FACTION,
+            Self::EstablishBanditCamp => &DECL_ESTABLISH_BANDIT_CAMP,
             Self::TreatWounds => &DECL_TREAT_WOUNDS,
             Self::ProduceCommodity => &DECL_PRODUCE_COMMODITY,
             Self::SellCommodity => &DECL_SELL_COMMODITY,
@@ -361,6 +370,7 @@ mod tests {
         GoalDispatchKey::RaidTarget,
         GoalDispatchKey::ReduceDanger,
         GoalDispatchKey::RegroupWithFaction,
+        GoalDispatchKey::EstablishBanditCamp,
         GoalDispatchKey::TreatWounds,
         GoalDispatchKey::ProduceCommodity,
         GoalDispatchKey::SellCommodity,
@@ -413,6 +423,9 @@ mod tests {
             GoalDispatchKey::RaidTarget => GoalKind::RaidTarget { target },
             GoalDispatchKey::ReduceDanger => GoalKind::ReduceDanger,
             GoalDispatchKey::RegroupWithFaction => GoalKind::RegroupWithFaction {
+                faction: office,
+            },
+            GoalDispatchKey::EstablishBanditCamp => GoalKind::EstablishBanditCamp {
                 faction: office,
             },
             GoalDispatchKey::TreatWounds => GoalKind::TreatWounds { patient: target },
@@ -477,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 26);
+        assert_eq!(ALL_KEYS.len(), 27);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();

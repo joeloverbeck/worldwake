@@ -40,6 +40,7 @@ struct HypotheticalQueueJoin {
 pub struct PlanningState<'snapshot> {
     snapshot: &'snapshot PlanningSnapshot,
     entity_place_overrides: SharedMap<PlanningEntityRef, Option<EntityId>>,
+    bandit_camp_faction_overrides: SharedMap<EntityId, Option<EntityId>>,
     direct_container_overrides: SharedMap<PlanningEntityRef, Option<PlanningEntityRef>>,
     direct_possessor_overrides: SharedMap<PlanningEntityRef, Option<PlanningEntityRef>>,
     resource_quantity_overrides: SharedMap<EntityId, Quantity>,
@@ -66,6 +67,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         Self {
             snapshot,
             entity_place_overrides: SharedMap::new(),
+            bandit_camp_faction_overrides: SharedMap::new(),
             direct_container_overrides: SharedMap::new(),
             direct_possessor_overrides: SharedMap::new(),
             resource_quantity_overrides: SharedMap::new(),
@@ -110,6 +112,26 @@ impl<'snapshot> PlanningState<'snapshot> {
     pub fn move_actor_to(self, destination: EntityId) -> Self {
         let actor = self.snapshot.actor();
         self.move_entity(actor, destination)
+    }
+
+    #[must_use]
+    pub fn bandit_camp_faction_at(&self, place: EntityId) -> Option<EntityId> {
+        self.bandit_camp_faction_overrides
+            .get(&place)
+            .copied()
+            .flatten()
+            .or_else(|| {
+                self.snapshot
+                    .places
+                    .get(&place)
+                    .and_then(|place| place.bandit_camp_faction)
+            })
+    }
+
+    #[must_use]
+    pub fn with_bandit_camp_faction(mut self, place: EntityId, faction: Option<EntityId>) -> Self {
+        self.bandit_camp_faction_overrides.insert(place, faction);
+        self
     }
 
     #[must_use]
@@ -1748,6 +1770,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
         (agent == self.snapshot.actor())
             .then_some(self.snapshot.actor_consultation_speed_factor)
             .flatten()
+    }
+
+    fn bandit_camp_establishment_ticks(
+        &self,
+        faction: EntityId,
+    ) -> Option<std::num::NonZeroU32> {
+        self.snapshot.bandit_camp_establishment_ticks(faction)
     }
 
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {

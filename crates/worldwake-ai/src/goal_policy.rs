@@ -168,6 +168,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         // --- Corpse / social / political goals (suppressed under stress, normal interrupt) ---
         GoalKind::BuryCorpse { .. }
         | GoalKind::RegroupWithFaction { .. }
+        | GoalKind::EstablishBanditCamp { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }

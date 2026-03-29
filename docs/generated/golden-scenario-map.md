@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 62
-- Files contributing scenario metadata: 10
-- `golden_*` tests associated with scenario blocks: 175
+- Scenario blocks with explicit metadata: 63
+- Files contributing scenario metadata: 11
+- `golden_*` tests associated with scenario blocks: 177
 
 ## Scenario Inventory
 
@@ -18,11 +18,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 |----------|-------|------|---------------|--------------|
 | `1` | Goal Invalidation by Another Agent | `golden_ai_decisions.rs:23` | `golden_goal_invalidation_by_another_agent` | — |
 | `1b` | Unrelated Commodity Change Preserves Frontier Exhaustion | `golden_ai_decisions.rs:124` | `golden_unrelated_commodity_change_preserves_frontier_exhaustion` | `golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deterministically` |
-| `1c` | Exhausted Opportunity Falls Through To Sibling Source | `golden_ai_decisions.rs:318` | `golden_exhausted_opportunity_switches_to_sibling_source` | `golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically` |
-| `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:545` | `golden_priority_based_interrupt` | — |
-| `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:654` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
-| `7` | Deprivation Cascade | `golden_ai_decisions.rs:743` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
-| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1922` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
+| `1c` | Exhausted Opportunity Falls Through To Sibling Source | `golden_ai_decisions.rs:319` | `golden_exhausted_opportunity_switches_to_sibling_source` | `golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically` |
+| `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:547` | `golden_priority_based_interrupt` | — |
+| `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:656` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
+| `7` | Deprivation Cascade | `golden_ai_decisions.rs:745` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
+| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1924` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
 | `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:722` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
 | `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:812` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
 | `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:900` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
@@ -75,6 +75,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:3156` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
 | `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1932` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan`<br>`golden_stale_prerequisite_ask_witness_chain` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`<br>`golden_stale_prerequisite_ask_witness_chain_replays_deterministically` |
+| `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:668` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
 | `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:881` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
 | `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:916` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
 | `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:951` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
@@ -116,7 +117,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 1c: Exhausted Opportunity Falls Through To Sibling Source
 
-- Source: `golden_ai_decisions.rs:318`
+- Source: `golden_ai_decisions.rs:319`
 - Systems: Needs, AI, Production, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Transport
@@ -134,7 +135,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:545`
+- Source: `golden_ai_decisions.rs:547`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -152,7 +153,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:654`
+- Source: `golden_ai_decisions.rs:656`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -169,7 +170,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:743`
+- Source: `golden_ai_decisions.rs:745`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -186,7 +187,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1922`
+- Source: `golden_ai_decisions.rs:1924`
 - Systems: Needs, Enterprise, AI, Travel, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity
 - ActionDomains: Needs, Travel, Production
@@ -1050,6 +1051,24 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: RestockCommodity{Bread} from concrete demand. Tick-0 traces show prerequisite-aware spatial guidance toward Orchard Farm. Full chain: travel -> harvest remote firewood -> return -> craft Bake Bread -> bread stock at home market.
 
 **Cross-system chain**: Demand memory -> restock signal -> prerequisite-aware route to remote input -> harvest/pickup -> return -> local craft -> bread at home market.
+
+### Scenario 22: Bandit Camp Destruction Chain
+
+- Source: `golden_t22_bandit_camp_destruction.rs:668`
+- Systems: Combat, Perception, Beliefs, AI, Travel, Production
+- GoalKinds: ReduceDanger, RegroupWithFaction, AcquireCommodity(SelfConsume)
+- ActionDomains: Combat, Generic, Production, Travel
+- Places: HomeMarket, BanditRoad, BanditCamp, SafeFarm, RallyGlen
+- Principles: 1, 4, 7, 12, 17, 25
+- Primary tests: `golden_t22_bandit_camp_destruction`
+- Replay tests: `golden_t22_bandit_camp_destruction_replays_deterministically`
+- All tests: `golden_t22_bandit_camp_destruction`, `golden_t22_bandit_camp_destruction_replays_deterministically`
+
+**Setup**: A custom five-place topology makes the danger-cost flip legible.
+
+**Proves**: 
+
+**Cross-system chain**: active camp -> local rally belief -> external attack -> death / departure
 
 ### Scenario 2b: Buyer-Driven Trade Acquisition
 

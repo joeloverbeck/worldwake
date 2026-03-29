@@ -1,4 +1,3 @@
-use crate::inventory::carried_entities;
 use std::collections::BTreeSet;
 use worldwake_core::{
     current_container_load, load_of_entity, ActionDefId, ActionDomain, BanditCamp,
@@ -72,7 +71,7 @@ fn establish_camp_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
 struct ValidatedEstablishCamp {
     place: EntityId,
     faction: EntityId,
-    carried_food_lots: Vec<EntityId>,
+    supply_lots: Vec<EntityId>,
     existing_place_camp: Option<BanditCamp>,
 }
 
@@ -108,9 +107,18 @@ fn active_camps_for_faction(world: &World, faction: EntityId) -> Vec<(EntityId, 
     camps
 }
 
-fn carried_edible_lots(txn: &WorldTxn<'_>, actor: EntityId) -> Vec<EntityId> {
-    let mut lots = carried_entities(txn, actor)
+fn controlled_edible_lots_at_place(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    place: EntityId,
+) -> Vec<EntityId> {
+    let mut lots = txn
+        .entities_effectively_at(place)
         .into_iter()
+        .filter(|entity| {
+            txn.can_exercise_control(actor, *entity).is_ok()
+                && txn.effective_place(*entity) == Some(place)
+        })
         .filter(|entity| {
             txn.get_component_item_lot(*entity).is_some_and(|lot| {
                 lot.commodity
@@ -183,17 +191,17 @@ fn validate_establish_camp(
         }
     }
 
-    let carried_food_lots = carried_edible_lots(txn, actor);
-    if carried_food_lots.is_empty() {
+    let supply_lots = controlled_edible_lots_at_place(txn, actor, place);
+    if supply_lots.is_empty() {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} carries no edible supplies"
+            "actor {actor} controls no edible supplies at place {place}"
         )));
     }
 
     Ok(ValidatedEstablishCamp {
         place,
         faction,
-        carried_food_lots,
+        supply_lots,
         existing_place_camp,
     })
 }
@@ -216,7 +224,7 @@ fn ensure_supply_container(
     txn: &mut WorldTxn<'_>,
     validated: &ValidatedEstablishCamp,
 ) -> Result<EntityId, ActionError> {
-    let transfer_load = transferred_load(txn, &validated.carried_food_lots)?;
+    let transfer_load = transferred_load(txn, &validated.supply_lots)?;
     if let Some(camp) = &validated.existing_place_camp {
         let container = camp.supplies;
         let current = txn
@@ -236,9 +244,36 @@ fn ensure_supply_container(
                     ActionError::InternalError("camp container capacity overflowed".to_string())
                 })?;
         if current.capacity.0 < required_capacity {
-            return Err(ActionError::PreconditionFailed(format!(
-                "camp supply container {container} lacks capacity for added supplies"
-            )));
+            let replacement = txn
+                .create_container(Container {
+                    capacity: LoadUnits(required_capacity),
+                    allowed_commodities: current.allowed_commodities,
+                    allows_unique_items: current.allows_unique_items,
+                    allows_nested_containers: current.allows_nested_containers,
+                })
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            txn.set_ground_location(replacement, validated.place)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            txn.set_owner(replacement, validated.faction)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            for item in txn.direct_contents_of(container) {
+                txn.remove_from_container(item)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+                txn.put_into_container(item, replacement)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            }
+            txn.set_component_bandit_camp(
+                validated.place,
+                BanditCamp {
+                    faction: validated.faction,
+                    supplies: replacement,
+                    empty_since_tick: camp.empty_since_tick,
+                },
+            )
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            txn.archive_entity(container)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            return Ok(replacement);
         }
         txn.set_owner(container, validated.faction)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -260,7 +295,7 @@ fn ensure_supply_container(
     }
 }
 
-fn transfer_carried_food_to_camp(
+fn transfer_supply_lots_to_camp(
     txn: &mut WorldTxn<'_>,
     faction: EntityId,
     place: EntityId,
@@ -345,12 +380,12 @@ fn commit_establish_camp(
         )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
-    transfer_carried_food_to_camp(
+    transfer_supply_lots_to_camp(
         txn,
         validated.faction,
         validated.place,
         container,
-        &validated.carried_food_lots,
+        &validated.supply_lots,
     )?;
     Ok(CommitOutcome::empty())
 }
@@ -594,6 +629,45 @@ mod tests {
     }
 
     #[test]
+    fn establish_camp_accepts_ground_supplies_under_local_control() {
+        let mut harness = Harness::new();
+        {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.clear_possessor(harness.bread).unwrap();
+            txn.commit(&mut harness.log);
+        }
+
+        let action_id = harness.start().unwrap();
+        let outcome = harness.tick(action_id);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        assert_eq!(harness.world.possessor_of(harness.bread), None);
+        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
+        assert_eq!(harness.world.owner_of(harness.bread), Some(harness.faction));
+    }
+
+    #[test]
+    fn establish_camp_accepts_faction_owned_ground_supplies() {
+        let mut harness = Harness::new();
+        {
+            let mut txn = new_txn(&mut harness.world, 2);
+            txn.clear_possessor(harness.bread).unwrap();
+            txn.set_owner(harness.bread, harness.faction).unwrap();
+            txn.commit(&mut harness.log);
+        }
+
+        let action_id = harness.start().unwrap();
+        let outcome = harness.tick(action_id);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        assert_eq!(harness.world.possessor_of(harness.bread), None);
+        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
+        assert_eq!(harness.world.owner_of(harness.bread), Some(harness.faction));
+    }
+
+    #[test]
     fn establish_camp_reuses_same_place_same_faction_camp() {
         let mut harness = Harness::new();
         let existing_container = {
@@ -628,6 +702,55 @@ mod tests {
         let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
         assert_eq!(camp.supplies, existing_container);
         assert_eq!(harness.world.direct_container(harness.bread), Some(existing_container));
+    }
+
+    #[test]
+    fn establish_camp_reuse_expands_same_place_camp_capacity_for_new_supplies() {
+        let mut harness = Harness::new();
+        let existing_container = {
+            let mut txn = new_txn(&mut harness.world, 2);
+            let container = txn
+                .create_container(Container {
+                    capacity: LoadUnits(1),
+                    allowed_commodities: None,
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
+                })
+                .unwrap();
+            txn.set_ground_location(container, harness.rally_place).unwrap();
+            txn.set_owner(container, harness.faction).unwrap();
+            txn.set_component_bandit_camp(
+                harness.rally_place,
+                BanditCamp {
+                    faction: harness.faction,
+                    supplies: container,
+                    empty_since_tick: None,
+                },
+            )
+            .unwrap();
+            txn.commit(&mut harness.log);
+            container
+        };
+
+        let action_id = harness.start().unwrap();
+        let outcome = harness.tick(action_id);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        assert_ne!(camp.supplies, existing_container);
+        assert!(
+            harness.world.get_component_container(existing_container).is_none(),
+            "resized reuse should archive the undersized container"
+        );
+        assert_eq!(
+            harness
+                .world
+                .get_component_container(camp.supplies)
+                .expect("replacement camp should keep a supply container")
+                .capacity,
+            LoadUnits(2)
+        );
+        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
     }
 
     #[test]

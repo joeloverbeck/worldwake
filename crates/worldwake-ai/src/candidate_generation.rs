@@ -811,12 +811,43 @@ fn emit_regroup_with_faction_goals(
     };
 
     for faction in ctx.view.bandit_factions_of(ctx.agent) {
+        if ctx
+            .view
+            .locally_observed_bandit_camp_faction_at(ctx.agent, current_place)
+            == Some(faction)
+            && !ctx.view.has_wounds(ctx.agent)
+            && ctx.view.visible_hostiles_for(ctx.agent).is_empty()
+        {
+            continue;
+        }
+
         let InstitutionalBeliefRead::Certain(Some(rally_place)) =
             ctx.view.believed_faction_rally_point(faction)
         else {
             continue;
         };
         if rally_place == current_place {
+            if ctx
+                .view
+                .locally_observed_bandit_camp_faction_at(ctx.agent, current_place)
+                == Some(faction)
+            {
+                continue;
+            }
+            if !has_local_controlled_edible_supplies(ctx.view, ctx.agent, current_place) {
+                continue;
+            }
+
+            let mut evidence = Evidence::with_place(rally_place);
+            evidence.entities.insert(faction);
+            emit_candidate_with_trace(
+                candidates,
+                diagnostics,
+                GoalKind::EstablishBanditCamp { faction },
+                OpportunityAnchor::Place(rally_place),
+                evidence,
+                EvidenceTrace::default(),
+            );
             continue;
         }
 
@@ -861,6 +892,21 @@ fn emit_regroup_with_faction_goals(
             trace,
         );
     }
+}
+
+fn has_local_controlled_edible_supplies(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+) -> bool {
+    CommodityKind::ALL.into_iter().any(|commodity| {
+        view.local_controlled_lots_for(agent, place, commodity)
+            .into_iter()
+            .any(|item| {
+                view.item_lot_consumable_profile(item)
+                    .is_some_and(|profile| profile.hunger_relief_per_unit.value() > 0)
+            })
+    })
 }
 
 fn subject_is_listener_observable_entity_belief(
@@ -3238,6 +3284,7 @@ mod tests {
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         bandit_factions: BTreeSet<EntityId>,
+        local_bandit_camps: BTreeMap<EntityId, EntityId>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
         support_declaration_beliefs:
@@ -3304,6 +3351,7 @@ mod tests {
                 factions_by_member: BTreeMap::new(),
                 faction_rally_point_beliefs: BTreeMap::new(),
                 bandit_factions: BTreeSet::new(),
+                local_bandit_camps: BTreeMap::new(),
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
@@ -3391,6 +3439,16 @@ mod tests {
                 .into_iter()
                 .filter(|faction| self.bandit_factions.contains(faction))
                 .collect()
+        }
+
+        fn locally_observed_bandit_camp_faction_at(
+            &self,
+            agent: EntityId,
+            place: EntityId,
+        ) -> Option<EntityId> {
+            (self.effective_place(agent) == Some(place))
+                .then(|| self.local_bandit_camps.get(&place).copied())
+                .flatten()
         }
 
         fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
@@ -5278,6 +5336,113 @@ mod tests {
             "regroup knowledge path should record rally doctrine provenance, got {:?}",
             trace.knowledge_path.institutional_beliefs,
         );
+    }
+
+    #[test]
+    fn regroup_with_faction_is_suppressed_while_agent_stands_in_active_faction_camp() {
+        let agent = entity(1);
+        let faction = entity(30);
+        let place = entity(10);
+        let rally_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.local_bandit_camps.insert(place, faction);
+        view.faction_rally_point_beliefs
+            .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::RegroupWithFaction { faction }
+        ));
+    }
+
+    #[test]
+    fn establish_bandit_camp_emits_at_rally_when_local_edible_supplies_are_controlled() {
+        let agent = entity(1);
+        let faction = entity(30);
+        let rally_place = entity(11);
+        let bread = entity(40);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(rally_place, EntityKind::Place);
+        view.entity_kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, rally_place);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.faction_rally_point_beliefs
+            .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
+        view.direct_possessions.insert(agent, vec![bread]);
+        view.direct_possessors.insert(bread, agent);
+        view.controllable.insert((agent, bread));
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread,
+            CommodityKind::Bread
+                .spec()
+                .consumable_profile
+                .expect("bread should stay edible"),
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::EstablishBanditCamp { faction }
+        ));
+    }
+
+    #[test]
+    fn establish_bandit_camp_requires_local_controlled_edible_supplies() {
+        let agent = entity(1);
+        let faction = entity(30);
+        let rally_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(rally_place, EntityKind::Place);
+        view.effective_places.insert(agent, rally_place);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.faction_rally_point_beliefs
+            .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::EstablishBanditCamp { faction }
+        ));
     }
 
     #[test]

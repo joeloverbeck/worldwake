@@ -424,6 +424,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RaidTarget { .. }
             | GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
+            | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::TreatWounds { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
@@ -528,9 +529,15 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::EstablishCamp | PlannerOpKind::AskWitness => {
-                Err(GoalPayloadOverrideError::UnsupportedGoal)
-            }
+            PlannerOpKind::EstablishCamp => match self {
+                GoalKind::EstablishBanditCamp { faction } => Ok(Some(
+                    ActionPayload::EstablishCamp(worldwake_sim::EstablishCampActionPayload {
+                        faction: *faction,
+                    }),
+                )),
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -765,8 +772,17 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 None => state,
             },
-            PlannerOpKind::EstablishCamp
-            | PlannerOpKind::Trade
+            PlannerOpKind::EstablishCamp => match self {
+                GoalKind::EstablishBanditCamp { faction } => {
+                    if let Some(place) = state.effective_place(actor) {
+                        state.with_bandit_camp_faction(place, Some(*faction))
+                    } else {
+                        state
+                    }
+                }
+                _ => state,
+            },
+            PlannerOpKind::Trade
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::Attack
@@ -900,6 +916,10 @@ impl GoalKindPlannerExt for GoalKind {
                 InstitutionalBeliefRead::Certain(Some(rally_place))
                     if state.effective_place(actor) == Some(rally_place)
             ),
+            GoalKind::EstablishBanditCamp { faction } => state
+                .effective_place(actor)
+                .and_then(|place| state.bandit_camp_faction_at(place))
+                == Some(*faction),
             GoalKind::TreatWounds { patient } => state
                 .pain_summary(*patient)
                 .is_some_and(|pain| pain == Permille::new_unchecked(0)),
@@ -970,6 +990,12 @@ impl GoalKindPlannerExt for GoalKind {
                 match state.believed_faction_rally_point(*faction) {
                     InstitutionalBeliefRead::Certain(Some(rally_place)) => vec![rally_place],
                     _ => Vec::new(),
+                }
+            }
+            GoalKind::EstablishBanditCamp { faction } => {
+                match state.believed_faction_rally_point(*faction) {
+                    InstitutionalBeliefRead::Certain(Some(rally_place)) => vec![rally_place],
+                    _ => state.effective_place(actor).into_iter().collect(),
                 }
             }
             GoalKind::ClaimOffice { office } => {
@@ -1133,6 +1159,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
+            | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::ProduceCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }
@@ -1641,6 +1668,24 @@ impl GroundedGoal {
                     RootCandidateSynthesis::Targets(vec![*place])
                 }
                 GoalKind::InvestigateViolation { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::EstablishCamp => match &self.key.kind {
+                GoalKind::EstablishBanditCamp { .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::ActorPlace]
+                    ) =>
+                {
+                    let Some(place) = (match self.anchor {
+                        worldwake_core::OpportunityAnchor::Place(place) => Some(place),
+                        _ => self.key.place,
+                    }) else {
+                        return RootCandidateSynthesis::TargetDerivationFailed;
+                    };
+                    RootCandidateSynthesis::Targets(vec![place])
+                }
+                GoalKind::EstablishBanditCamp { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
             PlannerOpKind::Attack => match &self.key.kind {
@@ -3374,6 +3419,47 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::Targets(vec![accused])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_establish_camp_root_targets_from_goal_place() {
+        let rally_place = entity(14);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(rally_place),
+            key: GoalKey::from(GoalKind::EstablishBanditCamp {
+                faction: entity(15),
+            }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::from([rally_place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "establish_camp".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::EstablishCamp,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics),
+            RootCandidateSynthesis::Targets(vec![rally_place])
         );
     }
 

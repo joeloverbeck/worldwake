@@ -314,6 +314,20 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
+            return None;
+        }
+
+        self.world
+            .get_component_bandit_camp(place)
+            .map(|camp| camp.faction)
+    }
+
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
         self.believed_entity(entity)
             .and_then(|state| state.believed_activity.as_ref())
@@ -442,6 +456,15 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         }
 
         self.authoritative_local_controlled_lots_for(agent, place, commodity)
+    }
+
+    fn bandit_camp_establishment_ticks(
+        &self,
+        faction: EntityId,
+    ) -> Option<std::num::NonZeroU32> {
+        self.world
+            .get_component_bandit_faction_policy(faction)
+            .map(|policy| policy.establishment_duration_ticks)
     }
 
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {

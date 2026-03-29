@@ -150,14 +150,14 @@ E16c ──→ E16b ✅ (force legitimacy needs institutional records and belief
 E16c ✅ ──→ E17 ✅ (justice records and institutional knowledge now reuse the same record/belief architecture)
 E16 ──→ E16b ✅ (explicit force legitimacy needs offices, factions, and succession substrate)
 E15 ✅, S03 ✅ ──→ E17 ✅ (crime closeout shipped on top of discovery, ownership claims, and planner binding)
-E16 ──→ E18 (bandits need faction system)
+E16 ──→ E18 ✅ (bandits need faction system)
 E16 ──→ E19 (guards need public order)
 E16b ✅ ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
 S01 ✅, S03 ✅, E16c ✅ ──→ E17 ✅ (crime closeout shipped with ownership claims, planner binding, and record architecture)
 S27 ✅ ──→ E17 ✅ (crime discovery now builds on the delivered expectation-violation theft-detection path)
 E17 ✅ ──→ E19 (guard crime response depends on the shipped theft/justice substrate)
-S02 ✅, E16 ──→ E18, E20
+S02 ✅, E16 ──→ E18 ✅, E20
 S02 ✅, E16, E16b ✅, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
 S04 ──→ S05 (stock storage needs selling + ownership)
@@ -170,12 +170,12 @@ S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final go
 S33 ✅ ──→ S37 ✅ (cooldown exhaustion shipped on opportunity-scoped identity)
 S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
 S35 ✅ ──→ S38 (learned preferences needs activity observation for source reliability)
-E18 ──→ S40 (remote hostile pursuit extends bandit combat beyond same-place opportunism)
+E18 ✅ ──→ S40 (remote hostile pursuit extends bandit combat beyond same-place opportunism)
 S12 ✅ ──→ S40 (remote hostile pursuit reuses prerequisite-aware search)
 S36 ✅ ──→ S40 (remote hostile pursuit extends declaration-owned combat goal surfaces)
 S27 ✅ ──→ S34 ✅ (epistemic actions extend violation detection)
 S34 ✅, S35 ✅ (independent, can parallel with S33)
-E18, E19, E20 ──→ E22 (integration tests need everything)
+E18 ✅, E19, E20 ──→ E22 (integration tests need everything)
 S40 ──→ E22 (integration should cover lawful remote combat pursuit if adopted)
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
@@ -344,6 +344,10 @@ S30 ✅ ──→ S31 ✅
   - replaced budget-halving backoff with cooldown-based retry at full search depth
   - persisted cooldown retry state across AI runtime save/load with explicit current-format version gating in `worldwake-sim`
   - archived spec: `archive/specs/S37-cooldown-based-exhaustion.md`
+- **E18**: Bandit Camp Dynamics — ✅ COMPLETED
+  - established faction-scoped bandit camps with authoritative abandonment, institutional rally-point regrouping, explicit AI camp re-establishment support, and belief-derived route-threat adaptation
+  - shipped T22 golden end-to-end coverage for camp destruction, regrouping, re-establishment, and downstream route-choice change
+  - archived spec: `archive/specs/E18-bandit-dynamics.md`
 
 Dependency graph:
 ```
@@ -356,7 +360,7 @@ S33 ✅ ──→ S39
 S34 ✅ (independent)
 S35 ✅ (independent)
 S35 ✅ ──→ S38
-E18 ──→ S40
+E18 ✅ ──→ S40
 S12 ✅ ──→ S40
 S36 ✅ ──→ S40
 ```
@@ -366,8 +370,8 @@ S36 ✅ ──→ S40
 ### Phase 4: Adaptation & Integration
 
 **Step 14** (parallel):
-- **E18**: Bandit Camp Dynamics
-  - needs ~~S02~~, E16
+- **E18**: Bandit Camp Dynamics — ✅ COMPLETED
+  - archived spec: `archive/specs/E18-bandit-dynamics.md`
 - **E19**: Guard & Patrol Adaptation
   - needs ~~S02~~, E16, E16b, E16c, E17
 - **E20**: Companion Behaviors
@@ -431,7 +435,6 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S29-planning-state-structural-sharing.md`~~ | 3+ | 13.5 W4 | ✅ COMPLETED |
-| `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
 | `S40-remote-hostile-pursuit.md` | 4 | 14.5 | E18, S12, S36 |
@@ -468,5 +471,5 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
-| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | PENDING |
+| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | IN PROGRESS (E18 complete; E19, E20, S40, and E22 pending) |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |

@@ -212,6 +212,7 @@ pub(crate) struct SnapshotPlace {
     pub(crate) entities: BTreeSet<EntityId>,
     pub(crate) tags: BTreeSet<PlaceTag>,
     pub(crate) adjacent_places_with_travel_ticks: Vec<(EntityId, NonZeroU32)>,
+    pub(crate) bandit_camp_faction: Option<EntityId>,
 }
 
 pub struct PlanningSnapshot {
@@ -234,6 +235,7 @@ pub struct PlanningSnapshot {
     pub(crate) actor_tell_profile: Option<TellProfile>,
     pub(crate) actor_epistemic_profile: Option<EpistemicDispositionProfile>,
     pub(crate) actor_consultation_speed_factor: Option<Permille>,
+    pub(crate) actor_bandit_establishment_ticks: BTreeMap<EntityId, NonZeroU32>,
     /// All-pairs shortest travel times between snapshot places.
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
     /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
@@ -277,7 +279,7 @@ impl PlanningSnapshot {
             travel_horizon,
         );
         let included_entities = collect_entities(view, actor, evidence_entities, &included_places);
-        let places = build_snapshot_places(view, &included_places, &included_entities);
+        let places = build_snapshot_places(view, actor, &included_places, &included_entities);
         let actor_known_entity_beliefs = view.known_entity_beliefs(actor).into_iter().collect();
         let actor_known_social_observations = view.known_social_observations(actor);
         let actor_confidence_policy = view.belief_confidence_policy(actor);
@@ -360,6 +362,14 @@ impl PlanningSnapshot {
             actor_tell_profile: view.tell_profile(actor),
             actor_epistemic_profile: view.epistemic_disposition_profile(actor),
             actor_consultation_speed_factor: view.consultation_speed_factor(actor),
+            actor_bandit_establishment_ticks: view
+                .bandit_factions_of(actor)
+                .into_iter()
+                .filter_map(|faction| {
+                    view.bandit_camp_establishment_ticks(faction)
+                        .map(|ticks| (faction, ticks))
+                })
+                .collect(),
             shortest_travel_ticks,
             perceived_travel_costs,
         }
@@ -420,6 +430,14 @@ impl PlanningSnapshot {
         self.entities
             .get(&office)
             .and_then(|snapshot| snapshot.office_data.clone())
+    }
+
+    #[must_use]
+    pub(crate) fn bandit_camp_establishment_ticks(
+        &self,
+        faction: EntityId,
+    ) -> Option<NonZeroU32> {
+        self.actor_bandit_establishment_ticks.get(&faction).copied()
     }
 
     #[must_use]
@@ -514,6 +532,7 @@ impl PlanningSnapshot {
 
 fn build_snapshot_places(
     view: &dyn RuntimeBeliefView,
+    actor: EntityId,
     included_places: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
@@ -541,6 +560,7 @@ fn build_snapshot_places(
                     entities,
                     tags,
                     adjacent_places_with_travel_ticks,
+                    bandit_camp_faction: view.locally_observed_bandit_camp_faction_at(actor, place),
                 },
             )
         })
