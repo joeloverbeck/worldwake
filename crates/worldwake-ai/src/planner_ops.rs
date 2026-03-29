@@ -3,7 +3,10 @@ use crate::{
     HypotheticalEntityId, PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::OnceLock,
+};
 use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
 use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
 
@@ -112,7 +115,8 @@ fn derived_relevant_goal_kinds_by_op() -> &'static BTreeMap<PlannerOpKind, &'sta
         tags_by_op
             .into_iter()
             .map(|(op_kind, goal_tags)| {
-                let leaked = Box::leak(goal_tags.into_iter().collect::<Vec<_>>().into_boxed_slice());
+                let leaked =
+                    Box::leak(goal_tags.into_iter().collect::<Vec<_>>().into_boxed_slice());
                 (op_kind, leaked as &'static [GoalKindTag])
             })
             .collect()
@@ -722,13 +726,13 @@ mod tests {
     use super::{
         apply_hypothetical_transition, authoritative_target, authoritative_targets,
         build_semantics_table, classify_action_def, derived_relevant_goal_kinds,
-        derived_relevant_goal_kinds_by_op, planner_only_candidates,
-        resolve_planning_targets_with, ExpectedMaterialization, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
+        derived_relevant_goal_kinds_by_op, planner_only_candidates, resolve_planning_targets_with,
+        ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlannerOpSemantics, PlannerTransitionKind,
     };
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalDispatchKey, GoalKey, GoalKind,
-        GoalKindTag, GroundedGoal, HypotheticalEntityId, PlanningEntityRef, PlanningState,
+        build_planning_snapshot, CommodityPurpose, GoalDispatchKey, GoalKey, GoalKind, GoalKindTag,
+        GroundedGoal, HypotheticalEntityId, PlanningEntityRef, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -755,64 +759,85 @@ mod tests {
 
     fn expected_reverse_membership() -> BTreeMap<PlannerOpKind, Vec<GoalKindTag>> {
         BTreeMap::from([
-            (PlannerOpKind::Travel, vec![
-                GoalKindTag::ConsumeOwnedCommodity,
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::Sleep,
-                GoalKindTag::Relieve,
-                GoalKindTag::Wash,
-                GoalKindTag::ReduceDanger,
-                GoalKindTag::TreatWounds,
-                GoalKindTag::ProduceCommodity,
-                GoalKindTag::SellCommodity,
-                GoalKindTag::RestockCommodity,
-                GoalKindTag::MoveCargo,
-                GoalKindTag::LootCorpse,
-                GoalKindTag::ClaimOffice,
-                GoalKindTag::SupportCandidateForOffice,
-                GoalKindTag::InvestigateViolation,
-                GoalKindTag::StealItem,
-                GoalKindTag::Accuse,
-                GoalKindTag::PunishAccused,
-            ]),
-            (PlannerOpKind::Consume, vec![GoalKindTag::ConsumeOwnedCommodity]),
+            (
+                PlannerOpKind::Travel,
+                vec![
+                    GoalKindTag::ConsumeOwnedCommodity,
+                    GoalKindTag::AcquireCommodity,
+                    GoalKindTag::Sleep,
+                    GoalKindTag::Relieve,
+                    GoalKindTag::Wash,
+                    GoalKindTag::ReduceDanger,
+                    GoalKindTag::TreatWounds,
+                    GoalKindTag::ProduceCommodity,
+                    GoalKindTag::SellCommodity,
+                    GoalKindTag::RestockCommodity,
+                    GoalKindTag::MoveCargo,
+                    GoalKindTag::LootCorpse,
+                    GoalKindTag::ClaimOffice,
+                    GoalKindTag::SupportCandidateForOffice,
+                    GoalKindTag::InvestigateViolation,
+                    GoalKindTag::StealItem,
+                    GoalKindTag::Accuse,
+                    GoalKindTag::PunishAccused,
+                ],
+            ),
+            (
+                PlannerOpKind::Consume,
+                vec![GoalKindTag::ConsumeOwnedCommodity],
+            ),
             (PlannerOpKind::Sleep, vec![GoalKindTag::Sleep]),
             (PlannerOpKind::Relieve, vec![GoalKindTag::Relieve]),
             (PlannerOpKind::Wash, vec![GoalKindTag::Wash]),
-            (PlannerOpKind::Trade, vec![
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::TreatWounds,
-                GoalKindTag::SellCommodity,
-                GoalKindTag::RestockCommodity,
-            ]),
-            (PlannerOpKind::QueueForFacilityUse, vec![
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::TreatWounds,
-                GoalKindTag::ProduceCommodity,
-                GoalKindTag::RestockCommodity,
-            ]),
-            (PlannerOpKind::Harvest, vec![
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::TreatWounds,
-                GoalKindTag::RestockCommodity,
-            ]),
-            (PlannerOpKind::Craft, vec![
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::TreatWounds,
-                GoalKindTag::ProduceCommodity,
-                GoalKindTag::RestockCommodity,
-            ]),
-            (PlannerOpKind::MoveCargo, vec![
-                GoalKindTag::ConsumeOwnedCommodity,
-                GoalKindTag::AcquireCommodity,
-                GoalKindTag::Wash,
-                GoalKindTag::TreatWounds,
-                GoalKindTag::ProduceCommodity,
-                GoalKindTag::SellCommodity,
-                GoalKindTag::RestockCommodity,
-                GoalKindTag::MoveCargo,
-                GoalKindTag::StealItem,
-            ]),
+            (
+                PlannerOpKind::Trade,
+                vec![
+                    GoalKindTag::AcquireCommodity,
+                    GoalKindTag::TreatWounds,
+                    GoalKindTag::SellCommodity,
+                    GoalKindTag::RestockCommodity,
+                ],
+            ),
+            (
+                PlannerOpKind::QueueForFacilityUse,
+                vec![
+                    GoalKindTag::AcquireCommodity,
+                    GoalKindTag::TreatWounds,
+                    GoalKindTag::ProduceCommodity,
+                    GoalKindTag::RestockCommodity,
+                ],
+            ),
+            (
+                PlannerOpKind::Harvest,
+                vec![
+                    GoalKindTag::AcquireCommodity,
+                    GoalKindTag::TreatWounds,
+                    GoalKindTag::RestockCommodity,
+                ],
+            ),
+            (
+                PlannerOpKind::Craft,
+                vec![
+                    GoalKindTag::AcquireCommodity,
+                    GoalKindTag::TreatWounds,
+                    GoalKindTag::ProduceCommodity,
+                    GoalKindTag::RestockCommodity,
+                ],
+            ),
+            (
+                PlannerOpKind::MoveCargo,
+                vec![
+                    GoalKindTag::ConsumeOwnedCommodity,
+                    GoalKindTag::AcquireCommodity,
+                    GoalKindTag::Wash,
+                    GoalKindTag::TreatWounds,
+                    GoalKindTag::ProduceCommodity,
+                    GoalKindTag::SellCommodity,
+                    GoalKindTag::RestockCommodity,
+                    GoalKindTag::MoveCargo,
+                    GoalKindTag::StealItem,
+                ],
+            ),
             (
                 PlannerOpKind::Heal,
                 vec![GoalKindTag::ReduceDanger, GoalKindTag::TreatWounds],
@@ -820,10 +845,13 @@ mod tests {
             (PlannerOpKind::Loot, vec![GoalKindTag::LootCorpse]),
             (PlannerOpKind::Bury, vec![GoalKindTag::BuryCorpse]),
             (PlannerOpKind::Tell, vec![GoalKindTag::ShareBelief]),
-            (PlannerOpKind::ConsultRecord, vec![
-                GoalKindTag::ClaimOffice,
-                GoalKindTag::SupportCandidateForOffice,
-            ]),
+            (
+                PlannerOpKind::ConsultRecord,
+                vec![
+                    GoalKindTag::ClaimOffice,
+                    GoalKindTag::SupportCandidateForOffice,
+                ],
+            ),
             (PlannerOpKind::Attack, vec![GoalKindTag::EngageHostile]),
             (PlannerOpKind::Defend, vec![GoalKindTag::ReduceDanger]),
             (PlannerOpKind::Bribe, vec![GoalKindTag::ClaimOffice]),
@@ -831,11 +859,17 @@ mod tests {
             (PlannerOpKind::Accuse, vec![GoalKindTag::Accuse]),
             (PlannerOpKind::Fine, vec![GoalKindTag::PunishAccused]),
             (PlannerOpKind::Exile, vec![GoalKindTag::PunishAccused]),
-            (PlannerOpKind::DeclareSupport, vec![
-                GoalKindTag::ClaimOffice,
-                GoalKindTag::SupportCandidateForOffice,
-            ]),
-            (PlannerOpKind::PressForceClaim, vec![GoalKindTag::ClaimOffice]),
+            (
+                PlannerOpKind::DeclareSupport,
+                vec![
+                    GoalKindTag::ClaimOffice,
+                    GoalKindTag::SupportCandidateForOffice,
+                ],
+            ),
+            (
+                PlannerOpKind::PressForceClaim,
+                vec![GoalKindTag::ClaimOffice],
+            ),
             (
                 PlannerOpKind::Investigate,
                 vec![GoalKindTag::InvestigateViolation],
@@ -1490,7 +1524,10 @@ mod tests {
             }
         }
 
-        assert_eq!(derived_relevant_goal_kinds(PlannerOpKind::YieldForceClaim), &[]);
+        assert_eq!(
+            derived_relevant_goal_kinds(PlannerOpKind::YieldForceClaim),
+            &[]
+        );
         assert_eq!(derived_relevant_goal_kinds(PlannerOpKind::AskWitness), &[]);
     }
 

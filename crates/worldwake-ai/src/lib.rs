@@ -14,9 +14,9 @@ pub mod exhaustion;
 pub mod failure_handling;
 pub mod feasibility;
 mod frame_switch_policy;
-pub mod goal_explanation;
 mod goal_dispatch_decl;
 mod goal_dispatch_key;
+pub mod goal_explanation;
 pub mod goal_model;
 pub mod goal_policy;
 mod goal_switching;
@@ -64,13 +64,13 @@ pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use feasibility::{feasibility_hint, FeasibilityHint};
+pub use goal_dispatch_decl::{GoalDispatchDeclaration, InvalidationStrategy};
+pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
     RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
     RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
-pub use goal_dispatch_key::GoalDispatchKey;
-pub use goal_dispatch_decl::{GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_policy::{
     evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
     GoalPolicyOutcome,

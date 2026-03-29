@@ -2,8 +2,8 @@ use crate::{ExhaustionEntry, GoalDispatchKey, InvalidationStrategy, OpportunityK
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    Permille, Quantity, ThresholdBand, UniqueItemKind,
+    CommodityKind, CommodityPurpose, EntityId, EntityKind, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, Permille, Quantity, ThresholdBand, UniqueItemKind,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -21,7 +21,26 @@ pub enum ExhaustionInvalidationCondition {
         need: HomeostaticNeedId,
         band: ThresholdBand,
     },
+    StealTargetStateChanged(EntityId),
     TargetDead(EntityId),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum StealTargetAccessState {
+    #[default]
+    UnownedOrMissing,
+    Stealable,
+    LawfulControl,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct StealTargetSnapshot {
+    pub effective_place: Option<EntityId>,
+    pub direct_possessor: Option<EntityId>,
+    pub direct_container: Option<EntityId>,
+    pub access_state: StealTargetAccessState,
+    pub fits_carry_capacity: bool,
+    pub is_item_lot: bool,
 }
 
 /// Snapshot of the goal-relevant state when a goal exhausted planning.
@@ -31,6 +50,7 @@ pub struct ExhaustionBaseline {
     pub needs: Option<HomeostaticNeeds>,
     pub commodity_quantities: Vec<(CommodityKind, Quantity)>,
     pub unique_item_counts: Vec<(UniqueItemKind, u32)>,
+    pub steal_target_states: Vec<(EntityId, StealTargetSnapshot)>,
     pub wound_count: usize,
     pub hostile_count: usize,
 }
@@ -75,6 +95,9 @@ pub(crate) fn derive_invalidation_conditions(
         }
         InvalidationStrategy::PositionAndTargetDead => {
             position_and_target_dead_conditions(goal, &mut conditions);
+        }
+        InvalidationStrategy::StealTargetState => {
+            steal_target_state_conditions(goal, &mut conditions);
         }
         InvalidationStrategy::ClaimOffice => claim_office_conditions(&mut conditions),
         InvalidationStrategy::SupportCandidateForOffice => {
@@ -164,9 +187,7 @@ fn combat_target_conditions(
     conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));
 }
 
-fn danger_reduction_conditions(
-    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
-) {
+fn danger_reduction_conditions(conditions: &mut BTreeSet<ExhaustionInvalidationCondition>) {
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
     conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
     conditions.insert(ExhaustionInvalidationCondition::HostilesChanged);
@@ -199,7 +220,9 @@ fn produce_commodity_conditions(
     conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
     if let Some(recipe) = recipe_registry.get(recipe_id) {
         for (commodity, _) in &recipe.inputs {
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(*commodity));
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+                *commodity,
+            ));
         }
     }
 }
@@ -208,7 +231,8 @@ fn position_and_commodity_conditions(
     goal: &GoalKind,
     conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
 ) {
-    let (GoalKind::SellCommodity { commodity } | GoalKind::MoveCargo { commodity, .. }) = *goal else {
+    let (GoalKind::SellCommodity { commodity } | GoalKind::MoveCargo { commodity, .. }) = *goal
+    else {
         unreachable!("PositionAndCommodity strategy requires SellCommodity or MoveCargo");
     };
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
@@ -236,14 +260,24 @@ fn position_and_target_dead_conditions(
     let target = match *goal {
         GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => corpse,
         GoalKind::ShareBelief { listener, .. } => listener,
-        GoalKind::StealItem { target_item } => target_item,
         GoalKind::Accuse { accused, .. } => accused,
-        _ => unreachable!(
-            "PositionAndTargetDead strategy requires corpse, share, steal, or accuse goal"
-        ),
+        _ => unreachable!("PositionAndTargetDead strategy requires corpse, share, or accuse goal"),
     };
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
     conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));
+}
+
+fn steal_target_state_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::StealItem { target_item } = *goal else {
+        unreachable!("StealTargetState strategy requires StealItem goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::StealTargetStateChanged(
+        target_item,
+    ));
 }
 
 fn claim_office_conditions(conditions: &mut BTreeSet<ExhaustionInvalidationCondition>) {
@@ -256,9 +290,7 @@ fn support_candidate_conditions(
     conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
 ) {
     let GoalKind::SupportCandidateForOffice { candidate, .. } = *goal else {
-        unreachable!(
-            "SupportCandidateForOffice strategy requires SupportCandidateForOffice goal"
-        );
+        unreachable!("SupportCandidateForOffice strategy requires SupportCandidateForOffice goal");
     };
     claim_office_conditions(conditions);
     conditions.insert(ExhaustionInvalidationCondition::TargetDead(candidate));
@@ -354,6 +386,17 @@ pub(crate) fn condition_changed(
             classify_need_band(need_value(&current_needs, *need), *band)
                 != classify_need_band(need_value(&baseline_needs, *need), *band)
         }
+        ExhaustionInvalidationCondition::StealTargetStateChanged(target) => {
+            let current = capture_steal_target_snapshot(view, agent, *target);
+            baseline
+                .steal_target_states
+                .iter()
+                .find(|(baseline_target, _)| baseline_target == target)
+                .map_or(
+                    current != StealTargetSnapshot::default(),
+                    |(_, baseline_snapshot)| *baseline_snapshot != current,
+                )
+        }
         ExhaustionInvalidationCondition::TargetDead(target) => !view.is_alive(*target),
     }
 }
@@ -389,6 +432,13 @@ fn build_baseline(
             _ => None,
         })
         .collect::<BTreeSet<_>>();
+    let steal_targets = conditions
+        .iter()
+        .filter_map(|condition| match condition {
+            ExhaustionInvalidationCondition::StealTargetStateChanged(target) => Some(*target),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
 
     ExhaustionBaseline {
         position: view.effective_place(agent),
@@ -401,9 +451,52 @@ fn build_baseline(
             .into_iter()
             .map(|kind| (kind, view.unique_item_count(agent, kind)))
             .collect(),
+        steal_target_states: steal_targets
+            .into_iter()
+            .map(|target| (target, capture_steal_target_snapshot(view, agent, target)))
+            .collect(),
         wound_count: view.wounds(agent).len(),
         hostile_count: view.visible_hostiles_for(agent).len(),
     }
+}
+
+fn capture_steal_target_snapshot(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    target: EntityId,
+) -> StealTargetSnapshot {
+    let is_item_lot = view.entity_kind(target) == Some(EntityKind::ItemLot);
+    let direct_possessor = view.direct_possessor(target);
+    let direct_container = view.direct_container(target);
+    let access_state = match view.believed_owner_of(target) {
+        None => StealTargetAccessState::UnownedOrMissing,
+        Some(_) if view.can_control(agent, target) => StealTargetAccessState::LawfulControl,
+        Some(_) => StealTargetAccessState::Stealable,
+    };
+    let fits_carry_capacity = fits_target_load(view, agent, target);
+
+    StealTargetSnapshot {
+        effective_place: view.effective_place(target),
+        direct_possessor,
+        direct_container,
+        access_state,
+        fits_carry_capacity,
+        is_item_lot,
+    }
+}
+
+fn fits_target_load(view: &dyn GoalBeliefView, agent: EntityId, target: EntityId) -> bool {
+    let Some(target_load) = view.load_of_entity(target) else {
+        return false;
+    };
+    let Some(carry_capacity) = view.carry_capacity(agent) else {
+        return false;
+    };
+    let Some(actor_load) = view.load_of_entity(agent) else {
+        return false;
+    };
+
+    carry_capacity.0.saturating_sub(actor_load.0) >= target_load.0
 }
 
 #[allow(dead_code)]
@@ -442,7 +535,7 @@ mod tests {
     use super::{
         classify_need_band, condition_changed, derive_invalidation_conditions,
         invalidate_exhausted_goals, need_threshold_band, need_value, ExhaustionBaseline,
-        ExhaustionInvalidationCondition,
+        ExhaustionInvalidationCondition, StealTargetAccessState, StealTargetSnapshot,
     };
     use crate::{ExhaustionEntry, ExhaustionRetryState, GoalKey, OpportunityKey};
     use std::collections::BTreeMap;
@@ -460,9 +553,16 @@ mod tests {
 
     #[derive(Default)]
     struct MockView {
+        entity_kinds: Vec<(EntityId, EntityKind)>,
         effective_places: Vec<(EntityId, EntityId)>,
         commodity_quantities: Vec<((EntityId, CommodityKind), Quantity)>,
         unique_item_counts: Vec<((EntityId, UniqueItemKind), u32)>,
+        direct_containers: Vec<(EntityId, EntityId)>,
+        direct_possessors: Vec<(EntityId, EntityId)>,
+        owners: Vec<(EntityId, EntityId)>,
+        controllable: Vec<(EntityId, EntityId)>,
+        carry_capacities: Vec<(EntityId, LoadUnits)>,
+        loads: Vec<(EntityId, LoadUnits)>,
         needs: Vec<(EntityId, HomeostaticNeeds)>,
         drive_thresholds: Vec<(EntityId, DriveThresholds)>,
         wounds: Vec<(EntityId, Vec<Wound>)>,
@@ -479,8 +579,11 @@ mod tests {
             self.dead.contains(&entity)
         }
 
-        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
-            None
+        fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
+            self.entity_kinds
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, kind)| *kind)
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -556,16 +659,25 @@ mod tests {
             None
         }
 
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, container)| *container)
         }
 
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, possessor)| *possessor)
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+            self.owners
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, owner)| *owner)
         }
 
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
@@ -596,16 +708,22 @@ mod tests {
             false
         }
 
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            self.controllable.contains(&(actor, entity))
         }
 
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, capacity)| *capacity)
         }
 
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.loads
+                .iter()
+                .find(|(subject, _)| *subject == entity)
+                .map(|(_, load)| *load)
         }
 
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
@@ -838,6 +956,7 @@ mod tests {
         assert_eq!(baseline.needs, None);
         assert!(baseline.commodity_quantities.is_empty());
         assert!(baseline.unique_item_counts.is_empty());
+        assert!(baseline.steal_target_states.is_empty());
         assert_eq!(baseline.wound_count, 0);
         assert_eq!(baseline.hostile_count, 0);
     }
@@ -1499,6 +1618,53 @@ mod tests {
     }
 
     #[test]
+    fn steal_item_derives_target_state_condition_instead_of_target_dead() {
+        let agent = entity(1);
+        let target = entity(2);
+        let owner = entity(3);
+        let place = entity(4);
+        let view = MockView {
+            entity_kinds: vec![(target, EntityKind::ItemLot)],
+            effective_places: vec![(agent, place), (target, place)],
+            owners: vec![(target, owner)],
+            carry_capacities: vec![(agent, LoadUnits(10))],
+            loads: vec![(agent, LoadUnits(0)), (target, LoadUnits(4))],
+            ..MockView::default()
+        };
+
+        let (conditions, baseline) = derive_invalidation_conditions(
+            &GoalKind::StealItem {
+                target_item: target,
+            },
+            agent,
+            &view,
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(
+            conditions,
+            vec![
+                ExhaustionInvalidationCondition::PositionChanged,
+                ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+            ]
+        );
+        assert_eq!(
+            baseline.steal_target_states,
+            vec![(
+                target,
+                StealTargetSnapshot {
+                    effective_place: Some(place),
+                    direct_possessor: None,
+                    direct_container: None,
+                    access_state: StealTargetAccessState::Stealable,
+                    fits_carry_capacity: true,
+                    is_item_lot: true,
+                },
+            )]
+        );
+    }
+
+    #[test]
     fn derive_invalidation_conditions_snapshots_relevant_baseline_state_deterministically() {
         let agent = entity(1);
         let place = entity(9);
@@ -1529,6 +1695,7 @@ mod tests {
                 needs: Some(needs),
                 commodity_quantities: vec![(CommodityKind::Medicine, Quantity(3))],
                 unique_item_counts: Vec::new(),
+                steal_target_states: Vec::new(),
                 wound_count: 2,
                 hostile_count: 2,
             }
@@ -1605,6 +1772,118 @@ mod tests {
         assert_eq!(loot, bury);
         assert_eq!(sell, move_cargo);
         assert_eq!(punish_fine, punish_exile);
+    }
+
+    #[test]
+    fn condition_changed_steal_target_detects_control_and_possession_delta() {
+        let agent = entity(1);
+        let target = entity(2);
+        let owner = entity(3);
+        let other = entity(4);
+        let container = entity(6);
+        let place = entity(5);
+        let baseline = ExhaustionBaseline {
+            steal_target_states: vec![(
+                target,
+                StealTargetSnapshot {
+                    effective_place: Some(place),
+                    direct_possessor: None,
+                    direct_container: None,
+                    access_state: StealTargetAccessState::Stealable,
+                    fits_carry_capacity: true,
+                    is_item_lot: true,
+                },
+            )],
+            ..ExhaustionBaseline::default()
+        };
+        let unchanged = MockView {
+            entity_kinds: vec![(target, EntityKind::ItemLot)],
+            effective_places: vec![(agent, place), (target, place)],
+            owners: vec![(target, owner)],
+            carry_capacities: vec![(agent, LoadUnits(10))],
+            loads: vec![(agent, LoadUnits(0)), (target, LoadUnits(3))],
+            ..MockView::default()
+        };
+        let lawfully_controllable = MockView {
+            controllable: vec![(agent, target)],
+            ..unchanged
+        };
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+            &baseline,
+            &MockView {
+                entity_kinds: vec![(target, EntityKind::ItemLot)],
+                effective_places: vec![(agent, place), (target, place)],
+                owners: vec![(target, owner)],
+                carry_capacities: vec![(agent, LoadUnits(10))],
+                loads: vec![(agent, LoadUnits(0)), (target, LoadUnits(3))],
+                ..MockView::default()
+            },
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+            &baseline,
+            &lawfully_controllable,
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+            &baseline,
+            &MockView {
+                entity_kinds: vec![(target, EntityKind::ItemLot)],
+                effective_places: vec![(agent, place), (target, place)],
+                owners: vec![(target, owner)],
+                direct_possessors: vec![(target, other)],
+                carry_capacities: vec![(agent, LoadUnits(10))],
+                loads: vec![(agent, LoadUnits(0)), (target, LoadUnits(3))],
+                ..MockView::default()
+            },
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+            &baseline,
+            &MockView {
+                entity_kinds: vec![(target, EntityKind::ItemLot)],
+                effective_places: vec![(agent, place), (target, place)],
+                owners: vec![(target, owner)],
+                direct_containers: vec![(target, container)],
+                carry_capacities: vec![(agent, LoadUnits(10))],
+                loads: vec![(agent, LoadUnits(0)), (target, LoadUnits(3))],
+                ..MockView::default()
+            },
+            agent,
+            false,
+            false,
+            false,
+        ));
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+            &baseline,
+            &MockView {
+                entity_kinds: vec![(target, EntityKind::ItemLot)],
+                effective_places: vec![(agent, place), (target, place)],
+                owners: vec![(target, owner)],
+                carry_capacities: vec![(agent, LoadUnits(2))],
+                loads: vec![(agent, LoadUnits(0)), (target, LoadUnits(3))],
+                ..MockView::default()
+            },
+            agent,
+            false,
+            false,
+            false,
+        ));
     }
 
     #[test]

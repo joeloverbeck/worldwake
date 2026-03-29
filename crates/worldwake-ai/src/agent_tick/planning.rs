@@ -1,8 +1,8 @@
 use crate::decision_trace::{
     BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, RankedGoalSummary, SelectedPlanReplacementKind,
-    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SameGoalPlanningStopReason, SameGoalPlanningTrace,
+    PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
+    SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
+    SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::plan_selection::SelectionCandidatePlan;
@@ -313,26 +313,27 @@ pub(super) fn summarize_same_goal_planning_trace(
         .iter()
         .find(|plan| plan.result.is_found())
         .map(|plan| plan.opportunity);
-    let stop_reason = if let Some(found_goal) = continuation_trigger.map(|opportunity| opportunity.goal_key) {
-        if let Some(next_candidate) = admitted_candidates
-            .into_iter()
-            .take(admitted_cap)
-            .skip(plans.len())
-            .find(|candidate| candidate.grounded.key != found_goal)
-        {
-            SameGoalPlanningStopReason::EncounteredDifferentGoal {
-                next_goal: next_candidate.grounded.key,
+    let stop_reason =
+        if let Some(found_goal) = continuation_trigger.map(|opportunity| opportunity.goal_key) {
+            if let Some(next_candidate) = admitted_candidates
+                .into_iter()
+                .take(admitted_cap)
+                .skip(plans.len())
+                .find(|candidate| candidate.grounded.key != found_goal)
+            {
+                SameGoalPlanningStopReason::EncounteredDifferentGoal {
+                    next_goal: next_candidate.grounded.key,
+                }
+            } else if candidate_cap_hit {
+                SameGoalPlanningStopReason::ReachedCandidatePlanCap
+            } else {
+                SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities
             }
         } else if candidate_cap_hit {
             SameGoalPlanningStopReason::ReachedCandidatePlanCap
         } else {
             SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities
-        }
-    } else if candidate_cap_hit {
-        SameGoalPlanningStopReason::ReachedCandidatePlanCap
-    } else {
-        SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities
-    };
+        };
 
     Some(SameGoalPlanningTrace {
         continuation_trigger,
@@ -1625,7 +1626,10 @@ mod tests {
             ranked_goal(sleep_goal.clone()),
         ];
         let plans = vec![
-            searched_plan(market, PlanSearchResult::FrontierExhausted { expansions_used: 1 }),
+            searched_plan(
+                market,
+                PlanSearchResult::FrontierExhausted { expansions_used: 1 },
+            ),
             searched_plan(
                 orchard,
                 PlanSearchResult::Found(Box::new(PlannedPlan::new(

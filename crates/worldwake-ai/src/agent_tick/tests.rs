@@ -12,6 +12,7 @@ use super::{
     effective_goal_switch_margin, handle_recoverable_travel_step_blockage, persist_blocked_memory,
     plan_and_validate_next_step_traced, update_frame_for_adopted_plan, AgentTickDriver,
 };
+use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::PlanningBudget;
 use crate::{
@@ -240,6 +241,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
                 )),
                 commodity_quantities: vec![(CommodityKind::Medicine, Quantity(2))],
                 unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                steal_target_states: Vec::new(),
                 wound_count: 2,
                 hostile_count: 1,
             },
@@ -300,6 +302,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
                 )),
                 commodity_quantities: vec![(CommodityKind::Medicine, Quantity(2))],
                 unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                steal_target_states: Vec::new(),
                 wound_count: 2,
                 hostile_count: 1,
             },
@@ -350,6 +353,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 needs: Some(HomeostaticNeeds::new_sated()),
                 commodity_quantities: vec![(CommodityKind::Bread, Quantity(1))],
                 unique_item_counts: Vec::new(),
+                steal_target_states: Vec::new(),
                 wound_count: 0,
                 hostile_count: 0,
             },
@@ -378,6 +382,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 )),
                 commodity_quantities: vec![(CommodityKind::Medicine, Quantity(1))],
                 unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                steal_target_states: Vec::new(),
                 wound_count: 1,
                 hostile_count: 0,
             },
@@ -400,6 +405,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 needs: Some(HomeostaticNeeds::new_sated()),
                 commodity_quantities: vec![(CommodityKind::Bread, Quantity(0))],
                 unique_item_counts: Vec::new(),
+                steal_target_states: Vec::new(),
                 wound_count: 0,
                 hostile_count: 0,
             },
@@ -416,6 +422,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 needs: Some(HomeostaticNeeds::new_sated()),
                 commodity_quantities: Vec::new(),
                 unique_item_counts: Vec::new(),
+                steal_target_states: Vec::new(),
                 wound_count: 0,
                 hostile_count: 0,
             },
@@ -485,6 +492,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 )),
                 commodity_quantities: vec![(CommodityKind::Medicine, Quantity(1))],
                 unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                steal_target_states: Vec::new(),
                 wound_count: 1,
                 hostile_count: 0,
             },
@@ -504,6 +512,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
                 needs: Some(HomeostaticNeeds::new_sated()),
                 commodity_quantities: Vec::new(),
                 unique_item_counts: Vec::new(),
+                steal_target_states: Vec::new(),
                 wound_count: 0,
                 hostile_count: 0,
             },
@@ -4925,6 +4934,91 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
         }
         other => panic!("expected Planning outcome, got {other:?}"),
     }
+}
+
+#[test]
+fn exhausted_steal_goal_is_cleared_when_target_becomes_lawfully_controllable() {
+    let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    let place = harness.world.effective_place(harness.actor).unwrap();
+    let _owner;
+    let target;
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        _owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+        target = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(_owner, place).unwrap();
+        txn.set_ground_location(target, place).unwrap();
+        txn.set_owner(target, _owner).unwrap();
+        txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::new_sated())
+            .unwrap();
+        txn.set_component_theft_disposition_profile(
+            harness.actor,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(1).unwrap(),
+                theft_motive_weight: Permille::new(500).unwrap(),
+                witness_risk_penalty: Permille::new(0).unwrap(),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
+
+    let goal = GoalKey::from(GoalKind::StealItem {
+        target_item: target,
+    });
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            dirty: DirtySet::COMMODITY,
+            exhaustion_cache: BTreeMap::from([(
+                exhaustion_key(goal, OpportunityAnchor::Entity(target)),
+                crate::ExhaustionEntry {
+                    retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+                    invalidation_conditions: vec![
+                        ExhaustionInvalidationCondition::PositionChanged,
+                        ExhaustionInvalidationCondition::StealTargetStateChanged(target),
+                    ],
+                    baseline: ExhaustionBaseline {
+                        position: Some(place),
+                        steal_target_states: vec![(
+                            target,
+                            StealTargetSnapshot {
+                                effective_place: Some(place),
+                                direct_possessor: None,
+                                direct_container: None,
+                                access_state: StealTargetAccessState::Stealable,
+                                fits_carry_capacity: true,
+                                is_item_lot: true,
+                            },
+                        )],
+                        ..ExhaustionBaseline::default()
+                    },
+                    consecutive_budget_exhaustions: 0,
+                },
+            )]),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    {
+        let mut txn = new_txn(&mut harness.world, 3);
+        txn.set_owner(target, harness.actor).unwrap();
+        commit_txn(txn);
+    }
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(3));
+
+    harness.step_once();
+
+    let runtime = harness.runtime().expect("runtime should exist after step");
+    assert!(
+        !runtime
+            .exhaustion_cache
+            .contains_key(&exhaustion_key(goal, OpportunityAnchor::Entity(target))),
+        "steal exhaustion entry should clear once the target becomes lawfully controllable"
+    );
 }
 
 #[test]

@@ -273,7 +273,10 @@ mod tests {
         registry
     }
 
-    fn believed_entity_state_with_activity(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
+    fn believed_entity_state_with_activity(
+        place: EntityId,
+        observed_tick: Tick,
+    ) -> BelievedEntityState {
         BelievedEntityState {
             last_known_place: Some(place),
             last_known_inventory: std::collections::BTreeMap::from([(
@@ -304,7 +307,10 @@ mod tests {
         let (reserved_item, reservation) =
             spawn_item_with_reservation(&mut world, &mut event_log, actor);
         let mut beliefs = AgentBeliefStore::new();
-        beliefs.update_entity(target, believed_entity_state_with_activity(belief_place, Tick(3)));
+        beliefs.update_entity(
+            target,
+            believed_entity_state_with_activity(belief_place, Tick(3)),
+        );
         let mut belief_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
         belief_txn
             .set_component_agent_belief_store(actor, beliefs)

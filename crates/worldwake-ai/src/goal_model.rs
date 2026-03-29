@@ -5,11 +5,10 @@ use crate::{
     },
     derive_danger_pressure,
     enterprise::restock_gap_at_destination,
-    GoalDispatchKey,
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
-    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
-    PlanningState,
+    GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget,
+    PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -447,7 +446,9 @@ impl GoalKindPlannerExt for GoalKind {
     }
 
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind] {
-        GoalDispatchKey::from_goal_kind(self).declaration().relevant_ops
+        GoalDispatchKey::from_goal_kind(self)
+            .declaration()
+            .relevant_ops
     }
 
     fn relevant_observed_commodities(

@@ -15,6 +15,7 @@ pub enum InvalidationStrategy {
     PositionAndCommodity,
     PositionCommodityAndCoin,
     PositionAndTargetDead,
+    StealTargetState,
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
@@ -228,7 +229,7 @@ static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
     provenance_family: None,
     relevant_ops: MOVE_CARGO_OPS,
-    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    invalidation_strategy: InvalidationStrategy::StealTargetState,
 };
 static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Accuse",
@@ -286,8 +287,8 @@ mod tests {
     use super::{GoalDispatchDeclaration, InvalidationStrategy};
     use crate::{GoalDispatchKey, GoalKindPlannerExt};
     use worldwake_core::{
-        CommodityKind, CommodityPurpose, EntityId, GoalKind, PunishmentKind, Quantity, RecipeId,
-        RecordEntryId, TellTopic, ViolationId, HomeostaticNeedId,
+        CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, PunishmentKind,
+        Quantity, RecipeId, RecordEntryId, TellTopic, ViolationId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -459,11 +460,17 @@ mod tests {
         }
 
         assert_ne!(
-            GoalDispatchKey::AcquireSelfConsume.declaration().trace_label,
-            GoalDispatchKey::AcquireRecipeInput.declaration().trace_label
+            GoalDispatchKey::AcquireSelfConsume
+                .declaration()
+                .trace_label,
+            GoalDispatchKey::AcquireRecipeInput
+                .declaration()
+                .trace_label
         );
         assert_ne!(
-            GoalDispatchKey::AcquireRecipeInput.declaration().trace_label,
+            GoalDispatchKey::AcquireRecipeInput
+                .declaration()
+                .trace_label,
             GoalDispatchKey::AcquireRestock.declaration().trace_label
         );
         assert_ne!(
@@ -487,6 +494,7 @@ mod tests {
                 | InvalidationStrategy::PositionAndCommodity
                 | InvalidationStrategy::PositionCommodityAndCoin
                 | InvalidationStrategy::PositionAndTargetDead
+                | InvalidationStrategy::StealTargetState
                 | InvalidationStrategy::ClaimOffice
                 | InvalidationStrategy::SupportCandidateForOffice
                 | InvalidationStrategy::InvestigateViolation
@@ -528,18 +536,36 @@ mod tests {
             InvalidationStrategy::AcquireRestock
         );
         assert_eq!(
-            GoalDispatchKey::LootCorpse.declaration().invalidation_strategy,
-            GoalDispatchKey::BuryCorpse.declaration().invalidation_strategy
+            GoalDispatchKey::LootCorpse
+                .declaration()
+                .invalidation_strategy,
+            GoalDispatchKey::BuryCorpse
+                .declaration()
+                .invalidation_strategy
         );
         assert_eq!(
             GoalDispatchKey::SellCommodity
                 .declaration()
                 .invalidation_strategy,
-            GoalDispatchKey::MoveCargo.declaration().invalidation_strategy
+            GoalDispatchKey::MoveCargo
+                .declaration()
+                .invalidation_strategy
         );
         assert_eq!(
-            GoalDispatchKey::PunishFine.declaration().invalidation_strategy,
-            GoalDispatchKey::PunishExile.declaration().invalidation_strategy
+            GoalDispatchKey::PunishFine
+                .declaration()
+                .invalidation_strategy,
+            GoalDispatchKey::PunishExile
+                .declaration()
+                .invalidation_strategy
+        );
+        assert_ne!(
+            GoalDispatchKey::StealItem
+                .declaration()
+                .invalidation_strategy,
+            GoalDispatchKey::LootCorpse
+                .declaration()
+                .invalidation_strategy
         );
     }
 }

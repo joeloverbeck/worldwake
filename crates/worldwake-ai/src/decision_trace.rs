@@ -1265,7 +1265,11 @@ fn format_goal_key(goal: &GoalKey) -> String {
 }
 
 fn format_opportunity_key(opportunity: OpportunityKey) -> String {
-    format!("{}@{:?}", format_goal_key(&opportunity.goal_key), opportunity.anchor)
+    format!(
+        "{}@{:?}",
+        format_goal_key(&opportunity.goal_key),
+        opportunity.anchor
+    )
 }
 
 fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> String {

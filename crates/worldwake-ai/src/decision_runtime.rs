@@ -449,6 +449,7 @@ mod tests {
                         needs: Some(last_needs),
                         commodity_quantities: vec![(CommodityKind::Water, Quantity(1))],
                         unique_item_counts: vec![(UniqueItemKind::SimpleTool, 1)],
+                        steal_target_states: Vec::new(),
                         wound_count: 1,
                         hostile_count: 0,
                     },
