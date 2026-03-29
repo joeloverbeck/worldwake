@@ -54,6 +54,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) zero_motive: Vec<worldwake_core::GoalKey>,
     /// Political goals omitted before emission due to hard gates.
     pub(super) omitted_political: Vec<crate::PoliticalCandidateOmission>,
+    /// Bandit goals omitted before emission due to local candidate gates.
+    pub(super) omitted_bandit: Vec<crate::BanditCandidateOmission>,
     /// Social goals omitted before emission due to resend suppression.
     pub(super) omitted_social: Vec<crate::SocialCandidateOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
@@ -160,6 +162,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,
+        omitted_bandit: candidates.diagnostics.omitted_bandit,
         omitted_social: candidates.diagnostics.omitted_social,
         decision_context: dc,
     }

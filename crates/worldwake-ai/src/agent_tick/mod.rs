@@ -693,6 +693,7 @@ fn process_agent(
                 suppressed: read_result.suppressed,
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,
+                omitted_bandit: read_result.omitted_bandit,
                 omitted_social: read_result.omitted_social,
             };
 

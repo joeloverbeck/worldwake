@@ -1,5 +1,6 @@
 use crate::{
     decision_trace::{
+        BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
         CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
         PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
@@ -146,6 +147,7 @@ struct GenerationContext<'a> {
 #[derive(Default)]
 pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
+    pub omitted_bandit: Vec<BanditCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
@@ -818,12 +820,22 @@ fn emit_regroup_with_faction_goals(
             && !ctx.view.has_wounds(ctx.agent)
             && ctx.view.visible_hostiles_for(ctx.agent).is_empty()
         {
+            diagnostics.omitted_bandit.push(BanditCandidateOmission {
+                family: BanditGoalFamily::RegroupWithFaction,
+                faction,
+                reason: BanditCandidateOmissionReason::AlreadySafeInObservedActiveCamp,
+            });
             continue;
         }
 
         let InstitutionalBeliefRead::Certain(Some(rally_place)) =
             ctx.view.believed_faction_rally_point(faction)
         else {
+            diagnostics.omitted_bandit.push(BanditCandidateOmission {
+                family: BanditGoalFamily::RegroupWithFaction,
+                faction,
+                reason: BanditCandidateOmissionReason::MissingRallyBelief,
+            });
             continue;
         };
         if rally_place == current_place {
@@ -832,9 +844,19 @@ fn emit_regroup_with_faction_goals(
                 .locally_observed_bandit_camp_faction_at(ctx.agent, current_place)
                 == Some(faction)
             {
+                diagnostics.omitted_bandit.push(BanditCandidateOmission {
+                    family: BanditGoalFamily::EstablishBanditCamp,
+                    faction,
+                    reason: BanditCandidateOmissionReason::AlreadyAtRallyWithObservedActiveCamp,
+                });
                 continue;
             }
             if !has_local_controlled_edible_supplies(ctx.view, ctx.agent, current_place) {
+                diagnostics.omitted_bandit.push(BanditCandidateOmission {
+                    family: BanditGoalFamily::EstablishBanditCamp,
+                    faction,
+                    reason: BanditCandidateOmissionReason::MissingLocalControlledEdibleSupplies,
+                });
                 continue;
             }
 
@@ -3209,6 +3231,7 @@ mod tests {
         knowledge_path::{
             BeliefAspect, InstitutionalBeliefProvenance, KnowledgePath, SelfKnowledgeProvenance,
         },
+        BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceTrace, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
         SocialCandidateOmission,
     };
@@ -3997,6 +4020,22 @@ mod tests {
                 && omission.office == office
                 && omission.candidate == candidate
                 && omission.reason == reason
+        })
+    }
+
+    fn contains_bandit_omission(
+        diagnostics: &CandidateGenerationDiagnostics,
+        family: BanditGoalFamily,
+        faction: EntityId,
+        reason: BanditCandidateOmissionReason,
+    ) -> bool {
+        diagnostics.omitted_bandit.iter().any(|omission| {
+            *omission
+                == BanditCandidateOmission {
+                    family,
+                    faction,
+                    reason,
+                }
         })
     }
 
@@ -5256,17 +5295,26 @@ mod tests {
         view.factions_by_member.insert(agent, vec![faction]);
         view.bandit_factions.insert(faction);
 
-        let candidates = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
+            6,
+            false,
         );
 
         assert!(!contains_goal(
-            &candidates,
+            &result.candidates,
             GoalKind::RegroupWithFaction { faction }
+        ));
+        assert!(contains_bandit_omission(
+            &result.diagnostics,
+            BanditGoalFamily::RegroupWithFaction,
+            faction,
+            BanditCandidateOmissionReason::MissingRallyBelief
         ));
     }
 
@@ -5356,17 +5404,26 @@ mod tests {
         view.faction_rally_point_beliefs
             .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
 
-        let candidates = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
+            6,
+            false,
         );
 
         assert!(!contains_goal(
-            &candidates,
+            &result.candidates,
             GoalKind::RegroupWithFaction { faction }
+        ));
+        assert!(contains_bandit_omission(
+            &result.diagnostics,
+            BanditGoalFamily::RegroupWithFaction,
+            faction,
+            BanditCandidateOmissionReason::AlreadySafeInObservedActiveCamp
         ));
     }
 
@@ -5431,17 +5488,26 @@ mod tests {
         view.faction_rally_point_beliefs
             .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
 
-        let candidates = generate_candidates(
+        let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
             &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
+            6,
+            false,
         );
 
         assert!(!contains_goal(
-            &candidates,
+            &result.candidates,
             GoalKind::EstablishBanditCamp { faction }
+        ));
+        assert!(contains_bandit_omission(
+            &result.diagnostics,
+            BanditGoalFamily::EstablishBanditCamp,
+            faction,
+            BanditCandidateOmissionReason::MissingLocalControlledEdibleSupplies
         ));
     }
 

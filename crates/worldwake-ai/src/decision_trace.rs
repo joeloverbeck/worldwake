@@ -263,6 +263,8 @@ pub struct CandidateTrace {
     pub zero_motive: Vec<GoalKey>,
     /// Political goals omitted before generation due to hard gates.
     pub omitted_political: Vec<PoliticalCandidateOmission>,
+    /// Bandit goals omitted before generation due to local candidate gates.
+    pub omitted_bandit: Vec<BanditCandidateOmission>,
     /// Social goals omitted before generation due to resend suppression.
     pub omitted_social: Vec<SocialCandidateOmission>,
 }
@@ -351,6 +353,30 @@ pub struct PoliticalCandidateOmission {
     pub office: EntityId,
     pub candidate: Option<EntityId>,
     pub reason: PoliticalCandidateOmissionReason,
+}
+
+/// Bandit goal families that can be omitted before candidate emission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BanditGoalFamily {
+    RegroupWithFaction,
+    EstablishBanditCamp,
+}
+
+/// Hard pre-emission reason for a bandit goal omission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BanditCandidateOmissionReason {
+    MissingRallyBelief,
+    AlreadySafeInObservedActiveCamp,
+    AlreadyAtRallyWithObservedActiveCamp,
+    MissingLocalControlledEdibleSupplies,
+}
+
+/// Diagnostic record for a bandit goal omitted before generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BanditCandidateOmission {
+    pub family: BanditGoalFamily,
+    pub faction: EntityId,
+    pub reason: BanditCandidateOmissionReason,
 }
 
 /// Diagnostic record for a social goal omitted before generation.
@@ -826,6 +852,7 @@ pub enum GoalTraceStatus {
     Dead,
     ActiveAction,
     OmittedPolitical(PoliticalCandidateOmissionReason),
+    OmittedBandit(BanditCandidateOmissionReason),
     OmittedSocial(TellTopicOmissionReason),
     NotGenerated,
     GeneratedOnly,
@@ -1023,6 +1050,10 @@ fn goal_status_in_planning(
     {
         return GoalTraceStatus::OmittedPolitical(reason);
     }
+    if let Some(reason) = omitted_bandit_reason_for_goal(&planning.candidates.omitted_bandit, goal)
+    {
+        return GoalTraceStatus::OmittedBandit(reason);
+    }
     if let Some(reason) = omitted_social_reason_for_goal(&planning.candidates.omitted_social, goal)
     {
         return GoalTraceStatus::OmittedSocial(reason);
@@ -1080,6 +1111,27 @@ fn omitted_political_reason_for_goal(
         }
         // Political omissions are only recorded for political goal families.
         // Non-political goals correctly have no matching omission reason here.
+        _ => None,
+    })
+}
+
+fn omitted_bandit_reason_for_goal(
+    omissions: &[BanditCandidateOmission],
+    goal: &crate::GoalKind,
+) -> Option<BanditCandidateOmissionReason> {
+    omissions.iter().find_map(|omission| match goal {
+        crate::GoalKind::RegroupWithFaction { faction }
+            if omission.family == BanditGoalFamily::RegroupWithFaction
+                && omission.faction == *faction =>
+        {
+            Some(omission.reason)
+        }
+        crate::GoalKind::EstablishBanditCamp { faction }
+            if omission.family == BanditGoalFamily::EstablishBanditCamp
+                && omission.faction == *faction =>
+        {
+            Some(omission.reason)
+        }
         _ => None,
     })
 }
@@ -1718,6 +1770,7 @@ mod tests {
         selected_plan_source: Option<SelectedPlanSource>,
         plan_continued: bool,
         omitted_political: Vec<PoliticalCandidateOmission>,
+        omitted_bandit: Vec<BanditCandidateOmission>,
         omitted_social: Vec<SocialCandidateOmission>,
     ) -> AgentDecisionTrace {
         AgentDecisionTrace {
@@ -1735,6 +1788,7 @@ mod tests {
                     suppressed,
                     zero_motive,
                     omitted_political,
+                    omitted_bandit,
                     omitted_social,
                 },
                 planning: PlanSearchTrace {
@@ -1866,6 +1920,7 @@ mod tests {
                 reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
             }],
             Vec::new(),
+            Vec::new(),
         );
 
         assert_eq!(
@@ -1923,6 +1978,7 @@ mod tests {
                 reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
             }],
             Vec::new(),
+            Vec::new(),
         );
         assert_eq!(
             support_trace.goal_status(&support_goal),
@@ -1947,6 +2003,7 @@ mod tests {
                 candidate: None,
                 reason: PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted,
             }],
+            Vec::new(),
             Vec::new(),
         );
         assert_eq!(
@@ -1976,6 +2033,7 @@ mod tests {
             None,
             false,
             Vec::new(),
+            Vec::new(),
             vec![SocialCandidateOmission {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
@@ -1988,6 +2046,35 @@ mod tests {
             GoalTraceStatus::OmittedSocial(
                 TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
             )
+        );
+    }
+
+    #[test]
+    fn goal_status_reports_bandit_omission_reason() {
+        let faction = entity(12);
+        let regroup_goal = GoalKind::RegroupWithFaction { faction };
+
+        let trace = goal_trace(
+            Tick(7),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            false,
+            Vec::new(),
+            vec![BanditCandidateOmission {
+                family: BanditGoalFamily::RegroupWithFaction,
+                faction,
+                reason: BanditCandidateOmissionReason::MissingRallyBelief,
+            }],
+            Vec::new(),
+        );
+
+        assert_eq!(
+            trace.goal_status(&regroup_goal),
+            GoalTraceStatus::OmittedBandit(BanditCandidateOmissionReason::MissingRallyBelief)
         );
     }
 
@@ -2009,6 +2096,7 @@ mod tests {
             None,
             None,
             false,
+            Vec::new(),
             Vec::new(),
             vec![SocialCandidateOmission {
                 listener,
@@ -2092,6 +2180,39 @@ mod tests {
     }
 
     #[test]
+    fn bandit_omission_helper_only_matches_bandit_goal_families() {
+        let faction = entity(40);
+        let omissions = vec![
+            BanditCandidateOmission {
+                family: BanditGoalFamily::RegroupWithFaction,
+                faction,
+                reason: BanditCandidateOmissionReason::MissingRallyBelief,
+            },
+            BanditCandidateOmission {
+                family: BanditGoalFamily::EstablishBanditCamp,
+                faction,
+                reason: BanditCandidateOmissionReason::MissingLocalControlledEdibleSupplies,
+            },
+        ];
+
+        assert_eq!(
+            omitted_bandit_reason_for_goal(&omissions, &GoalKind::RegroupWithFaction { faction }),
+            Some(BanditCandidateOmissionReason::MissingRallyBelief)
+        );
+        assert_eq!(
+            omitted_bandit_reason_for_goal(
+                &omissions,
+                &GoalKind::EstablishBanditCamp { faction }
+            ),
+            Some(BanditCandidateOmissionReason::MissingLocalControlledEdibleSupplies)
+        );
+        assert_eq!(
+            omitted_bandit_reason_for_goal(&omissions, &GoalKind::ClaimOffice { office: faction }),
+            None
+        );
+    }
+
+    #[test]
     fn goal_history_helpers_are_deterministic_and_preserve_continuation_metadata() {
         let agent = entity(1);
         let goal = GoalKind::ClaimOffice { office: entity(20) };
@@ -2114,6 +2235,7 @@ mod tests {
             false,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         ));
         sink.record(goal_trace(
             Tick(2),
@@ -2131,6 +2253,7 @@ mod tests {
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SnapshotContinuation),
             true,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         ));
@@ -2212,6 +2335,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2313,6 +2437,7 @@ mod tests {
             suppressed: vec![],
             zero_motive: vec![],
             omitted_political: vec![],
+            omitted_bandit: vec![],
             omitted_social: vec![],
         };
 
@@ -2370,6 +2495,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2457,6 +2583,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2537,6 +2664,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2596,6 +2724,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2652,6 +2781,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2698,6 +2828,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2765,6 +2896,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2837,6 +2969,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2900,6 +3033,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -2980,6 +3114,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -3043,6 +3178,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -3366,6 +3502,7 @@ mod tests {
                 suppressed: vec![],
                 zero_motive: vec![],
                 omitted_political: vec![],
+                omitted_bandit: vec![],
                 omitted_social: vec![],
             },
             planning: PlanSearchTrace {
@@ -3544,6 +3681,7 @@ mod tests {
                     suppressed: vec![],
                     zero_motive: vec![],
                     omitted_political: vec![],
+                    omitted_bandit: vec![],
                     omitted_social: vec![],
                 },
                 planning: PlanSearchTrace {

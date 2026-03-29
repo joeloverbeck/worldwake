@@ -4,7 +4,8 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_ai::{
-    CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource,
+    BanditCandidateOmissionReason, CommodityPurpose, DecisionOutcome, GoalTraceStatus,
+    PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
     build_believed_entity_state, hash_event_log, hash_world, ActionDomain, AgentData,
@@ -625,8 +626,22 @@ fn run_t22_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
                         faction: ids.faction,
                     })),
                 _ => true,
-            }),
+        }),
         "a same-faction outsider without rally doctrine should never select regroup"
+    );
+    assert!(
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should stay enabled")
+            .traces_for(ids.outsider)
+            .into_iter()
+            .any(|trace| {
+                trace.goal_status(&GoalKind::RegroupWithFaction { faction: ids.faction })
+                    == GoalTraceStatus::OmittedBandit(
+                        BanditCandidateOmissionReason::MissingRallyBelief,
+                    )
+            }),
+        "a same-faction outsider without rally doctrine should expose the missing-rally omission reason in decision traces"
     );
 
     let late_activation_tick = h.scheduler.current_tick().0;

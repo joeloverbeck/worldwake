@@ -27,15 +27,16 @@ use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, ActionDefId, BeliefConfidencePolicy,
-    BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, EventLog, EventPayload, ExclusiveFacilityPolicy, FacilityQueueIntents,
-    FacilityUseQueue, FrameState, GrantedFacilityUse, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
-    IntentionFrame, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+    build_believed_entity_state, build_prototype_world, ActionDefId, BanditFactionPolicy,
+    BeliefConfidencePolicy, BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory,
+    BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
+    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, EventPayload,
+    ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FrameState,
+    GrantedFacilityUse, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent,
+    PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
     QueuedFacilityIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
     TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
     TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
@@ -4863,6 +4864,92 @@ fn trace_social_resend_omission_reason() {
                 trace.goal_status(&share_goal),
                 crate::GoalTraceStatus::OmittedSocial(
                     worldwake_sim::TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief
+                )
+            );
+        }
+        other => panic!("expected Planning outcome, got {other:?}"),
+    }
+}
+
+#[test]
+fn trace_bandit_regroup_missing_rally_omission_reason() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let rally_place = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|candidate| Some(*candidate) != harness.world.effective_place(harness.actor))
+        .expect("prototype world should expose a second place");
+
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        let faction = txn.create_faction("Forest Bandits").unwrap();
+        txn.add_member(harness.actor, faction).unwrap();
+        txn.set_component_bandit_faction_policy(
+            faction,
+            BanditFactionPolicy {
+                min_regroup_count: 2,
+                establishment_duration_ticks: NonZeroU32::new(2).unwrap(),
+                abandonment_grace_ticks: NonZeroU32::new(2).unwrap(),
+                flee_wound_threshold: Permille::new(300).unwrap(),
+                rally_place: Some(rally_place),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
+
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let trace = harness
+        .driver
+        .trace_sink()
+        .unwrap()
+        .traces_for(harness.actor)
+        .into_iter()
+        .next()
+        .expect("expected one decision trace");
+    let regroup_goal = GoalKind::RegroupWithFaction {
+        faction: harness
+            .world
+            .factions_of(harness.actor)
+            .into_iter()
+            .next()
+            .expect("actor should now belong to one faction"),
+    };
+
+    match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => {
+            assert!(
+                !planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.goal_key.kind == regroup_goal),
+                "missing rally doctrine must omit RegroupWithFaction before generation"
+            );
+            assert!(
+                planning.candidates.omitted_bandit.iter().any(|omission| {
+                    omission.family == crate::BanditGoalFamily::RegroupWithFaction
+                        && omission.faction
+                            == harness
+                                .world
+                                .factions_of(harness.actor)
+                                .into_iter()
+                                .next()
+                                .unwrap()
+                        && omission.reason
+                            == crate::BanditCandidateOmissionReason::MissingRallyBelief
+                }),
+                "bandit omission should be preserved in the live decision trace"
+            );
+            assert_eq!(
+                trace.goal_status(&regroup_goal),
+                crate::GoalTraceStatus::OmittedBandit(
+                    crate::BanditCandidateOmissionReason::MissingRallyBelief
                 )
             );
         }
