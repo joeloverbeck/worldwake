@@ -1,6 +1,6 @@
 use crate::{
     DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalPriorityClass,
-    HypotheticalEntityId, PlannedPlan,
+    HypotheticalEntityId, PlannedPlan, PlanningBudget,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -66,11 +66,10 @@ pub struct ExhaustionEntry {
     pub retry_state: ExhaustionRetryState,
     pub invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
     pub baseline: ExhaustionBaseline,
-    /// How many consecutive times this goal has exhausted the search budget.
-    /// Used for exponential backoff: retry budget = base / 2^count (floor 32).
-    /// Reset to 0 when the goal finds a plan or invalidation fires.
     #[serde(default)]
-    pub consecutive_budget_exhaustions: u8,
+    pub next_retry_tick: Option<Tick>,
+    #[serde(default)]
+    pub consecutive_failures: u8,
 }
 
 impl ExhaustionEntry {
@@ -83,7 +82,8 @@ impl ExhaustionEntry {
             retry_state: ExhaustionRetryState::FrontierExhausted,
             invalidation_conditions,
             baseline,
-            consecutive_budget_exhaustions: 0,
+            next_retry_tick: None,
+            consecutive_failures: 0,
         }
     }
 
@@ -91,21 +91,28 @@ impl ExhaustionEntry {
     pub fn budget_retry_pending(
         invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
         baseline: ExhaustionBaseline,
+        current_tick: Tick,
+        budget: &PlanningBudget,
     ) -> Self {
-        Self {
+        let mut entry = Self {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions,
             baseline,
-            consecutive_budget_exhaustions: 1,
-        }
+            next_retry_tick: None,
+            consecutive_failures: 0,
+        };
+        entry.record_budget_exhaustion(current_tick, budget);
+        entry
     }
 
-    /// Compute the effective `max_node_expansions` for a budget-retry search.
-    /// Base budget is halved per consecutive exhaustion, with a floor of 16.
     #[must_use]
-    pub fn effective_max_expansions(&self, base: u16) -> u16 {
-        let shift = self.consecutive_budget_exhaustions.min(4);
-        (base >> shift).max(16)
+    pub fn is_retry_eligible(&self, current_tick: Tick) -> bool {
+        match self.retry_state {
+            ExhaustionRetryState::FrontierExhausted => false,
+            ExhaustionRetryState::BudgetRetryPending => self
+                .next_retry_tick
+                .is_none_or(|next_retry_tick| current_tick >= next_retry_tick),
+        }
     }
 
     #[must_use]
@@ -113,9 +120,16 @@ impl ExhaustionEntry {
         matches!(self.retry_state, ExhaustionRetryState::FrontierExhausted)
     }
 
-    #[must_use]
-    pub fn is_budget_retry_pending(&self) -> bool {
-        matches!(self.retry_state, ExhaustionRetryState::BudgetRetryPending)
+    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, budget: &PlanningBudget) {
+        self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+        let shift = u32::from(self.consecutive_failures.saturating_sub(1).min(6));
+        let cooldown = budget
+            .initial_cooldown_ticks
+            .checked_shl(shift)
+            .unwrap_or(u32::MAX)
+            .min(budget.max_cooldown_ticks);
+        self.next_retry_tick = Some(Tick(current_tick.0.saturating_add(u64::from(cooldown))));
+        self.retry_state = ExhaustionRetryState::BudgetRetryPending;
     }
 }
 
@@ -261,6 +275,7 @@ mod tests {
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        PlanningBudget,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
@@ -453,7 +468,8 @@ mod tests {
                         wound_count: 1,
                         hostile_count: 0,
                     },
-                    consecutive_budget_exhaustions: 0,
+                    next_retry_tick: Some(Tick(19)),
+                    consecutive_failures: 3,
                 },
             )]),
         };
@@ -491,6 +507,76 @@ mod tests {
         assert_eq!(decoded.last_frame_clear_reason, None);
         assert!(decoded.dirty.is_empty());
         assert_eq!(decoded.last_priority_class, None);
+    }
+
+    #[test]
+    fn budget_retry_pending_factory_sets_initial_cooldown_from_budget() {
+        let budget = PlanningBudget {
+            initial_cooldown_ticks: 10,
+            max_cooldown_ticks: 100,
+            ..PlanningBudget::default()
+        };
+
+        let entry = ExhaustionEntry::budget_retry_pending(
+            vec![ExhaustionInvalidationCondition::PositionChanged],
+            ExhaustionBaseline::default(),
+            Tick(7),
+            &budget,
+        );
+
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert_eq!(entry.consecutive_failures, 1);
+        assert_eq!(entry.next_retry_tick, Some(Tick(17)));
+    }
+
+    #[test]
+    fn record_budget_exhaustion_doubles_cooldown_until_cap() {
+        let budget = PlanningBudget {
+            initial_cooldown_ticks: 4,
+            max_cooldown_ticks: 16,
+            ..PlanningBudget::default()
+        };
+        let mut entry = ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
+
+        entry.record_budget_exhaustion(Tick(1), &budget);
+        assert_eq!(entry.consecutive_failures, 1);
+        assert_eq!(entry.next_retry_tick, Some(Tick(5)));
+
+        entry.record_budget_exhaustion(Tick(5), &budget);
+        assert_eq!(entry.consecutive_failures, 2);
+        assert_eq!(entry.next_retry_tick, Some(Tick(13)));
+
+        entry.record_budget_exhaustion(Tick(13), &budget);
+        assert_eq!(entry.consecutive_failures, 3);
+        assert_eq!(entry.next_retry_tick, Some(Tick(29)));
+
+        entry.record_budget_exhaustion(Tick(29), &budget);
+        assert_eq!(entry.consecutive_failures, 4);
+        assert_eq!(entry.next_retry_tick, Some(Tick(45)));
+    }
+
+    #[test]
+    fn retry_eligibility_respects_retry_tick_and_frontier_suppression() {
+        let frontier = ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
+        let retry = ExhaustionEntry {
+            retry_state: ExhaustionRetryState::BudgetRetryPending,
+            invalidation_conditions: Vec::new(),
+            baseline: ExhaustionBaseline::default(),
+            next_retry_tick: Some(Tick(12)),
+            consecutive_failures: 2,
+        };
+        let immediate = ExhaustionEntry {
+            retry_state: ExhaustionRetryState::BudgetRetryPending,
+            invalidation_conditions: Vec::new(),
+            baseline: ExhaustionBaseline::default(),
+            next_retry_tick: None,
+            consecutive_failures: 0,
+        };
+
+        assert!(!frontier.is_retry_eligible(Tick(99)));
+        assert!(!retry.is_retry_eligible(Tick(11)));
+        assert!(retry.is_retry_eligible(Tick(12)));
+        assert!(immediate.is_retry_eligible(Tick(0)));
     }
 
     #[test]

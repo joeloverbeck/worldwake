@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 11;
+pub const SAVE_FORMAT_VERSION: u32 = 12;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -128,7 +128,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>
 
     match found {
         LEGACY_SAVE_FORMAT_VERSION => load_legacy_v5(payload),
-        SAVE_FORMAT_VERSION => load_v10(payload),
+        SAVE_FORMAT_VERSION => load_current_format(payload),
         _ => Err(SaveError::UnsupportedVersion {
             found,
             expected: SAVE_FORMAT_VERSION,
@@ -142,7 +142,7 @@ fn load_legacy_v5(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), Sa
     Ok((state, None))
 }
 
-fn load_v10(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
+fn load_current_format(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
     let (sim_payload, rest) = split_length_prefixed_payload(bytes, "simulation")?;
     let state = bincode::deserialize(sim_payload)
         .map_err(|error| SaveError::Deserialization(error.to_string()))?;

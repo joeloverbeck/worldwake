@@ -249,7 +249,8 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
                 commodity_quantities: vec![(CommodityKind::Apple, Quantity(0))],
                 ..ExhaustionBaseline::default()
             },
-            consecutive_budget_exhaustions: 0,
+            next_retry_tick: None,
+            consecutive_failures: 0,
         },
     );
     let runtime_bytes = bincode::serialize(&DriverStateMirror {
@@ -432,7 +433,8 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
                 commodity_quantities: vec![(CommodityKind::Bread, Quantity(0))],
                 ..ExhaustionBaseline::default()
             },
-            consecutive_budget_exhaustions: 0,
+            next_retry_tick: None,
+            consecutive_failures: 0,
         },
     );
     let runtime_bytes = bincode::serialize(&DriverStateMirror {
