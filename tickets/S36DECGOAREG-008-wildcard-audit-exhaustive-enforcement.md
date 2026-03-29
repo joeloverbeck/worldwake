@@ -4,11 +4,11 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S36DECGOAREG-003, S36DECGOAREG-004, S36DECGOAREG-005, S36DECGOAREG-006, S36DECGOAREG-007
+**Deps**: S36DECGOAREG-005, S36DECGOAREG-006, S36DECGOAREG-007, S36DECGOAREG-009
 
 ## Problem
 
-After all dispatch surfaces are migrated to declaration lookups (003–007), remaining wildcard `_` arms in `GoalKind` matches across the AI crate should be audited. Wildcards that serve as shortcuts (should be reviewed per variant) must be converted to exhaustive matches. Wildcards that provide a meaningful correct-for-all-future-variants default should be documented.
+After the remaining S36 dispatch/cleanup surfaces are migrated to declaration-owned routing (005–007, 009), remaining wildcard `_` arms in `GoalKind` matches across the AI crate should be audited. Wildcards that serve as shortcuts (should be reviewed per variant) must be converted to exhaustive matches. Wildcards that provide a meaningful correct-for-all-future-variants default should be documented.
 
 ## Assumption Reassessment (2026-03-29)
 
@@ -18,6 +18,7 @@ After all dispatch surfaces are migrated to declaration lookups (003–007), rem
    - `derive_invalidation_conditions()` strategy routing — already exhaustive after 006.
    - `relevant_op_kinds()` — already routes through declarations after 003.
    - `goal_specific_feasibility()` strategy routing — already exhaustive after 007.
+   - Any residual coarse `GoalKindTag` shadow-identity routing should be removed by 009 before this audit runs.
 2. Remaining wildcard arms in `goal_model.rs` (confirmed from exploration):
    - `build_payload_override()` (lines 617-783): ~6 wildcard arms. These are in `GoalKindPlannerExt` goal-semantic methods that are **out of scope for S36** per the spec. The wildcards match on `PlannerOpKind`, not `GoalKind`. Leave as-is but document.
    - `apply_planner_step()` (lines 786-924): ~4 wildcard arms. Same — goal-semantic method, out of scope.
@@ -28,7 +29,7 @@ After all dispatch surfaces are migrated to declaration lookups (003–007), rem
    - `omitted_political_reason_for_goal()` (line 1068): `_ => None` — correct default for non-political goals. Document.
    - `omitted_social_reason_for_goal()` (line 1082): `_ => None` — correct default for non-social goals. Document.
    - `goal_history_entry()` (line 994): `_ => ...` on `DecisionOutcome`, not `GoalKind`. Not in scope.
-4. `goal_kind_tag()` (goal_model.rs:492-516): Already exhaustive, no wildcard.
+4. `goal_kind_tag()` currently exists only as a coarse shadow identity and is expected to be removed by 009 rather than audited here as an enduring dispatch surface.
 5. `goal_kind_discriminant()` (ranking.rs:1064-1088): Already exhaustive, no wildcard.
 
 ## Architecture Check

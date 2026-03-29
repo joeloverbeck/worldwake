@@ -1,9 +1,9 @@
 use crate::{
-    GoalKey, GoalKind, GoalKindPlannerExt, GoalKindTag, GroundedGoal, HypotheticalEntityId,
-    PlanningEntityRef, PlanningState,
+    GoalDispatchKey, GoalKey, GoalKind, GoalKindPlannerExt, GoalKindTag, GroundedGoal,
+    HypotheticalEntityId, PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{collections::{BTreeMap, BTreeSet}, sync::OnceLock};
 use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
 use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
 
@@ -56,81 +56,6 @@ pub enum PlannerTransitionKind {
     PutDownGroundLot,
 }
 
-const GOALS_CONSUME: &[GoalKindTag] = &[GoalKindTag::ConsumeOwnedCommodity];
-const GOALS_TRAVEL: &[GoalKindTag] = &[
-    GoalKindTag::ConsumeOwnedCommodity,
-    GoalKindTag::AcquireCommodity,
-    GoalKindTag::Sleep,
-    GoalKindTag::Relieve,
-    GoalKindTag::Wash,
-    GoalKindTag::EngageHostile,
-    GoalKindTag::ReduceDanger,
-    GoalKindTag::TreatWounds,
-    GoalKindTag::ProduceCommodity,
-    GoalKindTag::SellCommodity,
-    GoalKindTag::RestockCommodity,
-    GoalKindTag::MoveCargo,
-    GoalKindTag::LootCorpse,
-    GoalKindTag::InvestigateViolation,
-];
-const GOALS_ACQUIRE: &[GoalKindTag] = &[
-    GoalKindTag::ConsumeOwnedCommodity,
-    GoalKindTag::AcquireCommodity,
-    GoalKindTag::TreatWounds,
-    GoalKindTag::SellCommodity,
-    GoalKindTag::RestockCommodity,
-];
-const GOALS_HARVEST: &[GoalKindTag] = &[
-    GoalKindTag::ConsumeOwnedCommodity,
-    GoalKindTag::AcquireCommodity,
-    GoalKindTag::RestockCommodity,
-];
-const GOALS_QUEUE: &[GoalKindTag] = &[
-    GoalKindTag::ConsumeOwnedCommodity,
-    GoalKindTag::AcquireCommodity,
-    GoalKindTag::TreatWounds,
-    GoalKindTag::ProduceCommodity,
-    GoalKindTag::RestockCommodity,
-];
-const GOALS_PRODUCE: &[GoalKindTag] = &[
-    GoalKindTag::ConsumeOwnedCommodity,
-    GoalKindTag::AcquireCommodity,
-    GoalKindTag::TreatWounds,
-    GoalKindTag::ProduceCommodity,
-    GoalKindTag::RestockCommodity,
-];
-const GOALS_MOVE_CARGO: &[GoalKindTag] = &[
-    GoalKindTag::ConsumeOwnedCommodity,
-    GoalKindTag::AcquireCommodity,
-    GoalKindTag::Wash,
-    GoalKindTag::TreatWounds,
-    GoalKindTag::ProduceCommodity,
-    GoalKindTag::SellCommodity,
-    GoalKindTag::RestockCommodity,
-    GoalKindTag::MoveCargo,
-    GoalKindTag::StealItem,
-];
-const GOALS_TREAT_WOUNDS: &[GoalKindTag] = &[GoalKindTag::ReduceDanger, GoalKindTag::TreatWounds];
-const GOALS_LOOT: &[GoalKindTag] = &[GoalKindTag::LootCorpse];
-const GOALS_BURY: &[GoalKindTag] = &[GoalKindTag::BuryCorpse];
-const GOALS_TELL: &[GoalKindTag] = &[GoalKindTag::ShareBelief];
-const GOALS_CONSULT_RECORD: &[GoalKindTag] = &[
-    GoalKindTag::ClaimOffice,
-    GoalKindTag::SupportCandidateForOffice,
-];
-const GOALS_ATTACK: &[GoalKindTag] = &[GoalKindTag::EngageHostile];
-const GOALS_DEFEND: &[GoalKindTag] = &[GoalKindTag::ReduceDanger];
-const GOALS_BRIBE: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
-const GOALS_THREATEN: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
-const GOALS_ACCUSE: &[GoalKindTag] = &[GoalKindTag::Accuse];
-const GOALS_PUNISH: &[GoalKindTag] = &[GoalKindTag::PunishAccused];
-const GOALS_DECLARE_SUPPORT: &[GoalKindTag] = &[
-    GoalKindTag::ClaimOffice,
-    GoalKindTag::SupportCandidateForOffice,
-];
-const GOALS_PRESS_FORCE_CLAIM: &[GoalKindTag] = &[GoalKindTag::ClaimOffice];
-const GOALS_INVESTIGATE: &[GoalKindTag] = &[GoalKindTag::InvestigateViolation];
-
 #[must_use]
 pub fn build_semantics_table(
     registry: &ActionDefRegistry,
@@ -141,6 +66,64 @@ pub fn build_semantics_table(
             classify_action_def(def).map(|op_kind| (def.id, semantics_for(def, op_kind)))
         })
         .collect()
+}
+
+fn goal_tag_for_dispatch_key(key: GoalDispatchKey) -> GoalKindTag {
+    match key {
+        GoalDispatchKey::ConsumeOwnedCommodity => GoalKindTag::ConsumeOwnedCommodity,
+        GoalDispatchKey::AcquireSelfConsume
+        | GoalDispatchKey::AcquireRecipeInput
+        | GoalDispatchKey::AcquireRestock => GoalKindTag::AcquireCommodity,
+        GoalDispatchKey::Sleep => GoalKindTag::Sleep,
+        GoalDispatchKey::Relieve => GoalKindTag::Relieve,
+        GoalDispatchKey::Wash => GoalKindTag::Wash,
+        GoalDispatchKey::EngageHostile => GoalKindTag::EngageHostile,
+        GoalDispatchKey::ReduceDanger => GoalKindTag::ReduceDanger,
+        GoalDispatchKey::TreatWounds => GoalKindTag::TreatWounds,
+        GoalDispatchKey::ProduceCommodity => GoalKindTag::ProduceCommodity,
+        GoalDispatchKey::SellCommodity => GoalKindTag::SellCommodity,
+        GoalDispatchKey::RestockCommodity => GoalKindTag::RestockCommodity,
+        GoalDispatchKey::MoveCargo => GoalKindTag::MoveCargo,
+        GoalDispatchKey::LootCorpse => GoalKindTag::LootCorpse,
+        GoalDispatchKey::BuryCorpse => GoalKindTag::BuryCorpse,
+        GoalDispatchKey::ShareBelief => GoalKindTag::ShareBelief,
+        GoalDispatchKey::ClaimOffice => GoalKindTag::ClaimOffice,
+        GoalDispatchKey::SupportCandidateForOffice => GoalKindTag::SupportCandidateForOffice,
+        GoalDispatchKey::InvestigateViolation => GoalKindTag::InvestigateViolation,
+        GoalDispatchKey::StealItem => GoalKindTag::StealItem,
+        GoalDispatchKey::Accuse => GoalKindTag::Accuse,
+        GoalDispatchKey::PunishFine | GoalDispatchKey::PunishExile => GoalKindTag::PunishAccused,
+    }
+}
+
+fn derived_relevant_goal_kinds_by_op() -> &'static BTreeMap<PlannerOpKind, &'static [GoalKindTag]> {
+    static REVERSE_MEMBERSHIP: OnceLock<BTreeMap<PlannerOpKind, &'static [GoalKindTag]>> =
+        OnceLock::new();
+
+    REVERSE_MEMBERSHIP.get_or_init(|| {
+        let mut tags_by_op = BTreeMap::<PlannerOpKind, BTreeSet<GoalKindTag>>::new();
+        for key in GoalDispatchKey::all() {
+            let goal_tag = goal_tag_for_dispatch_key(*key);
+            for op_kind in key.declaration().relevant_ops {
+                tags_by_op.entry(*op_kind).or_default().insert(goal_tag);
+            }
+        }
+
+        tags_by_op
+            .into_iter()
+            .map(|(op_kind, goal_tags)| {
+                let leaked = Box::leak(goal_tags.into_iter().collect::<Vec<_>>().into_boxed_slice());
+                (op_kind, leaked as &'static [GoalKindTag])
+            })
+            .collect()
+    })
+}
+
+fn derived_relevant_goal_kinds(op_kind: PlannerOpKind) -> &'static [GoalKindTag] {
+    derived_relevant_goal_kinds_by_op()
+        .get(&op_kind)
+        .copied()
+        .unwrap_or(&[])
 }
 
 fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
@@ -210,50 +193,34 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
     }
 
     match op_kind {
-        PlannerOpKind::Travel => base_semantics(
+        PlannerOpKind::Travel
+        | PlannerOpKind::Sleep
+        | PlannerOpKind::Relieve
+        | PlannerOpKind::Wash
+        | PlannerOpKind::QueueForFacilityUse
+        | PlannerOpKind::Heal => base_semantics(
             op_kind,
             true,
             false,
             PlannerTransitionKind::GoalModelFallback,
-            GOALS_TRAVEL,
+            derived_relevant_goal_kinds(op_kind),
         ),
         PlannerOpKind::Consume => base_semantics(
             op_kind,
             true,
             false,
             PlannerTransitionKind::ConsumeMatchingTargetCommodity,
-            GOALS_CONSUME,
+            derived_relevant_goal_kinds(op_kind),
         ),
-        PlannerOpKind::Sleep => single_goal_semantics(op_kind, GoalKindTag::Sleep),
-        PlannerOpKind::Relieve => single_goal_semantics(op_kind, GoalKindTag::Relieve),
-        PlannerOpKind::Wash => single_goal_semantics(op_kind, GoalKindTag::Wash),
-        PlannerOpKind::Trade => base_semantics(
+        PlannerOpKind::Trade
+        | PlannerOpKind::Harvest
+        | PlannerOpKind::Craft
+        | PlannerOpKind::Loot => base_semantics(
             op_kind,
             true,
             true,
             PlannerTransitionKind::GoalModelFallback,
-            GOALS_ACQUIRE,
-        ),
-        PlannerOpKind::QueueForFacilityUse => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_QUEUE,
-        ),
-        PlannerOpKind::Harvest => base_semantics(
-            op_kind,
-            true,
-            true,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_HARVEST,
-        ),
-        PlannerOpKind::Craft => base_semantics(
-            op_kind,
-            true,
-            true,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_PRODUCE,
+            derived_relevant_goal_kinds(op_kind),
         ),
         PlannerOpKind::MoveCargo => base_semantics(
             op_kind,
@@ -265,28 +232,14 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
                 "put_down" => PlannerTransitionKind::PutDownGroundLot,
                 _ => PlannerTransitionKind::GoalModelFallback,
             },
-            GOALS_MOVE_CARGO,
-        ),
-        PlannerOpKind::Heal => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_TREAT_WOUNDS,
-        ),
-        PlannerOpKind::Loot => base_semantics(
-            op_kind,
-            true,
-            true,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_LOOT,
+            derived_relevant_goal_kinds(op_kind),
         ),
         PlannerOpKind::Bury => base_semantics(
             op_kind,
             false,
             true,
             PlannerTransitionKind::GoalModelFallback,
-            GOALS_BURY,
+            derived_relevant_goal_kinds(op_kind),
         ),
         PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
@@ -307,107 +260,34 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
 
 fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemantics> {
     Some(match op_kind {
-        PlannerOpKind::Tell => base_semantics(
+        PlannerOpKind::ConsultRecord | PlannerOpKind::Bribe | PlannerOpKind::Threaten => {
+            base_semantics(
+                op_kind,
+                true,
+                false,
+                PlannerTransitionKind::GoalModelFallback,
+                derived_relevant_goal_kinds(op_kind),
+            )
+        }
+        PlannerOpKind::Tell
+        | PlannerOpKind::Attack
+        | PlannerOpKind::Defend
+        | PlannerOpKind::Accuse
+        | PlannerOpKind::Fine
+        | PlannerOpKind::Exile
+        | PlannerOpKind::DeclareSupport
+        | PlannerOpKind::PressForceClaim
+        | PlannerOpKind::YieldForceClaim
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::Investigate => base_semantics(
             op_kind,
             false,
             false,
             PlannerTransitionKind::GoalModelFallback,
-            GOALS_TELL,
-        ),
-        PlannerOpKind::ConsultRecord => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_CONSULT_RECORD,
-        ),
-        PlannerOpKind::Attack => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_ATTACK,
-        ),
-        PlannerOpKind::Defend => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_DEFEND,
-        ),
-        PlannerOpKind::Bribe => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_BRIBE,
-        ),
-        PlannerOpKind::Threaten => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_THREATEN,
-        ),
-        PlannerOpKind::Accuse => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_ACCUSE,
-        ),
-        PlannerOpKind::Fine | PlannerOpKind::Exile => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_PUNISH,
-        ),
-        PlannerOpKind::DeclareSupport => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_DECLARE_SUPPORT,
-        ),
-        PlannerOpKind::PressForceClaim => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_PRESS_FORCE_CLAIM,
-        ),
-        PlannerOpKind::YieldForceClaim | PlannerOpKind::AskWitness => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            &[],
-        ),
-        PlannerOpKind::Investigate => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-            GOALS_INVESTIGATE,
+            derived_relevant_goal_kinds(op_kind),
         ),
         _ => return None,
     })
-}
-
-fn single_goal_semantics(op_kind: PlannerOpKind, goal_kind: GoalKindTag) -> PlannerOpSemantics {
-    base_semantics(
-        op_kind,
-        true,
-        false,
-        PlannerTransitionKind::GoalModelFallback,
-        match goal_kind {
-            GoalKindTag::Sleep => &[GoalKindTag::Sleep],
-            GoalKindTag::Relieve => &[GoalKindTag::Relieve],
-            GoalKindTag::Wash => &[GoalKindTag::Wash],
-            _ => unreachable!("single_goal_semantics only supports self-care leaf goals"),
-        },
-    )
 }
 
 #[must_use]
@@ -841,13 +721,14 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 mod tests {
     use super::{
         apply_hypothetical_transition, authoritative_target, authoritative_targets,
-        build_semantics_table, classify_action_def, planner_only_candidates,
+        build_semantics_table, classify_action_def, derived_relevant_goal_kinds,
+        derived_relevant_goal_kinds_by_op, planner_only_candidates,
         resolve_planning_targets_with, ExpectedMaterialization, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, GOALS_MOVE_CARGO,
+        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
     };
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GoalKindTag, GroundedGoal,
-        HypotheticalEntityId, PlanningEntityRef, PlanningState,
+        build_planning_snapshot, CommodityPurpose, GoalDispatchKey, GoalKey, GoalKind,
+        GoalKindTag, GroundedGoal, HypotheticalEntityId, PlanningEntityRef, PlanningState,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -867,6 +748,100 @@ mod tests {
         YieldForceClaimActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
+
+    fn move_cargo_goal_tags() -> &'static [GoalKindTag] {
+        derived_relevant_goal_kinds(PlannerOpKind::MoveCargo)
+    }
+
+    fn expected_reverse_membership() -> BTreeMap<PlannerOpKind, Vec<GoalKindTag>> {
+        BTreeMap::from([
+            (PlannerOpKind::Travel, vec![
+                GoalKindTag::ConsumeOwnedCommodity,
+                GoalKindTag::AcquireCommodity,
+                GoalKindTag::Sleep,
+                GoalKindTag::Relieve,
+                GoalKindTag::Wash,
+                GoalKindTag::ReduceDanger,
+                GoalKindTag::TreatWounds,
+                GoalKindTag::ProduceCommodity,
+                GoalKindTag::SellCommodity,
+                GoalKindTag::RestockCommodity,
+                GoalKindTag::MoveCargo,
+                GoalKindTag::LootCorpse,
+                GoalKindTag::ClaimOffice,
+                GoalKindTag::SupportCandidateForOffice,
+                GoalKindTag::InvestigateViolation,
+                GoalKindTag::StealItem,
+                GoalKindTag::Accuse,
+                GoalKindTag::PunishAccused,
+            ]),
+            (PlannerOpKind::Consume, vec![GoalKindTag::ConsumeOwnedCommodity]),
+            (PlannerOpKind::Sleep, vec![GoalKindTag::Sleep]),
+            (PlannerOpKind::Relieve, vec![GoalKindTag::Relieve]),
+            (PlannerOpKind::Wash, vec![GoalKindTag::Wash]),
+            (PlannerOpKind::Trade, vec![
+                GoalKindTag::AcquireCommodity,
+                GoalKindTag::TreatWounds,
+                GoalKindTag::SellCommodity,
+                GoalKindTag::RestockCommodity,
+            ]),
+            (PlannerOpKind::QueueForFacilityUse, vec![
+                GoalKindTag::AcquireCommodity,
+                GoalKindTag::TreatWounds,
+                GoalKindTag::ProduceCommodity,
+                GoalKindTag::RestockCommodity,
+            ]),
+            (PlannerOpKind::Harvest, vec![
+                GoalKindTag::AcquireCommodity,
+                GoalKindTag::TreatWounds,
+                GoalKindTag::RestockCommodity,
+            ]),
+            (PlannerOpKind::Craft, vec![
+                GoalKindTag::AcquireCommodity,
+                GoalKindTag::TreatWounds,
+                GoalKindTag::ProduceCommodity,
+                GoalKindTag::RestockCommodity,
+            ]),
+            (PlannerOpKind::MoveCargo, vec![
+                GoalKindTag::ConsumeOwnedCommodity,
+                GoalKindTag::AcquireCommodity,
+                GoalKindTag::Wash,
+                GoalKindTag::TreatWounds,
+                GoalKindTag::ProduceCommodity,
+                GoalKindTag::SellCommodity,
+                GoalKindTag::RestockCommodity,
+                GoalKindTag::MoveCargo,
+                GoalKindTag::StealItem,
+            ]),
+            (
+                PlannerOpKind::Heal,
+                vec![GoalKindTag::ReduceDanger, GoalKindTag::TreatWounds],
+            ),
+            (PlannerOpKind::Loot, vec![GoalKindTag::LootCorpse]),
+            (PlannerOpKind::Bury, vec![GoalKindTag::BuryCorpse]),
+            (PlannerOpKind::Tell, vec![GoalKindTag::ShareBelief]),
+            (PlannerOpKind::ConsultRecord, vec![
+                GoalKindTag::ClaimOffice,
+                GoalKindTag::SupportCandidateForOffice,
+            ]),
+            (PlannerOpKind::Attack, vec![GoalKindTag::EngageHostile]),
+            (PlannerOpKind::Defend, vec![GoalKindTag::ReduceDanger]),
+            (PlannerOpKind::Bribe, vec![GoalKindTag::ClaimOffice]),
+            (PlannerOpKind::Threaten, vec![GoalKindTag::ClaimOffice]),
+            (PlannerOpKind::Accuse, vec![GoalKindTag::Accuse]),
+            (PlannerOpKind::Fine, vec![GoalKindTag::PunishAccused]),
+            (PlannerOpKind::Exile, vec![GoalKindTag::PunishAccused]),
+            (PlannerOpKind::DeclareSupport, vec![
+                GoalKindTag::ClaimOffice,
+                GoalKindTag::SupportCandidateForOffice,
+            ]),
+            (PlannerOpKind::PressForceClaim, vec![GoalKindTag::ClaimOffice]),
+            (
+                PlannerOpKind::Investigate,
+                vec![GoalKindTag::InvestigateViolation],
+            ),
+        ])
+    }
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -1488,6 +1463,38 @@ mod tests {
     }
 
     #[test]
+    fn derived_reverse_membership_matches_expected_goal_tags() {
+        let expected = expected_reverse_membership();
+        let actual = derived_relevant_goal_kinds_by_op()
+            .iter()
+            .map(|(op_kind, goal_tags)| (*op_kind, goal_tags.to_vec()))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn derived_reverse_membership_covers_declared_ops_and_intentional_empties() {
+        let expected = expected_reverse_membership();
+
+        for key in GoalDispatchKey::all() {
+            for op_kind in key.declaration().relevant_ops {
+                assert!(
+                    expected.contains_key(op_kind),
+                    "missing derived reverse-membership entry for {op_kind:?} declared by {key:?}"
+                );
+                assert!(
+                    !derived_relevant_goal_kinds(*op_kind).is_empty(),
+                    "declared planner op {op_kind:?} should not derive an empty goal-tag set"
+                );
+            }
+        }
+
+        assert_eq!(derived_relevant_goal_kinds(PlannerOpKind::YieldForceClaim), &[]);
+        assert_eq!(derived_relevant_goal_kinds(PlannerOpKind::AskWitness), &[]);
+    }
+
+    #[test]
     fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
@@ -1812,7 +1819,7 @@ mod tests {
             may_appear_mid_plan: true,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
-            relevant_goal_kinds: GOALS_MOVE_CARGO,
+            relevant_goal_kinds: move_cargo_goal_tags(),
         };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::None,
@@ -1850,7 +1857,7 @@ mod tests {
             may_appear_mid_plan: true,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
-            relevant_goal_kinds: GOALS_MOVE_CARGO,
+            relevant_goal_kinds: move_cargo_goal_tags(),
         };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::None,
@@ -1906,7 +1913,7 @@ mod tests {
             may_appear_mid_plan: true,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
-            relevant_goal_kinds: GOALS_MOVE_CARGO,
+            relevant_goal_kinds: move_cargo_goal_tags(),
         };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::None,
@@ -1969,7 +1976,7 @@ mod tests {
             may_appear_mid_plan: true,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
-            relevant_goal_kinds: GOALS_MOVE_CARGO,
+            relevant_goal_kinds: move_cargo_goal_tags(),
         };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::None,
@@ -2004,7 +2011,7 @@ mod tests {
             may_appear_mid_plan: true,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PutDownGroundLot,
-            relevant_goal_kinds: GOALS_MOVE_CARGO,
+            relevant_goal_kinds: move_cargo_goal_tags(),
         };
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::None,

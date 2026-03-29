@@ -31,6 +31,38 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
+    pub const ALL: [Self; 24] = [
+        Self::ConsumeOwnedCommodity,
+        Self::AcquireSelfConsume,
+        Self::AcquireRecipeInput,
+        Self::AcquireRestock,
+        Self::Sleep,
+        Self::Relieve,
+        Self::Wash,
+        Self::EngageHostile,
+        Self::ReduceDanger,
+        Self::TreatWounds,
+        Self::ProduceCommodity,
+        Self::SellCommodity,
+        Self::RestockCommodity,
+        Self::MoveCargo,
+        Self::LootCorpse,
+        Self::BuryCorpse,
+        Self::ShareBelief,
+        Self::ClaimOffice,
+        Self::SupportCandidateForOffice,
+        Self::InvestigateViolation,
+        Self::StealItem,
+        Self::Accuse,
+        Self::PunishFine,
+        Self::PunishExile,
+    ];
+
+    #[must_use]
+    pub const fn all() -> &'static [Self] {
+        &Self::ALL
+    }
+
     #[must_use]
     pub const fn from_goal_kind(goal: &GoalKind) -> Self {
         match goal {
@@ -240,6 +272,18 @@ mod tests {
         assert_eq!(goals.len(), 21);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
+        }
+    }
+
+    #[test]
+    fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
+        assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
+        assert_eq!(GoalDispatchKey::all().len(), 24);
+        for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
+            assert!(
+                !GoalDispatchKey::all()[idx + 1..].contains(key),
+                "duplicate key in exhaustive dispatch-key list: {key:?}"
+            );
         }
     }
 }
