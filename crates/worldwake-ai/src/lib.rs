@@ -15,6 +15,7 @@ pub mod failure_handling;
 pub mod feasibility;
 mod frame_switch_policy;
 pub mod goal_explanation;
+mod goal_dispatch_key;
 pub mod goal_model;
 pub mod goal_policy;
 mod goal_switching;
@@ -67,6 +68,7 @@ pub use goal_model::{
     RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
     RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
+pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_policy::{
     evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
     GoalPolicyOutcome,
