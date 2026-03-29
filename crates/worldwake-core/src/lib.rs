@@ -26,6 +26,7 @@
 
 pub mod action_domain;
 pub mod allocator;
+pub mod bandit_camp;
 pub mod belief;
 pub mod blocked_intent;
 pub mod canonical;
@@ -75,6 +76,7 @@ pub mod wounds;
 
 pub use action_domain::ActionDomain;
 pub use allocator::EntityAllocator;
+pub use bandit_camp::{BanditCamp, BanditCampProfile};
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
     current_institutional_belief_topics, institutional_claim_same_memory_lane,

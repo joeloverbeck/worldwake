@@ -1888,10 +1888,10 @@ mod tests {
         TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
     };
     use crate::{
-        CommodityKind, Container, ControlSource, DeprivationExposure, EntityId, EntityKind,
-        HomeostaticNeeds, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag, Quantity,
-        ReservationId, ReservationRecord, ResourceSource, Tick, TickRange, Topology,
-        UniqueItemKind, World, WorldError,
+        BanditCamp, BanditCampProfile, CommodityKind, Container, ControlSource,
+        DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation,
+        Name, Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord,
+        ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1949,6 +1949,21 @@ mod tests {
     fn sample_production_output_ownership_policy() -> crate::ProductionOutputOwnershipPolicy {
         crate::ProductionOutputOwnershipPolicy {
             output_owner: crate::ProductionOutputOwner::ProducerOwner,
+        }
+    }
+
+    fn sample_bandit_camp() -> BanditCamp {
+        BanditCamp {
+            supplies: entity(61),
+        }
+    }
+
+    fn sample_bandit_camp_profile() -> BanditCampProfile {
+        BanditCampProfile {
+            min_regroup_count: 3,
+            establishment_duration_ticks: std::num::NonZeroU32::new(12).unwrap(),
+            flee_wound_threshold: Permille::new(650).unwrap(),
+            rally_place: Some(entity(62)),
         }
     }
 
@@ -3805,6 +3820,74 @@ mod tests {
     }
 
     #[test]
+    fn set_component_bandit_camp_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_bandit_camp();
+        let after = BanditCamp {
+            supplies: entity(63),
+        };
+        world.insert_component_bandit_camp(place, before.clone()).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_bandit_camp(place, after.clone()).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: place,
+                component_kind: ComponentKind::BanditCamp,
+                before: Some(ComponentValue::BanditCamp(before)),
+                after: ComponentValue::BanditCamp(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_bandit_camp(place), Some(&after));
+    }
+
+    #[test]
+    fn set_component_bandit_camp_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_bandit_camp_profile();
+        let after = BanditCampProfile {
+            min_regroup_count: 4,
+            establishment_duration_ticks: std::num::NonZeroU32::new(9).unwrap(),
+            flee_wound_threshold: Permille::new(725).unwrap(),
+            rally_place: Some(entity(64)),
+        };
+        world
+            .insert_component_bandit_camp_profile(place, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_bandit_camp_profile(place, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: place,
+                component_kind: ComponentKind::BanditCampProfile,
+                before: Some(ComponentValue::BanditCampProfile(before)),
+                after: ComponentValue::BanditCampProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_bandit_camp_profile(place), Some(&after));
+    }
+
+    #[test]
     fn set_component_carry_capacity_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -4717,6 +4800,62 @@ mod tests {
 
         assert_eq!(record_event.state_deltas().len(), 1);
         assert_eq!(world.get_component_record_data(record), None);
+    }
+
+    #[test]
+    fn clear_component_bandit_camp_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_bandit_camp();
+        world.insert_component_bandit_camp(place, before.clone()).unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_bandit_camp(place).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: place,
+                component_kind: ComponentKind::BanditCamp,
+                before: ComponentValue::BanditCamp(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_bandit_camp(place), None);
+    }
+
+    #[test]
+    fn clear_component_bandit_camp_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_bandit_camp_profile();
+        world
+            .insert_component_bandit_camp_profile(place, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_bandit_camp_profile(place).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: place,
+                component_kind: ComponentKind::BanditCampProfile,
+                before: ComponentValue::BanditCampProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_bandit_camp_profile(place), None);
     }
 
     #[test]

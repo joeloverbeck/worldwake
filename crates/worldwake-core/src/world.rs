@@ -2,18 +2,19 @@
 
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    BlockedIntentMemory, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
-    ComponentTables, ComponentValue, Container, DeadAt, DemandMemory, DeprivationExposure,
-    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
-    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
-    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PerceptionProfile, PlaceTag, ProductionJob,
-    ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData, RelationTables,
-    ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
+    BanditCamp, BanditCampProfile, BlockedIntentMemory, CarryCapacity, CombatProfile,
+    CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt,
+    DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
+    EntityMeta, EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
+    HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+    MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
+    PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
+    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -591,19 +592,19 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart,
-        CarryCapacity, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
-        DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, EventId, FactionData, FactionPurpose, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
-        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
-        PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList,
+        AgentBeliefStore, AgentData, BanditCamp, BanditCampProfile, BeliefConfidencePolicy,
+        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
+        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
+        FactionPurpose, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
+        OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource, Permille,
+        Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData, RecordEntryId,
+        RecordKind, ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences,
+        SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -808,6 +809,21 @@ mod tests {
             max_quantity: Quantity(15),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(4).unwrap()),
             last_regeneration_tick: Some(Tick(7)),
+        }
+    }
+
+    fn sample_bandit_camp() -> BanditCamp {
+        BanditCamp {
+            supplies: entity(70),
+        }
+    }
+
+    fn sample_bandit_camp_profile() -> BanditCampProfile {
+        BanditCampProfile {
+            min_regroup_count: 3,
+            establishment_duration_ticks: NonZeroU32::new(10).unwrap(),
+            flee_wound_threshold: Permille::new(650).unwrap(),
+            rally_place: Some(entity(71)),
         }
     }
 
@@ -5239,6 +5255,62 @@ mod tests {
                     output_owner: crate::ProductionOutputOwner::Actor,
                 },
             )
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn bandit_camp_component_roundtrip_on_place() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let camp = sample_bandit_camp();
+
+        world.insert_component_bandit_camp(place, camp.clone()).unwrap();
+        assert_eq!(world.get_component_bandit_camp(place), Some(&camp));
+        assert!(world.has_component_bandit_camp(place));
+
+        let removed = world.remove_component_bandit_camp(place).unwrap();
+        assert_eq!(removed, Some(camp));
+        assert_eq!(world.get_component_bandit_camp(place), None);
+    }
+
+    #[test]
+    fn bandit_camp_profile_component_roundtrip_on_place() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let profile = sample_bandit_camp_profile();
+
+        world
+            .insert_component_bandit_camp_profile(place, profile.clone())
+            .unwrap();
+        assert_eq!(world.get_component_bandit_camp_profile(place), Some(&profile));
+        assert!(world.has_component_bandit_camp_profile(place));
+
+        let removed = world.remove_component_bandit_camp_profile(place).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_bandit_camp_profile(place), None);
+    }
+
+    #[test]
+    fn insert_bandit_camp_on_non_place_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_bandit_camp(id, sample_bandit_camp())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_bandit_camp_profile_on_non_place_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+
+        let err = world
+            .insert_component_bandit_camp_profile(id, sample_bandit_camp_profile())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

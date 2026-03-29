@@ -1,6 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
+    bandit_camp::{BanditCamp, BanditCampProfile},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
@@ -138,13 +139,13 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        ActionDefId, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
-        ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-        ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Permille, ProductionJob,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
-        ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, Wound, WoundCause, WoundList,
+        ActionDefId, BanditCamp, BanditCampProfile, BodyPart, CarryCapacity, CombatProfile,
+        CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
+        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
+        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -371,6 +372,21 @@ mod tests {
                 output_owner: ProductionOutputOwner::ProducerOwner,
             },
         );
+        tables.insert_bandit_camp(
+            entity(31),
+            BanditCamp {
+                supplies: entity(32),
+            },
+        );
+        tables.insert_bandit_camp_profile(
+            entity(33),
+            BanditCampProfile {
+                min_regroup_count: 3,
+                establishment_duration_ticks: NonZeroU32::new(11).unwrap(),
+                flee_wound_threshold: Permille::new(650).unwrap(),
+                rally_place: Some(entity(34)),
+            },
+        );
     }
 
     #[test]
@@ -411,6 +427,8 @@ mod tests {
             0
         );
         assert_eq!(tables.iter_resource_sources().count(), 0);
+        assert_eq!(tables.iter_bandit_camps().count(), 0);
+        assert_eq!(tables.iter_bandit_camp_profiles().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
@@ -660,6 +678,39 @@ mod tests {
             Some(policy)
         );
         assert_eq!(tables.get_production_output_ownership_policy(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_bandit_camp() {
+        let mut tables = ComponentTables::default();
+        let id = entity(20);
+        let camp = BanditCamp {
+            supplies: entity(36),
+        };
+
+        assert_eq!(tables.insert_bandit_camp(id, camp.clone()), None);
+        assert_eq!(tables.get_bandit_camp(id), Some(&camp));
+        assert!(tables.has_bandit_camp(id));
+        assert_eq!(tables.remove_bandit_camp(id), Some(camp));
+        assert_eq!(tables.get_bandit_camp(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_bandit_camp_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(21);
+        let profile = BanditCampProfile {
+            min_regroup_count: 4,
+            establishment_duration_ticks: NonZeroU32::new(9).unwrap(),
+            flee_wound_threshold: Permille::new(700).unwrap(),
+            rally_place: Some(entity(38)),
+        };
+
+        assert_eq!(tables.insert_bandit_camp_profile(id, profile.clone()), None);
+        assert_eq!(tables.get_bandit_camp_profile(id), Some(&profile));
+        assert!(tables.has_bandit_camp_profile(id));
+        assert_eq!(tables.remove_bandit_camp_profile(id), Some(profile));
+        assert_eq!(tables.get_bandit_camp_profile(id), None);
     }
 
     #[test]
