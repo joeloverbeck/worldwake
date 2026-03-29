@@ -1014,7 +1014,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .expect("fallback replan should expose same-goal branch replacement provenance");
     assert_eq!(
         replacement.kind,
-        SelectedPlanReplacementKind::SameGoalBranchReplanned
+        SelectedPlanReplacementKind::SameGoalBranchRefreshed
     );
     assert_eq!(replacement.previous_goal, replacement.new_goal);
     assert_ne!(

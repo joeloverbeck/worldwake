@@ -100,6 +100,7 @@ The traceability contract lives in:
 - [`crates/worldwake-ai/src/search/candidates.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/candidates.rs)
 - [`crates/worldwake-ai/src/search/transition.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/transition.rs)
 - [`crates/worldwake-ai/src/decision_trace.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+- [`crates/worldwake-ai/src/agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs)
 
 Decision traces should explain planner failures at the planner boundary, not force source-diving into unrelated modules.
 
@@ -140,6 +141,46 @@ The `dependency` value must come from `PlannerDurationDependency`, not from ad h
 
 Use these when the question is "the operator surfaced, so why did it still not expand?"
 
+### Same-goal sibling planning stop provenance
+
+Opportunity-scoped same-goal continuation now has an explicit trace contract in:
+
+- [`build_candidate_plans()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs)
+- [`summarize_same_goal_planning_trace()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs)
+- [`PlanSearchTrace.same_goal_trace`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+
+The contract is:
+
+- `PlanSearchTrace.attempts` remains the authoritative admitted-attempt order.
+- Once one admitted attempt finds a plan, `build_candidate_plans()` continues only through later contiguous siblings with the same `GoalKey`.
+- The sibling scan stops for exactly one bounded reason recorded in `SameGoalPlanningStopReason`:
+  - `EncounteredDifferentGoal { next_goal }`
+  - `ReachedCandidatePlanCap`
+  - `ExhaustedAdmittedOpportunities`
+- `SameGoalPlanningTrace.continuation_trigger` records which found opportunity first enabled same-goal continuation. It is `None` when no admitted attempt found a plan.
+
+Do not reconstruct this from list length alone. Use `same_goal_trace`.
+
+### Same-goal branch attribution at selection
+
+Selection provenance for same-goal replans lives in:
+
+- [`determine_selected_plan_source()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs)
+- [`summarize_plan_replacement()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs)
+- [`SelectionTrace.selected_plan_source`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+- [`SelectionTrace.plan_replacement`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+
+The contract is:
+
+- `selected_plan_source` still answers the coarse source question: `SearchSelection`, `RetainedCurrentPlan`, or `SnapshotContinuation`.
+- When a fresh search displaces an existing branch, `plan_replacement.kind` records the finer branch attribution:
+  - `SameGoalBranchRefreshed`
+  - `SameGoalSiblingReplaced`
+  - `GoalChanged`
+- Same-goal refresh vs same-goal sibling replacement is determined by comparing the current plan's canonical `OpportunityKey` with the selected fresh plan's `OpportunityKey`. This stays opportunity-scoped; there is no second alias path at the `GoalKey` level.
+
+Do not overload `selected_plan_source` to answer branch-identity questions it does not own by itself. Read both fields together.
+
 ## 4. How To Use This In Tickets
 
 For planner-driven tickets:
@@ -147,7 +188,7 @@ For planner-driven tickets:
 - name the live `GoalKind`
 - name the exact operator surface under audit
 - state whether the terminal binding comes from `GoalKind` identity, grounded evidence, or neither
-- state whether the proof boundary is root omission tracing, surfaced-candidate skip tracing, snapshot/state parity, or another lower-layer planner test
+- state whether the proof boundary is root omission tracing, surfaced-candidate skip tracing, same-goal sibling stop tracing, selection branch attribution, snapshot/state parity, or another lower-layer planner test
 
 If traces prove the immediate result but not enough provenance to explain the architecture, follow `docs/precision-rules.md`: prove the behavior at the strongest lower layer and open a follow-up traceability ticket if the missing explanation surface matters.
 

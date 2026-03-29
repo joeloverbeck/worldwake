@@ -4362,14 +4362,22 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
 }
 
 #[test]
-fn summarize_plan_replacement_records_same_goal_branch_replan() {
+fn summarize_plan_replacement_records_same_goal_sibling_replacement() {
     let goal = GoalKey::from(GoalKind::RestockCommodity {
         commodity: CommodityKind::Bread,
     });
     let orchard_source = entity(12);
     let bandit_camp = entity(22);
+    let orchard_opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Place(entity(101)),
+    };
+    let camp_opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Place(entity(102)),
+    };
     let current_plan = PlannedPlan::new(
-        default_opportunity(goal),
+        orchard_opportunity,
         goal,
         vec![
             travel_step(1, entity(11)),
@@ -4386,7 +4394,7 @@ fn summarize_plan_replacement_records_same_goal_branch_replan() {
         PlanTerminalKind::GoalSatisfied,
     );
     let selected_plan = PlannedPlan::new(
-        default_opportunity(goal),
+        camp_opportunity,
         goal,
         vec![travel_step(3, bandit_camp)],
         PlanTerminalKind::GoalSatisfied,
@@ -4408,7 +4416,7 @@ fn summarize_plan_replacement_records_same_goal_branch_replan() {
 
     assert_eq!(
         replacement.kind,
-        SelectedPlanReplacementKind::SameGoalBranchReplanned
+        SelectedPlanReplacementKind::SameGoalSiblingReplaced
     );
     assert_eq!(replacement.previous_goal, goal);
     assert_eq!(replacement.new_goal, goal);
@@ -4428,6 +4436,51 @@ fn summarize_plan_replacement_records_same_goal_branch_replan() {
             .targets,
         vec![bandit_camp]
     );
+}
+
+#[test]
+fn summarize_plan_replacement_records_same_goal_branch_refresh() {
+    let goal = GoalKey::from(GoalKind::RestockCommodity {
+        commodity: CommodityKind::Bread,
+    });
+    let orchard = entity(12);
+    let opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Place(entity(99)),
+    };
+    let current_plan = PlannedPlan::new(
+        opportunity,
+        goal,
+        vec![travel_step(1, orchard)],
+        PlanTerminalKind::GoalSatisfied,
+    );
+    let selected_plan = PlannedPlan::new(
+        opportunity,
+        goal,
+        vec![travel_step(2, orchard)],
+        PlanTerminalKind::GoalSatisfied,
+    );
+    let runtime = AgentDecisionRuntime {
+        current_plan: Some(current_plan),
+        current_step_index: 0,
+        ..AgentDecisionRuntime::default()
+    };
+
+    let replacement = summarize_plan_replacement(
+        &runtime,
+        Some(goal),
+        goal,
+        &selected_plan,
+        &ActionDefRegistry::new(),
+    )
+    .expect("fresh same-goal search should expose refresh provenance");
+
+    assert_eq!(
+        replacement.kind,
+        SelectedPlanReplacementKind::SameGoalBranchRefreshed
+    );
+    assert_eq!(replacement.previous_goal, goal);
+    assert_eq!(replacement.new_goal, goal);
 }
 
 #[test]

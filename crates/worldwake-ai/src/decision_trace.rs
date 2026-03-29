@@ -139,6 +139,11 @@ impl DecisionOutcome {
                     .iter()
                     .filter(|a| matches!(a.outcome, PlanSearchOutcome::Found { .. }))
                     .count();
+                let same_goal_suffix = planning
+                    .planning
+                    .same_goal_trace
+                    .as_ref()
+                    .map_or_else(String::new, format_same_goal_planning_trace_summary);
                 let selected_summary = selected_ranked_goal_summary(planning);
                 let selected_provenance = selected_summary
                     .and_then(|summary| summary.provenance.as_ref())
@@ -160,11 +165,18 @@ impl DecisionOutcome {
                 } else {
                     format!(", unknown_blockers={}", planning.unknown_blockers.len())
                 };
+                let replacement_suffix = planning
+                    .selection
+                    .plan_replacement
+                    .as_ref()
+                    .map_or_else(String::new, |replacement| {
+                        format!(", replacement={:?}", replacement.kind)
+                    });
                 let frame_suffix =
                     format_frame_transition_summary(planning.frame_transition.as_ref());
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -423,6 +435,24 @@ pub enum CandidateLegalityTrace {
 pub struct PlanSearchTrace {
     /// One entry per candidate that was planned (top N by budget).
     pub attempts: Vec<PlanAttemptTrace>,
+    /// Structured same-goal sibling continuation/stop provenance for this
+    /// planning pass, when any candidates were admitted.
+    pub same_goal_trace: Option<SameGoalPlanningTrace>,
+}
+
+/// Why same-goal sibling planning stopped after walking admitted candidates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SameGoalPlanningStopReason {
+    EncounteredDifferentGoal { next_goal: GoalKey },
+    ReachedCandidatePlanCap,
+    ExhaustedAdmittedOpportunities,
+}
+
+/// Bounded provenance for same-goal sibling continuation and stop behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SameGoalPlanningTrace {
+    pub continuation_trigger: Option<OpportunityKey>,
+    pub stop_reason: SameGoalPlanningStopReason,
 }
 
 /// Diagnostic record of a candidate rejected by goal target binding.
@@ -726,7 +756,8 @@ pub struct GoalSwitchSummary {
 /// How a fresh search replaced the current branch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SelectedPlanReplacementKind {
-    SameGoalBranchReplanned,
+    SameGoalBranchRefreshed,
+    SameGoalSiblingReplaced,
     GoalChanged,
 }
 
@@ -1338,6 +1369,24 @@ fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvena
     )
 }
 
+fn format_same_goal_planning_trace_summary(trace: &SameGoalPlanningTrace) -> String {
+    let trigger = trace
+        .continuation_trigger
+        .map_or_else(|| "none".to_string(), format_opportunity_key);
+    let stop = match trace.stop_reason {
+        SameGoalPlanningStopReason::EncounteredDifferentGoal { next_goal } => {
+            format!("EncounteredDifferentGoal({:?})", next_goal.kind)
+        }
+        SameGoalPlanningStopReason::ReachedCandidatePlanCap => {
+            "ReachedCandidatePlanCap".to_string()
+        }
+        SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities => {
+            "ExhaustedAdmittedOpportunities".to_string()
+        }
+    };
+    format!(", same_goal=trigger={trigger}, stop={stop}")
+}
+
 impl Default for DecisionTraceSink {
     fn default() -> Self {
         Self::new()
@@ -1636,6 +1685,7 @@ mod tests {
                 },
                 planning: PlanSearchTrace {
                     attempts: Vec::new(),
+                    same_goal_trace: None,
                 },
                 selection: SelectionTrace {
                     selected_opportunity: selected.map(default_opportunity),
@@ -2041,7 +2091,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(market),
                 selected_plan: None,
@@ -2195,7 +2248,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
                 selected_plan: Some(SelectedPlanTrace {
@@ -2260,6 +2316,71 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_includes_same_goal_stop_and_replacement_kind() {
+        let goal = GoalKey::new(GoalKind::RestockCommodity {
+            commodity: worldwake_core::CommodityKind::Bread,
+        });
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![default_opportunity(goal)],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                ranked: vec![],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: Some(SameGoalPlanningTrace {
+                    continuation_trigger: Some(OpportunityKey {
+                        goal_key: goal,
+                        anchor: OpportunityAnchor::Place(entity(22)),
+                    }),
+                    stop_reason: SameGoalPlanningStopReason::EncounteredDifferentGoal {
+                        next_goal: GoalKey::new(GoalKind::Sleep),
+                    },
+                }),
+            },
+            selection: SelectionTrace {
+                selected_opportunity: Some(OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(23)),
+                }),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: Some(goal),
+                plan_replacement: Some(SelectedPlanReplacementTrace {
+                    previous_goal: goal,
+                    new_goal: goal,
+                    previous_next_step: None,
+                    new_next_step: None,
+                    kind: SelectedPlanReplacementKind::SameGoalSiblingReplaced,
+                }),
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("same_goal=trigger=RestockCommodity"));
+        assert!(summary.contains("EncounteredDifferentGoal(Sleep)"));
+        assert!(summary.contains("replacement=SameGoalSiblingReplaced"));
+    }
+
+    #[test]
     fn summary_planning_includes_selected_competition_discount() {
         use worldwake_core::GoalKind;
 
@@ -2285,7 +2406,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
                 selected_plan: None,
@@ -2337,7 +2461,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
                 selected_plan: None,
@@ -2387,6 +2514,7 @@ mod tests {
                     binding_rejections: vec![],
                     expansion_summaries: vec![],
                 }],
+                same_goal_trace: None,
             },
             selection: SelectionTrace {
                 selected_opportunity: None,
@@ -2444,7 +2572,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: None,
                 selected_plan: None,
@@ -2511,7 +2642,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(winner)),
                 selected_plan: None,
@@ -2570,7 +2704,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(GoalKey::new(
                     GoalKind::ReduceDanger,
@@ -2646,7 +2783,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(GoalKey::new(
                     GoalKind::ConsumeOwnedCommodity {
@@ -2744,6 +2884,7 @@ mod tests {
                         }],
                     }],
                 }],
+                same_goal_trace: None,
             },
             selection: SelectionTrace {
                 selected_opportunity: Some(default_opportunity(GoalKey::new(
@@ -3026,7 +3167,10 @@ mod tests {
                 omitted_political: vec![],
                 omitted_social: vec![],
             },
-            planning: PlanSearchTrace { attempts: vec![] },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
             selection: SelectionTrace {
                 selected_opportunity: None,
                 selected_plan: None,
@@ -3200,7 +3344,10 @@ mod tests {
                     omitted_political: vec![],
                     omitted_social: vec![],
                 },
-                planning: PlanSearchTrace { attempts: vec![] },
+                planning: PlanSearchTrace {
+                    attempts: vec![],
+                    same_goal_trace: None,
+                },
                 selection: SelectionTrace {
                     selected_opportunity: None,
                     selected_plan: None,

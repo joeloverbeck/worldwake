@@ -2,7 +2,7 @@ use crate::decision_trace::{
     BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, RankedGoalSummary, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace,
+    SelectedPlanTrace, SelectionTrace, SameGoalPlanningStopReason, SameGoalPlanningTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::plan_selection::SelectionCandidatePlan;
@@ -118,21 +118,23 @@ pub(super) fn summarize_plan_replacement(
     action_defs: &worldwake_sim::ActionDefRegistry,
 ) -> Option<SelectedPlanReplacementTrace> {
     let previous_goal = active_goal?;
+    let previous_opportunity = runtime.current_plan.as_ref().map(|plan| plan.opportunity);
     let previous_next_step = current_step(runtime).map(|step| summarize_step(step, action_defs));
     let new_next_step = selected_plan
         .steps
         .first()
         .map(|step| summarize_step(step, action_defs));
-    if previous_goal == selected_goal && previous_next_step == new_next_step {
-        return None;
-    }
     Some(SelectedPlanReplacementTrace {
         previous_goal,
         new_goal: selected_goal,
         previous_next_step,
         new_next_step,
         kind: if previous_goal == selected_goal {
-            SelectedPlanReplacementKind::SameGoalBranchReplanned
+            if previous_opportunity == Some(selected_plan.opportunity) {
+                SelectedPlanReplacementKind::SameGoalBranchRefreshed
+            } else {
+                SelectedPlanReplacementKind::SameGoalSiblingReplaced
+            }
         } else {
             SelectedPlanReplacementKind::GoalChanged
         },
@@ -190,7 +192,7 @@ pub(super) fn build_candidate_plans(
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
 ) -> Vec<CandidatePlanSearch> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
-    let candidates_to_plan: Vec<_> = ranked_candidates
+    let admitted_candidates: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
             let key = OpportunityKey {
@@ -201,6 +203,9 @@ pub(super) fn build_candidate_plans(
                 .get(&key)
                 .is_some_and(ExhaustionEntry::suppresses_planning)
         })
+        .collect();
+    let candidates_to_plan: Vec<_> = admitted_candidates
+        .into_iter()
         .take(usize::from(budget.max_candidates_to_plan))
         .collect();
 
@@ -278,6 +283,61 @@ pub(super) fn build_candidate_plans(
         }
     }
     results
+}
+
+pub(super) fn summarize_same_goal_planning_trace(
+    ranked_candidates: &[RankedGoal],
+    budget: &PlanningBudget,
+    exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    plans: &[CandidatePlanSearch],
+) -> Option<SameGoalPlanningTrace> {
+    if plans.is_empty() {
+        return None;
+    }
+
+    let admitted_candidates: Vec<_> = ranked_candidates
+        .iter()
+        .filter(|candidate| {
+            let key = OpportunityKey {
+                goal_key: candidate.grounded.key,
+                anchor: candidate.grounded.anchor,
+            };
+            !exhaustion_cache
+                .get(&key)
+                .is_some_and(ExhaustionEntry::suppresses_planning)
+        })
+        .collect();
+    let admitted_cap = usize::from(budget.max_candidates_to_plan);
+    let candidate_cap_hit = admitted_candidates.len() > admitted_cap;
+    let continuation_trigger = plans
+        .iter()
+        .find(|plan| plan.result.is_found())
+        .map(|plan| plan.opportunity);
+    let stop_reason = if let Some(found_goal) = continuation_trigger.map(|opportunity| opportunity.goal_key) {
+        if let Some(next_candidate) = admitted_candidates
+            .into_iter()
+            .take(admitted_cap)
+            .skip(plans.len())
+            .find(|candidate| candidate.grounded.key != found_goal)
+        {
+            SameGoalPlanningStopReason::EncounteredDifferentGoal {
+                next_goal: next_candidate.grounded.key,
+            }
+        } else if candidate_cap_hit {
+            SameGoalPlanningStopReason::ReachedCandidatePlanCap
+        } else {
+            SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities
+        }
+    } else if candidate_cap_hit {
+        SameGoalPlanningStopReason::ReachedCandidatePlanCap
+    } else {
+        SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities
+    };
+
+    Some(SameGoalPlanningTrace {
+        continuation_trigger,
+        stop_reason,
+    })
 }
 
 pub(super) fn selection_candidates(plans: &[CandidatePlanSearch]) -> Vec<SelectionCandidatePlan> {
@@ -588,6 +648,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     let mut plan_search_trace = PlanSearchTrace {
         attempts: Vec::new(),
+        same_goal_trace: None,
     };
     let mut selection_trace = SelectionTrace {
         selected_opportunity: None,
@@ -685,6 +746,12 @@ pub(super) fn plan_and_validate_next_step_traced(
                 plan.expansion_summaries.clone(),
             ));
         }
+        plan_search_trace.same_goal_trace = summarize_same_goal_planning_trace(
+            ranked_candidates,
+            budget,
+            &runtime.exhaustion_cache,
+            &plans,
+        );
 
         let selection_plans = selection_candidates(&plans);
         let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.goal_key);
@@ -969,6 +1036,31 @@ mod tests {
             .unwrap();
         topology
             .add_edge(TravelEdge::new(TravelEdgeId(2), destination, origin, 2, None).unwrap())
+            .unwrap();
+        topology
+    }
+
+    fn three_place_topology(
+        origin: worldwake_core::EntityId,
+        destination: worldwake_core::EntityId,
+        extra: worldwake_core::EntityId,
+    ) -> Topology {
+        let mut topology = cargo_topology(origin, destination);
+        topology
+            .add_place(
+                extra,
+                Place {
+                    name: "Extra".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::default(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(3), origin, extra, 2, None).unwrap())
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(4), extra, origin, 2, None).unwrap())
             .unwrap();
         topology
     }
@@ -1463,9 +1555,9 @@ mod tests {
             &recipes,
         );
 
-        let attempts = &plan_search_trace
-            .expect("traced planning should record attempt order")
-            .attempts;
+        let plan_search_trace =
+            plan_search_trace.expect("traced planning should record attempt order");
+        let attempts = &plan_search_trace.attempts;
         assert_eq!(attempts.len(), 2);
         assert_eq!(
             attempts[0].opportunity_anchor,
@@ -1488,6 +1580,170 @@ mod tests {
                 crate::decision_trace::PlanSearchOutcome::Unsupported
             ),
             "the later same-goal opportunity should appear as a real search attempt in the trace"
+        );
+        assert_eq!(
+            plan_search_trace.same_goal_trace,
+            Some(crate::SameGoalPlanningTrace {
+                continuation_trigger: None,
+                stop_reason: crate::SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities,
+            })
+        );
+    }
+
+    #[test]
+    fn same_goal_planning_trace_records_different_goal_stop_after_found_sibling() {
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        });
+        let market = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(61)),
+        };
+        let orchard = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(62)),
+        };
+        let sleep_goal = GroundedGoal {
+            key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(63)),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+        let ranked_candidates = vec![
+            ranked_goal(GroundedGoal {
+                key: goal,
+                anchor: market.anchor,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            }),
+            ranked_goal(GroundedGoal {
+                key: goal,
+                anchor: orchard.anchor,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            }),
+            ranked_goal(sleep_goal.clone()),
+        ];
+        let plans = vec![
+            searched_plan(market, PlanSearchResult::FrontierExhausted { expansions_used: 1 }),
+            searched_plan(
+                orchard,
+                PlanSearchResult::Found(Box::new(PlannedPlan::new(
+                    orchard,
+                    goal,
+                    Vec::new(),
+                    PlanTerminalKind::GoalSatisfied,
+                ))),
+            ),
+        ];
+
+        assert_eq!(
+            super::summarize_same_goal_planning_trace(
+                &ranked_candidates,
+                &PlanningBudget {
+                    max_candidates_to_plan: 3,
+                    ..PlanningBudget::default()
+                },
+                &BTreeMap::new(),
+                &plans,
+            ),
+            Some(crate::SameGoalPlanningTrace {
+                continuation_trigger: Some(orchard),
+                stop_reason: crate::SameGoalPlanningStopReason::EncounteredDifferentGoal {
+                    next_goal: sleep_goal.key,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn same_goal_planning_trace_records_candidate_cap_stop_reason() {
+        let origin = entity(51);
+        let market = entity(52);
+        let camp = entity(53);
+        let mut world = World::new(three_place_topology(origin, market, camp)).unwrap();
+        let (agent, bread) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_ground_location(bread, origin).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, bread)
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(origin),
+                BTreeSet::from([bread]),
+                BTreeSet::from([origin]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(camp),
+                BTreeSet::new(),
+                BTreeSet::from([camp]),
+            )),
+        ];
+        let plans = super::build_candidate_plans(
+            &world,
+            &scheduler,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            Tick(1),
+            &PlanningBudget {
+                snapshot_travel_horizon: 4,
+                max_candidates_to_plan: 2,
+                ..PlanningBudget::default()
+            },
+            &semantics,
+            &defs,
+            &handlers,
+            &recipes,
+            false,
+            false,
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(plans.len(), 2);
+        assert_eq!(
+            super::summarize_same_goal_planning_trace(
+                &ranked_candidates,
+                &PlanningBudget {
+                    snapshot_travel_horizon: 4,
+                    max_candidates_to_plan: 2,
+                    ..PlanningBudget::default()
+                },
+                &BTreeMap::new(),
+                &plans,
+            ),
+            Some(crate::SameGoalPlanningTrace {
+                continuation_trigger: None,
+                stop_reason: crate::SameGoalPlanningStopReason::ReachedCandidatePlanCap,
+            })
         );
     }
 

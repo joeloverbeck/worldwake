@@ -53,10 +53,10 @@ pub use decision_trace::{
     PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
     RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
     RootCandidateSkipReason, RootCandidateTrace, RootOperatorOmissionDetail,
-    RootOperatorOmissionReason, RootOperatorOmissionTrace, SelectedPlanReplacementKind,
-    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
-    TravelSuccessorTrace,
+    RootOperatorOmissionReason, RootOperatorOmissionTrace, SameGoalPlanningStopReason,
+    SameGoalPlanningTrace, SelectedPlanReplacementKind, SelectedPlanReplacementTrace,
+    SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace,
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};

@@ -702,6 +702,7 @@ fn process_agent(
                 candidates: candidate_trace,
                 planning: plan_search_trace.unwrap_or(PlanSearchTrace {
                     attempts: Vec::new(),
+                    same_goal_trace: None,
                 }),
                 selection: selection_trace.unwrap_or(SelectionTrace {
                     selected_opportunity: None,
