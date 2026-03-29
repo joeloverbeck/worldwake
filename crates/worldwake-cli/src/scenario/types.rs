@@ -192,6 +192,7 @@ mod tests {
                         danger_weight: 500,
                         enterprise_weight: 500,
                         social_weight: 200,
+                        activity_awareness_weight: 200,
                         courage: 500,
                         care_weight: 200,
                     ),
@@ -235,6 +236,14 @@ mod tests {
         assert!(bob.needs.is_some());
         assert!(bob.combat_profile.is_some());
         assert!(bob.utility_profile.is_some());
+        assert_eq!(
+            bob.utility_profile
+                .as_ref()
+                .unwrap()
+                .activity_awareness_weight
+                .value(),
+            200
+        );
         assert!(bob.merchandise_profile.is_some());
         let merch = bob.merchandise_profile.as_ref().unwrap();
         assert_eq!(

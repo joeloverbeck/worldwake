@@ -1375,6 +1375,7 @@ mod tests {
             danger_weight: pm(300),
             enterprise_weight: pm(200),
             social_weight: pm(150),
+            activity_awareness_weight: pm(200),
             courage: pm(500),
             care_weight: pm(200),
         }
