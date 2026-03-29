@@ -1,9 +1,31 @@
 use crate::{goal_dispatch_key::GoalDispatchKey, PlannerOpKind, RankedGoalProvenanceFamily};
+use worldwake_core::HomeostaticNeedId;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum InvalidationStrategy {
+    CommodityOnly,
+    AcquireCommodity,
+    AcquireRestock,
+    NeedWithFacilities(HomeostaticNeedId),
+    NeedWithPosition(HomeostaticNeedId),
+    CombatTarget,
+    DangerReduction,
+    TreatWounds,
+    ProduceCommodity,
+    PositionAndCommodity,
+    PositionCommodityAndCoin,
+    PositionAndTargetDead,
+    ClaimOffice,
+    SupportCandidateForOffice,
+    InvestigateViolation,
+    PunishAccused,
+}
 
 pub struct GoalDispatchDeclaration {
     pub trace_label: &'static str,
     pub provenance_family: Option<RankedGoalProvenanceFamily>,
     pub relevant_ops: &'static [PlannerOpKind],
+    pub invalidation_strategy: InvalidationStrategy,
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -86,121 +108,145 @@ static DECL_CONSUME_OWNED_COMMODITY: GoalDispatchDeclaration = GoalDispatchDecla
     trace_label: "ConsumeOwnedCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: CONSUME_OPS,
+    invalidation_strategy: InvalidationStrategy::CommodityOnly,
 };
 static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(SelfConsume)",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: ACQUIRE_OPS,
+    invalidation_strategy: InvalidationStrategy::AcquireCommodity,
 };
 static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(RecipeInput)",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: ACQUIRE_OPS,
+    invalidation_strategy: InvalidationStrategy::AcquireCommodity,
 };
 static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(Restock)",
     provenance_family: None,
     relevant_ops: ACQUIRE_OPS,
+    invalidation_strategy: InvalidationStrategy::AcquireRestock,
 };
 static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Sleep",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: SLEEP_OPS,
+    invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
 };
 static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Relieve",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: RELIEVE_OPS,
+    invalidation_strategy: InvalidationStrategy::NeedWithPosition(HomeostaticNeedId::Bladder),
 };
 static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Wash",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: WASH_OPS,
+    invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Dirtiness),
 };
 static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EngageHostile",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: ENGAGE_HOSTILE_OPS,
+    invalidation_strategy: InvalidationStrategy::CombatTarget,
 };
 static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ReduceDanger",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: REDUCE_DANGER_OPS,
+    invalidation_strategy: InvalidationStrategy::DangerReduction,
 };
 static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "TreatWounds",
     provenance_family: None,
     relevant_ops: TREAT_WOUNDS_OPS,
+    invalidation_strategy: InvalidationStrategy::TreatWounds,
 };
 static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ProduceCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: PRODUCE_OPS,
+    invalidation_strategy: InvalidationStrategy::ProduceCommodity,
 };
 static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SellCommodity",
     provenance_family: None,
     relevant_ops: SELL_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
 };
 static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "RestockCommodity",
     provenance_family: None,
     relevant_ops: RESTOCK_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionCommodityAndCoin,
 };
 static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "MoveCargo",
     provenance_family: None,
     relevant_ops: MOVE_CARGO_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
 };
 static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "LootCorpse",
     provenance_family: None,
     relevant_ops: LOOT_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
 };
 static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "BuryCorpse",
     provenance_family: None,
     relevant_ops: BURY_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
 };
 static DECL_SHARE_BELIEF: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ShareBelief",
     provenance_family: None,
     relevant_ops: SHARE_BELIEF_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
 };
 static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ClaimOffice",
     provenance_family: None,
     relevant_ops: CLAIM_OFFICE_OPS,
+    invalidation_strategy: InvalidationStrategy::ClaimOffice,
 };
 static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SupportCandidateForOffice",
     provenance_family: None,
     relevant_ops: SUPPORT_OFFICE_OPS,
+    invalidation_strategy: InvalidationStrategy::SupportCandidateForOffice,
 };
 static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "InvestigateViolation",
     provenance_family: None,
     relevant_ops: INVESTIGATE_OPS,
+    invalidation_strategy: InvalidationStrategy::InvestigateViolation,
 };
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
     provenance_family: None,
     relevant_ops: MOVE_CARGO_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
 };
 static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Accuse",
     provenance_family: None,
     relevant_ops: ACCUSE_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
 };
 static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PunishAccused(Fine)",
     provenance_family: None,
     relevant_ops: FINE_OPS,
+    invalidation_strategy: InvalidationStrategy::PunishAccused,
 };
 static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PunishAccused(Exile)",
     provenance_family: None,
     relevant_ops: EXILE_OPS,
+    invalidation_strategy: InvalidationStrategy::PunishAccused,
 };
 
 impl GoalDispatchKey {
@@ -237,11 +283,11 @@ impl GoalDispatchKey {
 
 #[cfg(test)]
 mod tests {
-    use super::GoalDispatchDeclaration;
+    use super::{GoalDispatchDeclaration, InvalidationStrategy};
     use crate::{GoalDispatchKey, GoalKindPlannerExt};
     use worldwake_core::{
         CommodityKind, CommodityPurpose, EntityId, GoalKind, PunishmentKind, Quantity, RecipeId,
-        RecordEntryId, TellTopic, ViolationId,
+        RecordEntryId, TellTopic, ViolationId, HomeostaticNeedId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -423,6 +469,77 @@ mod tests {
         assert_ne!(
             GoalDispatchKey::PunishFine.declaration().trace_label,
             GoalDispatchKey::PunishExile.declaration().trace_label
+        );
+    }
+
+    #[test]
+    fn test_invalidation_strategies_cover_all_declarations() {
+        for key in ALL_KEYS {
+            let declaration = key.declaration();
+            match declaration.invalidation_strategy {
+                InvalidationStrategy::CommodityOnly
+                | InvalidationStrategy::AcquireCommodity
+                | InvalidationStrategy::AcquireRestock
+                | InvalidationStrategy::CombatTarget
+                | InvalidationStrategy::DangerReduction
+                | InvalidationStrategy::TreatWounds
+                | InvalidationStrategy::ProduceCommodity
+                | InvalidationStrategy::PositionAndCommodity
+                | InvalidationStrategy::PositionCommodityAndCoin
+                | InvalidationStrategy::PositionAndTargetDead
+                | InvalidationStrategy::ClaimOffice
+                | InvalidationStrategy::SupportCandidateForOffice
+                | InvalidationStrategy::InvestigateViolation
+                | InvalidationStrategy::PunishAccused => {}
+                InvalidationStrategy::NeedWithFacilities(need)
+                | InvalidationStrategy::NeedWithPosition(need) => {
+                    assert!(
+                        matches!(
+                            need,
+                            HomeostaticNeedId::Fatigue
+                                | HomeostaticNeedId::Bladder
+                                | HomeostaticNeedId::Dirtiness
+                        ),
+                        "{key:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_invalidation_strategies_match_payload_sensitive_and_shared_families() {
+        assert_eq!(
+            GoalDispatchKey::AcquireSelfConsume
+                .declaration()
+                .invalidation_strategy,
+            InvalidationStrategy::AcquireCommodity
+        );
+        assert_eq!(
+            GoalDispatchKey::AcquireRecipeInput
+                .declaration()
+                .invalidation_strategy,
+            InvalidationStrategy::AcquireCommodity
+        );
+        assert_eq!(
+            GoalDispatchKey::AcquireRestock
+                .declaration()
+                .invalidation_strategy,
+            InvalidationStrategy::AcquireRestock
+        );
+        assert_eq!(
+            GoalDispatchKey::LootCorpse.declaration().invalidation_strategy,
+            GoalDispatchKey::BuryCorpse.declaration().invalidation_strategy
+        );
+        assert_eq!(
+            GoalDispatchKey::SellCommodity
+                .declaration()
+                .invalidation_strategy,
+            GoalDispatchKey::MoveCargo.declaration().invalidation_strategy
+        );
+        assert_eq!(
+            GoalDispatchKey::PunishFine.declaration().invalidation_strategy,
+            GoalDispatchKey::PunishExile.declaration().invalidation_strategy
         );
     }
 }

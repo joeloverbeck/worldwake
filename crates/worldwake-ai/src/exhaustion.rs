@@ -1,4 +1,4 @@
-use crate::{ExhaustionEntry, OpportunityKey};
+use crate::{ExhaustionEntry, GoalDispatchKey, InvalidationStrategy, OpportunityKey};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
@@ -44,118 +44,235 @@ pub(crate) fn derive_invalidation_conditions(
 ) -> (Vec<ExhaustionInvalidationCondition>, ExhaustionBaseline) {
     let mut conditions = BTreeSet::new();
 
-    match *goal {
-        GoalKind::ConsumeOwnedCommodity { commodity } => {
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+    match GoalDispatchKey::from_goal_kind(goal)
+        .declaration()
+        .invalidation_strategy
+    {
+        InvalidationStrategy::CommodityOnly => commodity_only_conditions(goal, &mut conditions),
+        InvalidationStrategy::AcquireCommodity => {
+            acquire_commodity_conditions(goal, &mut conditions);
         }
-        GoalKind::AcquireCommodity { commodity, purpose } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
-            if matches!(purpose, CommodityPurpose::Restock) {
-                conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
-                    CommodityKind::Coin,
-                ));
-            }
+        InvalidationStrategy::AcquireRestock => {
+            acquire_restock_conditions(goal, &mut conditions);
         }
-        GoalKind::Sleep => {
-            conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
-                need: HomeostaticNeedId::Fatigue,
-                band: need_threshold_band(view, agent, HomeostaticNeedId::Fatigue),
-            });
-            conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+        InvalidationStrategy::NeedWithFacilities(need) => {
+            need_with_facilities_conditions(need, agent, view, &mut conditions);
         }
-        GoalKind::Relieve => {
-            conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
-                need: HomeostaticNeedId::Bladder,
-                band: need_threshold_band(view, agent, HomeostaticNeedId::Bladder),
-            });
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+        InvalidationStrategy::NeedWithPosition(need) => {
+            need_with_position_conditions(need, agent, view, &mut conditions);
         }
-        GoalKind::Wash => {
-            conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
-                need: HomeostaticNeedId::Dirtiness,
-                band: need_threshold_band(view, agent, HomeostaticNeedId::Dirtiness),
-            });
-            conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+        InvalidationStrategy::CombatTarget => combat_target_conditions(goal, &mut conditions),
+        InvalidationStrategy::DangerReduction => danger_reduction_conditions(&mut conditions),
+        InvalidationStrategy::TreatWounds => treat_wounds_conditions(goal, &mut conditions),
+        InvalidationStrategy::ProduceCommodity => {
+            produce_commodity_conditions(goal, recipe_registry, &mut conditions);
         }
-        GoalKind::EngageHostile { target } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));
+        InvalidationStrategy::PositionAndCommodity => {
+            position_and_commodity_conditions(goal, &mut conditions);
         }
-        GoalKind::ReduceDanger => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
-            conditions.insert(ExhaustionInvalidationCondition::HostilesChanged);
+        InvalidationStrategy::PositionCommodityAndCoin => {
+            position_commodity_and_coin_conditions(goal, &mut conditions);
         }
-        GoalKind::TreatWounds { patient } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
-                CommodityKind::Medicine,
-            ));
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(patient));
+        InvalidationStrategy::PositionAndTargetDead => {
+            position_and_target_dead_conditions(goal, &mut conditions);
         }
-        GoalKind::ProduceCommodity { recipe_id } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
-            if let Some(recipe) = recipe_registry.get(recipe_id) {
-                for (commodity, _) in &recipe.inputs {
-                    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
-                        *commodity,
-                    ));
-                }
-            }
+        InvalidationStrategy::ClaimOffice => claim_office_conditions(&mut conditions),
+        InvalidationStrategy::SupportCandidateForOffice => {
+            support_candidate_conditions(goal, &mut conditions);
         }
-        GoalKind::SellCommodity { commodity } | GoalKind::MoveCargo { commodity, .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
-        }
-        GoalKind::RestockCommodity { commodity } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
-            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
-                CommodityKind::Coin,
-            ));
-        }
-        GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(corpse));
-        }
-        GoalKind::ShareBelief { listener, .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(listener));
-        }
-        GoalKind::ClaimOffice { .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
-        }
-        GoalKind::SupportCandidateForOffice { candidate, .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(candidate));
-        }
-        GoalKind::InvestigateViolation { .. } => {
+        InvalidationStrategy::InvestigateViolation => {
             conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
         }
-        GoalKind::StealItem { target_item } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(target_item));
-        }
-        GoalKind::Accuse { accused, .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(accused));
-        }
-        GoalKind::PunishAccused { accused, .. } => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-            conditions.insert(ExhaustionInvalidationCondition::TargetDead(accused));
-            conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
-        }
+        InvalidationStrategy::PunishAccused => punish_accused_conditions(goal, &mut conditions),
     }
 
     let conditions = conditions.into_iter().collect::<Vec<_>>();
     let baseline = build_baseline(agent, view, &conditions);
     (conditions, baseline)
+}
+
+fn commodity_only_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::ConsumeOwnedCommodity { commodity } = *goal else {
+        unreachable!("CommodityOnly strategy requires ConsumeOwnedCommodity goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+}
+
+fn acquire_commodity_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::AcquireCommodity { commodity, .. } = *goal else {
+        unreachable!("AcquireCommodity strategy requires AcquireCommodity goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+}
+
+fn acquire_restock_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::AcquireCommodity { purpose, .. } = *goal else {
+        unreachable!("AcquireRestock strategy requires AcquireCommodity goal");
+    };
+    debug_assert!(matches!(purpose, CommodityPurpose::Restock));
+    acquire_commodity_conditions(goal, conditions);
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+        CommodityKind::Coin,
+    ));
+}
+
+fn need_with_facilities_conditions(
+    need: HomeostaticNeedId,
+    agent: EntityId,
+    view: &dyn GoalBeliefView,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
+        need,
+        band: need_threshold_band(view, agent, need),
+    });
+    conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+}
+
+fn need_with_position_conditions(
+    need: HomeostaticNeedId,
+    agent: EntityId,
+    view: &dyn GoalBeliefView,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    conditions.insert(ExhaustionInvalidationCondition::NeedChangedBands {
+        need,
+        band: need_threshold_band(view, agent, need),
+    });
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+}
+
+fn combat_target_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::EngageHostile { target } = *goal else {
+        unreachable!("CombatTarget strategy requires EngageHostile goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
+    conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));
+}
+
+fn danger_reduction_conditions(
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
+    conditions.insert(ExhaustionInvalidationCondition::HostilesChanged);
+}
+
+fn treat_wounds_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::TreatWounds { patient } = *goal else {
+        unreachable!("TreatWounds strategy requires TreatWounds goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+        CommodityKind::Medicine,
+    ));
+    conditions.insert(ExhaustionInvalidationCondition::TargetDead(patient));
+}
+
+fn produce_commodity_conditions(
+    goal: &GoalKind,
+    recipe_registry: &RecipeRegistry,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::ProduceCommodity { recipe_id } = *goal else {
+        unreachable!("ProduceCommodity strategy requires ProduceCommodity goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::FacilitiesChanged);
+    if let Some(recipe) = recipe_registry.get(recipe_id) {
+        for (commodity, _) in &recipe.inputs {
+            conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(*commodity));
+        }
+    }
+}
+
+fn position_and_commodity_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let (GoalKind::SellCommodity { commodity } | GoalKind::MoveCargo { commodity, .. }) = *goal else {
+        unreachable!("PositionAndCommodity strategy requires SellCommodity or MoveCargo");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+}
+
+fn position_commodity_and_coin_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::RestockCommodity { commodity } = *goal else {
+        unreachable!("PositionCommodityAndCoin strategy requires RestockCommodity goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(commodity));
+    conditions.insert(ExhaustionInvalidationCondition::CommodityChanged(
+        CommodityKind::Coin,
+    ));
+}
+
+fn position_and_target_dead_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let target = match *goal {
+        GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => corpse,
+        GoalKind::ShareBelief { listener, .. } => listener,
+        GoalKind::StealItem { target_item } => target_item,
+        GoalKind::Accuse { accused, .. } => accused,
+        _ => unreachable!(
+            "PositionAndTargetDead strategy requires corpse, share, steal, or accuse goal"
+        ),
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::TargetDead(target));
+}
+
+fn claim_office_conditions(conditions: &mut BTreeSet<ExhaustionInvalidationCondition>) {
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
+}
+
+fn support_candidate_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::SupportCandidateForOffice { candidate, .. } = *goal else {
+        unreachable!(
+            "SupportCandidateForOffice strategy requires SupportCandidateForOffice goal"
+        );
+    };
+    claim_office_conditions(conditions);
+    conditions.insert(ExhaustionInvalidationCondition::TargetDead(candidate));
+}
+
+fn punish_accused_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::PunishAccused { accused, .. } = *goal else {
+        unreachable!("PunishAccused strategy requires PunishAccused goal");
+    };
+    claim_office_conditions(conditions);
+    conditions.insert(ExhaustionInvalidationCondition::TargetDead(accused));
 }
 
 pub(crate) fn invalidate_exhausted_goals(
@@ -1416,6 +1533,78 @@ mod tests {
                 hostile_count: 2,
             }
         );
+    }
+
+    #[test]
+    fn shared_invalidation_strategies_preserve_identical_conditions_for_shared_families() {
+        let agent = entity(1);
+        let target = entity(2);
+        let office = entity(3);
+        let destination = entity(4);
+
+        let loot = derive_invalidation_conditions(
+            &GoalKind::LootCorpse { corpse: target },
+            agent,
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+        let bury = derive_invalidation_conditions(
+            &GoalKind::BuryCorpse {
+                corpse: target,
+                burial_site: destination,
+            },
+            agent,
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+        let sell = derive_invalidation_conditions(
+            &GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            },
+            agent,
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+        let move_cargo = derive_invalidation_conditions(
+            &GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            },
+            agent,
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+        let punish_fine = derive_invalidation_conditions(
+            &GoalKind::PunishAccused {
+                office,
+                accused: target,
+                accusation_entry: RecordEntryId(5),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(7),
+                },
+            },
+            agent,
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+        let punish_exile = derive_invalidation_conditions(
+            &GoalKind::PunishAccused {
+                office,
+                accused: target,
+                accusation_entry: RecordEntryId(5),
+                punishment: PunishmentKind::Exile {
+                    from_faction: destination,
+                },
+            },
+            agent,
+            &MockView::default(),
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(loot, bury);
+        assert_eq!(sell, move_cargo);
+        assert_eq!(punish_fine, punish_exile);
     }
 
     #[test]
