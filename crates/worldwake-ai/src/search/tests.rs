@@ -3665,7 +3665,6 @@ fn travel_semantics() -> PlannerOpSemantics {
         may_appear_mid_plan: true,
         is_materialization_barrier: false,
         transition_kind: PlannerTransitionKind::GoalModelFallback,
-        relevant_goal_kinds: &[],
     }
 }
 
@@ -3675,7 +3674,6 @@ fn harvest_semantics() -> PlannerOpSemantics {
         may_appear_mid_plan: true,
         is_materialization_barrier: true,
         transition_kind: PlannerTransitionKind::GoalModelFallback,
-        relevant_goal_kinds: &[],
     }
 }
 
@@ -3803,7 +3801,6 @@ fn prune_travel_never_prunes_non_travel_actions() {
             may_appear_mid_plan: true,
             is_materialization_barrier: true,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         },
     );
 

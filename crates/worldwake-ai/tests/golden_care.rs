@@ -554,7 +554,7 @@ fn remote_treat_wounds_snapshot_supports_pick_up_transition_at_orchard() {
     let semantics = build_semantics_table(&h.defs);
     let transition = apply_hypothetical_transition(
         &grounded,
-        semantics
+        *semantics
             .get(&pick_up.def_id)
             .expect("pick_up should be classified by planner semantics"),
         state,

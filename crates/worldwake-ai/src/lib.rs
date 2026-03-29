@@ -67,7 +67,7 @@ pub use feasibility::{feasibility_hint, FeasibilityHint};
 pub use goal_dispatch_decl::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
-    GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
+    GoalKindPlannerExt, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
     RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
     RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };

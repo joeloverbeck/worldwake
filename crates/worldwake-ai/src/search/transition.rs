@@ -104,7 +104,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
 
     let transition = apply_hypothetical_transition(
         goal,
-        semantics,
+        *semantics,
         node.state.clone(),
         &candidate.planning_targets,
         payload_override.as_ref(),

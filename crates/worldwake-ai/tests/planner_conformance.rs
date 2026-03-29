@@ -264,7 +264,7 @@ fn conformance_eat_smoke_test() {
         .unwrap();
 
     let transition =
-        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+        apply_hypothetical_transition(&goal, semantics, initial_state, &[lot_ref], None)
             .expect("eat transition should produce Some");
 
     let planner_hunger = transition
@@ -351,7 +351,7 @@ fn conformance_drink() {
         .map(|n| n.thirst)
         .unwrap();
     let transition =
-        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+        apply_hypothetical_transition(&goal, semantics, initial_state, &[lot_ref], None)
             .expect("drink transition should produce Some");
     let planner_thirst = transition
         .state
@@ -407,7 +407,7 @@ fn conformance_sleep() {
         .homeostatic_needs_for(agent)
         .map(|n| n.fatigue)
         .unwrap();
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
+    let transition = apply_hypothetical_transition(&goal, semantics, initial_state, &[], None)
         .expect("sleep transition should produce Some");
     let planner_fatigue = transition
         .state
@@ -468,7 +468,7 @@ fn conformance_relieve() {
         .homeostatic_needs_for(agent)
         .map(|n| n.bladder)
         .unwrap();
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
+    let transition = apply_hypothetical_transition(&goal, semantics, initial_state, &[], None)
         .expect("toilet transition should produce Some");
     let planner_bladder = transition
         .state
@@ -538,7 +538,7 @@ fn conformance_wash() {
         .unwrap();
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state,
         &[PlanningEntityRef::Authoritative(water_lot)],
         None,
@@ -627,7 +627,7 @@ fn conformance_pick_up() {
         "lot should start on ground"
     );
     let transition =
-        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+        apply_hypothetical_transition(&goal, semantics, initial_state, &[lot_ref], None)
             .expect("pick_up transition should produce Some");
     assert_eq!(
         transition.state.direct_possessor_ref(lot_ref),
@@ -691,7 +691,7 @@ fn conformance_put_down() {
         "lot should start with agent"
     );
     let transition =
-        apply_hypothetical_transition(&goal, &semantics, initial_state, &[lot_ref], None)
+        apply_hypothetical_transition(&goal, semantics, initial_state, &[lot_ref], None)
             .expect("put_down transition should produce Some");
     assert!(
         transition.state.direct_possessor_ref(lot_ref).is_none(),
@@ -769,7 +769,7 @@ fn conformance_harvest_noop_coverage_gap() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &harvest_semantics,
+        harvest_semantics,
         initial_state.clone(),
         &[source_ref],
         Some(&harvest_payload),
@@ -864,7 +864,7 @@ fn conformance_craft_noop_coverage_gap() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &craft_semantics,
+        craft_semantics,
         initial_state.clone(),
         &[mill_ref],
         Some(&craft_payload),
@@ -926,7 +926,7 @@ fn conformance_travel() {
     // VillageSquare→RulersHall is a direct edge (edge 4, 1 tick).
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state,
         &[PlanningEntityRef::Authoritative(RULERS_HALL)],
         None,
@@ -1045,7 +1045,7 @@ fn conformance_trade_exact_acquisition() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state.clone(),
         &[PlanningEntityRef::Authoritative(seller)],
         None,
@@ -1141,7 +1141,7 @@ fn conformance_tell() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state.clone(),
         &[PlanningEntityRef::Authoritative(listener)],
         None,
@@ -1227,7 +1227,7 @@ fn conformance_investigate() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state.clone(),
         &[PlanningEntityRef::Authoritative(VILLAGE_SQUARE)],
         None,
@@ -1362,7 +1362,7 @@ fn conformance_accuse() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state.clone(),
         &[PlanningEntityRef::Authoritative(suspect)],
         None,
@@ -1467,7 +1467,7 @@ fn conformance_loot() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state,
         &[PlanningEntityRef::Authoritative(corpse)],
         None,
@@ -1566,7 +1566,7 @@ fn conformance_heal() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state,
         &[PlanningEntityRef::Authoritative(patient)],
         None,
@@ -1633,7 +1633,7 @@ fn conformance_attack_noop_coverage_gap() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state.clone(),
         &[PlanningEntityRef::Authoritative(target)],
         None,
@@ -1734,7 +1734,7 @@ fn conformance_bury() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state,
         &[corpse_ref, grave_ref],
         None,
@@ -1811,7 +1811,7 @@ fn conformance_declare_support() {
     let goal = grounded(GoalKind::ClaimOffice { office });
     let initial_state = PlanningState::new(&snapshot);
 
-    let _transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
+    let _transition = apply_hypothetical_transition(&goal, semantics, initial_state, &[], None)
         .expect("declare_support transition should produce Some");
 
     // Planner adds support declaration override (actor supports self for office).
@@ -1886,7 +1886,7 @@ fn conformance_press_force_claim() {
     let goal = grounded(GoalKind::ClaimOffice { office });
     let initial_state = PlanningState::new(&snapshot);
 
-    let transition = apply_hypothetical_transition(&goal, &semantics, initial_state, &[], None)
+    let transition = apply_hypothetical_transition(&goal, semantics, initial_state, &[], None)
         .expect("press_force_claim transition should produce Some");
 
     // Planner overrides force_controller_belief to Certain((Some(actor), false)).
@@ -1984,7 +1984,7 @@ fn conformance_queue_for_facility() {
 
     let transition = apply_hypothetical_transition(
         &goal,
-        &semantics,
+        semantics,
         initial_state,
         &[facility_ref],
         Some(&queue_payload),

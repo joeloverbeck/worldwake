@@ -2466,7 +2466,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         .expect("force-law claim goal should accept the press_force_claim affordance payload");
     let press_transition = apply_hypothetical_transition(
         &claim_goal,
-        press_semantics,
+        *press_semantics,
         snapshot_state.clone(),
         &press_affordance
             .bound_targets

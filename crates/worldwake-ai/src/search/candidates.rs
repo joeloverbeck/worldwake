@@ -283,7 +283,7 @@ fn goal_synthesized_candidates(
         .filter_map(|def_id| {
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
-            match goal.synthesized_root_candidate_targets(def, semantics) {
+            match goal.synthesized_root_candidate_targets(def, *semantics) {
                 RootCandidateSynthesis::Targets(authoritative_targets) => Some(SearchCandidate {
                     def_id: *def_id,
                     authoritative_targets: authoritative_targets.clone(),
@@ -348,7 +348,7 @@ fn record_root_operator_omissions(
             let Some(semantics) = semantics_table.get(&def_id) else {
                 continue;
             };
-            match goal.synthesized_root_candidate_targets(def, semantics) {
+            match goal.synthesized_root_candidate_targets(def, *semantics) {
                 RootCandidateSynthesis::TargetDerivationFailed => {
                     saw_target_derivation_failure = true;
                 }

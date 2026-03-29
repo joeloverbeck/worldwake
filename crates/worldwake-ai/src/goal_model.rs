@@ -25,31 +25,6 @@ use worldwake_sim::{
     TransportActionPayload,
 };
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum GoalKindTag {
-    ConsumeOwnedCommodity,
-    AcquireCommodity,
-    Sleep,
-    Relieve,
-    Wash,
-    EngageHostile,
-    ReduceDanger,
-    TreatWounds,
-    ProduceCommodity,
-    SellCommodity,
-    RestockCommodity,
-    MoveCargo,
-    LootCorpse,
-    BuryCorpse,
-    ShareBelief,
-    ClaimOffice,
-    SupportCandidateForOffice,
-    InvestigateViolation,
-    StealItem,
-    Accuse,
-    PunishAccused,
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RankedGoalProvenanceFamily {
     Danger,
@@ -57,7 +32,6 @@ pub enum RankedGoalProvenanceFamily {
 }
 
 pub trait GoalKindPlannerExt {
-    fn goal_kind_tag(&self) -> GoalKindTag;
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily>;
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind];
     fn relevant_observed_commodities(
@@ -413,32 +387,6 @@ fn political_step_blocked_by_unknown_vacancy(
 }
 
 impl GoalKindPlannerExt for GoalKind {
-    fn goal_kind_tag(&self) -> GoalKindTag {
-        match self {
-            GoalKind::ConsumeOwnedCommodity { .. } => GoalKindTag::ConsumeOwnedCommodity,
-            GoalKind::AcquireCommodity { .. } => GoalKindTag::AcquireCommodity,
-            GoalKind::Sleep => GoalKindTag::Sleep,
-            GoalKind::Relieve => GoalKindTag::Relieve,
-            GoalKind::Wash => GoalKindTag::Wash,
-            GoalKind::EngageHostile { .. } => GoalKindTag::EngageHostile,
-            GoalKind::ReduceDanger => GoalKindTag::ReduceDanger,
-            GoalKind::TreatWounds { .. } => GoalKindTag::TreatWounds,
-            GoalKind::ProduceCommodity { .. } => GoalKindTag::ProduceCommodity,
-            GoalKind::SellCommodity { .. } => GoalKindTag::SellCommodity,
-            GoalKind::RestockCommodity { .. } => GoalKindTag::RestockCommodity,
-            GoalKind::MoveCargo { .. } => GoalKindTag::MoveCargo,
-            GoalKind::LootCorpse { .. } => GoalKindTag::LootCorpse,
-            GoalKind::BuryCorpse { .. } => GoalKindTag::BuryCorpse,
-            GoalKind::ShareBelief { .. } => GoalKindTag::ShareBelief,
-            GoalKind::ClaimOffice { .. } => GoalKindTag::ClaimOffice,
-            GoalKind::SupportCandidateForOffice { .. } => GoalKindTag::SupportCandidateForOffice,
-            GoalKind::InvestigateViolation { .. } => GoalKindTag::InvestigateViolation,
-            GoalKind::StealItem { .. } => GoalKindTag::StealItem,
-            GoalKind::Accuse { .. } => GoalKindTag::Accuse,
-            GoalKind::PunishAccused { .. } => GoalKindTag::PunishAccused,
-        }
-    }
-
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
         GoalDispatchKey::from_goal_kind(self)
             .declaration()
@@ -1632,7 +1580,7 @@ impl GroundedGoal {
     pub(crate) fn synthesized_root_candidate_targets(
         &self,
         def: &ActionDef,
-        semantics: &PlannerOpSemantics,
+        semantics: PlannerOpSemantics,
     ) -> RootCandidateSynthesis {
         match semantics.op_kind {
             PlannerOpKind::Trade => match &self.key.kind {
@@ -1729,7 +1677,7 @@ pub struct RankedGoal {
 mod tests {
     use super::{
         grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
-        GoalKindPlannerExt, GoalKindTag, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
+        GoalKindPlannerExt, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
         RankedGoal, RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
     use crate::{
@@ -1868,64 +1816,6 @@ mod tests {
         let roundtrip: RankedGoal = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
-    }
-
-    #[test]
-    fn goal_kind_tag_tracks_goal_families_without_payload_identity() {
-        assert_eq!(
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-            }
-            .goal_kind_tag(),
-            GoalKindTag::AcquireCommodity
-        );
-        assert_eq!(
-            GoalKind::BuryCorpse {
-                corpse: entity_id(1, 0),
-                burial_site: entity_id(2, 0),
-            }
-            .goal_kind_tag(),
-            GoalKindTag::BuryCorpse
-        );
-        assert_eq!(
-            GoalKind::ShareBelief {
-                listener: entity_id(3, 0),
-                topic: TellTopic::EntityBelief {
-                    subject: entity_id(4, 0),
-                },
-            }
-            .goal_kind_tag(),
-            GoalKindTag::ShareBelief
-        );
-        assert_eq!(
-            GoalKind::StealItem {
-                target_item: entity_id(5, 0),
-            }
-            .goal_kind_tag(),
-            GoalKindTag::StealItem
-        );
-        assert_eq!(
-            GoalKind::Accuse {
-                crime_register: entity_id(5, 0),
-                accused: entity_id(6, 0),
-                violation_id: ViolationId(1),
-            }
-            .goal_kind_tag(),
-            GoalKindTag::Accuse
-        );
-        assert_eq!(
-            GoalKind::PunishAccused {
-                office: entity_id(6, 0),
-                accused: entity_id(7, 0),
-                accusation_entry: RecordEntryId(1),
-                punishment: PunishmentKind::Exile {
-                    from_faction: entity_id(8, 0),
-                },
-            }
-            .goal_kind_tag(),
-            GoalKindTag::PunishAccused
-        );
     }
 
     #[test]
@@ -2823,7 +2713,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         let payload = goal
@@ -2911,7 +2800,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
-            relevant_goal_kinds: &[],
         };
 
         let payload = goal
@@ -2978,7 +2866,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         let payload = goal
@@ -3044,7 +2931,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
         let affordance_payload = ActionPayload::Tell(TellActionPayload { listener, topic });
 
@@ -3119,7 +3005,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
         let affordance_payload = ActionPayload::Tell(TellActionPayload {
             listener,
@@ -3179,7 +3064,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         let payload = goal
@@ -3243,7 +3127,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         let payload = goal
@@ -3314,7 +3197,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         let payload = goal
@@ -3371,11 +3253,10 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, &semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::Targets(vec![listener])
         );
     }
@@ -3415,11 +3296,10 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, &semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::Targets(vec![accused])
         );
     }
@@ -3460,11 +3340,10 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, &semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::Targets(vec![seller])
         );
     }
@@ -3504,11 +3383,10 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, &semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::TargetDerivationFailed
         );
     }
@@ -3545,11 +3423,10 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, &semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::UnsupportedGoalOp
         );
     }
@@ -3594,7 +3471,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[],
         };
 
         let result = goal.build_payload_override(
@@ -4112,7 +3988,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[GoalKindTag::SupportCandidateForOffice],
         };
 
         assert_eq!(
@@ -4189,7 +4064,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[GoalKindTag::SupportCandidateForOffice],
         };
 
         let payload = goal
@@ -4242,7 +4116,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[GoalKindTag::ClaimOffice],
         };
 
         assert_eq!(
@@ -4279,7 +4152,6 @@ mod tests {
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::GoalModelFallback,
-            relevant_goal_kinds: &[GoalKindTag::ClaimOffice],
         };
 
         let payload = goal
