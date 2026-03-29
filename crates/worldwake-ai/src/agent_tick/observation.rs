@@ -393,6 +393,7 @@ fn reconcile_committed_facility_queue_intents(
         crate::PlannerOpKind::Travel
         | crate::PlannerOpKind::Sleep
         | crate::PlannerOpKind::Relieve
+        | crate::PlannerOpKind::EstablishCamp
         | crate::PlannerOpKind::Trade
         | crate::PlannerOpKind::Consume
         | crate::PlannerOpKind::Wash

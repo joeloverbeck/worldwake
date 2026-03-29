@@ -117,6 +117,7 @@ pub enum DurationExpr {
     ActorTheftDisposition,
     ActorInvestigationDisposition,
     ActorWitnessQueryDisposition,
+    BanditCampEstablishmentProfile,
     ActorDefendStance,
     CombatWeapon,
     TargetTreatment {
@@ -138,6 +139,7 @@ impl DurationExpr {
             | Self::ActorTheftDisposition
             | Self::ActorInvestigationDisposition
             | Self::ActorWitnessQueryDisposition
+            | Self::BanditCampEstablishmentProfile
             | Self::ActorDefendStance
             | Self::CombatWeapon
             | Self::TargetTreatment { .. } => None,
@@ -211,6 +213,13 @@ impl DurationExpr {
                 .get_component_epistemic_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks epistemic disposition profile")),
+            Self::BanditCampEstablishmentProfile => {
+                let payload = payload.as_establish_camp().ok_or_else(|| {
+                    "bandit camp establishment duration requires ActionPayload::EstablishCamp"
+                        .to_string()
+                })?;
+                Self::resolve_bandit_camp_establishment_duration(world, payload.faction)
+            }
             Self::ActorDefendStance => world
                 .get_component_combat_profile(actor)
                 .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get()))
@@ -272,6 +281,26 @@ impl DurationExpr {
             .ok_or_else(|| format!("missing target at index {target_index}"))
     }
 
+    fn resolve_bandit_camp_establishment_duration(
+        world: &World,
+        faction: EntityId,
+    ) -> Result<ActionDuration, String> {
+        let mut profiles = world
+            .query_bandit_camp_profile()
+            .filter(|(_, profile)| profile.faction == faction)
+            .collect::<Vec<_>>();
+        profiles.sort_by_key(|(place, _)| *place);
+        match profiles.as_slice() {
+            [] => Err(format!("no BanditCampProfile exists for faction {faction}")),
+            [(_, profile)] => Ok(ActionDuration::new(
+                profile.establishment_duration_ticks.get(),
+            )),
+            _ => Err(format!(
+                "multiple BanditCampProfile components exist for faction {faction}"
+            )),
+        }
+    }
+
     fn resolve_consult_record_duration(
         world: &World,
         actor: EntityId,
@@ -314,16 +343,19 @@ mod tests {
         Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
         Precondition, ReservationReq, TargetSpec,
     };
-    use crate::{ActionDuration, ActionPayload, CombatActionPayload, TradeActionPayload};
+    use crate::{
+        ActionDuration, ActionPayload, CombatActionPayload, EstablishCampActionPayload,
+        TradeActionPayload,
+    };
     use serde::{de::DeserializeOwned, Serialize};
     use std::mem;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind,
-        ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds, MetabolismProfile,
-        Permille, Quantity, RecipeId, RecordData, RecordKind, TheftDispositionProfile, Tick,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn,
+        build_prototype_world, BanditCampProfile, CauseRef, CombatProfile, CombatWeaponRef,
+        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds,
+        MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
+        TheftDispositionProfile, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, prototype_place_entity,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -412,7 +444,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 13] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 14] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -425,6 +457,7 @@ mod tests {
         DurationExpr::ActorTheftDisposition,
         DurationExpr::ActorInvestigationDisposition,
         DurationExpr::ActorWitnessQueryDisposition,
+        DurationExpr::BanditCampEstablishmentProfile,
         DurationExpr::ActorDefendStance,
         DurationExpr::CombatWeapon,
         DurationExpr::TargetTreatment {
@@ -492,6 +525,7 @@ mod tests {
             DurationExpr::ActorWitnessQueryDisposition.fixed_ticks(),
             None
         );
+        assert_eq!(DurationExpr::BanditCampEstablishmentProfile.fixed_ticks(), None);
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(
@@ -851,6 +885,45 @@ mod tests {
     }
 
     #[test]
+    fn duration_expr_resolves_bandit_camp_establishment_ticks_from_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let rally_place = prototype_place_entity(PrototypePlace::ForestPath);
+        let faction = {
+            let mut txn = new_txn(&mut world, 1);
+            let faction = txn.create_faction("Forest Bandits").unwrap();
+            txn.commit(&mut EventLog::new());
+            faction
+        };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_bandit_camp_profile(
+                rally_place,
+                BanditCampProfile {
+                    faction,
+                    min_regroup_count: 3,
+                    establishment_duration_ticks: nz(14),
+                    flee_wound_threshold: pm(650),
+                    rally_place: Some(rally_place),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        assert_eq!(
+            DurationExpr::BanditCampEstablishmentProfile
+                .resolve_for(
+                    &world,
+                    ENTITY_A,
+                    &[],
+                    &ActionPayload::EstablishCamp(EstablishCampActionPayload { faction }),
+                )
+                .unwrap(),
+            ActionDuration::new(14)
+        );
+    }
+
+    #[test]
     fn duration_expr_reports_clear_errors_for_invalid_dynamic_durations() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let actor = {
@@ -871,6 +944,17 @@ mod tests {
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap_err(),
             format!("actor {actor} lacks epistemic disposition profile")
+        );
+        assert_eq!(
+            DurationExpr::BanditCampEstablishmentProfile
+                .resolve_for(
+                    &world,
+                    actor,
+                    &[],
+                    &ActionPayload::EstablishCamp(EstablishCampActionPayload { faction: ENTITY_B }),
+                )
+                .unwrap_err(),
+            format!("no BanditCampProfile exists for faction {}", ENTITY_B)
         );
         assert_eq!(
             DurationExpr::ActorDefendStance

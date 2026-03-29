@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-ai (candidate_generation.rs)
-**Deps**: E18BANDYN-001 (BanditCamp components), E18BANDYN-002 (GoalKind variants), E18BANDYN-003 (Raid action def)
+**Deps**: E18BANDYN-002 (GoalKind variants), E18BANDYN-003 (Raid action def), archive/tickets/completed/E18BANDYN-004.md, E18BANDYN-010
 
 ## Problem
 
@@ -13,16 +13,17 @@ Bandit agents need to generate two new goal candidates through the existing AI c
 ## Assumption Reassessment (2026-03-29)
 
 1. `generate_candidates()` in `crates/worldwake-ai/src/candidate_generation.rs` takes a `GoalBeliefView` trait object, `BlockedIntentMemory`, `RecipeRegistry`, and current tick. It returns `Vec<GroundedGoal>`. The function dispatches to internal helpers based on agent state queries through the belief view.
-2. `GoalBeliefView` trait (in `crates/worldwake-sim/src/belief_view.rs`) provides query methods for agent beliefs. The raid candidate generator needs: (a) agent's faction membership, (b) non-faction agents at same place, (c) BanditCamp existence for agent's faction. The regroup generator needs: (a) agent's rally-point belief, (b) whether a camp currently exists for agent's faction.
+2. `GoalBeliefView` trait (in `crates/worldwake-sim/src/belief_view.rs`) provides query methods for agent beliefs. The raid candidate generator needs: (a) agent's faction membership, (b) non-faction agents at same place, (c) active `BanditCamp` existence for agent's faction. The regroup generator needs: (a) the agent's rally-point belief, (b) whether a camp currently exists for that faction. It should not depend on a place-backed `BanditCampProfile` after `E18BANDYN-010`.
 3. The spec's "enterprise signal pattern for raids" is analogous to merchant restock signals in `crates/worldwake-ai/src/enterprise.rs`. The raid opportunity assessment uses the same infrastructure.
 4. `BlockedIntentMemory` with `BlockingFact::CombatTooRisky` suppresses re-engaging at locations where the agent previously failed. This naturally limits raid retries.
 5. `GroundedGoal` includes the `GoalKind`, a priority/motive score, and suppression conditions. `RegroupWithFaction` has suppression: `WhenStressedAtOrAbove(Critical)` — survival comes first.
-6. The belief view trait may need extension to expose faction membership and camp existence queries. This ticket may need to add methods to `GoalBeliefView` and implement them on `OmniscientBeliefView`.
+6. The belief-view implementation detail in this ticket is stale: there is no standalone `omniscient_belief_view.rs` in live code. Any new `GoalBeliefView` surface must be wired through the live belief-view implementations and helpers that exist after reassessment.
+7. Adjacent contradiction exposed during reassessment: regroup policy should come from the faction-scoped contract in `E18BANDYN-010`, while regroup navigation still comes from the agent's own beliefs. This ticket must consume that canonical split instead of reintroducing place-backed policy reads.
 
 ## Architecture Check
 
 1. Extending the existing `generate_candidates()` function with two new candidate-generating branches follows the established pattern (e.g., `generate_combat_candidates()`, `generate_trade_candidates()`). Each candidate type gets its own helper function called from the main generator. This is cleaner than adding candidates through a separate system because all candidates compete through the same ranking pipeline.
-2. Rally-point awareness comes from agent beliefs (FND-7, FND-12): agents who never observed the rally point do NOT generate `RegroupWithFaction` candidates. The candidate generator checks the agent's belief about rally points, not the authoritative `BanditCampProfile.rally_place`.
+2. Rally-point awareness comes from agent beliefs (FND-7, FND-12): agents who never observed the rally point do NOT generate `RegroupWithFaction` candidates. The candidate generator checks the agent's belief about rally points, not direct authoritative reads from the faction policy component.
 3. No backwards-compatibility shims. New helper functions, new candidate types, additive changes to the generation pipeline.
 
 ## Verification Layers
@@ -46,7 +47,7 @@ In `crates/worldwake-sim/src/belief_view.rs`, add methods to query:
 - `agent_believes_camp_exists(agent, faction) -> bool` — whether agent believes their faction has a camp
 - `agent_rally_point_belief(agent, faction) -> Option<EntityId>` — agent's believed rally place
 
-Implement these on `OmniscientBeliefView` as omniscient stand-ins until E14's full belief system is live.
+Implement these on the live `GoalBeliefView` surfaces that currently back candidate generation, not on a nonexistent omniscient-belief-view file.
 
 ### 2. Add raid candidate generation helper
 
@@ -95,7 +96,7 @@ Call both helpers from the main candidate generation function, appending results
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — add raid + regroup candidate helpers, wire into main function)
 - `crates/worldwake-sim/src/belief_view.rs` (modify — extend trait with faction/camp query methods)
-- `crates/worldwake-sim/src/omniscient_belief_view.rs` (modify — implement new trait methods)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — if new belief-view methods are required on the live per-agent surface)
 - `crates/worldwake-ai/src/enterprise.rs` (modify — add raid opportunity signal if following enterprise pattern)
 
 ## Out of Scope
@@ -106,7 +107,7 @@ Call both helpers from the main candidate generation function, appending results
 - EstablishCamp action (E18BANDYN-004)
 - bandit_camp_system (E18BANDYN-005)
 - Golden test T22 (E18BANDYN-009)
-- Full belief system (E14) — use OmniscientBeliefView stand-ins
+- Full belief-system redesign beyond the live `GoalBeliefView` surfaces
 
 ## Acceptance Criteria
 
@@ -138,7 +139,7 @@ Call both helpers from the main candidate generation function, appending results
 
 1. `crates/worldwake-ai/src/candidate_generation.rs` — focused tests for raid candidate generation under various conditions
 2. `crates/worldwake-ai/src/candidate_generation.rs` — focused tests for regroup candidate generation under various conditions
-3. `crates/worldwake-sim/src/omniscient_belief_view.rs` — tests for new trait method implementations
+3. `crates/worldwake-sim/src/per_agent_belief_view.rs` — tests for any new live belief-view method implementations
 
 ### Commands
 

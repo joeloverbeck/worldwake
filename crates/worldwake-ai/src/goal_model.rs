@@ -528,7 +528,9 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::EstablishCamp | PlannerOpKind::AskWitness => {
+                Err(GoalPayloadOverrideError::UnsupportedGoal)
+            }
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -763,7 +765,8 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 None => state,
             },
-            PlannerOpKind::Trade
+            PlannerOpKind::EstablishCamp
+            | PlannerOpKind::Trade
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::Attack
@@ -1078,6 +1081,7 @@ impl GoalKindPlannerExt for GoalKind {
         match op_kind {
             PlannerOpKind::Travel
             | PlannerOpKind::Trade
+            | PlannerOpKind::EstablishCamp
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::QueueForFacilityUse

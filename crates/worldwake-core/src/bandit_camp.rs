@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 /// Marks a place as an active bandit camp and points at its communal supplies.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BanditCamp {
+    pub faction: EntityId,
     pub supplies: EntityId,
 }
 
@@ -13,6 +14,7 @@ impl Component for BanditCamp {}
 /// Per-camp policy inputs for later bandit action and regrouping systems.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BanditCampProfile {
+    pub faction: EntityId,
     pub min_regroup_count: u8,
     pub establishment_duration_ticks: NonZeroU32,
     pub flee_wound_threshold: Permille,
@@ -51,6 +53,7 @@ mod tests {
     #[test]
     fn bandit_camp_roundtrips_through_bincode() {
         let camp = BanditCamp {
+            faction: entity(2),
             supplies: entity(4),
         };
 
@@ -63,6 +66,7 @@ mod tests {
     #[test]
     fn bandit_camp_profile_roundtrips_through_bincode() {
         let profile = BanditCampProfile {
+            faction: entity(3),
             min_regroup_count: 3,
             establishment_duration_ticks: NonZeroU32::new(12).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),

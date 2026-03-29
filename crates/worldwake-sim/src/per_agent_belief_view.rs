@@ -286,6 +286,27 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        if entity == self.agent {
+            return self.world.factions_of(entity);
+        }
+
+        self.known_institutional_beliefs(self.agent)
+            .into_iter()
+            .filter_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::FactionMembership {
+                    faction,
+                    member,
+                    active: true,
+                    ..
+                } if member == entity => Some(faction),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
         self.believed_entity(entity)
             .and_then(|state| state.believed_activity.as_ref())

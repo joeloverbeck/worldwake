@@ -19,6 +19,7 @@ static GENERIC_PROGRESS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Sleep,
     PlannerOpKind::Relieve,
     PlannerOpKind::Wash,
+    PlannerOpKind::EstablishCamp,
     PlannerOpKind::Trade,
     PlannerOpKind::QueueForFacilityUse,
     PlannerOpKind::Harvest,
@@ -37,6 +38,7 @@ static GENERIC_PROGRESS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::PressForceClaim,
     PlannerOpKind::YieldForceClaim,
     PlannerOpKind::Investigate,
+    PlannerOpKind::AskWitness,
 ];
 
 /// Returns the set of `PlannerOpKind`s that count as forward progress for a
@@ -1072,6 +1074,7 @@ mod tests {
         assert!(ops.contains(&PlannerOpKind::Sleep));
         assert!(ops.contains(&PlannerOpKind::Relieve));
         assert!(ops.contains(&PlannerOpKind::Wash));
+        assert!(ops.contains(&PlannerOpKind::EstablishCamp));
         assert!(ops.contains(&PlannerOpKind::Trade));
         assert!(ops.contains(&PlannerOpKind::QueueForFacilityUse));
         assert!(ops.contains(&PlannerOpKind::Harvest));
@@ -1090,7 +1093,8 @@ mod tests {
         assert!(ops.contains(&PlannerOpKind::PressForceClaim));
         assert!(ops.contains(&PlannerOpKind::YieldForceClaim));
         assert!(ops.contains(&PlannerOpKind::Investigate));
-        assert_eq!(ops.len(), 23);
+        assert!(ops.contains(&PlannerOpKind::AskWitness));
+        assert_eq!(ops.len(), 25);
     }
 
     #[test]

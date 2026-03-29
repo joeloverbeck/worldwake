@@ -55,6 +55,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        let _ = entity;
+        Vec::new()
+    }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
         None
@@ -286,6 +290,10 @@ pub trait RuntimeBeliefView {
     }
     fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
+        Vec::new()
+    }
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        let _ = entity;
         Vec::new()
     }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
@@ -1098,6 +1106,7 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorWitnessQueryDisposition => view
             .epistemic_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.witness_query_duration_ticks.get())),
+        DurationExpr::BanditCampEstablishmentProfile => None,
         DurationExpr::ActorDefendStance => view
             .combat_profile(actor)
             .map(|profile| ActionDuration::new(profile.defend_stance_ticks.get())),

@@ -133,6 +133,7 @@ fn derive_blocking_fact(
         }
         PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
+        | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot
@@ -358,6 +359,7 @@ fn classify_input_failure(
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Trade
+        | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
@@ -395,6 +397,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
 
     match step.op_kind {
         PlannerOpKind::Trade
+        | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
         | PlannerOpKind::Loot
@@ -649,6 +652,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        | PlannerOpKind::EstablishCamp
         | PlannerOpKind::Investigate => None,
         PlannerOpKind::Bury
         | PlannerOpKind::Consume
@@ -703,6 +707,7 @@ fn related_place(
     match step.op_kind {
         PlannerOpKind::Travel => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Trade
+        | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft

@@ -1954,12 +1954,14 @@ mod tests {
 
     fn sample_bandit_camp() -> BanditCamp {
         BanditCamp {
+            faction: entity(60),
             supplies: entity(61),
         }
     }
 
     fn sample_bandit_camp_profile() -> BanditCampProfile {
         BanditCampProfile {
+            faction: entity(60),
             min_regroup_count: 3,
             establishment_duration_ticks: std::num::NonZeroU32::new(12).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),
@@ -3825,6 +3827,7 @@ mod tests {
         let place = entity(2);
         let before = sample_bandit_camp();
         let after = BanditCamp {
+            faction: entity(62),
             supplies: entity(63),
         };
         world.insert_component_bandit_camp(place, before.clone()).unwrap();
@@ -3856,6 +3859,7 @@ mod tests {
         let place = entity(2);
         let before = sample_bandit_camp_profile();
         let after = BanditCampProfile {
+            faction: entity(62),
             min_regroup_count: 4,
             establishment_duration_ticks: std::num::NonZeroU32::new(9).unwrap(),
             flee_wound_threshold: Permille::new(725).unwrap(),

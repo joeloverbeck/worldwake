@@ -4,6 +4,7 @@
 //! Depends on `worldwake-core` and `worldwake-sim`.
 
 pub mod action_registry;
+pub mod bandit_camp_actions;
 pub mod combat;
 pub mod consult_record_actions;
 pub mod epistemic_actions;
@@ -26,6 +27,7 @@ pub mod transport_actions;
 pub mod travel_actions;
 
 pub use action_registry::{build_full_action_registries, register_all_actions, ActionRegistries};
+pub use bandit_camp_actions::register_establish_camp_action;
 pub use combat::{
     combat_system, register_attack_action, register_bury_action, register_defend_action,
     register_heal_action, register_loot_action,

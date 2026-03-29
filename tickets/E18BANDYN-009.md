@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None — test only
-**Deps**: E18BANDYN-001 through E18BANDYN-008 (all prior E18 tickets)
+**Deps**: E18BANDYN-003, archive/tickets/completed/E18BANDYN-004.md, E18BANDYN-005, E18BANDYN-006, E18BANDYN-007, E18BANDYN-008, E18BANDYN-010
 
 ## Problem
 
@@ -18,7 +18,7 @@ The brainstorming spec (T22) requires a golden end-to-end test demonstrating the
 4. The test must demonstrate causal depth >= 4 across >= 3 subsystems (spec T22 requirement).
 5. Pass threshold: "Within 5 in-world days, route safety and at least one downstream economic behavior must change because of the diaspora."
 6. The test must set up: bandit camp with 3+ members, supplies, raid history, merchants with route beliefs, external attackers (guards/adventurers).
-7. All E18 components must be integrated: `BanditCamp`, `BanditCampProfile`, Raid action, EstablishCamp action, `bandit_camp_system()`, raid/regroup candidate generation, planner ops, route threat estimation.
+7. All E18 components must be integrated, but the policy contract is no longer correctly described as place-backed `BanditCampProfile`. After `E18BANDYN-010`, the golden chain should use active `BanditCamp` state on places plus faction-scoped camp policy on the faction entity.
 8. This is a multi-subsystem integration test spanning: combat (E12), needs (E09), AI decisions (E13), production/trade (E10/E11), beliefs (E14/E15), and E18's new bandit dynamics.
 
 ## Architecture Check
@@ -47,7 +47,7 @@ In `crates/worldwake-ai/tests/golden_t22_bandit_camp_destruction.rs`:
 - Create a place graph: village — road — crossroads — forest path — bandit camp place — rally place
 - Create bandit faction with `FactionData { purpose: Military }`
 - Create 4 bandit agents with `MemberOf`, `CombatProfile`, `UtilityProfile`, `HomeostaticNeeds`, `PerceptionProfile`
-- Create `BanditCamp` and `BanditCampProfile` on camp place (with rally_place set)
+- Create active `BanditCamp` on the camp place and the faction-scoped camp policy component on the bandit faction (with rally place set there)
 - Create camp supplies container with food
 - Create 2 merchant agents with `PerceptionProfile`, trade profiles, route knowledge
 - Create 2 attacker agents (guards) with strong `CombatProfile`
@@ -124,7 +124,7 @@ In `crates/worldwake-ai/tests/golden_t22_bandit_camp_destruction.rs`:
 
 1. FND-1 (Emergence): all behavior emerges from interacting systems, no scripted sequences in the test assertions
 2. FND-4 (Persistent Identity): dead bandits stay dead, supplies conserved, bodies persist
-3. FND-7 (Locality): rally-point knowledge via beliefs, not global queries
+3. FND-7 (Locality): rally-point knowledge via beliefs, not global queries from faction policy
 4. FND-17 (Agent Symmetry): bandits use same action framework as attackers and merchants
 5. FND-27 (Debuggability): causal chain is reconstructable from event log and traces
 6. Conservation: `verify_live_lot_conservation` passes at each assertion checkpoint

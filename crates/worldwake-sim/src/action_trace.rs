@@ -363,6 +363,7 @@ impl ActionTraceDetail {
             | ActionPayload::Threaten(_)
             | ActionPayload::Accuse(_)
             | ActionPayload::Punish(_)
+            | ActionPayload::EstablishCamp(_)
             | ActionPayload::DeclareSupport(_)
             | ActionPayload::PressForceClaim(_)
             | ActionPayload::YieldForceClaim(_)

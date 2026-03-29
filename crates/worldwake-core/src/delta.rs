@@ -459,9 +459,11 @@ mod tests {
                 output_owner: ProductionOutputOwner::ProducerOwner,
             }),
             ComponentValue::BanditCamp(BanditCamp {
+                faction: entity(40),
                 supplies: entity(41),
             }),
             ComponentValue::BanditCampProfile(BanditCampProfile {
+                faction: entity(40),
                 min_regroup_count: 3,
                 establishment_duration_ticks: std::num::NonZeroU32::new(14).unwrap(),
                 flee_wound_threshold: Permille::new(675).unwrap(),

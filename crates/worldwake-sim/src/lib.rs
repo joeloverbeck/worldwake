@@ -68,7 +68,7 @@ pub use action_instance::ActionInstance;
 pub use action_payload::{
     AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload, CombatActionPayload,
     ConsultRecordActionPayload, CraftActionPayload, DeclareSupportActionPayload,
-    HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
+    EstablishCampActionPayload, HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
     PressForceClaimActionPayload, PunishActionPayload, QueueForFacilityUsePayload,
     TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     YieldForceClaimActionPayload,

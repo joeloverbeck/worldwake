@@ -14,6 +14,7 @@ pub enum PlannerOpKind {
     Sleep,
     Relieve,
     Wash,
+    EstablishCamp,
     Trade,
     QueueForFacilityUse,
     Harvest,
@@ -74,6 +75,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Needs, "sleep") => Some(PlannerOpKind::Sleep),
         (ActionDomain::Needs, "toilet") => Some(PlannerOpKind::Relieve),
         (ActionDomain::Needs, "wash") => Some(PlannerOpKind::Wash),
+        (ActionDomain::Generic, "establish_camp") => Some(PlannerOpKind::EstablishCamp),
         (ActionDomain::Trade, "trade") => Some(PlannerOpKind::Trade),
         (ActionDomain::Production, "queue_for_facility_use") => {
             Some(PlannerOpKind::QueueForFacilityUse)
@@ -136,6 +138,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
+        | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Heal => {
             base_semantics(op_kind, true, false, PlannerTransitionKind::GoalModelFallback)
@@ -1266,6 +1269,7 @@ mod tests {
             PlannerOpKind::Sleep,
             PlannerOpKind::Relieve,
             PlannerOpKind::Wash,
+            PlannerOpKind::EstablishCamp,
             PlannerOpKind::Trade,
             PlannerOpKind::QueueForFacilityUse,
             PlannerOpKind::Harvest,
@@ -1284,7 +1288,7 @@ mod tests {
             PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 21);
+        assert_eq!(all.len(), 22);
     }
 
     #[test]
@@ -1307,6 +1311,7 @@ mod tests {
             ("sleep", PlannerOpKind::Sleep),
             ("toilet", PlannerOpKind::Relieve),
             ("wash", PlannerOpKind::Wash),
+            ("establish_camp", PlannerOpKind::EstablishCamp),
             ("travel", PlannerOpKind::Travel),
             ("pick_up", PlannerOpKind::MoveCargo),
             ("put_down", PlannerOpKind::MoveCargo),
@@ -1376,6 +1381,13 @@ mod tests {
     fn classify_action_def_fixed_name_families_ignore_placeholder_payload_shape() {
         let defs = build_phase_two_registry();
         let variants = [
+            (
+                "establish_camp",
+                ActionPayload::EstablishCamp(worldwake_sim::EstablishCampActionPayload {
+                    faction: entity(11),
+                }),
+                PlannerOpKind::EstablishCamp,
+            ),
             (
                 "queue_for_facility_use",
                 ActionPayload::QueueForFacilityUse(QueueForFacilityUsePayload {

@@ -375,12 +375,14 @@ mod tests {
         tables.insert_bandit_camp(
             entity(31),
             BanditCamp {
+                faction: entity(30),
                 supplies: entity(32),
             },
         );
         tables.insert_bandit_camp_profile(
             entity(33),
             BanditCampProfile {
+                faction: entity(30),
                 min_regroup_count: 3,
                 establishment_duration_ticks: NonZeroU32::new(11).unwrap(),
                 flee_wound_threshold: Permille::new(650).unwrap(),
@@ -685,6 +687,7 @@ mod tests {
         let mut tables = ComponentTables::default();
         let id = entity(20);
         let camp = BanditCamp {
+            faction: entity(35),
             supplies: entity(36),
         };
 
@@ -700,6 +703,7 @@ mod tests {
         let mut tables = ComponentTables::default();
         let id = entity(21);
         let profile = BanditCampProfile {
+            faction: entity(37),
             min_regroup_count: 4,
             establishment_duration_ticks: NonZeroU32::new(9).unwrap(),
             flee_wound_threshold: Permille::new(700).unwrap(),

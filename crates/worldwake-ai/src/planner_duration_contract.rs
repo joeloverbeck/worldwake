@@ -4,6 +4,7 @@ use worldwake_sim::DurationExpr;
 pub enum PlannerDurationDependency {
     TargetConsumable,
     ActorMetabolism,
+    BanditCampEstablishmentProfile,
     ActorTradeDisposition,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
@@ -15,9 +16,10 @@ pub enum PlannerDurationDependency {
     TravelToTarget,
 }
 
-pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 11] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 12] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
+    PlannerDurationDependency::BanditCampEstablishmentProfile,
     PlannerDurationDependency::ActorTradeDisposition,
     PlannerDurationDependency::ActorTheftDisposition,
     PlannerDurationDependency::ActorInvestigationDisposition,
@@ -38,6 +40,7 @@ impl PlannerDurationDependency {
         match self {
             Self::TargetConsumable => "TargetConsumable",
             Self::ActorMetabolism => "ActorMetabolism",
+            Self::BanditCampEstablishmentProfile => "BanditCampEstablishmentProfile",
             Self::ActorTradeDisposition => "ActorTradeDisposition",
             Self::ActorTheftDisposition => "ActorTheftDisposition",
             Self::ActorInvestigationDisposition => "ActorInvestigationDisposition",
@@ -61,6 +64,9 @@ impl PlannerDurationDependency {
             }
             DurationExpr::ActorWitnessQueryDisposition => Some(Self::ActorWitnessQueryDisposition),
             DurationExpr::Fixed(_) => None,
+            DurationExpr::BanditCampEstablishmentProfile => {
+                Some(Self::BanditCampEstablishmentProfile)
+            }
             DurationExpr::ActorDefendStance => Some(Self::ActorDefendStance),
             DurationExpr::CombatWeapon => Some(Self::CombatWeapon),
             DurationExpr::TargetTreatment { .. } => Some(Self::TargetTreatment),

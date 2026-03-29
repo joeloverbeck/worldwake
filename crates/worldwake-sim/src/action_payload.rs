@@ -14,6 +14,7 @@ pub enum ActionPayload {
     Threaten(ThreatenActionPayload),
     Accuse(AccuseActionPayload),
     Punish(PunishActionPayload),
+    EstablishCamp(EstablishCampActionPayload),
     DeclareSupport(DeclareSupportActionPayload),
     PressForceClaim(PressForceClaimActionPayload),
     YieldForceClaim(YieldForceClaimActionPayload),
@@ -33,24 +34,7 @@ impl ActionPayload {
     pub const fn as_bribe(&self) -> Option<&BribeActionPayload> {
         match self {
             Self::Bribe(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::Threaten(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -58,24 +42,7 @@ impl ActionPayload {
     pub const fn as_threaten(&self) -> Option<&ThreatenActionPayload> {
         match self {
             Self::Threaten(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -83,24 +50,7 @@ impl ActionPayload {
     pub const fn as_accuse(&self) -> Option<&AccuseActionPayload> {
         match self {
             Self::Accuse(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -108,24 +58,7 @@ impl ActionPayload {
     pub const fn as_punish(&self) -> Option<&PunishActionPayload> {
         match self {
             Self::Punish(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -133,24 +66,15 @@ impl ActionPayload {
     pub const fn as_declare_support(&self) -> Option<&DeclareSupportActionPayload> {
         match self {
             Self::DeclareSupport(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_establish_camp(&self) -> Option<&EstablishCampActionPayload> {
+        match self {
+            Self::EstablishCamp(payload) => Some(payload),
+            _ => None,
         }
     }
 
@@ -158,24 +82,7 @@ impl ActionPayload {
     pub const fn as_harvest(&self) -> Option<&HarvestActionPayload> {
         match self {
             Self::Harvest(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -183,24 +90,7 @@ impl ActionPayload {
     pub const fn as_transport(&self) -> Option<&TransportActionPayload> {
         match self {
             Self::Transport(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -208,24 +98,7 @@ impl ActionPayload {
     pub const fn as_craft(&self) -> Option<&CraftActionPayload> {
         match self {
             Self::Craft(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -233,24 +106,7 @@ impl ActionPayload {
     pub const fn as_trade(&self) -> Option<&TradeActionPayload> {
         match self {
             Self::Trade(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -258,24 +114,7 @@ impl ActionPayload {
     pub const fn as_combat(&self) -> Option<&CombatActionPayload> {
         match self {
             Self::Combat(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -283,24 +122,7 @@ impl ActionPayload {
     pub const fn as_loot(&self) -> Option<&LootActionPayload> {
         match self {
             Self::Loot(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -308,24 +130,7 @@ impl ActionPayload {
     pub const fn as_queue_for_facility_use(&self) -> Option<&QueueForFacilityUsePayload> {
         match self {
             Self::QueueForFacilityUse(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_) => None,
+            _ => None,
         }
     }
 
@@ -333,24 +138,7 @@ impl ActionPayload {
     pub const fn as_tell(&self) -> Option<&TellActionPayload> {
         match self {
             Self::Tell(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -358,24 +146,7 @@ impl ActionPayload {
     pub const fn as_consult_record(&self) -> Option<&ConsultRecordActionPayload> {
         match self {
             Self::ConsultRecord(payload) => Some(payload),
-            Self::None
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -383,24 +154,7 @@ impl ActionPayload {
     pub const fn as_press_force_claim(&self) -> Option<&PressForceClaimActionPayload> {
         match self {
             Self::PressForceClaim(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -408,24 +162,7 @@ impl ActionPayload {
     pub const fn as_yield_force_claim(&self) -> Option<&YieldForceClaimActionPayload> {
         match self {
             Self::YieldForceClaim(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -433,24 +170,7 @@ impl ActionPayload {
     pub const fn as_investigate(&self) -> Option<&InvestigateActionPayload> {
         match self {
             Self::Investigate(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::AskWitness(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 
@@ -458,24 +178,7 @@ impl ActionPayload {
     pub const fn as_ask_witness(&self) -> Option<&AskWitnessPayload> {
         match self {
             Self::AskWitness(payload) => Some(payload),
-            Self::None
-            | Self::ConsultRecord(_)
-            | Self::Tell(_)
-            | Self::Bribe(_)
-            | Self::Threaten(_)
-            | Self::Accuse(_)
-            | Self::Punish(_)
-            | Self::DeclareSupport(_)
-            | Self::PressForceClaim(_)
-            | Self::YieldForceClaim(_)
-            | Self::Transport(_)
-            | Self::Harvest(_)
-            | Self::Craft(_)
-            | Self::Trade(_)
-            | Self::Combat(_)
-            | Self::Loot(_)
-            | Self::Investigate(_)
-            | Self::QueueForFacilityUse(_) => None,
+            _ => None,
         }
     }
 }
@@ -513,6 +216,11 @@ pub struct PunishActionPayload {
     pub office: EntityId,
     pub accusation_entry: RecordEntryId,
     pub punishment: PunishmentKind,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct EstablishCampActionPayload {
+    pub faction: EntityId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -596,8 +304,8 @@ mod tests {
     use super::{
         AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload,
         CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
-        DeclareSupportActionPayload, HarvestActionPayload, InvestigateActionPayload,
-        LootActionPayload, PressForceClaimActionPayload, PunishActionPayload,
+        DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
+        InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload, PunishActionPayload,
         QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
         TransportActionPayload, YieldForceClaimActionPayload,
     };
@@ -764,6 +472,15 @@ mod tests {
         }
     }
 
+    fn sample_establish_camp_payload() -> EstablishCampActionPayload {
+        EstablishCampActionPayload {
+            faction: EntityId {
+                slot: 12,
+                generation: 0,
+            },
+        }
+    }
+
     fn sample_queue_payload() -> QueueForFacilityUsePayload {
         QueueForFacilityUsePayload {
             intended_action: ActionDefId(19),
@@ -807,6 +524,7 @@ mod tests {
         assert_traits::<ThreatenActionPayload>();
         assert_traits::<AccuseActionPayload>();
         assert_traits::<PunishActionPayload>();
+        assert_traits::<EstablishCampActionPayload>();
         assert_traits::<DeclareSupportActionPayload>();
         assert_traits::<PressForceClaimActionPayload>();
         assert_traits::<YieldForceClaimActionPayload>();
@@ -836,6 +554,7 @@ mod tests {
         let threaten = ActionPayload::Threaten(sample_threaten_payload());
         let accuse = ActionPayload::Accuse(sample_accuse_payload());
         let punish = ActionPayload::Punish(sample_punish_payload());
+        let establish_camp = ActionPayload::EstablishCamp(sample_establish_camp_payload());
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
         let press_force_claim = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
         let yield_force_claim = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
@@ -847,6 +566,7 @@ mod tests {
         assert_eq!(consult.as_tell(), None);
         assert_eq!(consult.as_bribe(), None);
         assert_eq!(consult.as_threaten(), None);
+        assert_eq!(consult.as_establish_camp(), None);
         assert_eq!(consult.as_declare_support(), None);
         assert_eq!(consult.as_press_force_claim(), None);
         assert_eq!(consult.as_yield_force_claim(), None);
@@ -862,6 +582,7 @@ mod tests {
         assert_eq!(tell.as_tell(), Some(&sample_tell_payload()));
         assert_eq!(tell.as_bribe(), None);
         assert_eq!(tell.as_threaten(), None);
+        assert_eq!(tell.as_establish_camp(), None);
         assert_eq!(tell.as_declare_support(), None);
         assert_eq!(tell.as_press_force_claim(), None);
         assert_eq!(tell.as_yield_force_claim(), None);
@@ -877,6 +598,7 @@ mod tests {
         assert_eq!(bribe.as_tell(), None);
         assert_eq!(bribe.as_bribe(), Some(&sample_bribe_payload()));
         assert_eq!(bribe.as_threaten(), None);
+        assert_eq!(bribe.as_establish_camp(), None);
         assert_eq!(bribe.as_declare_support(), None);
         assert_eq!(bribe.as_press_force_claim(), None);
         assert_eq!(bribe.as_yield_force_claim(), None);
@@ -890,6 +612,7 @@ mod tests {
         assert_eq!(threaten.as_bribe(), None);
         assert_eq!(threaten.as_threaten(), Some(&sample_threaten_payload()));
         assert_eq!(threaten.as_accuse(), None);
+        assert_eq!(threaten.as_establish_camp(), None);
         assert_eq!(threaten.as_declare_support(), None);
         assert_eq!(threaten.as_press_force_claim(), None);
         assert_eq!(threaten.as_yield_force_claim(), None);
@@ -904,6 +627,7 @@ mod tests {
         assert_eq!(accuse.as_threaten(), None);
         assert_eq!(accuse.as_accuse(), Some(&sample_accuse_payload()));
         assert_eq!(accuse.as_punish(), None);
+        assert_eq!(accuse.as_establish_camp(), None);
 
         assert_eq!(punish.as_consult_record(), None);
         assert_eq!(punish.as_tell(), None);
@@ -911,6 +635,7 @@ mod tests {
         assert_eq!(punish.as_threaten(), None);
         assert_eq!(punish.as_accuse(), None);
         assert_eq!(punish.as_punish(), Some(&sample_punish_payload()));
+        assert_eq!(punish.as_establish_camp(), None);
         assert_eq!(accuse.as_declare_support(), None);
         assert_eq!(accuse.as_press_force_claim(), None);
         assert_eq!(accuse.as_yield_force_claim(), None);
@@ -918,6 +643,24 @@ mod tests {
         assert_eq!(accuse.as_transport(), None);
         assert_eq!(accuse.as_craft(), None);
         assert_eq!(accuse.as_trade(), None);
+
+        assert_eq!(establish_camp.as_consult_record(), None);
+        assert_eq!(establish_camp.as_tell(), None);
+        assert_eq!(establish_camp.as_bribe(), None);
+        assert_eq!(establish_camp.as_threaten(), None);
+        assert_eq!(establish_camp.as_accuse(), None);
+        assert_eq!(establish_camp.as_punish(), None);
+        assert_eq!(
+            establish_camp.as_establish_camp(),
+            Some(&sample_establish_camp_payload())
+        );
+        assert_eq!(establish_camp.as_declare_support(), None);
+        assert_eq!(establish_camp.as_press_force_claim(), None);
+        assert_eq!(establish_camp.as_yield_force_claim(), None);
+        assert_eq!(establish_camp.as_harvest(), None);
+        assert_eq!(establish_camp.as_transport(), None);
+        assert_eq!(establish_camp.as_craft(), None);
+        assert_eq!(establish_camp.as_trade(), None);
 
         assert_eq!(declare_support.as_consult_record(), None);
         assert_eq!(declare_support.as_tell(), None);
@@ -1133,6 +876,7 @@ mod tests {
         assert_eq!(none.as_tell(), None);
         assert_eq!(none.as_bribe(), None);
         assert_eq!(none.as_threaten(), None);
+        assert_eq!(none.as_establish_camp(), None);
         assert_eq!(none.as_declare_support(), None);
         assert_eq!(none.as_press_force_claim(), None);
         assert_eq!(none.as_yield_force_claim(), None);
@@ -1148,7 +892,7 @@ mod tests {
 
     #[test]
     fn action_payload_roundtrips_through_bincode() {
-        let payload = ActionPayload::Harvest(sample_payload());
+        let payload = ActionPayload::EstablishCamp(sample_establish_camp_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

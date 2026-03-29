@@ -3900,6 +3900,13 @@ mod tests {
                     Vec::new(),
                     ActionPayload::None,
                 ),
+                PlannerDurationDependency::BanditCampEstablishmentProfile => (
+                    DurationExpr::BanditCampEstablishmentProfile,
+                    Vec::new(),
+                    ActionPayload::EstablishCamp(worldwake_sim::EstablishCampActionPayload {
+                        faction: actor,
+                    }),
+                ),
                 PlannerDurationDependency::ActorTradeDisposition => (
                     DurationExpr::ActorTradeDisposition,
                     Vec::new(),

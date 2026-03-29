@@ -814,12 +814,14 @@ mod tests {
 
     fn sample_bandit_camp() -> BanditCamp {
         BanditCamp {
+            faction: entity(69),
             supplies: entity(70),
         }
     }
 
     fn sample_bandit_camp_profile() -> BanditCampProfile {
         BanditCampProfile {
+            faction: entity(69),
             min_regroup_count: 3,
             establishment_duration_ticks: NonZeroU32::new(10).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),
