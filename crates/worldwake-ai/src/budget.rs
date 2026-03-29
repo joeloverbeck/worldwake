@@ -13,6 +13,8 @@ pub struct PlanningBudget {
     pub transient_block_ticks: u32,
     pub unknown_block_ticks: u32,
     pub structural_block_ticks: u32,
+    pub initial_cooldown_ticks: u32,
+    pub max_cooldown_ticks: u32,
 }
 
 impl Default for PlanningBudget {
@@ -28,6 +30,8 @@ impl Default for PlanningBudget {
             transient_block_ticks: 20,
             unknown_block_ticks: 5,
             structural_block_ticks: 200,
+            initial_cooldown_ticks: 4,
+            max_cooldown_ticks: 64,
         }
     }
 }
@@ -51,6 +55,8 @@ mod tests {
         assert_eq!(budget.transient_block_ticks, 20);
         assert_eq!(budget.unknown_block_ticks, 5);
         assert_eq!(budget.structural_block_ticks, 200);
+        assert_eq!(budget.initial_cooldown_ticks, 4);
+        assert_eq!(budget.max_cooldown_ticks, 64);
     }
 
     #[test]
