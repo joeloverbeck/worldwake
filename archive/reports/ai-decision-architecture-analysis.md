@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # Worldwake AI Decision Architecture: Technical Analysis for Deep Research
 
 ## 0. Preamble and Instructions for the Researcher
@@ -1384,3 +1386,10 @@ How the current AI architecture maps to the canonical regression scenarios:
 | **C** (Gold → Theft → Discovery) | Partial: ownership tracking works, theft goal exists. Discovery needs expectation-mismatch detection | Epic 14+ (stale belief + observation) |
 | **D** (Rumor → Travel → Discovery → Replan) | Strong: golden_social tests this pattern. Stale beliefs, reobservation, belief correction, replanning all work | Active with OmniscientBeliefView caveat |
 | **E** (Competing claimants → Queue → Prune) | Strong: facility queues, patience exhaustion, dead agent pruning, contention all tested | Works end-to-end in golden_production tests |
+
+## Outcome
+
+- Completion date: 2026-03-29
+- What actually changed: Archived this report as historical analysis for a superseded AI decision architecture version and moved it to `archive/reports/`.
+- Deviations from original plan: None. The report content was preserved; only archival metadata and repository references were updated.
+- Verification results: Confirmed the archived file exists under `archive/reports/`, updated the in-repo spec reference to the archived path, and verified the original path no longer exists under `reports/`.

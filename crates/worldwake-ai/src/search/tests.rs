@@ -456,6 +456,7 @@ fn believed_entity_state_at(
         alive: true,
         wounds: Vec::new(),
         last_known_courage: None,
+        believed_activity: None,
         observed_tick,
         source: PerceptionSource::DirectObservation,
     }
@@ -4419,7 +4420,7 @@ fn test_binding_two_corpses_same_place() {
         0,
     );
     let mut rejections = Vec::new();
-    let _result = search_plan(
+    let result = search_plan(
         &snapshot,
         &goal,
         &build_semantics_table(&registry),
@@ -4503,7 +4504,7 @@ fn test_binding_two_hostiles_same_place() {
         0,
     );
     let mut rejections = Vec::new();
-    let _result = search_plan(
+    let result = search_plan(
         &snapshot,
         &goal,
         &build_semantics_table(&registry),
@@ -5644,7 +5645,7 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
     );
     let mut expansions = Vec::new();
 
-    let result = search_plan(
+    let _result = search_plan(
         &snapshot,
         &goal,
         &build_semantics_table(&registry),
@@ -5713,7 +5714,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
     );
     let mut expansions = Vec::new();
 
-    let result = search_plan(
+    let _result = search_plan(
         &snapshot,
         &goal,
         &build_semantics_table(&registry),

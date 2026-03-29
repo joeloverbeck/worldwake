@@ -1879,13 +1879,13 @@ mod tests {
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
         estimate_duration_from_beliefs, AccuseActionPayload, ActionDef, ActionDefRegistry,
-        ActionDomain, ActionDuration, ActionHandlerId, ActionPayload, AskWitnessPayload,
-        BribeActionPayload, ConsultRecordActionPayload, DurationExpr, Interruptibility,
-        InvestigateActionPayload, PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry,
-        RuntimeBeliefView, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload,
+        ActionDuration, ActionHandlerId, ActionPayload, AskWitnessPayload, BribeActionPayload,
+        ConsultRecordActionPayload, DurationExpr, Interruptibility, InvestigateActionPayload,
+        PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
+    use worldwake_core::ActionDomain;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
@@ -6238,6 +6238,7 @@ mod tests {
             alive: true,
             wounds: Vec::new(),
             last_known_courage: None,
+            believed_activity: None,
             observed_tick,
             source: worldwake_core::PerceptionSource::DirectObservation,
         }

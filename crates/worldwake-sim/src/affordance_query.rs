@@ -401,7 +401,7 @@ fn enumerate_affordances_for_def(
 mod tests {
     use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
     use crate::{
-        ActionDef, ActionDefRegistry, ActionDomain, ActionError, ActionHandler, ActionHandlerId,
+        ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
         PerAgentBeliefView, Precondition, ReservationReq, TargetSpec, TradeActionPayload,
@@ -409,12 +409,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BelievedEntityState, BodyCostPerTick, CauseRef,
-        CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
-        ResourceSource, TellProfile, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        build_prototype_world, ActionDefId, ActionDomain, BelievedEntityState, BodyCostPerTick,
+        CauseRef, CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind,
+        ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Quantity, RecipeId, ResourceSource, TellProfile, Tick, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
     };
 
     #[derive(Default)]

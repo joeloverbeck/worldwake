@@ -48,7 +48,7 @@ pub fn register_transport_actions(
         defs.register(ActionDef {
             id: pick_up_id,
             name: "pick_up".to_string(),
-            domain: worldwake_sim::ActionDomain::Transport,
+            domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
             targets: vec![TargetSpec::EntityAtActorPlace {
                 kind: EntityKind::ItemLot,
@@ -91,7 +91,7 @@ pub fn register_transport_actions(
         defs.register(ActionDef {
             id: put_down_id,
             name: "put_down".to_string(),
-            domain: worldwake_sim::ActionDomain::Transport,
+            domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
             targets: vec![TargetSpec::EntityDirectlyPossessedByActor {
                 kind: EntityKind::ItemLot,
@@ -130,7 +130,7 @@ pub fn register_transport_actions(
         defs.register(ActionDef {
             id: steal_id,
             name: "steal".to_string(),
-            domain: worldwake_sim::ActionDomain::Transport,
+            domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotIncapacitated],
             targets: vec![TargetSpec::EntityAtActorPlace {
                 kind: EntityKind::ItemLot,

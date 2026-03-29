@@ -96,7 +96,7 @@ fn register_def(
     defs.register(ActionDef {
         id,
         name: name.to_string(),
-        domain: worldwake_sim::ActionDomain::Needs,
+        domain: worldwake_core::ActionDomain::Needs,
         actor_constraints: match name {
             "toilet" => vec![
                 Constraint::ActorAlive,

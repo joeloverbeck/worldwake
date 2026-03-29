@@ -999,7 +999,7 @@ mod tests {
         let def = ActionDef {
             id: ActionDefId(9),
             name: "fine".to_string(),
-            domain: crate::ActionDomain::Generic,
+            domain: worldwake_core::ActionDomain::Generic,
             actor_constraints: Vec::new(),
             targets: Vec::new(),
             preconditions: Vec::new(),

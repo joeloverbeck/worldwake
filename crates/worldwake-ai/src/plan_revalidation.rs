@@ -433,7 +433,7 @@ mod tests {
         registry.register(ActionDef {
             id: ActionDefId(0),
             name: "travel".to_string(),
-            domain: worldwake_sim::ActionDomain::Travel,
+            domain: worldwake_core::ActionDomain::Travel,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::AdjacentPlace],
             preconditions: vec![Precondition::TargetAdjacentToActor(0)],
@@ -462,7 +462,7 @@ mod tests {
         registry.register(ActionDef {
             id: ActionDefId(0),
             name: "harvest:test".to_string(),
-            domain: worldwake_sim::ActionDomain::Production,
+            domain: worldwake_core::ActionDomain::Production,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: Vec::new(),
             preconditions: vec![Precondition::ActorAlive],
@@ -527,7 +527,7 @@ mod tests {
         registry.register(ActionDef {
             id: ActionDefId(0),
             name: "pick_up".to_string(),
-            domain: worldwake_sim::ActionDomain::Transport,
+            domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::EntityAtActorPlace {
                 kind: EntityKind::ItemLot,
@@ -577,7 +577,7 @@ mod tests {
         registry.register(ActionDef {
             id: ActionDefId(0),
             name: "accuse:test".to_string(),
-            domain: worldwake_sim::ActionDomain::Social,
+            domain: worldwake_core::ActionDomain::Social,
             actor_constraints: vec![Constraint::ActorAlive],
             targets: vec![TargetSpec::SpecificEntity(entity(0))],
             preconditions: vec![

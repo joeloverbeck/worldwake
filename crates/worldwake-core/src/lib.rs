@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod allocator;
+pub mod action_domain;
 pub mod belief;
 pub mod blocked_intent;
 pub mod canonical;
@@ -73,6 +74,7 @@ pub mod world_txn;
 pub mod wounds;
 
 pub use allocator::EntityAllocator;
+pub use action_domain::ActionDomain;
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
     current_institutional_belief_topics, institutional_claim_same_memory_lane,
@@ -80,11 +82,11 @@ pub use belief::{
     recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
     social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
     to_shared_belief_snapshot, AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey,
-    BeliefConfidencePolicy, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
-    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
-    TellTopic, ToldBeliefMemory,
+    BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, HeardBeliefDisposition,
+    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile,
+    PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
+    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,

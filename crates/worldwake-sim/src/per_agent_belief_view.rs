@@ -1079,23 +1079,22 @@ crate::impl_goal_belief_view!(PerAgentBeliefView<'_>);
 mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
     use crate::{
-        ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, Constraint, DurationExpr,
-        GoalBeliefView, Interruptibility, Precondition, ReservationReq, RuntimeBeliefView,
-        TargetSpec,
+        ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
+        ActionInstanceId, ActionPayload, ActionStatus, Constraint, DurationExpr, GoalBeliefView,
+        Interruptibility, Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
-        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
-        CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
-        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
-        TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId,
+        build_believed_entity_state, build_prototype_world, ActionDefId, ActionDomain,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick,
+        BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog,
+        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData,
+        PerceptionProfile, Permille, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory,
+        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, Wound, WoundCause, WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1121,6 +1120,7 @@ mod tests {
                 vec![sample_wound()]
             },
             last_known_courage: None,
+            believed_activity: None,
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }

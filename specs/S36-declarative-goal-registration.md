@@ -6,7 +6,7 @@ Introduce a centralized declarative registration system for AI goal dispatch tha
 
 ## Source
 
-Derived from ChatGPT architecture review WW-AI-006 (Declarative registration and compile-time completeness), validated against the codebase. The report documented ~734 `GoalKind` match sites. The `reports/ai-decision-architecture-analysis.md` report confirmed "Parallel dispatch on GoalKind requiring 8+ file edits per new goal" as a known issue.
+Derived from ChatGPT architecture review WW-AI-006 (Declarative registration and compile-time completeness), validated against the codebase. The report documented ~734 `GoalKind` match sites. The `archive/reports/ai-decision-architecture-analysis.md` report confirmed "Parallel dispatch on GoalKind requiring 8+ file edits per new goal" as a known issue.
 
 ## Phase
 

@@ -34,7 +34,7 @@ fn consult_record_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
     ActionDef {
         id,
         name: "consult_record".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![
             Constraint::ActorAlive,
             Constraint::ActorHasControl,
@@ -556,7 +556,7 @@ mod tests {
         let def = defs.get(id).unwrap();
 
         assert_eq!(def.name, "consult_record");
-        assert_eq!(def.domain, worldwake_sim::ActionDomain::Social);
+        assert_eq!(def.domain, worldwake_core::ActionDomain::Social);
         assert_eq!(
             def.actor_constraints,
             vec![

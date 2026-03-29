@@ -33,7 +33,7 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
     ActionDef {
         id,
         name: "queue_for_facility_use".to_string(),
-        domain: worldwake_sim::ActionDomain::Production,
+        domain: worldwake_core::ActionDomain::Production,
         actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotInTransit],
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
@@ -392,7 +392,7 @@ mod tests {
         let def = defs.get(queue_id).unwrap();
 
         assert_eq!(def.name, "queue_for_facility_use");
-        assert_eq!(def.domain, worldwake_sim::ActionDomain::Production);
+        assert_eq!(def.domain, worldwake_core::ActionDomain::Production);
         assert_eq!(def.duration, DurationExpr::Fixed(NonZeroU32::MIN));
         assert_eq!(
             def.interruptibility,

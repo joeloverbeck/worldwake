@@ -166,7 +166,7 @@ fn transition_action_inner(
 mod tests {
     use super::{abort_action, interrupt_action};
     use crate::{
-        start_action, AbortReason, ActionDef, ActionDefRegistry, ActionDomain, ActionError,
+        start_action, AbortReason, ActionDef, ActionDefRegistry, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
         ActionState, ActionStatus, Affordance, Constraint, DeterministicRng, DurationExpr,
@@ -177,9 +177,9 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventTag, EventView, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView, Quantity, Seed,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

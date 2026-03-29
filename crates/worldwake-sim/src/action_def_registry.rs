@@ -48,14 +48,14 @@ impl ActionDefRegistry {
 mod tests {
     use super::ActionDefRegistry;
     use crate::{
-        ActionDef, ActionDomain, ActionHandlerId, ActionPayload, Constraint, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Quantity,
-        VisibilitySpec,
+        ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, EntityId, EntityKind,
+        EventTag, Quantity, VisibilitySpec,
     };
 
     fn sample_action_def(id: ActionDefId, name: &str) -> ActionDef {

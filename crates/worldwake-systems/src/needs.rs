@@ -322,10 +322,11 @@ mod tests {
         WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
-        ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionHandlerId,
-        ActionInstance, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
-        DeterministicRng, DurationExpr, Interruptibility, SystemExecutionContext, SystemId,
+        ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, DeterministicRng,
+        DurationExpr, Interruptibility, SystemExecutionContext, SystemId,
     };
+    use worldwake_core::ActionDomain;
 
     fn pm(value: u16) -> Permille {
         Permille::new(value).unwrap()

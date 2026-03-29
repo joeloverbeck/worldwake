@@ -59,7 +59,7 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "accuse".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![
             Constraint::ActorAlive,
             Constraint::ActorHasControl,
@@ -137,7 +137,7 @@ fn punishment_action_def(
     ActionDef {
         id,
         name: name.to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![
             Constraint::ActorAlive,
             Constraint::ActorHasControl,
@@ -1252,6 +1252,7 @@ mod tests {
                 alive,
                 wounds: Vec::new(),
                 last_known_courage: None,
+                believed_activity: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },
@@ -1550,7 +1551,7 @@ mod tests {
         let def = defs.get(id).unwrap();
 
         assert_eq!(def.name, "accuse");
-        assert_eq!(def.domain, worldwake_sim::ActionDomain::Social);
+        assert_eq!(def.domain, worldwake_core::ActionDomain::Social);
         assert_eq!(def.visibility, VisibilitySpec::SamePlace);
         assert!(def.causal_event_tags.contains(&EventTag::Crime));
         assert!(def.causal_event_tags.contains(&EventTag::Social));

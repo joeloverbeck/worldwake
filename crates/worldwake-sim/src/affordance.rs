@@ -54,13 +54,15 @@ impl PartialOrd for Affordance {
 mod tests {
     use super::Affordance;
     use crate::{
-        ActionDef, ActionDomain, ActionHandlerId, ActionPayload, DurationExpr, Interruptibility,
+        ActionDef, ActionHandlerId, ActionPayload, DurationExpr, Interruptibility,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::EntityId;
-    use worldwake_core::{ActionDefId, BodyCostPerTick, CommodityKind, Quantity, VisibilitySpec};
+    use worldwake_core::{
+        ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, Quantity, VisibilitySpec,
+    };
 
     fn assert_traits<T: Clone + Eq + Ord + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

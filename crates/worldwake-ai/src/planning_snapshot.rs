@@ -1217,6 +1217,7 @@ mod tests {
                             alive: true,
                             wounds: Vec::new(),
                             last_known_courage: None,
+                            believed_activity: None,
                             observed_tick: Tick(6),
                             source: worldwake_core::PerceptionSource::DirectObservation,
                         }),

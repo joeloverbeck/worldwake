@@ -225,7 +225,7 @@ fn map_reservation_error(err: WorldError, entity: worldwake_core::EntityId) -> A
 mod tests {
     use super::start_action;
     use crate::{
-        AbortReason, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
+        AbortReason, ActionDef, ActionDefRegistry, ActionDuration, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress, ActionState,
         Affordance, CombatActionPayload, Constraint, DeterministicRng, DurationExpr,
@@ -234,9 +234,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CombatProfile,
-        CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView,
-        Quantity, Seed, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        CombatProfile, CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog,
+        EventTag, EventView, Quantity, Seed, Tick, TickRange, VisibilitySpec, WitnessData,
+        World, WorldTxn,
     };
 
     fn entity(slot: u32) -> EntityId {

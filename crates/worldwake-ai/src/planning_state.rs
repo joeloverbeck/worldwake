@@ -1739,12 +1739,13 @@ mod tests {
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
-        ActionDomain, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
+        ActionDuration, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
+        ActionPayload, ActionProgress, ActionState, CombatActionPayload, Constraint,
+        DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
         ReservationReq, RuntimeBeliefView, TargetSpec,
     };
     use worldwake_systems::register_office_actions;
+    use worldwake_core::ActionDomain;
 
     struct StubBeliefView {
         current_tick: Tick,
@@ -2654,6 +2655,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     last_known_courage: None,
+                    believed_activity: None,
                     observed_tick: Tick(4),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -2712,6 +2714,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     last_known_courage: None,
+                    believed_activity: None,
                     observed_tick: Tick(7),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -2738,6 +2741,7 @@ mod tests {
                             alive: true,
                             wounds: Vec::new(),
                             last_known_courage: None,
+                            believed_activity: None,
                             observed_tick: Tick(4),
                             source: worldwake_core::PerceptionSource::DirectObservation,
                         }),
@@ -2802,6 +2806,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     last_known_courage: None,
+                    believed_activity: None,
                     observed_tick: Tick(0),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },

@@ -4211,6 +4211,7 @@ mod tests {
                 alive: false,
                 wounds: Vec::new(),
                 last_known_courage: None,
+                believed_activity: None,
                 observed_tick: Tick(12),
                 source: PerceptionSource::Inference,
             },

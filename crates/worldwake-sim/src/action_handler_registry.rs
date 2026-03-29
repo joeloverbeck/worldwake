@@ -58,16 +58,17 @@ pub fn verify_completeness(
 mod tests {
     use super::{verify_completeness, ActionHandlerRegistry};
     use crate::{
-        AbortReason, ActionDef, ActionDefRegistry, ActionDomain, ActionDuration, ActionError,
-        ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionState, ActionStatus, CommitOutcome, Constraint, DeterministicRng,
-        DurationExpr, Interruptibility, Precondition, ReservationReq, TargetSpec,
+        AbortReason, ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler,
+        ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionState, ActionStatus, CommitOutcome, Constraint, DeterministicRng, DurationExpr,
+        Interruptibility, Precondition, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, ControlSource, EntityId,
-        EventTag, ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        ControlSource, EntityId, EventTag, ReservationId, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {

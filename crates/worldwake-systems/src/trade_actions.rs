@@ -26,7 +26,7 @@ fn trade_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "trade".to_string(),
-        domain: worldwake_sim::ActionDomain::Trade,
+        domain: worldwake_core::ActionDomain::Trade,
         actor_constraints: vec![],
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Agent,

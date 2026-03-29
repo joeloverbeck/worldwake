@@ -45,7 +45,7 @@ fn ask_witness_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
     ActionDef {
         id,
         name: "ask_witness".to_string(),
-        domain: worldwake_sim::ActionDomain::Epistemic,
+        domain: worldwake_core::ActionDomain::Epistemic,
         actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotIncapacitated],
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Agent,
@@ -615,7 +615,7 @@ mod tests {
 
         assert!(handlers.get(def.handler).is_some());
         assert_eq!(def.name, "ask_witness");
-        assert_eq!(def.domain, worldwake_sim::ActionDomain::Epistemic);
+        assert_eq!(def.domain, worldwake_core::ActionDomain::Epistemic);
         assert_eq!(
             def.targets,
             vec![TargetSpec::EntityAtActorPlace {

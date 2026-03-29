@@ -2612,7 +2612,7 @@ mod tests {
                 } else {
                     format!("action-{id}")
                 },
-                domain: worldwake_sim::ActionDomain::Generic,
+                domain: worldwake_core::ActionDomain::Generic,
                 actor_constraints: vec![],
                 targets: vec![],
                 preconditions: vec![],

@@ -4,10 +4,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{load_per_unit, ActionDefId, EntityId, EntityKind, Quantity};
-use worldwake_sim::{
-    ActionDef, ActionDefRegistry, ActionDomain, ActionPayload, MaterializationTag,
-};
+use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
+use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {

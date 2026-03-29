@@ -34,7 +34,7 @@ fn investigate_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
     ActionDef {
         id,
         name: "investigate".to_string(),
-        domain: worldwake_sim::ActionDomain::Generic,
+        domain: worldwake_core::ActionDomain::Generic,
         actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotIncapacitated],
         targets: vec![TargetSpec::ActorPlace],
         preconditions: vec![
@@ -544,6 +544,7 @@ mod tests {
                 alive: true,
                 wounds: Vec::new(),
                 last_known_courage: None,
+                believed_activity: None,
                 observed_tick: Tick(1),
                 source: PerceptionSource::DirectObservation,
             },
@@ -630,7 +631,7 @@ mod tests {
 
         assert!(handlers.get(def.handler).is_some());
         assert_eq!(def.name, "investigate");
-        assert_eq!(def.domain, worldwake_sim::ActionDomain::Generic);
+        assert_eq!(def.domain, worldwake_core::ActionDomain::Generic);
         assert_eq!(def.targets, vec![TargetSpec::ActorPlace]);
         assert_eq!(def.duration, DurationExpr::ActorInvestigationDisposition);
         assert_eq!(def.interruptibility, Interruptibility::FreelyInterruptible);

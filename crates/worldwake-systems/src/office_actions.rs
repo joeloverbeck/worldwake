@@ -132,7 +132,7 @@ fn bribe_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "bribe".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Agent,
@@ -176,7 +176,7 @@ fn threaten_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "threaten".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Agent,
@@ -220,7 +220,7 @@ fn declare_support_action_def(id: ActionDefId, handler: ActionHandlerId) -> Acti
     ActionDef {
         id,
         name: "declare_support".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
         targets: Vec::new(),
         preconditions: vec![Precondition::ActorAlive],
@@ -240,7 +240,7 @@ fn press_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
     ActionDef {
         id,
         name: "press_force_claim".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
         targets: Vec::new(),
         preconditions: vec![Precondition::ActorAlive],
@@ -260,7 +260,7 @@ fn yield_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
     ActionDef {
         id,
         name: "yield_force_claim".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
         targets: Vec::new(),
         preconditions: vec![Precondition::ActorAlive],
@@ -1527,6 +1527,7 @@ mod tests {
                 alive: true,
                 wounds: Vec::new(),
                 last_known_courage: None,
+                believed_activity: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },
@@ -1569,11 +1570,11 @@ mod tests {
         assert_eq!(
             defs.iter().map(|def| def.domain).collect::<Vec<_>>(),
             vec![
-                worldwake_sim::ActionDomain::Social,
-                worldwake_sim::ActionDomain::Social,
-                worldwake_sim::ActionDomain::Social,
-                worldwake_sim::ActionDomain::Social,
-                worldwake_sim::ActionDomain::Social,
+                worldwake_core::ActionDomain::Social,
+                worldwake_core::ActionDomain::Social,
+                worldwake_core::ActionDomain::Social,
+                worldwake_core::ActionDomain::Social,
+                worldwake_core::ActionDomain::Social,
             ]
         );
     }
@@ -1657,6 +1658,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     last_known_courage: None,
+                    believed_activity: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },

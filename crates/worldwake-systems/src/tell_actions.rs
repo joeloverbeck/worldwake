@@ -37,7 +37,7 @@ fn tell_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "tell".to_string(),
-        domain: worldwake_sim::ActionDomain::Social,
+        domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![Constraint::ActorAlive],
         targets: vec![TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Agent,
@@ -1399,6 +1399,7 @@ mod tests {
             alive: true,
             wounds: Vec::new(),
             last_known_courage: None,
+            believed_activity: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -1419,7 +1420,7 @@ mod tests {
         let tell = defs.get(tell_id).unwrap();
 
         assert_eq!(tell.name, "tell");
-        assert_eq!(tell.domain, worldwake_sim::ActionDomain::Social);
+        assert_eq!(tell.domain, worldwake_core::ActionDomain::Social);
         assert_eq!(
             tell.targets,
             vec![TargetSpec::EntityAtActorPlace {
@@ -2803,6 +2804,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(2),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -2817,6 +2819,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(4),
                         source: PerceptionSource::Report {
                             from: entity(77),
@@ -2834,6 +2837,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(6),
                         source: PerceptionSource::Inference,
                     },
@@ -3088,6 +3092,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(3),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -3102,6 +3107,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(9),
                         source: PerceptionSource::Report {
                             from: entity(80),
@@ -3119,6 +3125,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(9),
                         source: PerceptionSource::Inference,
                     },
@@ -3133,6 +3140,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(7),
                         source: PerceptionSource::Rumor { chain_len: 3 },
                     },
@@ -3147,6 +3155,7 @@ mod tests {
                         alive: true,
                         wounds: Vec::new(),
                         last_known_courage: None,
+                        believed_activity: None,
                         observed_tick: Tick(5),
                         source: PerceptionSource::Rumor { chain_len: 1 },
                     },
@@ -3194,6 +3203,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     last_known_courage: None,
+                    believed_activity: None,
                     observed_tick: Tick(3),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3278,6 +3288,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     last_known_courage: None,
+                    believed_activity: None,
                     observed_tick: Tick(9),
                     source: PerceptionSource::DirectObservation,
                 },

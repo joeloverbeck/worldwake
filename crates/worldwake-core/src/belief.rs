@@ -1,9 +1,10 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    BelievedInstitutionalClaim, CommodityKind, Component, EntityId, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
-    ResourceSource, TheftFacts, Tick, WorkstationTag, World, Wound,
+    ActionDomain, BelievedInstitutionalClaim, CommodityKind, Component, EntityId,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
+    WorkstationTag, World, Wound,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -643,10 +644,18 @@ impl ObservedEntitySnapshot {
             alive: self.alive,
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
+            believed_activity: None,
             observed_tick,
             source,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedActivity {
+    pub action_domain: ActionDomain,
+    pub target: Option<EntityId>,
+    pub observed_tick: Tick,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -658,6 +667,7 @@ pub struct BelievedEntityState {
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub last_known_courage: Option<Permille>,
+    pub believed_activity: Option<BelievedActivity>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
 }
@@ -1327,18 +1337,19 @@ mod tests {
     use super::{
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
         recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
-        AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BelievedEntityState,
-        HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
-        PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedInstitutionalBelief,
-        SharedTellState, SocialObservation, SocialObservationDetail, SocialObservationKind,
-        TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+        AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BelievedActivity,
+        BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
+        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
+        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, current_institutional_belief_topics,
-        institutional_claim_same_memory_lane, traits::Component, BelievedInstitutionalClaim,
-        BodyPart, CommodityKind, ControlSource, DeadAt, EntityId, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille,
-        Quantity, TheftFacts, Tick, World, Wound, WoundCause, WoundId, WoundList,
+        institutional_claim_same_memory_lane, traits::Component, ActionDomain,
+        BelievedInstitutionalClaim, BodyPart, CommodityKind, ControlSource, DeadAt, EntityId,
+        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, Permille, Quantity, TheftFacts, Tick, World, Wound,
+        WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -1407,6 +1418,7 @@ mod tests {
             alive: true,
             wounds: vec![sample_wound(1, observed_tick)],
             last_known_courage: None,
+            believed_activity: None,
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
@@ -2149,6 +2161,47 @@ mod tests {
         let roundtrip: BelievedEntityState = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, state);
+    }
+
+    #[test]
+    fn believed_activity_constructs_and_compares() {
+        let activity = BelievedActivity {
+            action_domain: ActionDomain::Production,
+            target: Some(entity(44)),
+            observed_tick: Tick(13),
+        };
+
+        assert_eq!(
+            activity,
+            BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: Some(entity(44)),
+                observed_tick: Tick(13),
+            }
+        );
+        assert_ne!(
+            activity,
+            BelievedActivity {
+                action_domain: ActionDomain::Trade,
+                target: None,
+                observed_tick: Tick(13),
+            }
+        );
+    }
+
+    #[test]
+    fn believed_entity_state_equality_includes_believed_activity() {
+        let mut with_activity = sample_state(11, 7);
+        with_activity.believed_activity = Some(BelievedActivity {
+            action_domain: ActionDomain::Trade,
+            target: Some(entity(21)),
+            observed_tick: Tick(11),
+        });
+
+        let without_activity = sample_state(11, 7);
+
+        assert_ne!(with_activity, without_activity);
+        assert_eq!(without_activity.believed_activity, None);
     }
 
     #[test]

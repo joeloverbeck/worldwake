@@ -5,14 +5,14 @@ use crate::inventory::{
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    is_wound_load_fatal, load_per_unit, ActionDefId, BodyCostPerTick, BodyPart, CauseRef,
-    CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
-    DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
-    HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec, WitnessData,
-    WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
+    is_wound_load_fatal, load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, BodyPart,
+    CauseRef, CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind,
+    Container, DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
+    EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec,
+    WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionDomain, ActionError,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CombatActionPayload, CommitOutcome, Constraint, DeterministicRng,
     DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole, Precondition,
@@ -1654,7 +1654,7 @@ mod tests {
         let loot = defs.get(loot_id).unwrap();
 
         assert_eq!(loot.name, "loot");
-        assert_eq!(loot.domain, worldwake_sim::ActionDomain::Corpse);
+        assert_eq!(loot.domain, worldwake_core::ActionDomain::Corpse);
         assert_eq!(loot.duration, DurationExpr::Fixed(NonZeroU32::MIN));
         assert_eq!(loot.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(loot.visibility, VisibilitySpec::SamePlace);
@@ -1683,7 +1683,7 @@ mod tests {
         let bury = defs.get(bury_id).unwrap();
 
         assert_eq!(bury.name, "bury");
-        assert_eq!(bury.domain, worldwake_sim::ActionDomain::Corpse);
+        assert_eq!(bury.domain, worldwake_core::ActionDomain::Corpse);
         assert_eq!(bury.duration, DurationExpr::Fixed(NonZeroU32::MIN));
         assert_eq!(bury.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(bury.visibility, VisibilitySpec::SamePlace);
@@ -1712,7 +1712,7 @@ mod tests {
         let heal = defs.get(heal_id).unwrap();
 
         assert_eq!(heal.name, "heal");
-        assert_eq!(heal.domain, worldwake_sim::ActionDomain::Care);
+        assert_eq!(heal.domain, worldwake_core::ActionDomain::Care);
         assert_eq!(
             heal.duration,
             DurationExpr::TargetTreatment {

@@ -891,6 +891,7 @@ pub fn seed_known_office_at_place(
             alive: true,
             wounds: Vec::new(),
             last_known_courage: None,
+            believed_activity: None,
             observed_tick: tick,
             source: PerceptionSource::DirectObservation,
         },
