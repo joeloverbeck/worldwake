@@ -2228,4 +2228,78 @@ mod tests {
             OpportunityAnchor::Place(origin)
         );
     }
+
+    #[test]
+    fn cooldown_ineligible_entry_is_filtered_out_of_candidate_plans() {
+        let origin = entity(91);
+        let market = entity(92);
+        let mut world = World::new(cargo_topology(origin, market)).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![ranked_goal(acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(market),
+            BTreeSet::new(),
+            BTreeSet::from([market]),
+        ))];
+        let opportunity = OpportunityKey {
+            goal_key: ranked_candidates[0].grounded.key,
+            anchor: ranked_candidates[0].grounded.anchor,
+        };
+        let exhaustion_cache = BTreeMap::from([(
+            opportunity,
+            ExhaustionEntry {
+                retry_state: ExhaustionRetryState::BudgetRetryPending,
+                invalidation_conditions: Vec::new(),
+                baseline: crate::ExhaustionBaseline::default(),
+                next_retry_tick: Some(Tick(20)),
+                consecutive_failures: 2,
+            },
+        )]);
+
+        let plans = super::build_candidate_plans(
+            &world,
+            &scheduler,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            Tick(10),
+            &PlanningBudget {
+                snapshot_travel_horizon: 4,
+                max_candidates_to_plan: 1,
+                ..PlanningBudget::default()
+            },
+            &semantics,
+            &defs,
+            &handlers,
+            &recipes,
+            false,
+            false,
+            &exhaustion_cache,
+        );
+
+        assert!(
+            plans.is_empty(),
+            "cooldown-ineligible retry entries should be filtered before search when no sibling opportunity remains"
+        );
+    }
 }
