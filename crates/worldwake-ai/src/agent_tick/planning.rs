@@ -196,15 +196,14 @@ pub(super) fn build_candidate_plans(
     let admitted_candidates: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
-            let key = OpportunityKey {
-                goal_key: c.grounded.key,
-                anchor: c.grounded.anchor,
-            };
-            match exhaustion_cache.get(&key) {
-                Some(entry) if entry.suppresses_planning() => false,
-                Some(entry) if !entry.is_retry_eligible(current_tick) => false,
-                _ => true,
-            }
+            opportunity_admitted_by_exhaustion(
+                exhaustion_cache,
+                OpportunityKey {
+                    goal_key: c.grounded.key,
+                    anchor: c.grounded.anchor,
+                },
+                current_tick,
+            )
         })
         .collect();
     let candidates_to_plan: Vec<_> = admitted_candidates
@@ -276,6 +275,18 @@ pub(super) fn build_candidate_plans(
     results
 }
 
+fn opportunity_admitted_by_exhaustion(
+    exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    opportunity: OpportunityKey,
+    current_tick: Tick,
+) -> bool {
+    match exhaustion_cache.get(&opportunity) {
+        Some(entry) if entry.suppresses_planning() => false,
+        Some(entry) if !entry.is_retry_eligible(current_tick) => false,
+        _ => true,
+    }
+}
+
 pub(super) fn summarize_same_goal_planning_trace(
     ranked_candidates: &[RankedGoal],
     budget: &PlanningBudget,
@@ -290,15 +301,14 @@ pub(super) fn summarize_same_goal_planning_trace(
     let admitted_candidates: Vec<_> = ranked_candidates
         .iter()
         .filter(|candidate| {
-            let key = OpportunityKey {
-                goal_key: candidate.grounded.key,
-                anchor: candidate.grounded.anchor,
-            };
-            match exhaustion_cache.get(&key) {
-                Some(entry) if entry.suppresses_planning() => false,
-                Some(entry) if !entry.is_retry_eligible(current_tick) => false,
-                _ => true,
-            }
+            opportunity_admitted_by_exhaustion(
+                exhaustion_cache,
+                OpportunityKey {
+                    goal_key: candidate.grounded.key,
+                    anchor: candidate.grounded.anchor,
+                },
+                current_tick,
+            )
         })
         .collect();
     let admitted_cap = usize::from(budget.max_candidates_to_plan);
@@ -1070,6 +1080,32 @@ mod tests {
         topology
     }
 
+    fn four_place_topology(
+        origin: worldwake_core::EntityId,
+        destination: worldwake_core::EntityId,
+        extra_a: worldwake_core::EntityId,
+        extra_b: worldwake_core::EntityId,
+    ) -> Topology {
+        let mut topology = three_place_topology(origin, destination, extra_a);
+        topology
+            .add_place(
+                extra_b,
+                Place {
+                    name: "Extra B".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::default(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(5), origin, extra_b, 2, None).unwrap())
+            .unwrap();
+        topology
+            .add_edge(TravelEdge::new(TravelEdgeId(6), extra_b, origin, 2, None).unwrap())
+            .unwrap();
+        topology
+    }
+
     fn entity(slot: u32) -> worldwake_core::EntityId {
         worldwake_core::EntityId {
             slot,
@@ -1754,6 +1790,160 @@ mod tests {
                 continuation_trigger: None,
                 stop_reason: crate::SameGoalPlanningStopReason::ReachedCandidatePlanCap,
             })
+        );
+    }
+
+    #[test]
+    fn summarize_same_goal_planning_trace_uses_same_exhaustion_admission_as_candidate_plans() {
+        let origin = entity(101);
+        let frontier = entity(102);
+        let cooling_down = entity(103);
+        let retry_ready = entity(104);
+        let fresh = origin;
+        let mut world =
+            World::new(four_place_topology(origin, frontier, cooling_down, retry_ready)).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_ground_location(bread, fresh).unwrap();
+            txn.set_component_homeostatic_needs(
+                agent,
+                HomeostaticNeeds::new(
+                    worldwake_core::Permille::new(800).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                    worldwake_core::Permille::new(0).unwrap(),
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let (defs, handlers, recipes) = build_full_registries();
+        let semantics = build_semantics_table(&defs);
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let ranked_candidates = vec![
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(frontier),
+                BTreeSet::new(),
+                BTreeSet::from([frontier]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(cooling_down),
+                BTreeSet::new(),
+                BTreeSet::from([cooling_down]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(retry_ready),
+                BTreeSet::new(),
+                BTreeSet::from([retry_ready]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(fresh),
+                BTreeSet::new(),
+                BTreeSet::from([fresh]),
+            )),
+        ];
+        let exhaustion_cache = BTreeMap::from([
+            (
+                OpportunityKey {
+                    goal_key: ranked_candidates[0].grounded.key,
+                    anchor: ranked_candidates[0].grounded.anchor,
+                },
+                ExhaustionEntry {
+                    retry_state: ExhaustionRetryState::FrontierExhausted,
+                    invalidation_conditions: Vec::new(),
+                    baseline: crate::ExhaustionBaseline::default(),
+                    next_retry_tick: None,
+                    consecutive_failures: 0,
+                },
+            ),
+            (
+                OpportunityKey {
+                    goal_key: ranked_candidates[1].grounded.key,
+                    anchor: ranked_candidates[1].grounded.anchor,
+                },
+                ExhaustionEntry {
+                    retry_state: ExhaustionRetryState::BudgetRetryPending,
+                    invalidation_conditions: Vec::new(),
+                    baseline: crate::ExhaustionBaseline::default(),
+                    next_retry_tick: Some(Tick(20)),
+                    consecutive_failures: 2,
+                },
+            ),
+            (
+                OpportunityKey {
+                    goal_key: ranked_candidates[2].grounded.key,
+                    anchor: ranked_candidates[2].grounded.anchor,
+                },
+                ExhaustionEntry {
+                    retry_state: ExhaustionRetryState::BudgetRetryPending,
+                    invalidation_conditions: Vec::new(),
+                    baseline: crate::ExhaustionBaseline::default(),
+                    next_retry_tick: Some(Tick(10)),
+                    consecutive_failures: 2,
+                },
+            ),
+        ]);
+        let budget = PlanningBudget {
+            snapshot_travel_horizon: 4,
+            max_candidates_to_plan: 2,
+            max_node_expansions: 0,
+            ..PlanningBudget::default()
+        };
+
+        let plans = super::build_candidate_plans(
+            &world,
+            &scheduler,
+            agent,
+            &ranked_candidates,
+            &worldwake_core::BlockedIntentMemory::default(),
+            Tick(10),
+            &budget,
+            &semantics,
+            &defs,
+            &handlers,
+            &recipes,
+            false,
+            false,
+            &exhaustion_cache,
+        );
+
+        assert_eq!(
+            plans.iter().map(|plan| plan.opportunity).collect::<Vec<_>>(),
+            vec![
+                OpportunityKey {
+                    goal_key: ranked_candidates[2].grounded.key,
+                    anchor: ranked_candidates[2].grounded.anchor,
+                },
+                OpportunityKey {
+                    goal_key: ranked_candidates[3].grounded.key,
+                    anchor: ranked_candidates[3].grounded.anchor,
+                },
+            ]
+        );
+        assert_eq!(
+            super::summarize_same_goal_planning_trace(
+                &ranked_candidates,
+                &budget,
+                Tick(10),
+                &exhaustion_cache,
+                &plans,
+            ),
+            Some(crate::SameGoalPlanningTrace {
+                continuation_trigger: None,
+                stop_reason: crate::SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities,
+            }),
+            "the trace summary should see the same two admitted opportunities as real planning; if it over-admits the filtered entries it will report hitting the candidate cap instead"
         );
     }
 
