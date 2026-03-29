@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 10
 - Files contributing `golden_*` tests: 10
-- Total `golden_*` tests: 181
+- Total `golden_*` tests: 186
 
 ## Per-File Inventory
 
@@ -19,9 +19,9 @@ Do not hand-edit it.
 | `golden_determinism.rs` | 9 |
 | `golden_emergent.rs` | 47 |
 | `golden_offices.rs` | 21 |
-| `golden_production.rs` | 21 |
+| `golden_production.rs` | 24 |
 | `golden_social.rs` | 14 |
-| `golden_supply_chain.rs` | 4 |
+| `golden_supply_chain.rs` | 6 |
 | `golden_trade.rs` | 6 |
 
 ### `golden_ai_decisions.rs`
@@ -183,6 +183,9 @@ Do not hand-edit it.
 - `golden_resource_contention_with_conservation`
 - `golden_resource_exhaustion_race`
 - `golden_contested_harvest_start_failure_recovers_via_remote_fallback`
+- `golden_observed_harvest_competition_redirects_to_remote_sibling`
+- `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`
+- `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`
 - `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`
 - `golden_dead_agent_pruned_from_facility_queue`
 - `golden_facility_queue_patience_timeout`
@@ -225,6 +228,8 @@ Do not hand-edit it.
 - `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`
 - `golden_stale_prerequisite_belief_discovery_replan`
 - `golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`
+- `golden_stale_prerequisite_ask_witness_chain`
+- `golden_stale_prerequisite_ask_witness_chain_replays_deterministically`
 
 ### `golden_trade.rs`
 

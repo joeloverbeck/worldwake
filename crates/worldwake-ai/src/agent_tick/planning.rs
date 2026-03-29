@@ -188,7 +188,13 @@ pub(super) fn build_candidate_plans(
     }
 
     let mut results = Vec::with_capacity(candidates_to_plan.len());
+    let mut continue_same_goal_after_found = None;
     for ranked in candidates_to_plan {
+        if let Some(found_goal) = continue_same_goal_after_found {
+            if ranked.grounded.key != found_goal {
+                break;
+            }
+        }
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -240,12 +246,8 @@ pub(super) fn build_candidate_plans(
         );
         let found = result.is_found();
         results.push((opportunity, result, rejections, expansions));
-        // Early termination: candidates are ranked by priority. If the
-        // top-ranked candidate found a plan, lower-ranked candidates
-        // cannot produce a better selection (compare_ranked_plans sorts
-        // by priority_class first). Skip remaining searches.
         if found {
-            break;
+            continue_same_goal_after_found = Some(opportunity.goal_key);
         }
     }
     results

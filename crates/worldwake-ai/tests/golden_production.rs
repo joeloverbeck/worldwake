@@ -7,15 +7,17 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_ai::{
     CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
-    PlannerOpKind, SelectedPlanSource,
+    PlannerOpKind, RankedGoalComparisonDimension, SelectedPlanSource,
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, BlockingFact, BodyPart,
-    CarryCapacity, CombatProfile, CommodityKind, DeprivationExposure, DeprivationKind, EntityId,
+    verify_authoritative_conservation, verify_live_lot_conservation, AgentData, BlockingFact,
+    BodyPart, CarryCapacity, CombatProfile, CommodityKind, ControlSource, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind, EntityId,
     EventTag, EventView, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
+    WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionStartFailureReason, ActionTraceKind, RequestAttemptTrace, RequestBindingKind,
@@ -32,6 +34,18 @@ fn production_perception_profile() -> PerceptionProfile {
         consultation_speed_factor: pm(500),
         contradiction_tolerance: pm(300),
     }
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
 }
 
 // ---------------------------------------------------------------------------
@@ -1047,6 +1061,21 @@ struct ContestedHarvestStartFailureOutcome {
     remote_source_final_quantity: Quantity,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ObservedHarvestCompetitionOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    local_effective_discount: u16,
+    local_motive_score: u32,
+    remote_motive_score: u32,
+    first_ranked_opportunity: OpportunityKey,
+    top_ranked_decisive_dimension: Option<RankedGoalComparisonDimension>,
+    selected_opportunity: OpportunityKey,
+    observer_started_travel: bool,
+    observer_local_start_failed: bool,
+    remote_source_decreased: bool,
+}
+
 #[allow(clippy::too_many_lines)]
 fn run_contested_harvest_start_failure_remote_recovery_scenario(
     seed: Seed,
@@ -1439,6 +1468,264 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
             .get_component_resource_source(remote_workstation)
             .expect("remote orchard should retain its source component through scenario end")
             .available_quantity,
+    }
+}
+
+fn run_observed_harvest_competition_scenario(
+    seed: Seed,
+    activity_awareness_weight: u16,
+) -> ObservedHarvestCompetitionOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let occupant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Occupant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(250), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let observer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Observer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            enterprise_weight: pm(900),
+            hunger_weight: pm(0),
+            activity_awareness_weight: pm(activity_awareness_weight),
+            ..UtilityProfile::default()
+        },
+    );
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        occupant,
+        production_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        production_perception_profile(),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_merchandise_profile(
+            observer,
+            MerchandiseProfile {
+                sale_kinds: std::collections::BTreeSet::from([CommodityKind::Apple]),
+                home_market: Some(VILLAGE_SQUARE),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(
+            observer,
+            TradeDispositionProfile {
+                negotiation_round_ticks: nz(4),
+                initial_offer_bias: pm(500),
+                concession_rate: pm(100),
+                demand_memory_retention_ticks: 240,
+            },
+        )
+        .unwrap();
+        txn.set_component_demand_memory(
+            observer,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(2),
+                    place: VILLAGE_SQUARE,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    set_control_source(&mut h, observer, ControlSource::None, 0);
+
+    let local_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let remote_place = worldwake_core::prototype_place_entity(PrototypePlace::GeneralStore);
+    let remote_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        remote_place,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in [occupant, observer] {
+        seed_actor_world_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::Inference,
+        );
+    }
+
+    h.step_once();
+
+    let occupant_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for_at(occupant, Tick(0));
+    assert!(
+        occupant_events.iter().any(|event| {
+            event.action_name == "harvest:Harvest Apples"
+                && matches!(event.kind, ActionTraceKind::Started { .. })
+        }),
+        "occupant should begin the local harvest before the observing agent is re-enabled"
+    );
+
+    set_control_source(&mut h, observer, ControlSource::Ai, 1);
+    h.step_once();
+
+    let trace_tick_1 = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(observer, Tick(1))
+        .expect("observer should produce a planning trace on tick 1");
+    let planning_tick_1 = match &trace_tick_1.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace for observer at tick 1, got {other:?}"),
+    };
+
+    let local_opportunity = OpportunityKey {
+        goal_key: GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        }),
+        anchor: OpportunityAnchor::Place(VILLAGE_SQUARE),
+    };
+    let remote_opportunity = OpportunityKey {
+        goal_key: GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        }),
+        anchor: OpportunityAnchor::Place(remote_place),
+    };
+
+    assert!(
+        planning_tick_1
+            .candidates
+            .generated_contains_opportunity(local_opportunity),
+        "observer should still generate the occupied local orchard opportunity"
+    );
+    assert!(
+        planning_tick_1
+            .candidates
+            .generated_contains_opportunity(remote_opportunity),
+        "observer should still generate the remote sibling orchard opportunity"
+    );
+
+    let local_summary = planning_tick_1
+        .candidates
+        .ranked_summary_for_opportunity(local_opportunity)
+        .expect("occupied local production opportunity should be ranked");
+    let remote_summary = planning_tick_1
+        .candidates
+        .ranked_summary_for_opportunity(remote_opportunity)
+        .expect("remote sibling production opportunity should be ranked");
+    let local_discount = local_summary
+        .competition_discount
+        .as_ref()
+        .expect("occupied local production opportunity should carry a competition discount trace");
+    assert_eq!(
+        local_discount.domain,
+        worldwake_core::ActionDomain::Production
+    );
+    assert_eq!(
+        local_discount.observed_competitors,
+        vec![occupant],
+        "the observer should attribute the occupied orchard to the active local harvester"
+    );
+    let local_effective_discount = local_discount.effective_discount.value();
+    let local_motive_score = local_summary.motive_score;
+    let remote_motive_score = remote_summary.motive_score;
+
+    let selected_opportunity = planning_tick_1
+        .selection
+        .selected_opportunity
+        .expect("observer should select one of the sibling production opportunities");
+    let first_ranked_opportunity = planning_tick_1
+        .candidates
+        .ranked
+        .first()
+        .map(|summary| summary.opportunity)
+        .expect("observer should have ranked opportunities on tick 1");
+    let top_ranked_decisive_dimension = planning_tick_1
+        .candidates
+        .top_ranked_comparison
+        .map(|comparison| comparison.decisive_dimension);
+    let observer_tick_1_events = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for_at(observer, Tick(1));
+    let observer_started_travel = observer_tick_1_events.iter().any(|event| {
+        event.action_name == "travel" && matches!(event.kind, ActionTraceKind::Started { .. })
+    });
+    let observer_local_start_failed = observer_tick_1_events.iter().any(|event| {
+        event.action_name == "harvest:Harvest Apples"
+            && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+    });
+
+    let mut remote_source_decreased = false;
+    for _ in 0..160 {
+        h.step_once();
+        remote_source_decreased |= h
+            .world
+            .get_component_resource_source(remote_workstation)
+            .expect("remote orchard should retain its source component")
+            .available_quantity
+            < Quantity(4);
+        if remote_source_decreased {
+            break;
+        }
+    }
+
+    let _ = local_workstation;
+
+    ObservedHarvestCompetitionOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        local_effective_discount,
+        local_motive_score,
+        remote_motive_score,
+        first_ranked_opportunity,
+        top_ranked_decisive_dimension,
+        selected_opportunity,
+        observer_started_travel,
+        observer_local_start_failed,
+        remote_source_decreased,
     }
 }
 
@@ -2222,7 +2509,7 @@ fn run_grant_expiry_before_intended_action_scenario(
 // Systems: Needs, Production, Travel, Conservation
 // GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 // ActionDomains: Needs, Production, Travel
-// Places: VillageSquare, OrchardFarm
+// Places: VillageSquare, GeneralStore
 //
 // Setup: Two critically hungry agents at Village Square. Alice has 1 bread.
 //   Orchard Farm has apples.
@@ -2367,6 +2654,92 @@ fn golden_contested_harvest_start_failure_recovers_via_remote_fallback() {
     assert!(
         outcome.remote_source_final_quantity < Quantity(4),
         "the remote orchard should be the fallback source that actually gets used"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 3b: Observed Harvest Competition Redirects To Remote Sibling
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, Production, Travel, AI
+// GoalKinds: ProduceCommodity
+// ActionDomains: Production, Travel
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 12, 20, 27
+//
+// Setup: Occupant and Observer start at VillageSquare with two lawful orchard
+//   production opportunities: one local, one remote. Occupant starts the local
+//   harvest first. Observer is re-enabled on the next tick after local
+//   perception can lawfully record Occupant's active production.
+//
+// Proves: The current S35 architecture is locality-preserving. Observer's
+//   believed local activity discounts the occupied VillageSquare production
+//   opportunity without suppressing it, and high `activity_awareness_weight`
+//   redirects selection to the remote OrchardFarm sibling opportunity.
+//
+// Chain: local active harvest -> perceived `BelievedActivity` ->
+//   `agents_active_at(place, Production, None)` -> competition discount on the
+//   occupied local production opportunity -> remote sibling selected -> travel
+//   and remote harvest execution.
+
+#[test]
+fn golden_observed_harvest_competition_redirects_to_remote_sibling() {
+    let outcome = run_observed_harvest_competition_scenario(Seed([33; 32]), 500);
+
+    assert_eq!(
+        outcome.local_effective_discount, 500,
+        "high awareness should apply a 50% local production competition discount for one observed competitor"
+    );
+    assert_eq!(
+        outcome.selected_opportunity,
+        OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            anchor: OpportunityAnchor::Place(worldwake_core::prototype_place_entity(
+                PrototypePlace::GeneralStore,
+            )),
+        },
+        "observer should redirect to the remote sibling production opportunity rather than collide with the occupied local orchard: {outcome:?}"
+    );
+    assert!(
+        outcome.remote_source_decreased,
+        "remote sibling orchard should eventually be used after the observed-competition redirect"
+    );
+}
+
+#[test]
+fn golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically() {
+    let first = run_observed_harvest_competition_scenario(Seed([33; 32]), 500);
+    let second = run_observed_harvest_competition_scenario(Seed([33; 32]), 500);
+
+    assert_eq!(
+        first, second,
+        "observed harvest competition redirect should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition() {
+    let outcome = run_observed_harvest_competition_scenario(Seed([34; 32]), 0);
+
+    assert_eq!(
+        outcome.local_effective_discount, 0,
+        "zero awareness should preserve the observed-competition trace but apply no effective discount"
+    );
+    assert_eq!(
+        outcome.selected_opportunity,
+        OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }),
+            anchor: OpportunityAnchor::Place(VILLAGE_SQUARE),
+        },
+        "zero-awareness control should keep the occupied local production opportunity selected"
+    );
+    assert!(
+        outcome.observer_local_start_failed,
+        "zero-awareness control should collide with the occupied local harvest instead of redirecting away from it"
     );
 }
 

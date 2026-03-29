@@ -5,7 +5,7 @@ use crate::{
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use worldwake_core::{IntentionFrame, Permille};
+use worldwake_core::{IntentionFrame, OpportunityKey, Permille};
 
 pub fn select_best_plan(
     candidates: &[RankedGoal],
@@ -20,7 +20,10 @@ pub fn select_best_plan(
         .iter()
         .map(|candidate| {
             (
-                candidate.grounded.key,
+                OpportunityKey {
+                    goal_key: candidate.grounded.key,
+                    anchor: candidate.grounded.anchor,
+                },
                 (candidate.priority_class, candidate.motive_score),
             )
         })
@@ -28,9 +31,10 @@ pub fn select_best_plan(
 
     let mut available = plans
         .iter()
-        .filter_map(|(key, plan)| {
+        .filter_map(|(_, plan)| {
             let plan = plan.as_ref()?;
-            let (priority_class, motive_score) = candidate_scores.get(key).copied()?;
+            let (priority_class, motive_score) =
+                candidate_scores.get(&plan.opportunity).copied()?;
             Some((priority_class, motive_score, plan.clone()))
         })
         .collect::<Vec<_>>();
@@ -39,13 +43,14 @@ pub fn select_best_plan(
     let has_current_goal_plan = active_goal.is_some_and(|goal| {
         plans
             .iter()
-            .any(|(key, plan)| *key == goal && plan.is_some())
+            .any(|(_, plan)| plan.as_ref().is_some_and(|plan| plan.goal == goal))
     });
 
     let Some(current_plan) = current.current_plan.clone() else {
         return Some(best_plan);
     };
-    let Some((current_class, current_motive)) = candidate_scores.get(&current_plan.goal).copied()
+    let Some((current_class, current_motive)) =
+        candidate_scores.get(&current_plan.opportunity).copied()
     else {
         return Some(best_plan);
     };
@@ -108,7 +113,8 @@ mod tests {
     use std::collections::BTreeSet;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        CommodityKind, EntityId, FrameState, IntentionDomain, IntentionFrame, Permille, Tick,
+        CommodityKind, EntityId, FrameState, IntentionDomain, IntentionFrame, OpportunityAnchor,
+        Permille, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -144,6 +150,23 @@ mod tests {
     fn plan(goal: GoalKey, def_id: u32, ticks: u32) -> PlannedPlan {
         PlannedPlan::new(
             opportunity(goal),
+            goal,
+            vec![PlannedStep {
+                def_id: ActionDefId(def_id),
+                targets: vec![PlanningEntityRef::Authoritative(entity(def_id))],
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: ticks,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+            }],
+            PlanTerminalKind::GoalSatisfied,
+        )
+    }
+
+    fn plan_at(goal: GoalKey, anchor: worldwake_core::OpportunityAnchor, def_id: u32, ticks: u32) -> PlannedPlan {
+        PlannedPlan::new(
+            worldwake_core::OpportunityKey { goal_key: goal, anchor },
             goal,
             vec![PlannedStep {
                 def_id: ActionDefId(def_id),
@@ -203,6 +226,60 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected.goal, eat_goal);
+    }
+
+    #[test]
+    fn same_goal_sibling_opportunity_selection_uses_opportunity_scoped_scores() {
+        let goal = GoalKey::from(worldwake_core::GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        });
+        let local_anchor = OpportunityAnchor::Place(entity(30));
+        let remote_anchor = OpportunityAnchor::Place(entity(31));
+        let candidates = vec![
+            RankedGoal {
+                grounded: GroundedGoal {
+                    anchor: local_anchor,
+                    key: goal,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::High,
+                motive_score: 450,
+                provenance: None,
+                competition_discount: None,
+                feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            },
+            RankedGoal {
+                grounded: GroundedGoal {
+                    anchor: remote_anchor,
+                    key: goal,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::High,
+                motive_score: 900,
+                provenance: None,
+                competition_discount: None,
+                feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            },
+        ];
+        let plans = vec![
+            (goal, Some(plan_at(goal, local_anchor, 1, 1))),
+            (goal, Some(plan_at(goal, remote_anchor, 2, 2))),
+        ];
+
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            None,
+            &AgentDecisionRuntime::default(),
+            None,
+            default_switch_margin(),
+            default_switch_margin(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.opportunity.anchor, remote_anchor);
     }
 
     #[test]
