@@ -11,7 +11,7 @@ use worldwake_core::{
 };
 use worldwake_sim::GoalBeliefView;
 
-use crate::goal_model::RankedGoal;
+use crate::{goal_model::RankedGoal, FeasibilityStrategy, GoalDispatchKey};
 
 /// Cheap pre-GOAP estimate of whether a goal is locally actionable.
 /// Used to reorder candidates within the same `GoalPriorityClass` —
@@ -90,38 +90,63 @@ fn goal_specific_feasibility(
     agent: EntityId,
     goal: &RankedGoal,
 ) -> Option<FeasibilityHint> {
-    match &goal.grounded.key.kind {
-        GoalKind::ConsumeOwnedCommodity { commodity } => {
+    let strategy = GoalDispatchKey::from_goal_kind(&goal.grounded.key.kind)
+        .declaration()
+        .feasibility_strategy;
+
+    match (strategy, &goal.grounded.key.kind) {
+        (FeasibilityStrategy::OwnedCommodityCheck, GoalKind::ConsumeOwnedCommodity { commodity }) => {
             if view.commodity_quantity(agent, *commodity) > Quantity(0) {
                 Some(FeasibilityHint::Likely)
             } else {
                 None // Uncertain — might acquire
             }
         }
-        GoalKind::AcquireCommodity { .. }
-        | GoalKind::ProduceCommodity { .. }
-        | GoalKind::RestockCommodity { .. }
-        | GoalKind::LootCorpse { .. }
-        | GoalKind::ClaimOffice { .. } => check_evidence_places_local(view, agent, goal),
-        GoalKind::Sleep | GoalKind::Relieve => Some(FeasibilityHint::Likely),
-        GoalKind::Wash => {
+        (FeasibilityStrategy::EvidencePlaceLocal, _) => check_evidence_places_local(view, agent, goal),
+        (FeasibilityStrategy::AlwaysLikely, GoalKind::Sleep | GoalKind::Relieve) => {
+            Some(FeasibilityHint::Likely)
+        }
+        (FeasibilityStrategy::CommodityPresenceCheck, GoalKind::Wash) => {
             if view.commodity_quantity(agent, CommodityKind::Water) > Quantity(0) {
                 Some(FeasibilityHint::Likely)
             } else {
                 None // Uncertain
             }
         }
-        GoalKind::EngageHostile { target } => check_colocated_or_dead(view, agent, *target),
-        GoalKind::ReduceDanger | GoalKind::StealItem { .. } => None,
-        GoalKind::TreatWounds { patient } => check_colocated_or_dead(view, agent, *patient),
-        GoalKind::SellCommodity { commodity } => {
+        (
+            FeasibilityStrategy::ColocationOrDead,
+            GoalKind::EngageHostile { target },
+        ) => check_colocated_or_dead(view, agent, *target),
+        (
+            FeasibilityStrategy::ColocationOrDead,
+            GoalKind::TreatWounds { patient },
+        ) => check_colocated_or_dead(view, agent, *patient),
+        (
+            FeasibilityStrategy::ColocationOrDead,
+            GoalKind::ShareBelief { listener, .. },
+        ) => check_colocated_or_dead(view, agent, *listener),
+        (
+            FeasibilityStrategy::ColocationOrDead,
+            GoalKind::SupportCandidateForOffice { candidate, .. },
+        ) => check_colocated_or_dead(view, agent, *candidate),
+        (
+            FeasibilityStrategy::ColocationOrDead,
+            GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. },
+        ) => check_colocated_or_dead(view, agent, *accused),
+        (FeasibilityStrategy::NoOpinion, GoalKind::ReduceDanger | GoalKind::StealItem { .. }) => {
+            None
+        }
+        (FeasibilityStrategy::SellCheck, GoalKind::SellCommodity { commodity }) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
             if !has_commodity {
                 return Some(FeasibilityHint::Unlikely);
             }
             check_evidence_places_local(view, agent, goal)
         }
-        GoalKind::MoveCargo { commodity, .. } => {
+        (
+            FeasibilityStrategy::CargoDestinationCheck,
+            GoalKind::MoveCargo { commodity, .. },
+        ) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
             if has_commodity {
                 if let Some(agent_place) = view.effective_place(agent) {
@@ -137,7 +162,7 @@ fn goal_specific_feasibility(
             }
             None
         }
-        GoalKind::BuryCorpse { corpse, .. } => {
+        (FeasibilityStrategy::CorpseBurialCheck, GoalKind::BuryCorpse { corpse, .. }) => {
             let agent_place = view.effective_place(agent)?;
             let corpse_place = view.effective_place(*corpse)?;
             if agent_place != corpse_place {
@@ -155,11 +180,7 @@ fn goal_specific_feasibility(
             }
             None
         }
-        GoalKind::ShareBelief { listener, .. } => check_colocated_or_dead(view, agent, *listener),
-        GoalKind::SupportCandidateForOffice { candidate, .. } => {
-            check_colocated_or_dead(view, agent, *candidate)
-        }
-        GoalKind::InvestigateViolation { place, .. } => {
+        (FeasibilityStrategy::PlaceMatch, GoalKind::InvestigateViolation { place, .. }) => {
             let agent_place = view.effective_place(agent)?;
             if agent_place == *place {
                 Some(FeasibilityHint::Likely)
@@ -167,8 +188,10 @@ fn goal_specific_feasibility(
                 None // Uncertain — needs travel
             }
         }
-        GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. } => {
-            check_colocated_or_dead(view, agent, *accused)
+        (strategy, goal_kind) => {
+            unreachable!(
+                "feasibility strategy {strategy:?} does not match goal kind {goal_kind:?}"
+            )
         }
     }
 }
@@ -206,7 +229,10 @@ fn check_evidence_places_local(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal};
+    use crate::{
+        goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal},
+        GoalDispatchKey,
+    };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -491,6 +517,12 @@ mod tests {
             observed_tick: Tick(1),
             expires_tick: expires,
         }
+    }
+
+    fn goal_specific_feasibility_strategy(goal: &RankedGoal) -> crate::FeasibilityStrategy {
+        GoalDispatchKey::from_goal_kind(&goal.grounded.key.kind)
+            .declaration()
+            .feasibility_strategy
     }
 
     // ── Test 1: Exhausted frame → Unlikely ──
@@ -906,6 +938,72 @@ mod tests {
             let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
             assert_eq!(hint, FeasibilityHint::Uncertain);
         }
+    }
+
+    #[test]
+    fn declaration_routing_assigns_expected_feasibility_strategies() {
+        assert_eq!(
+            goal_specific_feasibility_strategy(&ranked_goal(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            })),
+            crate::FeasibilityStrategy::EvidencePlaceLocal
+        );
+        assert_eq!(
+            goal_specific_feasibility_strategy(&ranked_goal(GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: entity(40),
+            })),
+            crate::FeasibilityStrategy::CargoDestinationCheck
+        );
+        assert_eq!(
+            goal_specific_feasibility_strategy(&ranked_goal(GoalKind::BuryCorpse {
+                corpse: entity(41),
+                burial_site: entity(42),
+            })),
+            crate::FeasibilityStrategy::CorpseBurialCheck
+        );
+        assert_eq!(
+            goal_specific_feasibility_strategy(&ranked_goal(GoalKind::PunishAccused {
+                office: entity(43),
+                accused: entity(44),
+                accusation_entry: worldwake_core::RecordEntryId(2),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(5),
+                },
+            })),
+            crate::FeasibilityStrategy::ColocationOrDead
+        );
+    }
+
+    #[test]
+    fn move_cargo_destination_strategy_marks_local_and_adjacent_destinations_likely() {
+        let destination = entity(11);
+        let view = MockView {
+            agent_place: Some(destination),
+            commodities: vec![(CommodityKind::Bread, Quantity(2))],
+            adjacent: vec![(entity(12), NonZeroU32::new(3).unwrap())],
+            ..Default::default()
+        };
+        let blocked = empty_blocked_memory();
+        let local_goal = ranked_goal(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        });
+        let adjacent_goal = ranked_goal(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination: entity(12),
+        });
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &local_goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Likely
+        );
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &adjacent_goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Likely
+        );
     }
 
     // ── Invariant: Ord gives Likely < Uncertain < Unlikely ──

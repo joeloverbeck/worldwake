@@ -64,7 +64,7 @@ pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
 pub use feasibility::{feasibility_hint, FeasibilityHint};
-pub use goal_dispatch_decl::{GoalDispatchDeclaration, InvalidationStrategy};
+pub use goal_dispatch_decl::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
     GoalKindPlannerExt, GoalKindTag, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,

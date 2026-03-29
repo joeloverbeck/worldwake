@@ -22,11 +22,26 @@ pub enum InvalidationStrategy {
     PunishAccused,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum FeasibilityStrategy {
+    OwnedCommodityCheck,
+    EvidencePlaceLocal,
+    AlwaysLikely,
+    CommodityPresenceCheck,
+    ColocationOrDead,
+    NoOpinion,
+    SellCheck,
+    CargoDestinationCheck,
+    CorpseBurialCheck,
+    PlaceMatch,
+}
+
 pub struct GoalDispatchDeclaration {
     pub trace_label: &'static str,
     pub provenance_family: Option<RankedGoalProvenanceFamily>,
     pub relevant_ops: &'static [PlannerOpKind],
     pub invalidation_strategy: InvalidationStrategy,
+    pub feasibility_strategy: FeasibilityStrategy,
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -110,144 +125,168 @@ static DECL_CONSUME_OWNED_COMMODITY: GoalDispatchDeclaration = GoalDispatchDecla
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: CONSUME_OPS,
     invalidation_strategy: InvalidationStrategy::CommodityOnly,
+    feasibility_strategy: FeasibilityStrategy::OwnedCommodityCheck,
 };
 static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(SelfConsume)",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireCommodity,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(RecipeInput)",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireCommodity,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(Restock)",
     provenance_family: None,
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireRestock,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Sleep",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: SLEEP_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
+    feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
 };
 static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Relieve",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: RELIEVE_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithPosition(HomeostaticNeedId::Bladder),
+    feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
 };
 static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Wash",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: WASH_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Dirtiness),
+    feasibility_strategy: FeasibilityStrategy::CommodityPresenceCheck,
 };
 static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EngageHostile",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: ENGAGE_HOSTILE_OPS,
     invalidation_strategy: InvalidationStrategy::CombatTarget,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ReduceDanger",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: REDUCE_DANGER_OPS,
     invalidation_strategy: InvalidationStrategy::DangerReduction,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
 static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "TreatWounds",
     provenance_family: None,
     relevant_ops: TREAT_WOUNDS_OPS,
     invalidation_strategy: InvalidationStrategy::TreatWounds,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ProduceCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: PRODUCE_OPS,
     invalidation_strategy: InvalidationStrategy::ProduceCommodity,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SellCommodity",
     provenance_family: None,
     relevant_ops: SELL_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
+    feasibility_strategy: FeasibilityStrategy::SellCheck,
 };
 static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "RestockCommodity",
     provenance_family: None,
     relevant_ops: RESTOCK_OPS,
     invalidation_strategy: InvalidationStrategy::PositionCommodityAndCoin,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "MoveCargo",
     provenance_family: None,
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
+    feasibility_strategy: FeasibilityStrategy::CargoDestinationCheck,
 };
 static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "LootCorpse",
     provenance_family: None,
     relevant_ops: LOOT_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "BuryCorpse",
     provenance_family: None,
     relevant_ops: BURY_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::CorpseBurialCheck,
 };
 static DECL_SHARE_BELIEF: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ShareBelief",
     provenance_family: None,
     relevant_ops: SHARE_BELIEF_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ClaimOffice",
     provenance_family: None,
     relevant_ops: CLAIM_OFFICE_OPS,
     invalidation_strategy: InvalidationStrategy::ClaimOffice,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
 };
 static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SupportCandidateForOffice",
     provenance_family: None,
     relevant_ops: SUPPORT_OFFICE_OPS,
     invalidation_strategy: InvalidationStrategy::SupportCandidateForOffice,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "InvestigateViolation",
     provenance_family: None,
     relevant_ops: INVESTIGATE_OPS,
     invalidation_strategy: InvalidationStrategy::InvestigateViolation,
+    feasibility_strategy: FeasibilityStrategy::PlaceMatch,
 };
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
     provenance_family: None,
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::StealTargetState,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
 static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Accuse",
     provenance_family: None,
     relevant_ops: ACCUSE_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PunishAccused(Fine)",
     provenance_family: None,
     relevant_ops: FINE_OPS,
     invalidation_strategy: InvalidationStrategy::PunishAccused,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PunishAccused(Exile)",
     provenance_family: None,
     relevant_ops: EXILE_OPS,
     invalidation_strategy: InvalidationStrategy::PunishAccused,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
 
 impl GoalDispatchKey {
@@ -284,7 +323,7 @@ impl GoalDispatchKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{GoalDispatchDeclaration, InvalidationStrategy};
+    use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
     use crate::{GoalDispatchKey, GoalKindPlannerExt};
     use worldwake_core::{
         CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, PunishmentKind,
@@ -566,6 +605,86 @@ mod tests {
             GoalDispatchKey::LootCorpse
                 .declaration()
                 .invalidation_strategy
+        );
+    }
+
+    #[test]
+    fn test_feasibility_strategies_cover_all_declarations() {
+        for key in ALL_KEYS {
+            match key.declaration().feasibility_strategy {
+                FeasibilityStrategy::OwnedCommodityCheck
+                | FeasibilityStrategy::EvidencePlaceLocal
+                | FeasibilityStrategy::AlwaysLikely
+                | FeasibilityStrategy::CommodityPresenceCheck
+                | FeasibilityStrategy::ColocationOrDead
+                | FeasibilityStrategy::NoOpinion
+                | FeasibilityStrategy::SellCheck
+                | FeasibilityStrategy::CargoDestinationCheck
+                | FeasibilityStrategy::CorpseBurialCheck
+                | FeasibilityStrategy::PlaceMatch => {}
+            }
+        }
+    }
+
+    #[test]
+    fn test_feasibility_strategies_match_payload_sensitive_and_shared_families() {
+        assert_eq!(
+            GoalDispatchKey::AcquireSelfConsume
+                .declaration()
+                .feasibility_strategy,
+            FeasibilityStrategy::EvidencePlaceLocal
+        );
+        assert_eq!(
+            GoalDispatchKey::AcquireRecipeInput
+                .declaration()
+                .feasibility_strategy,
+            FeasibilityStrategy::EvidencePlaceLocal
+        );
+        assert_eq!(
+            GoalDispatchKey::AcquireRestock
+                .declaration()
+                .feasibility_strategy,
+            FeasibilityStrategy::EvidencePlaceLocal
+        );
+        assert_eq!(
+            GoalDispatchKey::Sleep.declaration().feasibility_strategy,
+            GoalDispatchKey::Relieve.declaration().feasibility_strategy
+        );
+        assert_eq!(
+            GoalDispatchKey::EngageHostile
+                .declaration()
+                .feasibility_strategy,
+            GoalDispatchKey::TreatWounds
+                .declaration()
+                .feasibility_strategy
+        );
+        assert_eq!(
+            GoalDispatchKey::Accuse.declaration().feasibility_strategy,
+            GoalDispatchKey::PunishFine.declaration().feasibility_strategy
+        );
+        assert_eq!(
+            GoalDispatchKey::PunishFine
+                .declaration()
+                .feasibility_strategy,
+            GoalDispatchKey::PunishExile
+                .declaration()
+                .feasibility_strategy
+        );
+        assert_ne!(
+            GoalDispatchKey::SellCommodity
+                .declaration()
+                .feasibility_strategy,
+            GoalDispatchKey::MoveCargo
+                .declaration()
+                .feasibility_strategy
+        );
+        assert_ne!(
+            GoalDispatchKey::LootCorpse
+                .declaration()
+                .feasibility_strategy,
+            GoalDispatchKey::BuryCorpse
+                .declaration()
+                .feasibility_strategy
         );
     }
 }
