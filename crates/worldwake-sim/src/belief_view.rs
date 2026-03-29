@@ -3,14 +3,15 @@ use crate::{
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
-    BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile, DemandObservation,
-    DriveThresholds, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-    RecordedViolation, ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
+    BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
+    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind,
     ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
@@ -53,6 +54,19 @@ pub trait GoalBeliefView {
     }
     fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
+        Vec::new()
+    }
+    fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
+        let _ = entity;
+        None
+    }
+    fn agents_active_at(
+        &self,
+        place: EntityId,
+        domain: ActionDomain,
+        target: Option<EntityId>,
+    ) -> Vec<EntityId> {
+        let _ = (place, domain, target);
         Vec::new()
     }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
@@ -273,6 +287,19 @@ pub trait RuntimeBeliefView {
     }
     fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
+        Vec::new()
+    }
+    fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
+        let _ = entity;
+        None
+    }
+    fn agents_active_at(
+        &self,
+        place: EntityId,
+        domain: ActionDomain,
+        target: Option<EntityId>,
+    ) -> Vec<EntityId> {
+        let _ = (place, domain, target);
         Vec::new()
     }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
@@ -595,6 +622,22 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
                 $crate::RuntimeBeliefView::known_institutional_beliefs(self, agent)
+            }
+
+            fn believed_activity_of(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Option<&worldwake_core::BelievedActivity> {
+                $crate::RuntimeBeliefView::believed_activity_of(self, entity)
+            }
+
+            fn agents_active_at(
+                &self,
+                place: worldwake_core::EntityId,
+                domain: worldwake_core::ActionDomain,
+                target: Option<worldwake_core::EntityId>,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::agents_active_at(self, place, domain, target)
             }
 
             fn adjacent_places_with_travel_ticks(

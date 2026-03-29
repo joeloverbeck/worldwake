@@ -3,7 +3,7 @@ use crate::shared_collections::{SharedMap, SharedSet};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    load_per_unit, to_shared_belief_snapshot, ActionDefId, BelievedEntityState,
+    load_per_unit, to_shared_belief_snapshot, ActionDefId, ActionDomain, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
@@ -1024,6 +1024,40 @@ impl RuntimeBeliefView for PlanningState<'_> {
         self.snapshot.actor_known_institutional_beliefs.clone()
     }
 
+    fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
+        self.snapshot
+            .actor_known_entity_beliefs
+            .get(&entity)
+            .and_then(|belief| belief.believed_activity.as_ref())
+    }
+
+    fn agents_active_at(
+        &self,
+        place: EntityId,
+        domain: ActionDomain,
+        target: Option<EntityId>,
+    ) -> Vec<EntityId> {
+        let mut entities = self
+            .snapshot
+            .actor_known_entity_beliefs
+            .iter()
+            .filter_map(|(entity, belief)| {
+                (belief.last_known_place == Some(place)
+                    && belief
+                        .believed_activity
+                        .as_ref()
+                        .is_some_and(|activity| {
+                            activity.action_domain == domain
+                                && (target.is_none() || activity.target == target)
+                        }))
+                .then_some(*entity)
+            })
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         let mut entities = self
             .snapshot
@@ -1727,14 +1761,15 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
+        ActionDefId, BelievedActivity, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, GrantedFacilityUse,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
-        SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity,
+        RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource,
+        SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+        TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind,
         ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -2236,6 +2271,30 @@ mod tests {
         Permille::new(value).unwrap()
     }
 
+    fn belief_with_activity(
+        place: EntityId,
+        domain: ActionDomain,
+        target: Option<EntityId>,
+        observed_tick: u64,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: Some(BelievedActivity {
+                action_domain: domain,
+                target,
+                observed_tick: Tick(observed_tick),
+            }),
+            observed_tick: Tick(observed_tick),
+            source: worldwake_core::PerceptionSource::DirectObservation,
+        }
+    }
+
     #[allow(clippy::unnecessary_wraps)]
     fn noop_start(
         _def: &ActionDef,
@@ -2681,6 +2740,82 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::tell_profile(&state, actor),
             view.tell_profiles.get(&actor).copied()
+        );
+    }
+
+    #[test]
+    fn planning_state_exposes_believed_activity_from_snapshot() {
+        let (mut view, actor, town, _field, _bread) = test_view();
+        let observed = entity(30);
+        view.beliefs.insert(
+            actor,
+            vec![(observed, belief_with_activity(town, ActionDomain::Production, Some(entity(40)), 9))],
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            RuntimeBeliefView::believed_activity_of(&state, observed),
+            Some(&BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: Some(entity(40)),
+                observed_tick: Tick(9),
+            })
+        );
+        assert_eq!(RuntimeBeliefView::believed_activity_of(&state, actor), None);
+    }
+
+    #[test]
+    fn planning_state_agents_active_at_filters_snapshot_beliefs() {
+        let (mut view, actor, town, field, _bread) = test_view();
+        let source = entity(40);
+        let other_source = entity(41);
+        let producer = entity(30);
+        let trader = entity(31);
+        let other_target = entity(32);
+        let remote = entity(33);
+        view.beliefs.insert(
+            actor,
+            vec![
+                (producer, belief_with_activity(town, ActionDomain::Production, Some(source), 9)),
+                (trader, belief_with_activity(town, ActionDomain::Trade, Some(source), 9)),
+                (
+                    other_target,
+                    belief_with_activity(town, ActionDomain::Production, Some(other_source), 9),
+                ),
+                (remote, belief_with_activity(field, ActionDomain::Production, Some(source), 9)),
+            ],
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Production, None),
+            vec![producer, other_target]
+        );
+        assert_eq!(
+            RuntimeBeliefView::agents_active_at(
+                &state,
+                town,
+                ActionDomain::Production,
+                Some(source)
+            ),
+            vec![producer]
+        );
+        assert_eq!(
+            RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
+            vec![trader]
+        );
+        assert!(
+            RuntimeBeliefView::agents_active_at(
+                &state,
+                field,
+                ActionDomain::Trade,
+                Some(source)
+            )
+            .is_empty()
         );
     }
 

@@ -286,6 +286,38 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
+        self.believed_entity(entity)
+            .and_then(|state| state.believed_activity.as_ref())
+    }
+
+    fn agents_active_at(
+        &self,
+        place: EntityId,
+        domain: worldwake_core::ActionDomain,
+        target: Option<EntityId>,
+    ) -> Vec<EntityId> {
+        let mut entities = self
+            .belief_store
+            .known_entities
+            .iter()
+            .filter_map(|(entity, state)| {
+                (state.last_known_place == Some(place)
+                    && state
+                        .believed_activity
+                        .as_ref()
+                        .is_some_and(|activity| {
+                            activity.action_domain == domain
+                                && (target.is_none() || activity.target == target)
+                        }))
+                .then_some(*entity)
+            })
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         if holder == self.agent {
             return self.world.possessions_of(holder);
@@ -1126,6 +1158,21 @@ mod tests {
         }
     }
 
+    fn entity_belief_with_activity(
+        place: worldwake_core::EntityId,
+        domain: ActionDomain,
+        target: Option<worldwake_core::EntityId>,
+        observed_tick: u64,
+    ) -> BelievedEntityState {
+        let mut state = entity_belief(place, true, 0, observed_tick);
+        state.believed_activity = Some(worldwake_core::BelievedActivity {
+            action_domain: domain,
+            target,
+            observed_tick: Tick(observed_tick),
+        });
+        state
+    }
+
     fn sample_wound() -> Wound {
         Wound {
             id: WoundId(1),
@@ -1367,6 +1414,111 @@ mod tests {
         assert!(
             RuntimeBeliefView::known_entity_beliefs(&view, other).is_empty(),
             "belief enumeration should not expose another agent's store through this view"
+        );
+    }
+
+    #[test]
+    fn believed_activity_of_reads_subjective_activity_beliefs_only() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let unknown = entity(999);
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let observed = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(observed, place).unwrap();
+            commit_txn(txn);
+            (agent, observed)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            other,
+            entity_belief_with_activity(place, ActionDomain::Production, Some(entity(40)), 8),
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::believed_activity_of(&view, other),
+            Some(&worldwake_core::BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: Some(entity(40)),
+                observed_tick: Tick(8),
+            })
+        );
+        assert_eq!(RuntimeBeliefView::believed_activity_of(&view, agent), None);
+        assert_eq!(RuntimeBeliefView::believed_activity_of(&view, unknown), None);
+    }
+
+    #[test]
+    fn agents_active_at_filters_believed_entities_by_place_domain_and_target() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let other_place = places[1];
+        let source = entity(40);
+        let other_source = entity(41);
+        let (agent, a, b, c, d) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let a = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let b = txn.create_agent("Cora", ControlSource::Ai).unwrap();
+            let c = txn.create_agent("Dain", ControlSource::Ai).unwrap();
+            let d = txn.create_agent("Edda", ControlSource::Ai).unwrap();
+            for entity in [agent, a, b, c, d] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            commit_txn(txn);
+            (agent, a, b, c, d)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            a,
+            entity_belief_with_activity(place, ActionDomain::Production, Some(source), 8),
+        );
+        beliefs.update_entity(
+            b,
+            entity_belief_with_activity(place, ActionDomain::Trade, Some(source), 8),
+        );
+        beliefs.update_entity(
+            c,
+            entity_belief_with_activity(place, ActionDomain::Production, Some(other_source), 8),
+        );
+        beliefs.update_entity(
+            d,
+            entity_belief_with_activity(other_place, ActionDomain::Production, Some(source), 8),
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Production, None),
+            vec![a, c]
+        );
+        assert_eq!(
+            RuntimeBeliefView::agents_active_at(
+                &view,
+                place,
+                ActionDomain::Production,
+                Some(source)
+            ),
+            vec![a]
+        );
+        assert_eq!(
+            RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Trade, Some(source)),
+            vec![b]
+        );
+        assert!(
+            RuntimeBeliefView::agents_active_at(
+                &view,
+                other_place,
+                ActionDomain::Trade,
+                Some(source)
+            )
+            .is_empty()
         );
     }
 
