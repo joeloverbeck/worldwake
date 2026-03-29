@@ -1,5 +1,6 @@
 use crate::{
     assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
+    decision_trace::CompetitionDiscount,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
     theft::assess_theft_deterrence,
@@ -9,9 +10,9 @@ use crate::{
 };
 use std::cmp::Ordering;
 use worldwake_core::{
-    belief_confidence, BelievedEntityState, CommodityKind, CommodityPurpose, DriveThresholds,
-    EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityKey, PerceptionSource, Permille,
-    TellTopic, ThresholdBand, Tick, UtilityProfile,
+    belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
+    DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, Permille, TellTopic, ThresholdBand, Tick, UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -91,17 +92,17 @@ pub fn rank_candidates(
             continue;
         }
         let provenance = goal_ranking_provenance(candidate, &context, recipes);
+        let priority_class = ranked_priority_class(candidate, &context, recipes, provenance.as_ref());
+        let motive_score = ranked_motive_score(candidate, &context, recipes, provenance.as_ref());
+        let competition_discount = apply_competition_discount(candidate, &context, motive_score);
         let scored = RankedGoal {
             grounded: candidate.clone(),
-            priority_class: ranked_priority_class(
-                candidate,
-                &context,
-                recipes,
-                provenance.as_ref(),
-            ),
-            motive_score: ranked_motive_score(candidate, &context, recipes, provenance.as_ref()),
+            priority_class,
+            motive_score: competition_discount
+                .as_ref()
+                .map_or(motive_score, |discount| discount.post_discount_motive),
             provenance,
-            competition_discount: None,
+            competition_discount,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
         if scored.motive_score == 0 {
@@ -154,6 +155,50 @@ fn ranked_motive_score(
                 .unwrap_or(0),
         },
     )
+}
+
+fn apply_competition_discount(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    motive_score: u32,
+) -> Option<CompetitionDiscount> {
+    if motive_score == 0 {
+        return None;
+    }
+
+    let (domain, place) = competition_discount_scope(candidate)?;
+    let observed_competitors = context.view.agents_active_at(place, domain, None);
+    if observed_competitors.is_empty() {
+        return None;
+    }
+
+    let observed_count = u32::try_from(observed_competitors.len()).unwrap_or(u32::MAX);
+    let effective_count = observed_count.min(3);
+    let awareness = u32::from(context.utility.activity_awareness_weight.value());
+    let factor = 1000u32.saturating_sub(awareness.saturating_mul(effective_count));
+    let post_discount_motive = motive_score.saturating_mul(factor) / 1000;
+
+    Some(CompetitionDiscount {
+        observed_competitors,
+        domain,
+        effective_discount: Permille::new((1000 - factor) as u16).unwrap(),
+        pre_discount_motive: motive_score,
+        post_discount_motive: post_discount_motive.max(1),
+    })
+}
+
+fn competition_discount_scope(candidate: &GroundedGoal) -> Option<(ActionDomain, EntityId)> {
+    let place = match candidate.anchor {
+        OpportunityAnchor::Place(place) => place,
+        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => return None,
+    };
+
+    match candidate.key.kind {
+        GoalKind::ProduceCommodity { .. } | GoalKind::RestockCommodity { .. } => {
+            Some((ActionDomain::Production, place))
+        }
+        _ => None,
+    }
 }
 
 fn goal_ranking_provenance(
@@ -1042,22 +1087,25 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_decision_context, rank_candidates};
+    use super::{apply_competition_discount, build_decision_context, rank_candidates, RankingContext};
     use crate::{
+        decision_trace::CompetitionDiscount,
         GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
         RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        belief_confidence, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+        belief_confidence, ActionDomain, BeliefConfidencePolicy, BelievedActivity,
+        BelievedEntityState, BodyCostPerTick, BodyPart, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DemandObservationReason, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
         JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId, ResourceSource, TellTopic,
-        TheftDispositionProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
+        OpportunityAnchor, PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId,
+        ResourceSource, TellTopic, TheftDispositionProfile, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1107,6 +1155,41 @@ mod tests {
         }
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+        fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
+            self.beliefs.values().find_map(|beliefs| {
+                beliefs.iter().find_map(|(subject, state)| {
+                    (*subject == entity)
+                        .then_some(state.believed_activity.as_ref())
+                        .flatten()
+                })
+            })
+        }
+        fn agents_active_at(
+            &self,
+            place: EntityId,
+            domain: ActionDomain,
+            target: Option<EntityId>,
+        ) -> Vec<EntityId> {
+            let mut entities = self
+                .beliefs
+                .values()
+                .flat_map(|beliefs| beliefs.iter())
+                .filter_map(|(entity, state)| {
+                    (state.last_known_place == Some(place)
+                        && state
+                            .believed_activity
+                            .as_ref()
+                            .is_some_and(|activity| {
+                                activity.action_domain == domain
+                                    && (target.is_none() || activity.target == target)
+                            }))
+                    .then_some(*entity)
+                })
+                .collect::<Vec<_>>();
+            entities.sort();
+            entities.dedup();
+            entities
         }
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
             Vec::new()
@@ -1358,10 +1441,42 @@ mod tests {
 
     fn goal(kind: GoalKind) -> GroundedGoal {
         GroundedGoal {
-            anchor: worldwake_core::OpportunityAnchor::None,
+            anchor: OpportunityAnchor::None,
             key: GoalKey::from(kind),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+        }
+    }
+
+    fn goal_at_place(kind: GoalKind, place: EntityId) -> GroundedGoal {
+        GroundedGoal {
+            anchor: OpportunityAnchor::Place(place),
+            key: GoalKey::from(kind),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::from([place]),
+        }
+    }
+
+    fn observed_activity_state(
+        place: EntityId,
+        domain: ActionDomain,
+        target: Option<EntityId>,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(place),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: Some(BelievedActivity {
+                action_domain: domain,
+                target,
+                observed_tick: Tick(9),
+            }),
+            observed_tick: Tick(9),
+            source: PerceptionSource::DirectObservation,
         }
     }
 
@@ -1618,6 +1733,256 @@ mod tests {
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 200 * 1000);
+    }
+
+    #[test]
+    fn production_competition_discount_applies_to_restock_goals() {
+        let agent = entity(1);
+        let market = entity(2);
+        let competitor_a = entity(10);
+        let competitor_b = entity(11);
+        let mut view = base_view(agent);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    competitor_a,
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+                (
+                    competitor_b,
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+            ],
+        );
+
+        let ranked = rank(
+            &[goal_at_place(
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                market,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].motive_score, 120_000);
+        assert_eq!(
+            ranked[0].competition_discount,
+            Some(CompetitionDiscount {
+                observed_competitors: vec![competitor_a, competitor_b],
+                domain: ActionDomain::Production,
+                effective_discount: pm(400),
+                pre_discount_motive: 200_000,
+                post_discount_motive: 120_000,
+            })
+        );
+    }
+
+    #[test]
+    fn production_competition_discount_caps_at_three_competitors() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = base_view(agent);
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        });
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (entity(10), observed_activity_state(market, ActionDomain::Production, None)),
+                (entity(11), observed_activity_state(market, ActionDomain::Production, None)),
+                (entity(12), observed_activity_state(market, ActionDomain::Production, None)),
+                (entity(13), observed_activity_state(market, ActionDomain::Production, None)),
+            ],
+        );
+
+        let ranked = rank(
+            &[goal_at_place(
+                GoalKind::ProduceCommodity {
+                    recipe_id,
+                },
+                market,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &recipes,
+        )
+        .into_ranked();
+
+        let discount = ranked[0].competition_discount.as_ref().unwrap();
+        assert_eq!(discount.effective_discount, pm(600));
+        assert_eq!(discount.pre_discount_motive, 90_000);
+        assert_eq!(discount.post_discount_motive, 36_000);
+        assert_eq!(discount.observed_competitors.len(), 4);
+    }
+
+    #[test]
+    fn production_competition_discount_respects_zero_awareness_weight() {
+        let agent = entity(1);
+        let market = entity(2);
+        let competitor = entity(10);
+        let mut view = base_view(agent);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                competitor,
+                observed_activity_state(market, ActionDomain::Production, None),
+            )],
+        );
+        let mut zero_awareness = utility();
+        zero_awareness.activity_awareness_weight = pm(0);
+
+        let ranked = rank(
+            &[goal_at_place(
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                market,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &zero_awareness,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 200_000);
+        assert_eq!(
+            ranked[0].competition_discount,
+            Some(CompetitionDiscount {
+                observed_competitors: vec![competitor],
+                domain: ActionDomain::Production,
+                effective_discount: pm(0),
+                pre_discount_motive: 200_000,
+                post_discount_motive: 200_000,
+            })
+        );
+    }
+
+    #[test]
+    fn production_competition_discount_floors_positive_motive_at_one() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (entity(10), observed_activity_state(market, ActionDomain::Production, None)),
+                (entity(11), observed_activity_state(market, ActionDomain::Production, None)),
+                (entity(12), observed_activity_state(market, ActionDomain::Production, None)),
+            ],
+        );
+        let mut aggressive_awareness = utility();
+        aggressive_awareness.activity_awareness_weight = pm(500);
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &aggressive_awareness,
+            build_decision_context(&view, agent),
+        );
+
+        let discount = apply_competition_discount(
+            &goal_at_place(
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                market,
+            ),
+            &context,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(discount.effective_discount, pm(1000));
+        assert_eq!(discount.pre_discount_motive, 1);
+        assert_eq!(discount.post_discount_motive, 1);
+    }
+
+    #[test]
+    fn acquire_commodity_is_not_discounted_by_observed_production_activity() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = base_view(agent);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                entity(10),
+                observed_activity_state(market, ActionDomain::Production, None),
+            )],
+        );
+
+        let ranked = rank(
+            &[goal_at_place(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::Restock,
+                },
+                market,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 200_000);
+        assert_eq!(ranked[0].competition_discount, None);
     }
 
     #[test]
