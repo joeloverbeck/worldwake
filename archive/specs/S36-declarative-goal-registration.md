@@ -1,5 +1,7 @@
 # S36: Declarative Goal Registration
 
+**Status**: ✅ COMPLETED
+
 ## Summary
 
 Introduce a centralized declarative registration system for AI goal dispatch that consolidates the static and strategy-selection tables currently scattered across multiple `worldwake-ai` files. The live code has already shown that `GoalKindTag` is too coarse to serve as the universal declaration key: some dispatch distinctions depend on payload shape inside one `GoalKindTag`. S36 therefore introduces a payload-aware AI-internal declaration key derived from concrete `GoalKind`, a declaration table keyed by that derived key, and exhaustive-match enforcement so incomplete dispatch registration fails compilation.
@@ -284,3 +286,23 @@ Implementation should proceed in three phases, each independently shippable:
 ## Ticket Note
 
 Previous tickets S36DECGOAL-002, S36DECGOAL-003, and S36DECGOAL-004 were created during S35 implementation. Their insights have been incorporated into this spec. Those tickets should be deleted and new implementation tickets generated from this updated spec, following the three-phase migration strategy above.
+
+## Outcome
+
+Completed: 2026-03-29
+
+What actually changed:
+- Introduced the payload-aware `GoalDispatchKey` in `worldwake-ai` and made `GoalKind -> GoalDispatchKey` an exhaustive compile-checked dispatch boundary.
+- Added `GoalDispatchDeclaration` plus declaration-owned `trace_label`, `provenance_family`, `relevant_ops`, `InvalidationStrategy`, and `FeasibilityStrategy`, then migrated the live static and dynamic AI dispatch surfaces to that declaration path.
+- Retired the stale `GoalKindTag` shadow identity from AI dispatch and moved decision-trace labeling onto declaration-owned labels while preserving concrete payload detail in trace output.
+- Closed the remaining wildcard audit by documenting the two legitimate family-scoped omission defaults in `decision_trace.rs` and adding focused regression coverage for them.
+
+Deviations from original plan:
+- The spec’s planned planner-op reverse-membership derivation did not survive as a long-term runtime artifact. Reassessment during ticket 009 showed there was no production consumer for that reverse map, so the cleaner architecture was to delete the coarse reverse-membership metadata rather than preserve or re-key it.
+- Exhaustiveness enforcement landed through the real compile-checked declaration matches and focused declaration tests, not through synthetic “add a dummy variant” verification commands.
+- The broad wildcard-audit narrative narrowed by the end of the work: once declaration routing and `GoalKindTag` retirement were delivered, the only remaining in-scope wildcard defaults worth touching were the family-scoped omission helpers in `decision_trace.rs`.
+
+Verification results:
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace`

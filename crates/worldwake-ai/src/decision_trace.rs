@@ -1065,6 +1065,8 @@ fn omitted_political_reason_for_goal(
         {
             Some(omission.reason)
         }
+        // Political omissions are only recorded for political goal families.
+        // Non-political goals correctly have no matching omission reason here.
         _ => None,
     })
 }
@@ -1079,6 +1081,8 @@ fn omitted_social_reason_for_goal(
         {
             Some(omission.reason)
         }
+        // Social omissions are only recorded for ShareBelief candidates.
+        // Other goal families correctly fall through with no omission reason.
         _ => None,
     })
 }
@@ -1990,6 +1994,74 @@ mod tests {
         assert_eq!(
             trace.goal_status(&share_goal),
             GoalTraceStatus::OmittedSocial(TellTopicOmissionReason::DirectlyObservableByListener)
+        );
+    }
+
+    #[test]
+    fn political_omission_helper_only_matches_political_goal_families() {
+        let office = entity(21);
+        let candidate = entity(22);
+        let omissions = vec![
+            PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::ClaimOffice,
+                office,
+                candidate: None,
+                reason: PoliticalCandidateOmissionReason::ForceSuccessionLaw,
+            },
+            PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::SupportCandidateForOffice,
+                office,
+                candidate: Some(candidate),
+                reason: PoliticalCandidateOmissionReason::CandidateNotEligible,
+            },
+        ];
+
+        assert_eq!(
+            omitted_political_reason_for_goal(&omissions, &GoalKind::ClaimOffice { office }),
+            Some(PoliticalCandidateOmissionReason::ForceSuccessionLaw)
+        );
+        assert_eq!(
+            omitted_political_reason_for_goal(
+                &omissions,
+                &GoalKind::SupportCandidateForOffice { office, candidate }
+            ),
+            Some(PoliticalCandidateOmissionReason::CandidateNotEligible)
+        );
+        assert_eq!(
+            omitted_political_reason_for_goal(
+                &omissions,
+                &GoalKind::ShareBelief {
+                    listener: entity(23),
+                    topic: TellTopic::EntityBelief { subject: office },
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn social_omission_helper_only_matches_share_belief_goals() {
+        let listener = entity(30);
+        let subject = entity(31);
+        let omissions = vec![SocialCandidateOmission {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+            reason: TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief,
+        }];
+
+        assert_eq!(
+            omitted_social_reason_for_goal(
+                &omissions,
+                &GoalKind::ShareBelief {
+                    listener,
+                    topic: TellTopic::EntityBelief { subject },
+                }
+            ),
+            Some(TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief)
+        );
+        assert_eq!(
+            omitted_social_reason_for_goal(&omissions, &GoalKind::ClaimOffice { office: subject }),
+            None
         );
     }
 
