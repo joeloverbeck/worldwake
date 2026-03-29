@@ -450,6 +450,7 @@ mod tests {
             priority_class: GoalPriorityClass::Medium,
             motive_score: 500,
             provenance: None,
+            competition_discount: None,
             feasibility: FeasibilityHint::Uncertain,
         }
     }

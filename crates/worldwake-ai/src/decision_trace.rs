@@ -4,11 +4,12 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use std::fmt::Write as _;
+use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
+    ActionDefId, ActionDomain, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, PunishmentFineSelectionTrace, SuspensionReason, TellTopic,
-    Tick,
+    OpportunityKey, PerceptionSource, Permille, PunishmentFineSelectionTrace, SuspensionReason,
+    TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
@@ -146,6 +147,9 @@ impl DecisionOutcome {
                     .map(|s| s.feasibility)
                     .filter(|f| *f != FeasibilityHint::Uncertain)
                     .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
+                let competition_suffix = selected_summary
+                    .and_then(|summary| summary.competition_discount.as_ref())
+                    .map_or_else(String::new, format_competition_discount_summary);
                 let ranking_suffix = planning
                     .candidates
                     .top_ranked_comparison
@@ -160,7 +164,7 @@ impl DecisionOutcome {
                     format_frame_transition_summary(planning.frame_transition.as_ref());
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking_suffix}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}"
                 )
             }
         }
@@ -339,7 +343,18 @@ pub struct RankedGoalSummary {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
+    pub competition_discount: Option<CompetitionDiscount>,
     pub feasibility: FeasibilityHint,
+}
+
+/// Records the competition discount applied to a ranked goal's motive score.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CompetitionDiscount {
+    pub observed_competitors: Vec<EntityId>,
+    pub domain: ActionDomain,
+    pub effective_discount: Permille,
+    pub pre_discount_motive: u32,
+    pub post_discount_motive: u32,
 }
 
 /// Actionable evidence contributor kind for one generated goal.
@@ -876,6 +891,15 @@ impl DecisionTraceSink {
             );
             // Render per-candidate evidence and knowledge paths for Planning outcomes.
             if let DecisionOutcome::Planning(ref planning) = trace.outcome {
+                for ranked in &planning.candidates.ranked {
+                    if let Some(discount) = ranked.competition_discount.as_ref() {
+                        eprintln!(
+                            "  Ranked: {}{}",
+                            format_opportunity_key(ranked.opportunity),
+                            format_competition_discount_summary(discount)
+                        );
+                    }
+                }
                 for ev in &planning.candidates.evidence {
                     let feasibility = planning
                         .candidates
@@ -1086,6 +1110,9 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .map(|s| s.feasibility)
                 .filter(|f| *f != FeasibilityHint::Uncertain)
                 .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
+            let competition = selected_summary
+                .and_then(|summary| summary.competition_discount.as_ref())
+                .map_or_else(String::new, format_competition_discount_summary);
             let ranking = planning
                 .candidates
                 .top_ranked_comparison
@@ -1093,7 +1120,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .map_or_else(String::new, format_ranked_goal_comparison_summary);
             let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{ranking}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{ranking}"
             );
             for blocked in &planning.candidates.fully_blocked_desires {
                 let _ = write!(
@@ -1236,6 +1263,17 @@ fn format_ranked_goal_comparison_summary(comparison: &RankedGoalComparison) -> S
         comparison.decisive_dimension,
         format_opportunity_key(comparison.winner),
         format_opportunity_key(comparison.loser)
+    )
+}
+
+fn format_competition_discount_summary(discount: &CompetitionDiscount) -> String {
+    format!(
+        ", competition=domain={:?} competitors={:?} discount={} pre={} post={}",
+        discount.domain,
+        discount.observed_competitors,
+        discount.effective_discount.value(),
+        discount.pre_discount_motive,
+        discount.post_discount_motive,
     )
 }
 
@@ -1556,6 +1594,16 @@ mod tests {
         }
     }
 
+    fn sample_competition_discount() -> CompetitionDiscount {
+        CompetitionDiscount {
+            observed_competitors: vec![entity(8), entity(9)],
+            domain: ActionDomain::Production,
+            effective_discount: Permille::new(400).unwrap(),
+            pre_discount_motive: 700,
+            post_discount_motive: 420,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn goal_trace(
         tick: Tick,
@@ -1691,6 +1739,7 @@ mod tests {
                     priority_class: GoalPriorityClass::High,
                     motive_score: 900,
                     provenance: None,
+                    competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 },
                 RankedGoalSummary {
@@ -1698,6 +1747,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Medium,
                     motive_score: 600,
                     provenance: None,
+                    competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 },
             ],
@@ -1883,6 +1933,7 @@ mod tests {
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
+                competition_discount: None,
                 feasibility: FeasibilityHint::Uncertain,
             }],
             Some(GoalKey::from(&goal)),
@@ -1901,6 +1952,7 @@ mod tests {
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
+                competition_discount: None,
                 feasibility: FeasibilityHint::Uncertain,
             }],
             Some(GoalKey::from(&goal)),
@@ -1971,6 +2023,7 @@ mod tests {
                         priority_class: GoalPriorityClass::High,
                         motive_score: 800,
                         provenance: None,
+                        competition_discount: None,
                         feasibility: FeasibilityHint::Uncertain,
                     },
                     RankedGoalSummary {
@@ -1978,6 +2031,7 @@ mod tests {
                         priority_class: GoalPriorityClass::High,
                         motive_score: 790,
                         provenance: None,
+                        competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     },
                 ],
@@ -2132,6 +2186,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
                     provenance: None,
+                    competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
                 top_ranked_comparison: None,
@@ -2202,6 +2257,108 @@ mod tests {
         assert!(summary.contains("expansions=3"));
         assert!(summary.contains("root_remaining=7"));
         assert!(summary.contains("pruned=["));
+    }
+
+    #[test]
+    fn summary_planning_includes_selected_competition_discount() {
+        use worldwake_core::GoalKind;
+
+        let discount = sample_competition_discount();
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                ranked: vec![RankedGoalSummary {
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: discount.post_discount_motive,
+                    provenance: None,
+                    competition_discount: Some(discount),
+                    feasibility: FeasibilityHint::Uncertain,
+                }],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("competition=domain=Production"));
+        assert!(summary.contains("discount=400"));
+        assert!(summary.contains("pre=700"));
+        assert!(summary.contains("post=420"));
+    }
+
+    #[test]
+    fn summary_planning_omits_competition_discount_when_absent() {
+        use worldwake_core::GoalKind;
+
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                ranked: vec![RankedGoalSummary {
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: 800,
+                    provenance: None,
+                    competition_discount: None,
+                    feasibility: FeasibilityHint::Uncertain,
+                }],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace { attempts: vec![] },
+            selection: SelectionTrace {
+                selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(!summary.contains("competition="));
     }
 
     #[test]
@@ -2332,6 +2489,7 @@ mod tests {
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 800,
                         provenance: None,
+                        competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     },
                     RankedGoalSummary {
@@ -2339,6 +2497,7 @@ mod tests {
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 600,
                         provenance: None,
+                        competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     },
                 ],
@@ -2402,6 +2561,7 @@ mod tests {
                         has_wounds: true,
                         is_incapacitated: false,
                     })),
+                    competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
                 top_ranked_comparison: None,
@@ -2477,6 +2637,7 @@ mod tests {
                             }],
                         },
                     )),
+                    competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
                 top_ranked_comparison: None,
@@ -2535,6 +2696,7 @@ mod tests {
                     priority_class: GoalPriorityClass::High,
                     motive_score: 400,
                     provenance: None,
+                    competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
                 top_ranked_comparison: None,
@@ -3029,6 +3191,7 @@ mod tests {
                         priority_class: GoalPriorityClass::Medium,
                         motive_score: 100,
                         provenance: None,
+                        competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     }],
                     top_ranked_comparison: None,

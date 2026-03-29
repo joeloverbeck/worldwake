@@ -277,6 +277,7 @@ mod tests {
             priority_class,
             motive_score,
             provenance: None,
+            competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         }
     }

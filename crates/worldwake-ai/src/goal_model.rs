@@ -1,6 +1,7 @@
 use crate::{
     decision_trace::{
-        PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
+        CompetitionDiscount, PrerequisiteExclusionReason, PrerequisiteExclusionTrace,
+        PrerequisiteGuidanceTrace,
     },
     derive_danger_pressure,
     enterprise::restock_gap_at_destination,
@@ -1846,6 +1847,7 @@ pub struct RankedGoal {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
+    pub competition_discount: Option<CompetitionDiscount>,
     pub feasibility: crate::feasibility::FeasibilityHint,
 }
 
@@ -1857,6 +1859,7 @@ mod tests {
         RankedGoal, RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
     use crate::{
+        decision_trace::CompetitionDiscount,
         build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
         GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
         PlanningBudget, PlanningState,
@@ -1916,6 +1919,32 @@ mod tests {
     }
 
     #[test]
+    fn ranked_goal_supports_optional_competition_discount() {
+        let discount = CompetitionDiscount {
+            observed_competitors: vec![entity_id(2, 0), entity_id(3, 0)],
+            domain: ActionDomain::Production,
+            effective_discount: Permille::new(400).unwrap(),
+            pre_discount_motive: 700,
+            post_discount_motive: 420,
+        };
+        let ranked = RankedGoal {
+            grounded: GroundedGoal {
+                anchor: worldwake_core::OpportunityAnchor::None,
+                key: GoalKey::from(GoalKind::Sleep),
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            },
+            priority_class: GoalPriorityClass::High,
+            motive_score: discount.post_discount_motive,
+            provenance: None,
+            competition_discount: Some(discount.clone()),
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+        };
+
+        assert_eq!(ranked.competition_discount, Some(discount));
+    }
+
+    #[test]
     fn crate_re_exports_the_canonical_shared_goal_identity() {
         let kind = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
@@ -1958,6 +1987,7 @@ mod tests {
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
             provenance: None,
+            competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
 

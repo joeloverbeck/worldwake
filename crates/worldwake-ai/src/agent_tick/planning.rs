@@ -124,6 +124,7 @@ pub(super) fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
         provenance: ranked.provenance.clone(),
+        competition_discount: ranked.competition_discount.clone(),
         feasibility: ranked.feasibility,
     }
 }
@@ -822,18 +823,19 @@ pub(super) fn plan_search_result_to_trace(
 
 #[cfg(test)]
 mod tests {
-    use super::{has_pending_budget_retry, record_exhausted_goals};
+    use super::{has_pending_budget_retry, record_exhausted_goals, summarize_ranked_goal};
     use crate::{
-        build_semantics_table, feasibility::FeasibilityHint, AgentDecisionRuntime, DirtySet,
-        ExhaustionEntry, ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
-        GoalPriorityClass, GroundedGoal, OpportunityAnchor, OpportunityKey, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan, PlanningBudget, RankedGoal,
+        build_semantics_table, decision_trace::CompetitionDiscount, feasibility::FeasibilityHint,
+        AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
+        ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
+        OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
+        PlanningBudget, RankedGoal,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, CommodityPurpose, ControlSource, EventLog,
-        HomeostaticNeeds, MerchandiseProfile, Place, Quantity, Tick, Topology, TravelEdge,
-        TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDomain, CauseRef, CommodityKind, CommodityPurpose,
+        ControlSource, EventLog, HomeostaticNeeds, MerchandiseProfile, Permille, Place, Quantity,
+        Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
@@ -962,8 +964,31 @@ mod tests {
             priority_class: GoalPriorityClass::High,
             motive_score: 100,
             provenance: None,
+            competition_discount: None,
             feasibility: FeasibilityHint::Likely,
         }
+    }
+
+    #[test]
+    fn summarize_ranked_goal_preserves_competition_discount() {
+        let goal = acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(40)),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        );
+        let mut ranked = ranked_goal(goal);
+        ranked.competition_discount = Some(CompetitionDiscount {
+            observed_competitors: vec![entity(7), entity(8)],
+            domain: ActionDomain::Production,
+            effective_discount: Permille::new(400).unwrap(),
+            pre_discount_motive: 100,
+            post_discount_motive: 60,
+        });
+
+        let summary = summarize_ranked_goal(&ranked);
+
+        assert_eq!(summary.competition_discount, ranked.competition_discount);
     }
 
     fn setup_agent_world() -> (World, worldwake_core::EntityId, worldwake_core::EntityId) {

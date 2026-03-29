@@ -101,6 +101,7 @@ pub fn rank_candidates(
             ),
             motive_score: ranked_motive_score(candidate, &context, recipes, provenance.as_ref()),
             provenance,
+            competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
         if scored.motive_score == 0 {
@@ -3070,6 +3071,7 @@ mod tests {
             priority_class,
             motive_score: motive,
             provenance: None,
+            competition_discount: None,
             feasibility,
         }
     }
