@@ -127,6 +127,27 @@ pub(super) fn build_successor_detailed<'snapshot>(
         .total_estimated_ticks
         .checked_add(estimated_ticks)
         .ok_or(crate::decision_trace::RootCandidateSkipReason::TotalDurationOverflow)?;
+    let search_step_cost = if semantics.op_kind == PlannerOpKind::Travel {
+        let current_place = node
+            .state
+            .effective_place_ref(PlanningEntityRef::Authoritative(actor))
+            .ok_or(crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed)?;
+        let destination = candidate
+            .authoritative_targets
+            .first()
+            .copied()
+            .ok_or(crate::decision_trace::RootCandidateSkipReason::MissingActionDef)?;
+        node.state
+            .snapshot()
+            .direct_perceived_travel_cost(current_place, destination)
+            .unwrap_or(estimated_ticks)
+    } else {
+        estimated_ticks
+    };
+    let search_cost = node
+        .search_cost
+        .checked_add(search_step_cost)
+        .ok_or(crate::decision_trace::RootCandidateSkipReason::TotalDurationOverflow)?;
     let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
     let heuristic_ticks = compute_heuristic(
         node.state.snapshot(),
@@ -142,6 +163,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
             state: transition.state,
             steps,
             total_estimated_ticks,
+            search_cost,
             heuristic_ticks,
         },
     ))

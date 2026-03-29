@@ -9,11 +9,11 @@ use worldwake_sim::RecipeRegistry;
 
 use super::{SearchCandidate, SearchNode};
 
-/// Compute the A* heuristic: minimum travel ticks from the actor's current
-/// simulated position to the nearest goal-relevant place.  Returns 0 when
-/// the actor is already at a goal-relevant place, when no spatial guidance
-/// is available (empty `goal_relevant_places`), or when the actor's place
-/// cannot be resolved.
+/// Compute the A* heuristic: minimum perceived travel cost from the actor's
+/// current simulated position to the nearest goal-relevant place. Returns 0
+/// when the actor is already at a goal-relevant place, when no spatial
+/// guidance is available (empty `goal_relevant_places`), or when the actor's
+/// place cannot be resolved.
 pub(super) fn compute_heuristic(
     snapshot: &PlanningSnapshot,
     state: &PlanningState<'_>,
@@ -25,7 +25,7 @@ pub(super) fn compute_heuristic(
     let actor = state.snapshot().actor();
     state
         .effective_place_ref(PlanningEntityRef::Authoritative(actor))
-        .and_then(|place| snapshot.min_travel_ticks_to_any(place, goal_relevant_places))
+        .and_then(|place| snapshot.min_perceived_travel_cost_to_any(place, goal_relevant_places))
         .unwrap_or(0)
 }
 
@@ -71,6 +71,7 @@ pub(super) fn root_node<'snapshot>(
         state,
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
+        search_cost: 0,
         heuristic_ticks,
     }
 }
@@ -109,7 +110,7 @@ pub(super) fn prune_travel_away_from_goal(
         goal_places.to_vec()
     };
     let current_min = snapshot
-        .min_travel_ticks_to_any(current_place, &effective_goal_places)
+        .min_perceived_travel_cost_to_any(current_place, &effective_goal_places)
         .unwrap_or(u32::MAX);
     let mut retained = Vec::new();
     let mut pruned = Vec::new();
@@ -130,7 +131,7 @@ pub(super) fn prune_travel_away_from_goal(
         };
 
         let remaining_travel_ticks = snapshot
-            .min_travel_ticks_to_any(destination, &effective_goal_places)
+            .min_perceived_travel_cost_to_any(destination, &effective_goal_places)
             .unwrap_or(u32::MAX);
         let successor = crate::decision_trace::TravelSuccessorTrace {
             destination,

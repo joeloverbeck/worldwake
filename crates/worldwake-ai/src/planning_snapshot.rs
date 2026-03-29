@@ -13,6 +13,8 @@ use worldwake_core::{
 };
 use worldwake_sim::RuntimeBeliefView;
 
+use crate::route_threat::perceived_direct_travel_cost_from_memory;
+
 type SupportBeliefRead = InstitutionalBeliefRead<Option<EntityId>>;
 type ForceControllerBeliefRead = InstitutionalBeliefRead<(Option<EntityId>, bool)>;
 type OfficeSupportBeliefReads = Vec<(EntityId, SupportBeliefRead)>;
@@ -136,6 +138,13 @@ struct DistanceMatrix {
 
 impl DistanceMatrix {
     fn new(places: &BTreeMap<EntityId, SnapshotPlace>) -> Self {
+        Self::with_edge_cost(places, |_from, _to, ticks| ticks.get())
+    }
+
+    fn with_edge_cost<F>(places: &BTreeMap<EntityId, SnapshotPlace>, edge_cost: F) -> Self
+    where
+        F: Fn(EntityId, EntityId, NonZeroU32) -> u32,
+    {
         let place_ids: Vec<EntityId> = places.keys().copied().collect();
         let n = place_ids.len();
         let idx: BTreeMap<EntityId, usize> = place_ids
@@ -155,7 +164,7 @@ impl DistanceMatrix {
                 let Some(&j) = idx.get(&adjacent) else {
                     continue;
                 };
-                let weight = ticks.get();
+                let weight = edge_cost(place, adjacent, ticks);
                 let cell = &mut data[i * n + j];
                 *cell = (*cell).min(weight);
             }
@@ -229,6 +238,7 @@ pub struct PlanningSnapshot {
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
     /// the number of places in the snapshot (typically 10-20, so < 8000 ops).
     shortest_travel_ticks: DistanceMatrix,
+    perceived_travel_costs: DistanceMatrix,
 }
 
 impl PlanningSnapshot {
@@ -268,6 +278,9 @@ impl PlanningSnapshot {
         );
         let included_entities = collect_entities(view, actor, evidence_entities, &included_places);
         let places = build_snapshot_places(view, &included_places, &included_entities);
+        let actor_known_entity_beliefs = view.known_entity_beliefs(actor).into_iter().collect();
+        let actor_known_social_observations = view.known_social_observations(actor);
+        let actor_confidence_policy = view.belief_confidence_policy(actor);
         let entities = included_entities
             .iter()
             .copied()
@@ -280,6 +293,17 @@ impl PlanningSnapshot {
             .collect();
 
         let shortest_travel_ticks = DistanceMatrix::new(&places);
+        let perceived_travel_costs = DistanceMatrix::with_edge_cost(&places, |from, to, ticks| {
+            perceived_direct_travel_cost_from_memory(
+                view.current_tick(),
+                actor_confidence_policy,
+                &actor_known_entity_beliefs,
+                &actor_known_social_observations,
+                from,
+                to,
+                ticks.get(),
+            )
+        });
 
         Self {
             actor,
@@ -287,8 +311,8 @@ impl PlanningSnapshot {
             entities,
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
-            actor_known_entity_beliefs: view.known_entity_beliefs(actor).into_iter().collect(),
-            actor_known_social_observations: view.known_social_observations(actor),
+            actor_known_entity_beliefs,
+            actor_known_social_observations,
             actor_known_institutional_beliefs: view.known_institutional_beliefs(actor),
             actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
             actor_office_holder_beliefs: included_entities
@@ -332,11 +356,12 @@ impl PlanningSnapshot {
                     )
                 })
                 .collect(),
-            actor_confidence_policy: view.belief_confidence_policy(actor),
+            actor_confidence_policy,
             actor_tell_profile: view.tell_profile(actor),
             actor_epistemic_profile: view.epistemic_disposition_profile(actor),
             actor_consultation_speed_factor: view.consultation_speed_factor(actor),
             shortest_travel_ticks,
+            perceived_travel_costs,
         }
     }
 
@@ -445,6 +470,45 @@ impl PlanningSnapshot {
             .iter()
             .filter_map(|dest| self.shortest_travel_ticks.get(from, *dest))
             .min()
+    }
+
+    #[must_use]
+    pub(crate) fn min_perceived_travel_cost_to_any(
+        &self,
+        from: EntityId,
+        destinations: &[EntityId],
+    ) -> Option<u32> {
+        if destinations.contains(&from) {
+            return Some(0);
+        }
+        destinations
+            .iter()
+            .filter_map(|dest| self.perceived_travel_costs.get(from, *dest))
+            .min()
+    }
+
+    #[must_use]
+    pub(crate) fn direct_perceived_travel_cost(
+        &self,
+        from: EntityId,
+        to: EntityId,
+    ) -> Option<u32> {
+        let base_ticks = self
+            .places
+            .get(&from)?
+            .adjacent_places_with_travel_ticks
+            .iter()
+            .find(|(adjacent, _)| *adjacent == to)
+            .map(|(_, ticks)| ticks.get())?;
+        let threat = crate::route_threat::route_threat_estimate(self, from, to);
+        let penalty = if threat.value() == 0 {
+            0
+        } else {
+            base_ticks
+                .saturating_mul(u32::from(threat.value()))
+                .div_ceil(1000)
+        };
+        Some(base_ticks.saturating_add(penalty))
     }
 }
 

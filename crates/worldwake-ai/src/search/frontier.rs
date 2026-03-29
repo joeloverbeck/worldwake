@@ -36,14 +36,11 @@ impl Ord for FrontierEntry<'_> {
 }
 
 pub(super) fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
-    let left_f = left
-        .total_estimated_ticks
-        .saturating_add(left.heuristic_ticks);
-    let right_f = right
-        .total_estimated_ticks
-        .saturating_add(right.heuristic_ticks);
+    let left_f = left.search_cost.saturating_add(left.heuristic_ticks);
+    let right_f = right.search_cost.saturating_add(right.heuristic_ticks);
     left_f
         .cmp(&right_f)
+        .then_with(|| left.search_cost.cmp(&right.search_cost))
         .then_with(|| left.total_estimated_ticks.cmp(&right.total_estimated_ticks))
         .then_with(|| left.steps.len().cmp(&right.steps.len()))
         .then_with(|| left.steps.as_slice().cmp(right.steps.as_slice()))

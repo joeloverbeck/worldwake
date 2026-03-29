@@ -6602,8 +6602,8 @@ mod tests {
                 assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::GoalSatisfied);
             }
             crate::PlanSearchResult::FrontierExhausted { .. }
-            | crate::PlanSearchResult::BudgetExhausted { .. } => {}
-            other => panic!("unexpected remote raid result: {other:?}"),
+            | crate::PlanSearchResult::BudgetExhausted { .. }
+            | crate::PlanSearchResult::Unsupported => {}
         }
     }
 

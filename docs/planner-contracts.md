@@ -1,10 +1,11 @@
 # Planner Contracts
 
-This document is the authoritative planner-facing contract for three boundaries that repeatedly show up in AI tickets and regressions:
+This document is the authoritative planner-facing contract for four boundaries that repeatedly show up in AI tickets and regressions:
 
 1. exact-goal terminal operator surfacing
 2. planning-snapshot completeness for planner-visible runtime data
-3. decision-trace diagnostics for omitted operators and missing prerequisites
+3. belief-backed travel cost and route preference
+4. decision-trace diagnostics for omitted operators and missing prerequisites
 
 Use this doc when a ticket touches planner root candidates, snapshot-backed planning state, or AI traceability. Keep `docs/FOUNDATIONS.md` as the design authority and `docs/precision-rules.md` as the claim-writing authority. This file exists to make the live planner architecture explicit, not to duplicate either of those documents.
 
@@ -92,6 +93,32 @@ The contract is:
 - focused parity coverage must prove snapshot-backed estimation stays aligned with runtime `estimate_duration_from_beliefs()`
 
 This inventory is planner-local on purpose. It aligns to runtime semantics without creating a cross-crate alias layer or letting the planner reach around the belief boundary.
+
+### Belief-backed travel cost
+
+Travel planning has an additional snapshot-backed contract that is easy to misstate if you reconstruct it from older tickets.
+
+The governing symbols are:
+
+- [`PlanningSnapshot::min_travel_ticks()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`PlanningSnapshot::min_perceived_travel_cost_to_any()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`PlanningSnapshot::direct_perceived_travel_cost()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`route_threat::route_threat_estimate()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/route_threat.rs)
+- [`search::heuristic::compute_heuristic()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/heuristic.rs)
+- [`search::heuristic::prune_travel_away_from_goal()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/heuristic.rs)
+- [`search::frontier::compare_search_nodes()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/frontier.rs)
+- [`search::transition::build_successor_detailed()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/transition.rs)
+
+The contract is:
+
+- Travel still executes over the authoritative adjacency graph. The planner does not invent a second topology.
+- Raw travel duration remains the authoritative runtime quantity used by `DurationExpr::TravelToTarget` and action execution.
+- Route preference is planner-local and belief-backed. The planner may rank or prune travel branches using perceived travel cost derived from the actor's remembered entity state, remembered social conflict, and live `belief_confidence()` aging.
+- That perceived cost must stay snapshot-backed. The planner must not query authoritative world threat state directly.
+- The same perceived cost model must be used consistently across search ordering and travel pruning. Do not bolt a one-off penalty onto one planner stage while leaving the others on raw travel ticks.
+- Ignorance remains first-class: when the actor lacks relevant danger beliefs, perceived travel cost collapses back to raw travel cost.
+
+When reassessing a travel-planning ticket, state explicitly whether the claim concerns authoritative travel duration, planner-local perceived travel cost, or both. Do not collapse them into one vague "route cost" claim.
 
 ## 3. Traceability For Omitted Operators And Missing Prerequisites
 
@@ -187,6 +214,7 @@ For planner-driven tickets:
 
 - name the live `GoalKind`
 - name the exact operator surface under audit
+- name whether travel reasoning depends on authoritative duration, perceived travel cost, or neither
 - state whether the terminal binding comes from `GoalKind` identity, grounded evidence, or neither
 - state whether the proof boundary is root omission tracing, surfaced-candidate skip tracing, same-goal sibling stop tracing, selection branch attribution, snapshot/state parity, or another lower-layer planner test
 

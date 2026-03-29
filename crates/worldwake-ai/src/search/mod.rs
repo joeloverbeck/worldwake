@@ -29,10 +29,11 @@ struct SearchNode<'snapshot> {
     state: PlanningState<'snapshot>,
     steps: SharedVec<PlannedStep>,
     total_estimated_ticks: u32,
-    /// A* heuristic: minimum travel ticks from the actor's current simulated
-    /// position to the nearest goal-relevant place.  Zero when already at a
-    /// goal-relevant place, when no spatial guidance is available, or when the
-    /// actor's place cannot be resolved.
+    search_cost: u32,
+    /// A* heuristic: minimum perceived travel cost from the actor's current simulated
+    /// position to the nearest goal-relevant place under the actor's perceived
+    /// travel-cost model. Zero when already at a goal-relevant place, when no
+    /// spatial guidance is available, or when the actor's place cannot be resolved.
     heuristic_ticks: u32,
 }
 

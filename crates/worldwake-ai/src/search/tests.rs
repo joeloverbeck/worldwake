@@ -462,6 +462,16 @@ fn believed_entity_state_at(
     }
 }
 
+fn combat_belief_at(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
+    let mut state = believed_entity_state_at(place, observed_tick, None);
+    state.believed_activity = Some(worldwake_core::BelievedActivity {
+        action_domain: worldwake_core::ActionDomain::Combat,
+        target: None,
+        observed_tick,
+    });
+    state
+}
+
 fn harvest_apple_recipe() -> RecipeDefinition {
     RecipeDefinition {
         name: "Harvest Apples".to_string(),
@@ -583,6 +593,7 @@ fn frontier_test_node(
         state: PlanningState::new(snapshot),
         steps: shared_steps(steps),
         total_estimated_ticks,
+        search_cost: total_estimated_ticks,
         heuristic_ticks: 0,
     }
 }
@@ -645,6 +656,7 @@ fn pickup_node(
             state: PlanningState::new(snapshot),
             steps: SharedVec::new(),
             total_estimated_ticks: 0,
+            search_cost: 0,
             heuristic_ticks: 0,
         },
         actor,
@@ -2052,6 +2064,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
+        search_cost: 0,
         heuristic_ticks: 0,
     };
 
@@ -2284,6 +2297,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
+        search_cost: 0,
         heuristic_ticks: 0,
     };
     let candidate = SearchCandidate {
@@ -2351,6 +2365,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
         state: PlanningState::new(&snapshot),
         steps: shared_steps(vec![parent_step.clone()]),
         total_estimated_ticks: 2,
+        search_cost: 2,
         heuristic_ticks: 0,
     };
     let candidate = SearchCandidate {
@@ -2435,6 +2450,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
+        search_cost: 0,
         heuristic_ticks: 0,
     };
     let candidate = SearchCandidate {
@@ -3472,6 +3488,218 @@ fn heuristic_equals_shortest_path_distance_to_goal_place() {
 }
 
 #[test]
+fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let dangerous_waypoint = entity(11);
+    let safe_waypoint = entity(12);
+    let market = entity(13);
+    let bread = entity(20);
+    let hostile = entity(30);
+
+    let mut view = TestBeliefView {
+        current_tick: Tick(10),
+        ..TestBeliefView::default()
+    };
+    view.alive
+        .extend([actor, origin, dangerous_waypoint, safe_waypoint, market, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(dangerous_waypoint, EntityKind::Place);
+    view.kinds.insert(safe_waypoint, EntityKind::Place);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(bread, market);
+    view.entities_at.insert(origin, vec![actor]);
+    view.entities_at.insert(market, vec![bread]);
+    view.controllable.insert((actor, bread));
+    view.adjacent.insert(
+        origin,
+        vec![
+            (dangerous_waypoint, NonZeroU32::new(1).unwrap()),
+            (safe_waypoint, NonZeroU32::new(1).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        dangerous_waypoint,
+        vec![
+            (origin, NonZeroU32::new(1).unwrap()),
+            (market, NonZeroU32::new(1).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        safe_waypoint,
+        vec![
+            (origin, NonZeroU32::new(1).unwrap()),
+            (market, NonZeroU32::new(2).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        market,
+        vec![
+            (dangerous_waypoint, NonZeroU32::new(1).unwrap()),
+            (safe_waypoint, NonZeroU32::new(2).unwrap()),
+        ],
+    );
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(1));
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(hostile, combat_belief_at(dangerous_waypoint, Tick(10)))],
+    );
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([bread]),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let (registry, handlers) = build_registry();
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(10),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("planner should still find the safe detour plan");
+
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(safe_waypoint)]
+    );
+    assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[1].targets,
+        vec![PlanningEntityRef::Authoritative(market)]
+    );
+}
+
+#[test]
+fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let dangerous_waypoint = entity(11);
+    let safe_waypoint = entity(12);
+    let market = entity(13);
+    let bread = entity(20);
+
+    let mut view = TestBeliefView {
+        current_tick: Tick(10),
+        ..TestBeliefView::default()
+    };
+    view.alive
+        .extend([actor, origin, dangerous_waypoint, safe_waypoint, market, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(dangerous_waypoint, EntityKind::Place);
+    view.kinds.insert(safe_waypoint, EntityKind::Place);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(bread, market);
+    view.entities_at.insert(origin, vec![actor]);
+    view.entities_at.insert(market, vec![bread]);
+    view.controllable.insert((actor, bread));
+    view.adjacent.insert(
+        origin,
+        vec![
+            (dangerous_waypoint, NonZeroU32::new(1).unwrap()),
+            (safe_waypoint, NonZeroU32::new(1).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        dangerous_waypoint,
+        vec![
+            (origin, NonZeroU32::new(1).unwrap()),
+            (market, NonZeroU32::new(1).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        safe_waypoint,
+        vec![
+            (origin, NonZeroU32::new(1).unwrap()),
+            (market, NonZeroU32::new(2).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        market,
+        vec![
+            (dangerous_waypoint, NonZeroU32::new(1).unwrap()),
+            (safe_waypoint, NonZeroU32::new(2).unwrap()),
+        ],
+    );
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(1));
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([bread]),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let (registry, handlers) = build_registry();
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(10),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("planner should find the shorter default route");
+
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(dangerous_waypoint)]
+    );
+}
+
+#[test]
 fn heuristic_picks_nearest_among_multiple_goal_places() {
     let (view, actor, _place_a, place_b, place_c) = build_chain_heuristic_view();
     let snapshot = build_planning_snapshot(
@@ -3509,12 +3737,14 @@ fn compare_search_nodes_orders_by_f_cost() {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 2,
+        search_cost: 2,
         heuristic_ticks: 1, // f = 3
     };
     let high_f = SearchNode {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 3,
+        search_cost: 3,
         heuristic_ticks: 2, // f = 5
     };
     assert_eq!(compare_search_nodes(&low_f, &high_f), Ordering::Less);
@@ -3536,12 +3766,14 @@ fn compare_search_nodes_equal_f_prefers_lower_g() {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 2,
+        search_cost: 2,
         heuristic_ticks: 3, // f = 5, g = 2
     };
     let high_g = SearchNode {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 3,
+        search_cost: 3,
         heuristic_ticks: 2, // f = 5, g = 3
     };
     assert_eq!(compare_search_nodes(&low_g, &high_g), Ordering::Less);
@@ -3563,12 +3795,14 @@ fn search_with_empty_goal_places_degrades_to_uniform_cost() {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 5,
+        search_cost: 5,
         heuristic_ticks: 0,
     };
     let node_b = SearchNode {
         state: PlanningState::new(&snapshot),
         steps: SharedVec::new(),
         total_estimated_ticks: 3,
+        search_cost: 3,
         heuristic_ticks: 0,
     };
     // Pure g-cost: node_b (3) < node_a (5)
@@ -4013,6 +4247,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         state: PlanningState::new(&snapshot).move_actor_to(medicine_place),
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
+        search_cost: 0,
         heuristic_ticks: 0,
     };
 

@@ -31,6 +31,7 @@ pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
 pub mod ranking;
+mod route_threat;
 pub mod search;
 mod shared_collections;
 mod theft;
