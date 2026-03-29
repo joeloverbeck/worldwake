@@ -1644,14 +1644,6 @@ impl GroundedGoal {
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
             PlannerOpKind::Attack => match &self.key.kind {
-                GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target }
-                    if matches!(
-                        def.targets.as_slice(),
-                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
-                    ) =>
-                {
-                    RootCandidateSynthesis::Targets(vec![*target])
-                }
                 GoalKind::EngageHostile { .. } | GoalKind::RaidTarget { .. } => {
                     RootCandidateSynthesis::NoSynthesisPath
                 }
@@ -2253,6 +2245,7 @@ mod tests {
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
+        hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
@@ -2298,6 +2291,7 @@ mod tests {
                 trade_profiles: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 wounds: BTreeMap::new(),
+                hostiles: BTreeMap::new(),
                 resource_sources: BTreeMap::new(),
                 workstation_tags: BTreeMap::new(),
                 place_tags: BTreeMap::new(),
@@ -2553,8 +2547,8 @@ mod tests {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
         }
 
         fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
@@ -3507,6 +3501,88 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics),
             RootCandidateSynthesis::UnsupportedGoalOp
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_attack_root_targets_for_raid_goal() {
+        let target = entity(10);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(target),
+            key: GoalKey::from(GoalKind::RaidTarget { target }),
+            evidence_entities: BTreeSet::from([target]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "attack".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Attack,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_attack_root_targets_for_engage_hostile_goal() {
+        let target = entity(11);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(target),
+            key: GoalKey::from(GoalKind::EngageHostile { target }),
+            evidence_entities: BTreeSet::from([target]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(13),
+            name: "attack".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Attack,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics),
+            RootCandidateSynthesis::NoSynthesisPath
         );
     }
 
@@ -6413,6 +6489,122 @@ mod tests {
             plan.steps[0].targets,
             vec![crate::PlanningEntityRef::Authoritative(rally)]
         );
+    }
+
+    #[test]
+    fn search_raid_goal_uses_colocated_attack_affordance() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, town);
+        view.entities_at.insert(town, vec![actor, target]);
+        view.hostiles.insert(actor, vec![target]);
+
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(target),
+            key: GoalKey::from(GoalKind::RaidTarget { target }),
+            evidence_entities: BTreeSet::from([target]),
+            evidence_places: BTreeSet::from([town]),
+        };
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(5),
+            None,
+            None,
+        )
+        .into_plan()
+        .expect("planner should find a colocated raid attack plan");
+
+        assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::CombatCommitment);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Attack);
+        assert_eq!(
+            plan.steps[0].targets,
+            vec![crate::PlanningEntityRef::Authoritative(target)]
+        );
+    }
+
+    #[test]
+    fn search_remote_raid_goal_does_not_fabricate_attack_commitment() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+        let road = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target, town, road]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(road, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, road);
+        view.entities_at.insert(town, vec![actor]);
+        view.entities_at.insert(road, vec![target]);
+        view.hostiles.insert(actor, vec![target]);
+
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(target),
+            key: GoalKey::from(GoalKind::RaidTarget { target }),
+            evidence_entities: BTreeSet::from([target]),
+            evidence_places: BTreeSet::from([road]),
+        };
+        let (registry, handlers) = build_registry();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([target]),
+            &BTreeSet::from([road]),
+            1,
+        );
+        let result = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(5),
+            None,
+            None,
+        );
+
+        match result {
+            crate::PlanSearchResult::Found(plan) => {
+                assert!(
+                    plan.steps.is_empty(),
+                    "remote raid should not fabricate an attack step: {plan:?}"
+                );
+                assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::GoalSatisfied);
+            }
+            crate::PlanSearchResult::FrontierExhausted { .. }
+            | crate::PlanSearchResult::BudgetExhausted { .. } => {}
+            other => panic!("unexpected remote raid result: {other:?}"),
+        }
     }
 
     /// Test 1: Planner selects Bribe plan when competitor has existing support.

@@ -1106,8 +1106,9 @@ mod tests {
         apply_competition_discount, build_decision_context, rank_candidates, RankingContext,
     };
     use crate::{
-        decision_trace::CompetitionDiscount, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
-        RankedDriveKind, RankedGoalProvenance, RankedPriorityAdjustment,
+        decision_trace::CompetitionDiscount, derive_danger_pressure, GoalKey, GoalKind,
+        GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
+        RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3297,6 +3298,77 @@ mod tests {
             ranked[0].motive_score,
             u32::from(utility().enterprise_weight.value())
         );
+    }
+
+    #[test]
+    fn raid_target_uses_danger_provenance_instead_of_enterprise_weight() {
+        let agent = entity(1);
+        let target = entity(7);
+        let mut view = base_view(agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.alive.insert(target);
+        view.place_entities
+            .entry(view.effective_places[&agent])
+            .or_default()
+            .push(target);
+        view.effective_places.insert(target, view.effective_places[&agent]);
+        view.hostiles.insert(agent, vec![target]);
+
+        let utility = UtilityProfile {
+            danger_weight: pm(450),
+            enterprise_weight: pm(999),
+            ..utility()
+        };
+        let danger_pressure = derive_danger_pressure(&view, agent);
+        let decision_context = build_decision_context(&view, agent);
+
+        let ranked = rank(
+            &[goal(GoalKind::RaidTarget { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, decision_context.danger_class);
+        assert_eq!(
+            ranked[0].motive_score,
+            u32::from(utility.danger_weight.value()) * u32::from(danger_pressure.value())
+        );
+        assert!(matches!(
+            ranked[0].provenance,
+            Some(RankedGoalProvenance::Danger(_))
+        ));
+    }
+
+    #[test]
+    fn regroup_with_faction_uses_medium_priority_and_social_weight() {
+        let agent = entity(1);
+        let faction = entity(7);
+        let view = base_view(agent);
+        let utility = UtilityProfile {
+            social_weight: pm(420),
+            enterprise_weight: pm(999),
+            ..utility()
+        };
+
+        let ranked = rank(
+            &[goal(GoalKind::RegroupWithFaction { faction })],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].motive_score, u32::from(utility.social_weight.value()));
+        assert!(ranked[0].provenance.is_none());
     }
 
     #[test]

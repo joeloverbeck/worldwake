@@ -913,6 +913,51 @@ mod tests {
         assert_eq!(decision_penalty, InterruptDecision::NoInterrupt);
     }
 
+    #[test]
+    fn reduce_danger_interrupts_raid_target_but_raid_does_not_interrupt_reduce_danger() {
+        let raid_goal = GoalKind::RaidTarget { target: entity(77) };
+        let danger_goal = GoalKind::ReduceDanger;
+
+        let raid_interrupted = evaluate_interrupt(
+            &runtime(raid_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(raid_goal)),
+            None,
+            Interruptibility::FreelyInterruptible,
+            &[
+                ranked(raid_goal, GoalPriorityClass::Medium, 100),
+                ranked(danger_goal, GoalPriorityClass::High, 900),
+            ],
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+        assert_eq!(
+            raid_interrupted,
+            InterruptDecision::InterruptForReplan {
+                trigger: InterruptTrigger::HigherPriorityGoal,
+            }
+        );
+
+        let danger_not_interrupted = evaluate_interrupt(
+            &runtime(danger_goal, GoalPriorityClass::High),
+            Some(GoalKey::from(danger_goal)),
+            None,
+            Interruptibility::FreelyInterruptible,
+            &[
+                ranked(danger_goal, GoalPriorityClass::High, 900),
+                ranked(raid_goal, GoalPriorityClass::Medium, 1000),
+            ],
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+        assert_eq!(danger_not_interrupted, InterruptDecision::NoInterrupt);
+    }
+
     #[allow(clippy::too_many_lines)]
     #[test]
     fn frame_interrupt_allows_detour_without_route_margin_when_plan_is_local() {

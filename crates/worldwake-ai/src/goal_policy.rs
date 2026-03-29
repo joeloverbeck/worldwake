@@ -645,6 +645,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn raid_target_remains_available_even_under_critical_stress() {
+        let ctx = DecisionContext {
+            max_self_care_class: GoalPriorityClass::Critical,
+            danger_class: GoalPriorityClass::Critical,
+        };
+
+        assert_eq!(
+            evaluate_suppression(
+                &GoalKind::RaidTarget {
+                    target: dummy_entity(),
+                },
+                &ctx
+            ),
+            GoalPolicyOutcome::Available,
+        );
+        assert_eq!(
+            goal_family_policy(&GoalKind::RaidTarget {
+                target: dummy_entity(),
+            })
+            .free_interrupt,
+            FreeInterruptRole::Normal,
+        );
+    }
+
+    #[test]
+    fn regroup_with_faction_is_suppressed_at_high_stress_and_uses_normal_role() {
+        let ctx = DecisionContext {
+            max_self_care_class: GoalPriorityClass::High,
+            danger_class: GoalPriorityClass::Low,
+        };
+
+        assert_eq!(
+            evaluate_suppression(
+                &GoalKind::RegroupWithFaction {
+                    faction: dummy_entity(),
+                },
+                &ctx
+            ),
+            GoalPolicyOutcome::Suppressed {
+                threshold: GoalPriorityClass::High,
+                max_self_care: GoalPriorityClass::High,
+                danger: GoalPriorityClass::Low,
+            },
+        );
+        assert_eq!(
+            goal_family_policy(&GoalKind::RegroupWithFaction {
+                faction: dummy_entity(),
+            })
+            .free_interrupt,
+            FreeInterruptRole::Normal,
+        );
+    }
+
     // -- DecisionContext tests --
 
     #[test]

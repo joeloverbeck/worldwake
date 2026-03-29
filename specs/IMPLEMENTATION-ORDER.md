@@ -170,9 +170,13 @@ S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final go
 S33 ✅ ──→ S37 ✅ (cooldown exhaustion shipped on opportunity-scoped identity)
 S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
 S35 ✅ ──→ S38 (learned preferences needs activity observation for source reliability)
+E18 ──→ S40 (remote hostile pursuit extends bandit combat beyond same-place opportunism)
+S12 ✅ ──→ S40 (remote hostile pursuit reuses prerequisite-aware search)
+S36 ✅ ──→ S40 (remote hostile pursuit extends declaration-owned combat goal surfaces)
 S27 ✅ ──→ S34 ✅ (epistemic actions extend violation detection)
 S34 ✅, S35 ✅ (independent, can parallel with S33)
 E18, E19, E20 ──→ E22 (integration tests need everything)
+S40 ──→ E22 (integration should cover lawful remote combat pursuit if adopted)
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
 S26 ✅ (planner conformance tests completed — 32 tests across all action families)
@@ -352,6 +356,9 @@ S33 ✅ ──→ S39
 S34 ✅ (independent)
 S35 ✅ (independent)
 S35 ✅ ──→ S38
+E18 ──→ S40
+S12 ✅ ──→ S40
+S36 ✅ ──→ S40
 ```
 
 ---
@@ -366,7 +373,12 @@ S35 ✅ ──→ S38
 - **E20**: Companion Behaviors
   - needs ~~S02~~ (all deps met)
 
-**Step 15** (needs E18–E20):
+**Step 14.5** (after E18, before E22):
+- **S40**: Remote Hostile Pursuit
+  - needs E18, S12, S36
+  - extends exact combat goals with belief-backed prerequisite travel while keeping `Attack` local
+
+**Step 15** (needs E18–E20, S40):
 - **E22**: Scenario Integration & Soak Tests
 
 #### Phase 4 Gate
@@ -422,7 +434,8 @@ E17 is intentionally absent from the table below because its completed spec now 
 | `E18-bandit-dynamics.md` | 4 | 14 | E16, S02 |
 | `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
-| `E22-integration-soak-tests.md` | 4 | 15 | E18, E19, E20 |
+| `S40-remote-hostile-pursuit.md` | 4 | 14.5 | E18, S12, S36 |
+| `E22-integration-soak-tests.md` | 4 | 15 | E18, E19, E20, S40 |
 | `S04-merchant-selling-market-presence.md` | 4+ | 16 | E14 |
 | `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
 | `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
@@ -455,5 +468,5 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
-| 4: Adaptation & Integration | E18–E20, E22 | Full integration, all scenarios | PENDING |
+| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | PENDING |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |
