@@ -117,7 +117,7 @@ impl DecisionOutcome {
                 let selected = planning
                     .selection
                     .selected_goal()
-                    .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+                    .map_or_else(|| "none".to_string(), |goal| format_goal_key(&goal));
                 let selected_opportunity = planning
                     .selection
                     .selected_opportunity
@@ -1115,7 +1115,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let selected = planning
                 .selection
                 .selected_goal()
-                .map_or_else(|| "none".to_string(), |g| format!("{:?}", g.kind));
+                .map_or_else(|| "none".to_string(), |goal| format_goal_key(&goal));
             let selected_plan = planning
                 .selection
                 .selected_plan
@@ -1156,15 +1156,18 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             for blocked in &planning.candidates.fully_blocked_desires {
                 let _ = write!(
                     out,
-                    "\n  fully blocked desire: goal={:?}, opportunities={:?}",
-                    blocked.goal_key.kind, blocked.blocked_opportunities
+                    "\n  fully blocked desire: goal={}, opportunities={:?}",
+                    format_goal_key(&blocked.goal_key),
+                    blocked.blocked_opportunities
                 );
             }
             for attempt in &planning.planning.attempts {
                 let _ = write!(
                     out,
-                    "\n  plan attempt: goal={:?}, anchor={:?}, outcome={:?}",
-                    attempt.goal, attempt.opportunity_anchor, attempt.outcome
+                    "\n  plan attempt: goal={}, anchor={:?}, outcome={:?}",
+                    format_goal_key(&attempt.goal),
+                    attempt.opportunity_anchor,
+                    attempt.outcome
                 );
                 for rej in &attempt.binding_rejections {
                     let def_name = action_defs
@@ -1223,8 +1226,10 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                         .map_or("unknown", |d| d.name.as_str());
                     let _ = write!(
                         out,
-                        "\n    goal={:?} action={def_name} op={:?} place={:?}",
-                        ub.goal_key.kind, ub.op_kind, ub.place,
+                        "\n    goal={} action={def_name} op={:?} place={:?}",
+                        format_goal_key(&ub.goal_key),
+                        ub.op_kind,
+                        ub.place,
                     );
                 }
             }
@@ -1243,8 +1248,24 @@ fn selected_ranked_goal_summary(planning: &PlanningPipelineTrace) -> Option<&Ran
     planning.selected_ranked_summary()
 }
 
+fn format_goal_kind(goal: &crate::GoalKind) -> String {
+    let label = crate::GoalDispatchKey::from_goal_kind(goal)
+        .declaration()
+        .trace_label;
+    let detail = format!("{goal:?}");
+    if detail == label {
+        label.to_string()
+    } else {
+        format!("{label} [{detail}]")
+    }
+}
+
+fn format_goal_key(goal: &GoalKey) -> String {
+    format_goal_kind(&goal.kind)
+}
+
 fn format_opportunity_key(opportunity: OpportunityKey) -> String {
-    format!("{:?}@{:?}", opportunity.goal_key.kind, opportunity.anchor)
+    format!("{}@{:?}", format_goal_key(&opportunity.goal_key), opportunity.anchor)
 }
 
 fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> String {
@@ -1375,7 +1396,7 @@ fn format_same_goal_planning_trace_summary(trace: &SameGoalPlanningTrace) -> Str
         .map_or_else(|| "none".to_string(), format_opportunity_key);
     let stop = match trace.stop_reason {
         SameGoalPlanningStopReason::EncounteredDifferentGoal { next_goal } => {
-            format!("EncounteredDifferentGoal({:?})", next_goal.kind)
+            format!("EncounteredDifferentGoal({})", format_goal_key(&next_goal))
         }
         SameGoalPlanningStopReason::ReachedCandidatePlanCap => {
             "ReachedCandidatePlanCap".to_string()
@@ -2381,6 +2402,71 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_uses_trace_label_and_preserves_selected_goal_payload() {
+        use worldwake_core::{GoalKind, OpportunityAnchor};
+
+        let target = entity(41);
+        let goal = GoalKey::new(GoalKind::EngageHostile { target });
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Entity(target),
+                }],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                ranked: vec![RankedGoalSummary {
+                    opportunity: OpportunityKey {
+                        goal_key: goal,
+                        anchor: OpportunityAnchor::Entity(target),
+                    },
+                    priority_class: GoalPriorityClass::High,
+                    motive_score: 700,
+                    provenance: None,
+                    competition_discount: None,
+                    feasibility: FeasibilityHint::Likely,
+                }],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_social: vec![],
+            },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
+            selection: SelectionTrace {
+                selected_opportunity: Some(OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Entity(target),
+                }),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            frame_transition: None,
+        }));
+
+        let summary = outcome.summary();
+        assert!(summary.contains("selected=EngageHostile"));
+        assert!(summary.contains("selected_opportunity=EngageHostile"));
+        assert!(summary.contains("target"));
+        assert!(summary.contains("slot: 41"));
+    }
+
+    #[test]
     fn summary_planning_includes_selected_competition_discount() {
         use worldwake_core::GoalKind;
 
@@ -2596,7 +2682,8 @@ mod tests {
 
         let summary = format_outcome(&outcome, &ActionDefRegistry::new());
         assert!(summary.contains("fully blocked desire"));
-        assert!(summary.contains("AcquireCommodity"));
+        assert!(summary.contains("AcquireCommodity(SelfConsume)"));
+        assert!(summary.contains("commodity: Bread"));
         assert!(summary.contains("Place("));
     }
 
