@@ -1,6 +1,6 @@
 # S35OBSACTSIG-009: Unify direct-local observation bookkeeping in perception
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` perception pipeline internals
@@ -42,7 +42,8 @@ The current behavior is correct, but the architecture is not ideal. One observer
    - `tickets/S35OBSACTSIG-006.md` is ranking arithmetic
    - `tickets/S35OBSACTSIG-007.md` is golden proof
    Those tickets should consume the perception contract, not reshape it.
-9. Mismatch + correction: the remaining open S35 tickets are not the right place to absorb this cleanup. If pursued, it needs its own perception-scoped ticket to avoid mixed-layer scope creep.
+9. Focused-test reassessment: the named focused perception tests do exist in `crates/worldwake-systems/src/perception.rs` under the real `perception::tests::*` path, and the narrow command surface is `cargo test -p worldwake-systems --lib perception::tests::...`. However, current coverage is still split across separate tests for missing-entity discovery and departure-driven activity clearing; there is not yet one focused test proving both outcomes come from the same observer-local direct observation cycle. Adding that proof remains in-scope for this ticket.
+10. Mismatch + correction: the remaining open S35 tickets are not the right place to absorb this cleanup. If pursued, it needs its own perception-scoped ticket to avoid mixed-layer scope creep.
 
 ## Architecture Check
 
@@ -141,7 +142,24 @@ The visible behavior should remain the same; only the internal transport path be
 
 ### Commands
 
-1. `cargo test -p worldwake-systems perception::tests::`
+1. `cargo test -p worldwake-systems --lib perception::tests::`
 2. `cargo test -p worldwake-systems`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-29
+- What actually changed:
+  - Added a perception-internal `DirectLocalObservationBatch` in `crates/worldwake-systems/src/perception.rs` so one observer-local direct observation cycle now canonically produces directly observed snapshots and directly noticed missing subjects.
+  - Refactored passive same-place perception to collect that batch once, apply snapshot updates from it, and emit missing-entity discoveries from it.
+  - Refactored `observe_active_actions()` to consume the same batch for activity projection, idle clearing, and departure-driven clearing instead of re-deriving direct observation by scanning belief writes.
+  - Added focused regression coverage proving one departure observation cycle both clears stale `believed_activity` and emits the expected missing-entity discovery.
+- Deviations from original plan:
+  - The refactor stayed entirely inside `crates/worldwake-systems/src/perception.rs`; no additional helper modules or cross-crate contract changes were needed.
+  - The concrete batch stores `BelievedEntityState` snapshots plus missing-subject ids rather than a more abstract subject list, because the passive snapshot writer already needs the full snapshot payload and this kept the refactor smaller.
+- Verification results:
+  - `cargo test -p worldwake-systems --lib perception::tests::` passed.
+  - `cargo test -p worldwake-systems` passed.
+  - `cargo test --workspace` passed.
+  - `cargo clippy --workspace` passed.

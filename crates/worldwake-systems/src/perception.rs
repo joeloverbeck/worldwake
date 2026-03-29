@@ -19,6 +19,12 @@ struct DiscoveryContext {
     place: Option<EntityId>,
 }
 
+struct DirectLocalObservationBatch {
+    place: EntityId,
+    observed_snapshots: BTreeMap<EntityId, worldwake_core::BelievedEntityState>,
+    noticed_missing_subjects: BTreeSet<EntityId>,
+}
+
 pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
     let SystemExecutionContext {
         world,
@@ -34,8 +40,16 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     let event_ids = event_log.events_at_tick(tick).to_vec();
     let mut updated_stores = BTreeMap::<EntityId, AgentBeliefStore>::new();
 
-    observe_passive_local_entities(world, event_log, tick, rng, &mut updated_stores);
-    observe_active_actions(world, tick, rng, active_actions, action_defs, &mut updated_stores);
+    let direct_local_batches =
+        observe_passive_local_entities(world, event_log, tick, rng, &mut updated_stores);
+    observe_active_actions(
+        world,
+        tick,
+        active_actions,
+        action_defs,
+        &direct_local_batches,
+        &mut updated_stores,
+    );
 
     for event_id in event_ids {
         let Some(record) = event_log.get(event_id).cloned() else {
@@ -183,7 +197,9 @@ fn observe_passive_local_entities(
     tick: worldwake_core::Tick,
     rng: &mut worldwake_sim::DeterministicRng,
     updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
-) {
+) -> BTreeMap<EntityId, DirectLocalObservationBatch> {
+    let mut batches = BTreeMap::new();
+
     for (agent, _) in world.query_agent_data() {
         if world.get_component_dead_at(agent).is_some() {
             continue;
@@ -195,73 +211,49 @@ fn observe_passive_local_entities(
             continue;
         };
 
-        let store = updated_stores.entry(agent).or_insert_with(|| {
-            world
-                .get_component_agent_belief_store(agent)
-                .cloned()
-                .unwrap_or_default()
-        });
-
-        let mut observed_any = false;
-        let mut observed_entities = BTreeSet::new();
-        for entity in world.entities_effectively_at(place) {
-            if entity == agent {
-                continue;
-            }
-            if !passes_observation_check(profile.observation_fidelity.value(), rng) {
-                continue;
-            }
-            if let Some(snapshot) = build_believed_entity_state(
-                world,
-                entity,
-                tick,
-                PerceptionSource::DirectObservation,
-            ) {
-                record_observed_snapshot(
-                    event_log,
-                    DiscoveryContext {
-                        tick,
-                        observer: agent,
-                        place: Some(place),
-                    },
-                    store,
-                    entity,
-                    snapshot,
-                    false,
-                );
-                observed_entities.insert(entity);
-                observed_any = true;
-            }
-        }
-
-        emit_entity_missing_discoveries(
+        let base_store = world
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .unwrap_or_default();
+        let Some(batch) = collect_direct_local_observation_batch(
             world,
-            event_log,
+            agent,
+            place,
+            tick,
+            profile.observation_fidelity.value(),
             rng,
+            &base_store,
+        ) else {
+            continue;
+        };
+
+        let mut store = base_store;
+        apply_direct_local_observation_batch(
+            event_log,
             DiscoveryContext {
                 tick,
                 observer: agent,
-                place: Some(place),
+                place: Some(batch.place),
             },
-            profile.observation_fidelity.value(),
-            store,
-            &observed_entities,
+            &mut store,
+            &batch,
+            &profile,
         );
-
-        if observed_any {
-            store.enforce_capacity(&profile, tick);
-        } else {
-            updated_stores.remove(&agent);
+        if !batch.observed_snapshots.is_empty() {
+            updated_stores.insert(agent, store);
         }
+        batches.insert(agent, batch);
     }
+
+    batches
 }
 
 fn observe_active_actions(
     world: &World,
     tick: worldwake_core::Tick,
-    rng: &mut worldwake_sim::DeterministicRng,
     active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
     action_defs: &ActionDefRegistry,
+    direct_local_batches: &BTreeMap<EntityId, DirectLocalObservationBatch>,
     updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
 ) {
     let mut active_by_actor = BTreeMap::<EntityId, &ActionInstance>::new();
@@ -269,21 +261,11 @@ fn observe_active_actions(
         active_by_actor.entry(instance.actor).or_insert(instance);
     }
 
-    for (agent, _) in world.query_agent_data() {
-        if world.get_component_dead_at(agent).is_some() {
-            continue;
-        }
-        let Some(profile) = world.get_component_perception_profile(agent).copied() else {
-            continue;
-        };
-        let Some(place) = world.effective_place(agent) else {
-            continue;
-        };
-
+    for (agent, batch) in direct_local_batches {
         let Some(base_store) = updated_stores
-            .get(&agent)
+            .get(agent)
             .cloned()
-            .or_else(|| world.get_component_agent_belief_store(agent).cloned())
+            .or_else(|| world.get_component_agent_belief_store(*agent).cloned())
         else {
             continue;
         };
@@ -291,23 +273,8 @@ fn observe_active_actions(
         let mut store = base_store.clone();
         let mut changed = false;
 
-        let directly_observed_subjects = base_store
-            .known_entities
-            .iter()
-            .filter_map(|(subject, belief)| {
-                if *subject == agent
-                    || belief.last_known_place != Some(place)
-                    || belief.observed_tick != tick
-                    || belief.source != PerceptionSource::DirectObservation
-                {
-                    return None;
-                }
-                Some(*subject)
-            })
-            .collect::<Vec<_>>();
-
-        for subject in directly_observed_subjects {
-            let next_activity = match active_by_actor.get(&subject) {
+        for subject in batch.observed_snapshots.keys() {
+            let next_activity = match active_by_actor.get(subject) {
                 Some(instance) => {
                     let Some(def) = action_defs.get(instance.def_id) else {
                         continue;
@@ -322,36 +289,18 @@ fn observe_active_actions(
             };
 
             let current_activity = store
-                .get_entity(&subject)
+                .get_entity(subject)
                 .and_then(|belief| belief.believed_activity.clone());
             if current_activity != next_activity {
-                if let Some(belief) = store.known_entities.get_mut(&subject) {
+                if let Some(belief) = store.known_entities.get_mut(subject) {
                     belief.believed_activity = next_activity;
                     changed = true;
                 }
             }
         }
 
-        let departed_subjects = base_store
-            .known_entities
-            .iter()
-            .filter_map(|(subject, belief)| {
-                if *subject == agent
-                    || belief.last_known_place != Some(place)
-                    || belief.believed_activity.is_none()
-                    || world.effective_place(*subject) == Some(place)
-                {
-                    return None;
-                }
-                Some(*subject)
-            })
-            .collect::<Vec<_>>();
-
-        for subject in departed_subjects {
-            if !passes_observation_check(profile.observation_fidelity.value(), rng) {
-                continue;
-            }
-            if let Some(belief) = store.known_entities.get_mut(&subject) {
+        for subject in &batch.noticed_missing_subjects {
+            if let Some(belief) = store.known_entities.get_mut(subject) {
                 if belief.believed_activity.take().is_some() {
                     changed = true;
                 }
@@ -359,8 +308,91 @@ fn observe_active_actions(
         }
 
         if changed {
-            updated_stores.insert(agent, store);
+            updated_stores.insert(*agent, store);
         }
+    }
+}
+
+fn collect_direct_local_observation_batch(
+    world: &World,
+    observer: EntityId,
+    place: EntityId,
+    tick: worldwake_core::Tick,
+    observation_fidelity: u16,
+    rng: &mut worldwake_sim::DeterministicRng,
+    store: &AgentBeliefStore,
+) -> Option<DirectLocalObservationBatch> {
+    let mut observed_snapshots = BTreeMap::new();
+    for entity in world.entities_effectively_at(place) {
+        if entity == observer {
+            continue;
+        }
+        if !passes_observation_check(observation_fidelity, rng) {
+            continue;
+        }
+        if let Some(snapshot) = build_believed_entity_state(
+            world,
+            entity,
+            tick,
+            PerceptionSource::DirectObservation,
+        ) {
+            observed_snapshots.insert(entity, snapshot);
+        }
+    }
+
+    let observed_entities = observed_snapshots.keys().copied().collect::<BTreeSet<_>>();
+    let mut noticed_missing_subjects = BTreeSet::new();
+    for (subject, belief) in &store.known_entities {
+        if belief.last_known_place != Some(place) {
+            continue;
+        }
+        if observed_entities.contains(subject) {
+            continue;
+        }
+        if world.effective_place(*subject) == Some(place) {
+            continue;
+        }
+        if !passes_observation_check(observation_fidelity, rng) {
+            continue;
+        }
+        noticed_missing_subjects.insert(*subject);
+    }
+
+    if observed_snapshots.is_empty() && noticed_missing_subjects.is_empty() {
+        return None;
+    }
+
+    Some(DirectLocalObservationBatch {
+        place,
+        observed_snapshots,
+        noticed_missing_subjects,
+    })
+}
+
+fn apply_direct_local_observation_batch(
+    event_log: &mut EventLog,
+    context: DiscoveryContext,
+    store: &mut AgentBeliefStore,
+    batch: &DirectLocalObservationBatch,
+    profile: &worldwake_core::PerceptionProfile,
+) {
+    for (subject, snapshot) in &batch.observed_snapshots {
+        record_observed_snapshot(
+            event_log,
+            context,
+            store,
+            *subject,
+            snapshot.clone(),
+            false,
+        );
+    }
+
+    for subject in &batch.noticed_missing_subjects {
+        emit_discovery_event(event_log, context, *subject, MismatchKind::EntityMissing);
+    }
+
+    if !batch.observed_snapshots.is_empty() {
+        store.enforce_capacity(profile, context.tick);
     }
 }
 
@@ -461,36 +493,6 @@ fn detect_observation_mismatches(
     }
 
     mismatches
-}
-
-fn emit_entity_missing_discoveries(
-    world: &World,
-    event_log: &mut EventLog,
-    rng: &mut worldwake_sim::DeterministicRng,
-    context: DiscoveryContext,
-    observation_fidelity: u16,
-    store: &AgentBeliefStore,
-    observed_entities: &BTreeSet<EntityId>,
-) {
-    let Some(place) = context.place else {
-        return;
-    };
-    for (subject, belief) in &store.known_entities {
-        if belief.last_known_place != Some(place) {
-            continue;
-        }
-        if observed_entities.contains(subject) {
-            continue;
-        }
-        if world.effective_place(*subject) == Some(place) {
-            continue;
-        }
-        if !passes_observation_check(observation_fidelity, rng) {
-            continue;
-        }
-
-        emit_discovery_event(event_log, context, *subject, MismatchKind::EntityMissing);
-    }
 }
 
 fn emit_discovery_event(
@@ -1255,6 +1257,67 @@ mod tests {
             .expect("departed subject should remain known");
         assert_eq!(believed.believed_activity, None);
         assert_eq!(believed.last_known_place, Some(place));
+    }
+
+    #[test]
+    fn departed_subject_missing_cycle_clears_activity_and_emits_discovery() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let other_place = *places.get(1).unwrap_or(&place);
+        assert_ne!(
+            place, other_place,
+            "prototype world needs at least two places for departure coverage"
+        );
+        let (observer, actor) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(actor, other_place).unwrap();
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(actor, stale_activity_belief(place, ActionDomain::Travel, None));
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x15; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let believed = beliefs
+            .get_entity(&actor)
+            .expect("departed subject should remain known");
+        assert_eq!(believed.believed_activity, None);
+        assert_eq!(believed.last_known_place, Some(place));
+        assert_eq!(
+            discovery_records(&event_log)[0].evidence(),
+            vec![EvidenceRef::Mismatch {
+                observer,
+                subject: actor,
+                kind: MismatchKind::EntityMissing,
+            }]
+        );
     }
 
     #[test]
