@@ -2,7 +2,7 @@
 
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    BanditCamp, BanditCampProfile, BlockedIntentMemory, CarryCapacity, CombatProfile,
+    BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
     CombatStance, CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
     ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueIntents,
@@ -240,7 +240,7 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, BanditCamp, BanditCampProfile,
+        ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy,
         BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
         CombatStance, CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure,
         DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
@@ -462,10 +462,10 @@ mod tests {
                 faction: entity(40),
                 supplies: entity(41),
             }),
-            ComponentValue::BanditCampProfile(BanditCampProfile {
-                faction: entity(40),
+            ComponentValue::BanditFactionPolicy(BanditFactionPolicy {
                 min_regroup_count: 3,
                 establishment_duration_ticks: std::num::NonZeroU32::new(14).unwrap(),
+                abandonment_grace_ticks: std::num::NonZeroU32::new(5).unwrap(),
                 flee_wound_threshold: Permille::new(675).unwrap(),
                 rally_place: Some(entity(42)),
             }),
@@ -665,7 +665,7 @@ mod tests {
                 ComponentKind::ResourceSource,
                 ComponentKind::ProductionOutputOwnershipPolicy,
                 ComponentKind::BanditCamp,
-                ComponentKind::BanditCampProfile,
+                ComponentKind::BanditFactionPolicy,
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
                 ComponentKind::ActiveGoal,

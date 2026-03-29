@@ -2,7 +2,7 @@
 
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    BanditCamp, BanditCampProfile, BlockedIntentMemory, CarryCapacity, CombatProfile,
+    BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
     CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt,
     DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
     EntityMeta, EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy,
@@ -592,7 +592,7 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        AgentBeliefStore, AgentData, BanditCamp, BanditCampProfile, BeliefConfidencePolicy,
+        AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
         ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
@@ -819,11 +819,11 @@ mod tests {
         }
     }
 
-    fn sample_bandit_camp_profile() -> BanditCampProfile {
-        BanditCampProfile {
-            faction: entity(69),
+    fn sample_bandit_faction_policy() -> BanditFactionPolicy {
+        BanditFactionPolicy {
             min_regroup_count: 3,
             establishment_duration_ticks: NonZeroU32::new(10).unwrap(),
+            abandonment_grace_ticks: NonZeroU32::new(4).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),
             rally_place: Some(entity(71)),
         }
@@ -5278,20 +5278,20 @@ mod tests {
     }
 
     #[test]
-    fn bandit_camp_profile_component_roundtrip_on_place() {
+    fn bandit_faction_policy_component_roundtrip_on_faction() {
         let mut world = World::new(test_topology()).unwrap();
-        let place = entity(2);
-        let profile = sample_bandit_camp_profile();
+        let faction = world.create_faction("Forest Bandits", Tick(1)).unwrap();
+        let profile = sample_bandit_faction_policy();
 
         world
-            .insert_component_bandit_camp_profile(place, profile.clone())
+            .insert_component_bandit_faction_policy(faction, profile.clone())
             .unwrap();
-        assert_eq!(world.get_component_bandit_camp_profile(place), Some(&profile));
-        assert!(world.has_component_bandit_camp_profile(place));
+        assert_eq!(world.get_component_bandit_faction_policy(faction), Some(&profile));
+        assert!(world.has_component_bandit_faction_policy(faction));
 
-        let removed = world.remove_component_bandit_camp_profile(place).unwrap();
+        let removed = world.remove_component_bandit_faction_policy(faction).unwrap();
         assert_eq!(removed, Some(profile));
-        assert_eq!(world.get_component_bandit_camp_profile(place), None);
+        assert_eq!(world.get_component_bandit_faction_policy(faction), None);
     }
 
     #[test]
@@ -5307,12 +5307,12 @@ mod tests {
     }
 
     #[test]
-    fn insert_bandit_camp_profile_on_non_place_errors() {
+    fn insert_bandit_faction_policy_on_non_faction_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
 
         let err = world
-            .insert_component_bandit_camp_profile(id, sample_bandit_camp_profile())
+            .insert_component_bandit_faction_policy(id, sample_bandit_faction_policy())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));

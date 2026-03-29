@@ -1,7 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
-    bandit_camp::{BanditCamp, BanditCampProfile},
+    bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
@@ -139,7 +139,7 @@ mod tests {
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        ActionDefId, BanditCamp, BanditCampProfile, BodyPart, CarryCapacity, CombatProfile,
+        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
@@ -379,12 +379,12 @@ mod tests {
                 supplies: entity(32),
             },
         );
-        tables.insert_bandit_camp_profile(
+        tables.insert_bandit_faction_policy(
             entity(33),
-            BanditCampProfile {
-                faction: entity(30),
+            BanditFactionPolicy {
                 min_regroup_count: 3,
                 establishment_duration_ticks: NonZeroU32::new(11).unwrap(),
+                abandonment_grace_ticks: NonZeroU32::new(5).unwrap(),
                 flee_wound_threshold: Permille::new(650).unwrap(),
                 rally_place: Some(entity(34)),
             },
@@ -430,7 +430,7 @@ mod tests {
         );
         assert_eq!(tables.iter_resource_sources().count(), 0);
         assert_eq!(tables.iter_bandit_camps().count(), 0);
-        assert_eq!(tables.iter_bandit_camp_profiles().count(), 0);
+        assert_eq!(tables.iter_bandit_faction_policies().count(), 0);
         assert_eq!(tables.iter_production_jobs().count(), 0);
         assert_eq!(tables.iter_in_transit_on_edges().count(), 0);
         assert_eq!(tables.iter_item_lots().count(), 0);
@@ -699,22 +699,22 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get_bandit_camp_profile() {
+    fn insert_and_get_bandit_faction_policy() {
         let mut tables = ComponentTables::default();
         let id = entity(21);
-        let profile = BanditCampProfile {
-            faction: entity(37),
+        let profile = BanditFactionPolicy {
             min_regroup_count: 4,
             establishment_duration_ticks: NonZeroU32::new(9).unwrap(),
+            abandonment_grace_ticks: NonZeroU32::new(6).unwrap(),
             flee_wound_threshold: Permille::new(700).unwrap(),
             rally_place: Some(entity(38)),
         };
 
-        assert_eq!(tables.insert_bandit_camp_profile(id, profile.clone()), None);
-        assert_eq!(tables.get_bandit_camp_profile(id), Some(&profile));
-        assert!(tables.has_bandit_camp_profile(id));
-        assert_eq!(tables.remove_bandit_camp_profile(id), Some(profile));
-        assert_eq!(tables.get_bandit_camp_profile(id), None);
+        assert_eq!(tables.insert_bandit_faction_policy(id, profile.clone()), None);
+        assert_eq!(tables.get_bandit_faction_policy(id), Some(&profile));
+        assert!(tables.has_bandit_faction_policy(id));
+        assert_eq!(tables.remove_bandit_faction_policy(id), Some(profile));
+        assert_eq!(tables.get_bandit_faction_policy(id), None);
     }
 
     #[test]

@@ -17,11 +17,11 @@ When all living faction members leave or die at a bandit camp, the camp should e
 3. `SystemManifest` in `crates/worldwake-sim/src/system_manifest.rs` defines the execution order. The new system must be inserted after `Combat` (so combat deaths are processed first) and before `FacilityQueue` (so abandonment is visible to downstream systems).
 4. System functions have the signature matching the `SystemContext` pattern used in `crates/worldwake-systems/src/`. Each system receives `&mut World`, `&mut EventLog`, `&mut DeterministicRng`, tick, and other context.
 5. `members_of(faction_id)` on `RelationTables` returns member entity IDs. Checking "living members at this place" requires: (a) no `DeadAt` component, (b) `located_in` matches the camp's place.
-6. The live code has no `abandonment_grace_ticks` field yet. The canonical place for that missing input should be the faction-scoped policy contract introduced by `E18BANDYN-010`, not a revived place-backed `BanditCampProfile`.
+6. The live code has no `abandonment_grace_ticks` field yet. The canonical place for that missing input should be `BanditFactionPolicy` from `E18BANDYN-010`, not a revived place-backed `BanditCampProfile`.
 7. `CampAbandoned` event needs an `EventTag`. `EventTag::WorldMutation` is appropriate since it modifies the place's component state.
 8. Camp supplies container remains at the place after abandonment — lootable by anyone. The container is NOT removed.
 9. Faction entity is NOT archived — surviving members still reference it.
-10. Adjacent contradiction exposed during reassessment: this ticket previously normalized a nonexistent `BanditCampProfile.abandonment_grace_ticks` field. That policy input should come from `E18BANDYN-010`; this ticket should consume that canonical faction-scoped contract instead of recreating a place-level alias.
+10. Adjacent contradiction exposed during reassessment: this ticket previously normalized a nonexistent `BanditCampProfile.abandonment_grace_ticks` field. That policy input should come from `E18BANDYN-010` as `BanditFactionPolicy.abandonment_grace_ticks`; this ticket should consume that canonical faction-scoped contract instead of recreating a place-level alias.
 
 ## Architecture Check
 
@@ -131,7 +131,7 @@ Wire `bandit_camp_system` into `SystemDispatchTable` at the `BanditCamp` ordinal
 ### Invariants
 
 1. `BanditCamp` removal only through this system (not through direct component deletion elsewhere)
-2. Grace period is policy-driven from the faction-scoped contract introduced by `E18BANDYN-010`, not hardcoded
+2. Grace period is policy-driven from `BanditFactionPolicy` introduced by `E18BANDYN-010`, not hardcoded
 3. Conservation: system does not create or destroy any entities or items
 4. System ordering: Combat < BanditCamp < FacilityQueue (load-bearing)
 5. No global queries — system iterates only Place entities with `BanditCamp` component

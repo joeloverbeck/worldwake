@@ -285,20 +285,10 @@ impl DurationExpr {
         world: &World,
         faction: EntityId,
     ) -> Result<ActionDuration, String> {
-        let mut profiles = world
-            .query_bandit_camp_profile()
-            .filter(|(_, profile)| profile.faction == faction)
-            .collect::<Vec<_>>();
-        profiles.sort_by_key(|(place, _)| *place);
-        match profiles.as_slice() {
-            [] => Err(format!("no BanditCampProfile exists for faction {faction}")),
-            [(_, profile)] => Ok(ActionDuration::new(
-                profile.establishment_duration_ticks.get(),
-            )),
-            _ => Err(format!(
-                "multiple BanditCampProfile components exist for faction {faction}"
-            )),
-        }
+        world
+            .get_component_bandit_faction_policy(faction)
+            .map(|policy| ActionDuration::new(policy.establishment_duration_ticks.get()))
+            .ok_or_else(|| format!("faction {faction} lacks BanditFactionPolicy"))
     }
 
     fn resolve_consult_record_duration(
@@ -351,7 +341,7 @@ mod tests {
     use std::mem;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BanditCampProfile, CauseRef, CombatProfile, CombatWeaponRef,
+        build_prototype_world, BanditFactionPolicy, CauseRef, CombatProfile, CombatWeaponRef,
         CommodityKind, ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds,
         MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
         TheftDispositionProfile, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
@@ -885,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn duration_expr_resolves_bandit_camp_establishment_ticks_from_profile() {
+    fn duration_expr_resolves_bandit_camp_establishment_ticks_from_faction_policy() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let rally_place = prototype_place_entity(PrototypePlace::ForestPath);
         let faction = {
@@ -896,12 +886,12 @@ mod tests {
         };
         {
             let mut txn = new_txn(&mut world, 2);
-            txn.set_component_bandit_camp_profile(
-                rally_place,
-                BanditCampProfile {
-                    faction,
+            txn.set_component_bandit_faction_policy(
+                faction,
+                BanditFactionPolicy {
                     min_regroup_count: 3,
                     establishment_duration_ticks: nz(14),
+                    abandonment_grace_ticks: nz(5),
                     flee_wound_threshold: pm(650),
                     rally_place: Some(rally_place),
                 },
@@ -954,7 +944,7 @@ mod tests {
                     &ActionPayload::EstablishCamp(EstablishCampActionPayload { faction: ENTITY_B }),
                 )
                 .unwrap_err(),
-            format!("no BanditCampProfile exists for faction {}", ENTITY_B)
+            format!("faction {} lacks BanditFactionPolicy", ENTITY_B)
         );
         assert_eq!(
             DurationExpr::ActorDefendStance

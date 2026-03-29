@@ -2,7 +2,7 @@ use crate::inventory::carried_entities;
 use std::collections::BTreeSet;
 use worldwake_core::{
     current_container_load, load_of_entity, ActionDefId, ActionDomain, BanditCamp,
-    BanditCampProfile, BodyCostPerTick, Container, EntityId, EntityKind, EventTag, LoadUnits,
+    BanditFactionPolicy, BodyCostPerTick, Container, EntityId, EntityKind, EventTag, LoadUnits,
     PlaceTag, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
@@ -72,8 +72,6 @@ fn establish_camp_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
 struct ValidatedEstablishCamp {
     place: EntityId,
     faction: EntityId,
-    profile_origin: EntityId,
-    profile: BanditCampProfile,
     carried_food_lots: Vec<EntityId>,
     existing_place_camp: Option<BanditCamp>,
 }
@@ -89,25 +87,15 @@ fn payload_faction(payload: &ActionPayload) -> Result<EntityId, ActionError> {
         })
 }
 
-fn canonical_bandit_camp_profile(
-    world: &World,
-    faction: EntityId,
-) -> Result<(EntityId, BanditCampProfile), ActionError> {
-    let mut profiles = world
-        .query_bandit_camp_profile()
-        .filter(|(_, profile)| profile.faction == faction)
-        .map(|(place, profile)| (place, profile.clone()))
-        .collect::<Vec<_>>();
-    profiles.sort_by_key(|(place, _)| *place);
-    match profiles.as_slice() {
-        [] => Err(ActionError::PreconditionFailed(format!(
-            "no BanditCampProfile exists for faction {faction}"
-        ))),
-        [(place, profile)] => Ok((*place, profile.clone())),
-        _ => Err(ActionError::PreconditionFailed(format!(
-            "multiple BanditCampProfile components exist for faction {faction}"
-        ))),
-    }
+fn faction_policy(world: &World, faction: EntityId) -> Result<BanditFactionPolicy, ActionError> {
+    world
+        .get_component_bandit_faction_policy(faction)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "faction {faction} lacks BanditFactionPolicy"
+            ))
+        })
 }
 
 fn active_camps_for_faction(world: &World, faction: EntityId) -> Vec<(EntityId, BanditCamp)> {
@@ -170,21 +158,12 @@ fn validate_establish_camp(
             )));
         }
     }
-    if let Some(profile) = txn.get_component_bandit_camp_profile(place) {
-        if profile.faction != faction {
-            return Err(ActionError::PreconditionFailed(format!(
-                "place {place} already holds bandit camp profile for faction {}",
-                profile.faction
-            )));
-        }
-    }
-
-    let (profile_origin, profile) = canonical_bandit_camp_profile(txn, faction)?;
+    let policy = faction_policy(txn, faction)?;
     let member_count = living_faction_members_at_place(txn, faction, place);
-    if member_count < usize::from(profile.min_regroup_count) {
+    if member_count < usize::from(policy.min_regroup_count) {
         return Err(ActionError::PreconditionFailed(format!(
             "faction {faction} has only {member_count} living members at place {place}, needs {}",
-            profile.min_regroup_count
+            policy.min_regroup_count
         )));
     }
 
@@ -214,8 +193,6 @@ fn validate_establish_camp(
     Ok(ValidatedEstablishCamp {
         place,
         faction,
-        profile_origin,
-        profile,
         carried_food_lots,
         existing_place_camp,
     })
@@ -318,21 +295,6 @@ fn transfer_carried_food_to_camp(
     Ok(())
 }
 
-fn rehome_camp_profile(
-    txn: &mut WorldTxn<'_>,
-    validated: &ValidatedEstablishCamp,
-) -> Result<(), ActionError> {
-    if validated.profile_origin != validated.place {
-        txn.clear_component_bandit_camp_profile(validated.profile_origin)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    if txn.get_component_bandit_camp_profile(validated.place) != Some(&validated.profile) {
-        txn.set_component_bandit_camp_profile(validated.place, validated.profile.clone())
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    Ok(())
-}
-
 fn start_establish_camp(
     _def: &ActionDef,
     instance: &ActionInstance,
@@ -382,8 +344,6 @@ fn commit_establish_camp(
         )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
-
-    rehome_camp_profile(txn, &validated)?;
     transfer_carried_food_to_camp(
         txn,
         validated.faction,
@@ -443,7 +403,7 @@ fn validate_establish_camp_payload_authoritatively(
             "actor {actor} is not a member of faction {faction}"
         )));
     }
-    let _ = canonical_bandit_camp_profile(world, faction)?;
+    let _ = faction_policy(world, faction)?;
     Ok(())
 }
 
@@ -453,8 +413,9 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, prototype_place_entity, verify_live_lot_conservation, BanditCamp,
-        BanditCampProfile, CauseRef, CommodityKind, Container, ControlSource, EntityId, EventLog,
-        LoadUnits, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, World, WorldTxn,
+        BanditFactionPolicy, CauseRef, CommodityKind, Container, ControlSource, EntityId,
+        EventLog, LoadUnits, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, World,
+        WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -499,12 +460,12 @@ mod tests {
                 txn.set_ground_location(bread, rally_place).unwrap();
                 txn.set_owner(bread, actor).unwrap();
                 txn.set_possessor(bread, actor).unwrap();
-                txn.set_component_bandit_camp_profile(
-                    anchor_place,
-                    BanditCampProfile {
-                        faction,
+                txn.set_component_bandit_faction_policy(
+                    faction,
+                    BanditFactionPolicy {
                         min_regroup_count: 3,
                         establishment_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                        abandonment_grace_ticks: std::num::NonZeroU32::new(2).unwrap(),
                         flee_wound_threshold: worldwake_core::Permille::new(650).unwrap(),
                         rally_place: Some(rally_place),
                     },
@@ -619,18 +580,14 @@ mod tests {
         assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
         assert_eq!(harness.world.owner_of(harness.bread), Some(harness.faction));
         assert_eq!(
-            harness
-                .world
-                .get_component_bandit_camp_profile(harness.rally_place)
-                .unwrap()
-                .faction,
-            harness.faction
-        );
-        assert_eq!(
-            harness
-                .world
-                .get_component_bandit_camp_profile(harness.anchor_place),
-            None
+            harness.world.get_component_bandit_faction_policy(harness.faction),
+            Some(&BanditFactionPolicy {
+                min_regroup_count: 3,
+                establishment_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                abandonment_grace_ticks: std::num::NonZeroU32::new(2).unwrap(),
+                flee_wound_threshold: worldwake_core::Permille::new(650).unwrap(),
+                rally_place: Some(harness.rally_place),
+            })
         );
         verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 2).unwrap();
     }

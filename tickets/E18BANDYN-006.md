@@ -13,12 +13,12 @@ Bandit agents need to generate two new goal candidates through the existing AI c
 ## Assumption Reassessment (2026-03-29)
 
 1. `generate_candidates()` in `crates/worldwake-ai/src/candidate_generation.rs` takes a `GoalBeliefView` trait object, `BlockedIntentMemory`, `RecipeRegistry`, and current tick. It returns `Vec<GroundedGoal>`. The function dispatches to internal helpers based on agent state queries through the belief view.
-2. `GoalBeliefView` trait (in `crates/worldwake-sim/src/belief_view.rs`) provides query methods for agent beliefs. The raid candidate generator needs: (a) agent's faction membership, (b) non-faction agents at same place, (c) active `BanditCamp` existence for agent's faction. The regroup generator needs: (a) the agent's rally-point belief, (b) whether a camp currently exists for that faction. It should not depend on a place-backed `BanditCampProfile` after `E18BANDYN-010`.
+2. `GoalBeliefView` trait (in `crates/worldwake-sim/src/belief_view.rs`) provides query methods for agent beliefs. The raid candidate generator needs: (a) agent's faction membership, (b) non-faction agents at same place, (c) active `BanditCamp` existence for agent's faction. The regroup generator needs: (a) the agent's rally-point belief, (b) whether a camp currently exists for that faction. It should not depend on a place-backed `BanditCampProfile`; canonical authoritative policy comes from `BanditFactionPolicy` after `E18BANDYN-010`.
 3. The spec's "enterprise signal pattern for raids" is analogous to merchant restock signals in `crates/worldwake-ai/src/enterprise.rs`. The raid opportunity assessment uses the same infrastructure.
 4. `BlockedIntentMemory` with `BlockingFact::CombatTooRisky` suppresses re-engaging at locations where the agent previously failed. This naturally limits raid retries.
 5. `GroundedGoal` includes the `GoalKind`, a priority/motive score, and suppression conditions. `RegroupWithFaction` has suppression: `WhenStressedAtOrAbove(Critical)` — survival comes first.
 6. The belief-view implementation detail in this ticket is stale: there is no standalone `omniscient_belief_view.rs` in live code. Any new `GoalBeliefView` surface must be wired through the live belief-view implementations and helpers that exist after reassessment.
-7. Adjacent contradiction exposed during reassessment: regroup policy should come from the faction-scoped contract in `E18BANDYN-010`, while regroup navigation still comes from the agent's own beliefs. This ticket must consume that canonical split instead of reintroducing place-backed policy reads.
+7. Adjacent contradiction exposed during reassessment: regroup policy should come from `BanditFactionPolicy` in `E18BANDYN-010`, while regroup navigation still comes from the agent's own beliefs. This ticket must consume that canonical split instead of reintroducing place-backed policy reads.
 
 ## Architecture Check
 

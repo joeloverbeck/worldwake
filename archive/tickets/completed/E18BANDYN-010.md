@@ -1,9 +1,9 @@
 # E18BANDYN-010: Split faction camp policy from place-backed bandit camp state
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — worldwake-core (bandit camp data contract), worldwake-sim (duration/query consumers), worldwake-systems (EstablishCamp consumer), tickets/spec references
+**Engine Changes**: Yes — worldwake-core (bandit camp data contract), worldwake-sim (duration/query consumers), worldwake-systems (EstablishCamp consumer), active E18 spec/ticket references
 **Deps**: archive/tickets/completed/E18BANDYN-004.md, specs/E18-bandit-dynamics.md
 
 ## Problem
@@ -36,6 +36,7 @@ This is the wrong long-term architecture. It couples faction doctrine to current
 6. `E18BANDYN-005` already needs `abandonment_grace_ticks`, but no such field exists in live code. If we are correcting the policy boundary anyway, that missing grace-period input belongs on the faction-scoped policy component rather than on a place profile.
 7. `E18BANDYN-006` and `E18BANDYN-009` depend on rally-point and regroup policy facts that must survive camp destruction and relocation. Those facts are better modeled as faction policy than as a component that must be reattached to a place.
 8. This cleanup is a required architectural consequence of E18, not cosmetic follow-up. Leaving the movable place-backed policy in place would keep violating `docs/FOUNDATIONS.md` Principle 3 (concrete state over abstract aliases) and Principle 7 (information paths should not depend on hidden global inference).
+9. The active epic spec [`specs/E18-bandit-dynamics.md`](/home/joeloverbeck/projects/worldwake/specs/E18-bandit-dynamics.md) is stale relative to the intended correction. It still defines `BanditCampProfile` as a place component and still describes rally-point observation through that place-backed profile. This ticket must update the live spec alongside code so the canonical contract does not keep pointing future tickets back to the superseded alias path.
 
 ## Architecture Check
 
@@ -51,7 +52,8 @@ This is the wrong long-term architecture. It couples faction doctrine to current
 2. EstablishCamp duration resolves from faction policy rather than place scans -> focused sim duration semantics/unit coverage
 3. EstablishCamp commit no longer rehomes policy between places -> authoritative world-state assertions in focused systems coverage
 4. Downstream tickets no longer normalize place-backed faction policy -> ticket/document reassessment in affected active tickets
-5. This ticket is mixed-layer but not planner- or golden-driven; the contract under audit is the authoritative data path, not decision-trace behavior
+5. Active E18 spec no longer documents the removed alias path -> spec diff in `specs/E18-bandit-dynamics.md`
+6. This ticket is mixed-layer but not planner- or golden-driven; the contract under audit is the authoritative data path, not decision-trace behavior
 
 ## What to Change
 
@@ -104,6 +106,14 @@ Update the active E18 tickets that currently rely on place-backed policy:
 
 They should depend on this ticket and describe faction policy as coming from the faction entity, not from `BanditCampProfile` on places.
 
+### 5. Update the active E18 spec contract
+
+Update [`specs/E18-bandit-dynamics.md`](/home/joeloverbeck/projects/worldwake/specs/E18-bandit-dynamics.md) so the live epic contract matches the new architecture:
+
+- replace the place-backed `BanditCampProfile` section with a faction-scoped policy component
+- update EstablishCamp, abandonment, and rally-point information-path text to reference faction policy plus agent belief acquisition at an active camp
+- remove language that implies faction doctrine migrates with the currently occupied camp place
+
 ## Files to Touch
 
 - [`crates/worldwake-core/src/bandit_camp.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/bandit_camp.rs) (modify)
@@ -114,6 +124,7 @@ They should depend on this ticket and describe faction policy as coming from the
 - [`crates/worldwake-core/src/world_txn.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/world_txn.rs) (modify)
 - [`crates/worldwake-sim/src/action_semantics.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/action_semantics.rs) (modify)
 - [`crates/worldwake-systems/src/bandit_camp_actions.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/bandit_camp_actions.rs) (modify)
+- [`specs/E18-bandit-dynamics.md`](/home/joeloverbeck/projects/worldwake/specs/E18-bandit-dynamics.md) (modify)
 - [`tickets/E18BANDYN-005.md`](/home/joeloverbeck/projects/worldwake/tickets/E18BANDYN-005.md) (modify)
 - [`tickets/E18BANDYN-006.md`](/home/joeloverbeck/projects/worldwake/tickets/E18BANDYN-006.md) (modify)
 - [`tickets/E18BANDYN-009.md`](/home/joeloverbeck/projects/worldwake/tickets/E18BANDYN-009.md) (modify)
@@ -153,7 +164,7 @@ They should depend on this ticket and describe faction policy as coming from the
 1. [`crates/worldwake-core/src/bandit_camp.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/bandit_camp.rs) — prove the new faction-scoped policy contract and removal of the old place-scoped profile
 2. [`crates/worldwake-sim/src/action_semantics.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/action_semantics.rs) — prove EstablishCamp duration resolves from faction policy
 3. [`crates/worldwake-systems/src/bandit_camp_actions.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/bandit_camp_actions.rs) — prove EstablishCamp still validates and commits without policy rehoming
-4. `None — ticket updates in tickets/ are documentation maintenance driven by the contract split; verification is command-based and code-focused.`
+4. [`specs/E18-bandit-dynamics.md`](/home/joeloverbeck/projects/worldwake/specs/E18-bandit-dynamics.md) plus the affected E18 tickets — document the canonical faction-scoped policy path so follow-on work no longer targets the removed place-backed alias
 
 ### Commands
 
@@ -163,3 +174,21 @@ They should depend on this ticket and describe faction policy as coming from the
 4. `cargo test -p worldwake-systems action_registry::tests::build_full_action_registries_returns_complete_action_catalog`
 5. `cargo clippy --workspace`
 6. `cargo build --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-29
+- What actually changed:
+  - Replaced place-backed `BanditCampProfile` with faction-scoped `BanditFactionPolicy`
+  - Removed the old authoritative component/schema/query/setter path entirely rather than keeping a transition alias
+  - Retargeted EstablishCamp duration/validation to the faction entity policy and removed policy rehoming from commit
+  - Updated the active E18 spec plus dependent E18 tickets to describe the new canonical contract
+- Deviations from original plan:
+  - No production-code behavior beyond the data-path split was broadened; the work stayed focused on the authoritative contract and EstablishCamp consumers
+  - Focused tests were strengthened inside existing core/sim/systems files instead of creating new standalone test files
+- Verification results:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-systems`
+  - `cargo clippy --workspace`
+  - `cargo build --workspace`

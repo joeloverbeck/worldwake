@@ -18,7 +18,7 @@ The brainstorming spec (T22) requires a golden end-to-end test demonstrating the
 4. The test must demonstrate causal depth >= 4 across >= 3 subsystems (spec T22 requirement).
 5. Pass threshold: "Within 5 in-world days, route safety and at least one downstream economic behavior must change because of the diaspora."
 6. The test must set up: bandit camp with 3+ members, supplies, raid history, merchants with route beliefs, external attackers (guards/adventurers).
-7. All E18 components must be integrated, but the policy contract is no longer correctly described as place-backed `BanditCampProfile`. After `E18BANDYN-010`, the golden chain should use active `BanditCamp` state on places plus faction-scoped camp policy on the faction entity.
+7. All E18 components must be integrated, but the policy contract is no longer correctly described as place-backed `BanditCampProfile`. After `E18BANDYN-010`, the golden chain should use active `BanditCamp` state on places plus `BanditFactionPolicy` on the faction entity.
 8. This is a multi-subsystem integration test spanning: combat (E12), needs (E09), AI decisions (E13), production/trade (E10/E11), beliefs (E14/E15), and E18's new bandit dynamics.
 
 ## Architecture Check

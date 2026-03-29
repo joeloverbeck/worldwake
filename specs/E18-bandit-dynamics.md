@@ -63,30 +63,32 @@ pub struct BanditCamp {
 - No `morale` field — behavior emerges from concrete agent state (FND-3)
 - No `preferred_raid_routes` — patrol targets emerge from individual agent goals (FND-1)
 
-### 2. BanditCampProfile Component (`worldwake-core`)
+### 2. BanditFactionPolicy Component (`worldwake-core`)
 
 ```rust
-/// Per-camp profile controlling bandit behavior thresholds.
+/// Faction-scoped policy controlling regrouping, establishment, and abandonment thresholds.
 /// All thresholds are Permille (0–1000) to comply with spec drafting rules.
-pub struct BanditCampProfile {
+pub struct BanditFactionPolicy {
     /// Minimum living faction members needed to establish a new camp.
     pub min_regroup_count: u8,
     /// Ticks required to establish a new camp via EstablishCamp action.
     pub establishment_duration_ticks: NonZeroU32,
+    /// Grace period before an empty camp is considered abandoned.
+    pub abandonment_grace_ticks: NonZeroU32,
     /// Wound-load threshold (as fraction of capacity) above which
     /// a bandit prioritizes fleeing over fighting. Per-agent courage
     /// in UtilityProfile modulates this further.
     pub flee_wound_threshold: Permille,
     /// Known rally place where faction members should regroup after
-    /// camp destruction. Members learn this through observation while
-    /// at camp (belief, not guaranteed knowledge).
+    /// camp destruction. Members learn this by observing faction policy
+    /// while co-located with an active camp (belief, not guaranteed knowledge).
     pub rally_place: Option<EntityId>,
 }
 ```
 
 - Profile-driven parameters replace all magic numbers (FND-2)
 - `flee_wound_threshold` interacts with existing `UtilityProfile.courage` — agents with high courage may fight past this threshold
-- `rally_place` is observable state that members can perceive, forming a belief about where to regroup
+- `rally_place` is faction policy rather than place state, but members still learn it through lawful local observation while at an active camp
 
 ### 3. Faction Setup
 
@@ -132,8 +134,8 @@ No new relation types needed. The existing `members_of(faction_id)` query return
 | Domain | `ActionDomain::Generic` |
 | Actor constraints | `ActorAlive`, `ActorHasControl`, `ActorNotInTransit` |
 | Target spec | None (acts on current place) |
-| Preconditions | Actor's place has `PlaceTag::Camp` or `PlaceTag::Forest`; actor has `MemberOf` to a bandit faction; at least `BanditCampProfile.min_regroup_count` living faction members at same place; actor possesses minimum supplies (food commodity) |
-| Duration | `BanditCampProfile.establishment_duration_ticks` |
+| Preconditions | Actor's place has `PlaceTag::Camp` or `PlaceTag::Forest`; actor has `MemberOf` to a bandit faction; at least `BanditFactionPolicy.min_regroup_count` living faction members at same place; actor possesses minimum supplies (food commodity) |
+| Duration | `BanditFactionPolicy.establishment_duration_ticks` |
 | Body cost | Moderate (hunger, fatigue increase) |
 | Interruptibility | `InterruptibleWithPenalty` (disruption by attack wastes progress) |
 | Commit conditions | Same place requirements still met; minimum members still present |
@@ -155,7 +157,7 @@ Camp destruction is **not** a special system — it emerges from existing combat
 
 **Camp abandonment detection**: A lightweight per-tick check in the bandit camp system (new system function `bandit_camp_system()` registered in SystemManifest):
 - For each place with `BanditCamp` component: query `members_of(faction)` for living members at that place
-- If zero living members present for `abandonment_grace_ticks` (profile-driven): remove `BanditCamp` component, emit `CampAbandoned` event
+- If zero living members present for `BanditFactionPolicy.abandonment_grace_ticks`: remove `BanditCamp` component, emit `CampAbandoned` event
 - Camp supplies container remains at the place — lootable by anyone
 - Faction entity is NOT archived (surviving members still reference it)
 - Grace period prevents premature abandonment if all members are briefly away (e.g., on a raid)
@@ -187,7 +189,7 @@ Survivors behave autonomously through the existing pressure-based AI decision sy
 
 **Information path** (FND-7 compliance):
 
-1. While at camp, bandit agents can observe the `BanditCampProfile.rally_place` field → forms a belief: "if camp falls, regroup at [rally place]"
+1. While at an active camp, bandit agents can lawfully observe their faction's `BanditFactionPolicy.rally_place` → forms a belief: "if camp falls, regroup at [rally place]"
 2. When camp is destroyed (high danger, members flee), each surviving bandit independently checks their belief about the rally point
 3. Survivors who hold this belief generate `RegroupWithFaction { faction }` goal → plan search finds Travel to rally place
 4. Survivors who never observed the rally point (e.g., newly joined, absent when it was set) do NOT know where to go — they act on their own survival goals only
@@ -236,7 +238,7 @@ Route safety is assessed through agent beliefs, not stored values on edges (FND-
 | "Bandits are at location X" | Direct observation (co-location) | Immediate perception | 0 ticks |
 | "Route Y was attacked" | Witness testimony | Tell action at shared location | Travel time to shared place + Tell |
 | "Camp at Z was destroyed" | Direct observation or testimony | Same as above | Variable |
-| "Rally point is at W" | Observation of BanditCampProfile while at camp | Immediate (co-located with camp) | 0 ticks |
+| "Rally point is at W" | Observation of `BanditFactionPolicy` while at an active camp | Immediate (co-located with camp) | 0 ticks |
 | "Route Y is safe again" | Absence of new attack reports | Belief aging/decay | Configured belief freshness period |
 
 No information arrives at an agent without a traceable physical path. Rally-point knowledge requires prior co-location with the camp.
@@ -265,7 +267,7 @@ All dampeners are physical world processes, not numeric caps (FND-10).
 
 **Authoritative stored state:**
 - `BanditCamp` component on Place entities (supplies container ref)
-- `BanditCampProfile` component on Place entities (thresholds, rally place)
+- `BanditFactionPolicy` component on Faction entities (thresholds, abandonment grace, rally place)
 - `MemberOf` relations (bandit → faction)
 - `LoyalTo` relations (bandit → faction, with strength)
 - `HostileTo` relations (bandit → targets)
@@ -286,7 +288,7 @@ All dampeners are physical world processes, not numeric caps (FND-10).
 | Entity/Component | Kind | Purpose |
 |-----------------|------|---------|
 | `BanditCamp` | Component on Place | Marks a place as a bandit camp, references supply container |
-| `BanditCampProfile` | Component on Place | Per-camp behavioral thresholds and rally point |
+| `BanditFactionPolicy` | Component on Faction | Faction regroup/establishment/abandonment policy and rally point |
 | Supply container | EntityKind::Container | Holds camp's communal supplies |
 | Bandit faction | EntityKind::Faction | `FactionData { purpose: Military }` |
 
@@ -349,7 +351,7 @@ See Section H.2 and H.3 above.
 
 ### 28.11 Save/Load, Replay, and Compression Survival
 
-All authoritative state (`BanditCamp`, `BanditCampProfile`, faction relations, agent state) is component/relation data already handled by the existing save/load and replay systems. No new serialization requirements beyond registering the two new components in `component_tables` and `component_schema`.
+All authoritative state (`BanditCamp`, `BanditFactionPolicy`, faction relations, agent state) is component/relation data already handled by the existing save/load and replay systems. No new serialization requirements beyond registering the two components in `component_tables` and `component_schema`.
 
 ---
 
@@ -374,7 +376,7 @@ Placement after Combat ensures that combat deaths are processed before abandonme
 ### Component Registration
 
 - `BanditCamp`: allowed on `EntityKind::Place`
-- `BanditCampProfile`: allowed on `EntityKind::Place`
+- `BanditFactionPolicy`: allowed on `EntityKind::Faction`
 
 ### AI Extensions (`worldwake-ai`)
 

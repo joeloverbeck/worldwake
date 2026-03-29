@@ -1888,7 +1888,7 @@ mod tests {
         TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
     };
     use crate::{
-        BanditCamp, BanditCampProfile, CommodityKind, Container, ControlSource,
+        BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
         DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation,
         Name, Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord,
         ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
@@ -1959,11 +1959,11 @@ mod tests {
         }
     }
 
-    fn sample_bandit_camp_profile() -> BanditCampProfile {
-        BanditCampProfile {
-            faction: entity(60),
+    fn sample_bandit_faction_policy() -> BanditFactionPolicy {
+        BanditFactionPolicy {
             min_regroup_count: 3,
             establishment_duration_ticks: std::num::NonZeroU32::new(12).unwrap(),
+            abandonment_grace_ticks: std::num::NonZeroU32::new(5).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),
             rally_place: Some(entity(62)),
         }
@@ -3854,32 +3854,32 @@ mod tests {
     }
 
     #[test]
-    fn set_component_bandit_camp_profile_records_component_delta_and_updates_world_on_commit() {
+    fn set_component_bandit_faction_policy_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
-        let place = entity(2);
-        let before = sample_bandit_camp_profile();
-        let after = BanditCampProfile {
-            faction: entity(62),
+        let faction = world.create_faction("Forest Bandits", Tick(1)).unwrap();
+        let before = sample_bandit_faction_policy();
+        let after = BanditFactionPolicy {
             min_regroup_count: 4,
             establishment_duration_ticks: std::num::NonZeroU32::new(9).unwrap(),
+            abandonment_grace_ticks: std::num::NonZeroU32::new(6).unwrap(),
             flee_wound_threshold: Permille::new(725).unwrap(),
             rally_place: Some(entity(64)),
         };
         world
-            .insert_component_bandit_camp_profile(place, before.clone())
+            .insert_component_bandit_faction_policy(faction, before.clone())
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_bandit_camp_profile(place, after.clone())
+        txn.set_component_bandit_faction_policy(faction, after.clone())
             .unwrap();
 
         assert_eq!(
             txn.deltas(),
             &[StateDelta::Component(ComponentDelta::Set {
-                entity: place,
-                component_kind: ComponentKind::BanditCampProfile,
-                before: Some(ComponentValue::BanditCampProfile(before)),
-                after: ComponentValue::BanditCampProfile(after.clone()),
+                entity: faction,
+                component_kind: ComponentKind::BanditFactionPolicy,
+                before: Some(ComponentValue::BanditFactionPolicy(before)),
+                after: ComponentValue::BanditFactionPolicy(after.clone()),
             })]
         );
 
@@ -3888,7 +3888,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(world.get_component_bandit_camp_profile(place), Some(&after));
+        assert_eq!(world.get_component_bandit_faction_policy(faction), Some(&after));
     }
 
     #[test]
@@ -4834,23 +4834,23 @@ mod tests {
     }
 
     #[test]
-    fn clear_component_bandit_camp_profile_records_removed_delta_and_updates_world_on_commit() {
+    fn clear_component_bandit_faction_policy_records_removed_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
-        let place = entity(2);
-        let before = sample_bandit_camp_profile();
+        let faction = world.create_faction("Forest Bandits", Tick(1)).unwrap();
+        let before = sample_bandit_faction_policy();
         world
-            .insert_component_bandit_camp_profile(place, before.clone())
+            .insert_component_bandit_faction_policy(faction, before.clone())
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.clear_component_bandit_camp_profile(place).unwrap();
+        txn.clear_component_bandit_faction_policy(faction).unwrap();
 
         assert_eq!(
             txn.deltas(),
             &[StateDelta::Component(ComponentDelta::Removed {
-                entity: place,
-                component_kind: ComponentKind::BanditCampProfile,
-                before: ComponentValue::BanditCampProfile(before),
+                entity: faction,
+                component_kind: ComponentKind::BanditFactionPolicy,
+                before: ComponentValue::BanditFactionPolicy(before),
             })]
         );
 
@@ -4859,7 +4859,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(world.get_component_bandit_camp_profile(place), None);
+        assert_eq!(world.get_component_bandit_faction_policy(faction), None);
     }
 
     #[test]
