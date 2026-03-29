@@ -5,6 +5,7 @@ use crate::{
     },
     derive_danger_pressure,
     enterprise::restock_gap_at_destination,
+    GoalDispatchKey,
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
@@ -14,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     belief_confidence, CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, GoalKey,
-    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, PunishmentKind, Quantity, RecordKind,
-    SuccessionLaw, WorkstationTag,
+    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
+    WorkstationTag,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -105,82 +106,6 @@ pub trait GoalKindPlannerExt {
     /// - Flexible goals → always `true` regardless of op or targets.
     fn matches_binding(&self, authoritative_targets: &[EntityId], op_kind: PlannerOpKind) -> bool;
 }
-
-const CONSUME_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Consume,
-    PlannerOpKind::Travel,
-    PlannerOpKind::MoveCargo,
-];
-const ACQUIRE_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::Trade,
-    PlannerOpKind::QueueForFacilityUse,
-    PlannerOpKind::Harvest,
-    PlannerOpKind::Craft,
-    PlannerOpKind::MoveCargo,
-];
-const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep, PlannerOpKind::Travel];
-const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
-const WASH_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Wash,
-    PlannerOpKind::Travel,
-    PlannerOpKind::MoveCargo,
-];
-const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Attack];
-const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::Defend,
-    PlannerOpKind::Heal,
-];
-const TREAT_WOUNDS_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::Heal,
-    PlannerOpKind::Trade,
-    PlannerOpKind::QueueForFacilityUse,
-    PlannerOpKind::Craft,
-    PlannerOpKind::MoveCargo,
-    PlannerOpKind::Harvest,
-];
-const PRODUCE_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::QueueForFacilityUse,
-    PlannerOpKind::Craft,
-    PlannerOpKind::MoveCargo,
-];
-const SELL_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::Trade,
-    PlannerOpKind::MoveCargo,
-];
-const RESTOCK_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::Trade,
-    PlannerOpKind::QueueForFacilityUse,
-    PlannerOpKind::Harvest,
-    PlannerOpKind::Craft,
-    PlannerOpKind::MoveCargo,
-];
-const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::MoveCargo];
-const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
-const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
-const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
-const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::ConsultRecord,
-    PlannerOpKind::Bribe,
-    PlannerOpKind::Threaten,
-    PlannerOpKind::DeclareSupport,
-    PlannerOpKind::PressForceClaim,
-];
-const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Travel,
-    PlannerOpKind::ConsultRecord,
-    PlannerOpKind::DeclareSupport,
-];
-const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
-const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
-const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
-const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GoalPayloadOverrideError {
@@ -516,65 +441,13 @@ impl GoalKindPlannerExt for GoalKind {
     }
 
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
-        match self {
-            GoalKind::ConsumeOwnedCommodity { .. }
-            | GoalKind::AcquireCommodity {
-                purpose: CommodityPurpose::SelfConsume | CommodityPurpose::RecipeInput(_),
-                ..
-            }
-            | GoalKind::Sleep
-            | GoalKind::Relieve
-            | GoalKind::Wash
-            | GoalKind::ProduceCommodity { .. } => Some(RankedGoalProvenanceFamily::Drive),
-            GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
-                Some(RankedGoalProvenanceFamily::Danger)
-            }
-            GoalKind::AcquireCommodity {
-                purpose: CommodityPurpose::Restock,
-                ..
-            }
-            | GoalKind::TreatWounds { .. }
-            | GoalKind::SellCommodity { .. }
-            | GoalKind::RestockCommodity { .. }
-            | GoalKind::MoveCargo { .. }
-            | GoalKind::LootCorpse { .. }
-            | GoalKind::BuryCorpse { .. }
-            | GoalKind::ShareBelief { .. }
-            | GoalKind::ClaimOffice { .. }
-            | GoalKind::SupportCandidateForOffice { .. }
-            | GoalKind::InvestigateViolation { .. }
-            | GoalKind::StealItem { .. }
-            | GoalKind::Accuse { .. }
-            | GoalKind::PunishAccused { .. } => None,
-        }
+        GoalDispatchKey::from_goal_kind(self)
+            .declaration()
+            .provenance_family
     }
 
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind] {
-        match self {
-            GoalKind::ConsumeOwnedCommodity { .. } => CONSUME_OPS,
-            GoalKind::AcquireCommodity { .. } => ACQUIRE_OPS,
-            GoalKind::Sleep => SLEEP_OPS,
-            GoalKind::Relieve => RELIEVE_OPS,
-            GoalKind::Wash => WASH_OPS,
-            GoalKind::EngageHostile { .. } => ENGAGE_HOSTILE_OPS,
-            GoalKind::ReduceDanger => REDUCE_DANGER_OPS,
-            GoalKind::TreatWounds { .. } => TREAT_WOUNDS_OPS,
-            GoalKind::ProduceCommodity { .. } => PRODUCE_OPS,
-            GoalKind::SellCommodity { .. } => SELL_OPS,
-            GoalKind::RestockCommodity { .. } => RESTOCK_OPS,
-            GoalKind::MoveCargo { .. } | GoalKind::StealItem { .. } => MOVE_CARGO_OPS,
-            GoalKind::LootCorpse { .. } => LOOT_OPS,
-            GoalKind::BuryCorpse { .. } => BURY_OPS,
-            GoalKind::ShareBelief { .. } => SHARE_BELIEF_OPS,
-            GoalKind::ClaimOffice { .. } => CLAIM_OFFICE_OPS,
-            GoalKind::SupportCandidateForOffice { .. } => SUPPORT_OFFICE_OPS,
-            GoalKind::InvestigateViolation { .. } => INVESTIGATE_OPS,
-            GoalKind::Accuse { .. } => ACCUSE_OPS,
-            GoalKind::PunishAccused { punishment, .. } => match punishment {
-                PunishmentKind::Fine { .. } => FINE_OPS,
-                PunishmentKind::Exile { .. } => EXILE_OPS,
-            },
-        }
+        GoalDispatchKey::from_goal_kind(self).declaration().relevant_ops
     }
 
     fn relevant_observed_commodities(
