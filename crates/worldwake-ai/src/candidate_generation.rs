@@ -373,6 +373,7 @@ fn emit_combat_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
+    emit_raid_target_goals(candidates, diagnostics, ctx);
     emit_engage_hostile_goals(candidates, diagnostics, ctx);
     emit_reduce_danger_goal(candidates, diagnostics, ctx);
     emit_care_goals(candidates, diagnostics, ctx);
@@ -1258,8 +1259,14 @@ fn emit_engage_hostile_goals(
     } else {
         Vec::new()
     };
+    let raid_targets = local_raid_targets(ctx.view, ctx.agent, ctx.place)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
 
     for target in local_hostility_targets(ctx.view, ctx.agent, ctx.place) {
+        if raid_targets.contains(&target) {
+            continue;
+        }
         if current_attackers.contains(&target) {
             continue;
         }
@@ -1286,6 +1293,47 @@ fn emit_engage_hostile_goals(
             OpportunityAnchor::Entity(target),
             evidence,
             trace,
+        );
+    }
+}
+
+fn emit_raid_target_goals(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    if ctx
+        .view
+        .drive_thresholds(ctx.agent)
+        .is_some_and(|thresholds| {
+            derive_danger_pressure(ctx.view, ctx.agent) >= thresholds.danger.high()
+        })
+    {
+        return;
+    }
+
+    let current_attackers = ctx
+        .view
+        .current_attackers_of(ctx.agent)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    for target in local_raid_targets(ctx.view, ctx.agent, ctx.place) {
+        if current_attackers.contains(&target) {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(target);
+        if let Some(place) = ctx.place {
+            evidence.places.insert(place);
+        }
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::RaidTarget { target },
+            OpportunityAnchor::Entity(target),
+            evidence,
+            EvidenceTrace::default(),
         );
     }
 }
@@ -1640,6 +1688,39 @@ fn local_hostility_targets(
                 .is_some_and(|kind| kind == worldwake_core::EntityKind::Agent)
         })
         .filter(|target| view.effective_place(*target) == Some(place))
+        .collect()
+}
+
+fn local_raid_targets(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+) -> Vec<EntityId> {
+    let Some(place) = place else {
+        return Vec::new();
+    };
+
+    let bandit_factions = view
+        .bandit_factions_of(agent)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if bandit_factions.is_empty() {
+        return Vec::new();
+    }
+
+    view.locally_observed_entities_at(agent, place)
+        .into_iter()
+        .filter(|target| *target != agent)
+        .filter(|target| {
+            view.entity_kind(*target)
+                .is_some_and(|kind| kind == worldwake_core::EntityKind::Agent)
+        })
+        .filter(|target| view.is_alive(*target) && !view.is_dead(*target))
+        .filter(|target| {
+            view.factions_of(*target)
+                .into_iter()
+                .all(|faction| !bandit_factions.contains(&faction))
+        })
         .collect()
 }
 
@@ -3091,6 +3172,7 @@ mod tests {
         force_controller_beliefs:
             BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
+        bandit_factions: BTreeSet<EntityId>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
         support_declaration_beliefs:
@@ -3155,6 +3237,7 @@ mod tests {
                 office_holder_beliefs: BTreeMap::new(),
                 force_controller_beliefs: BTreeMap::new(),
                 factions_by_member: BTreeMap::new(),
+                bandit_factions: BTreeSet::new(),
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
@@ -3228,6 +3311,20 @@ mod tests {
                 .get(&place)
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.factions_by_member
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.factions_of(entity)
+                .into_iter()
+                .filter(|faction| self.bandit_factions.contains(faction))
+                .collect()
         }
 
         fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
@@ -4893,6 +4990,122 @@ mod tests {
             &candidates,
             GoalKind::EngageHostile { target: hostile }
         ));
+    }
+
+    #[test]
+    fn bandit_with_local_non_faction_agent_emits_raid_target_instead_of_engage_hostile() {
+        let agent = entity(1);
+        let traveler = entity(2);
+        let faction = entity(30);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, traveler]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(traveler, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(traveler, place);
+        view.entities_at.insert(place, vec![agent, traveler]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![traveler]);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::RaidTarget { target: traveler }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::EngageHostile { target: traveler }
+        ));
+    }
+
+    #[test]
+    fn bandit_does_not_raid_same_faction_member() {
+        let agent = entity(1);
+        let ally = entity(2);
+        let faction = entity(30);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, ally]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(ally, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(ally, place);
+        view.entities_at.insert(place, vec![agent, ally]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![ally]);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.factions_by_member.insert(ally, vec![faction]);
+        view.bandit_factions.insert(faction);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::RaidTarget { target: ally }
+        ));
+    }
+
+    #[test]
+    fn blocked_raid_target_is_filtered_by_blocked_memory() {
+        let agent = entity(1);
+        let traveler = entity(2);
+        let faction = entity(30);
+        let place = entity(10);
+        let goal = GoalKind::RaidTarget { target: traveler };
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, traveler]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(traveler, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(traveler, place);
+        view.entities_at.insert(place, vec![agent, traveler]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![traveler]);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(goal),
+                place: Some(place),
+                target: Some(traveler),
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::CombatTooRisky,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+        });
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &blocked,
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(&candidates, goal));
     }
 
     #[test]

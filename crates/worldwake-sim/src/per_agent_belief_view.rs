@@ -307,6 +307,13 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.factions_of(entity)
+            .into_iter()
+            .filter(|faction| self.world.get_component_bandit_faction_policy(*faction).is_some())
+            .collect()
+    }
+
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
         self.believed_entity(entity)
             .and_then(|state| state.believed_activity.as_ref())

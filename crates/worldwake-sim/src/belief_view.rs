@@ -59,6 +59,10 @@ pub trait GoalBeliefView {
         let _ = entity;
         Vec::new()
     }
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        let _ = entity;
+        Vec::new()
+    }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
         None
@@ -293,6 +297,10 @@ pub trait RuntimeBeliefView {
         Vec::new()
     }
     fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        let _ = entity;
+        Vec::new()
+    }
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
         let _ = entity;
         Vec::new()
     }
@@ -629,6 +637,20 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
                 $crate::RuntimeBeliefView::known_institutional_beliefs(self, agent)
+            }
+
+            fn factions_of(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::factions_of(self, entity)
+            }
+
+            fn bandit_factions_of(
+                &self,
+                entity: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::bandit_factions_of(self, entity)
             }
 
             fn believed_activity_of(
