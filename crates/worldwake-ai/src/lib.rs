@@ -15,6 +15,7 @@ pub mod failure_handling;
 pub mod feasibility;
 mod frame_switch_policy;
 pub mod goal_explanation;
+mod goal_dispatch_decl;
 mod goal_dispatch_key;
 pub mod goal_model;
 pub mod goal_policy;
@@ -69,6 +70,7 @@ pub use goal_model::{
     RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
 pub use goal_dispatch_key::GoalDispatchKey;
+pub use goal_dispatch_decl::GoalDispatchDeclaration;
 pub use goal_policy::{
     evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
     GoalPolicyOutcome,
