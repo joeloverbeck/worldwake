@@ -83,6 +83,9 @@ pub(crate) fn derive_invalidation_conditions(
         }
         InvalidationStrategy::CombatTarget => combat_target_conditions(goal, &mut conditions),
         InvalidationStrategy::DangerReduction => danger_reduction_conditions(&mut conditions),
+        InvalidationStrategy::FactionRegroup | InvalidationStrategy::InvestigateViolation => {
+            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+        }
         InvalidationStrategy::TreatWounds => treat_wounds_conditions(goal, &mut conditions),
         InvalidationStrategy::ProduceCommodity => {
             produce_commodity_conditions(goal, recipe_registry, &mut conditions);
@@ -102,9 +105,6 @@ pub(crate) fn derive_invalidation_conditions(
         InvalidationStrategy::ClaimOffice => claim_office_conditions(&mut conditions),
         InvalidationStrategy::SupportCandidateForOffice => {
             support_candidate_conditions(goal, &mut conditions);
-        }
-        InvalidationStrategy::InvestigateViolation => {
-            conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
         }
         InvalidationStrategy::PunishAccused => punish_accused_conditions(goal, &mut conditions),
     }
@@ -179,8 +179,8 @@ fn combat_target_conditions(
     goal: &GoalKind,
     conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
 ) {
-    let GoalKind::EngageHostile { target } = *goal else {
-        unreachable!("CombatTarget strategy requires EngageHostile goal");
+    let (GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target }) = *goal else {
+        unreachable!("CombatTarget strategy requires EngageHostile or RaidTarget goal");
     };
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
     conditions.insert(ExhaustionInvalidationCondition::WoundsChanged);

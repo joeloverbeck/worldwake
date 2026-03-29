@@ -115,7 +115,7 @@ fn goal_specific_feasibility(
         }
         (
             FeasibilityStrategy::ColocationOrDead,
-            GoalKind::EngageHostile { target },
+            GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target },
         ) => check_colocated_or_dead(view, agent, *target),
         (
             FeasibilityStrategy::ColocationOrDead,
@@ -133,7 +133,12 @@ fn goal_specific_feasibility(
             FeasibilityStrategy::ColocationOrDead,
             GoalKind::Accuse { accused, .. } | GoalKind::PunishAccused { accused, .. },
         ) => check_colocated_or_dead(view, agent, *accused),
-        (FeasibilityStrategy::NoOpinion, GoalKind::ReduceDanger | GoalKind::StealItem { .. }) => {
+        (
+            FeasibilityStrategy::NoOpinion,
+            GoalKind::ReduceDanger
+            | GoalKind::RegroupWithFaction { .. }
+            | GoalKind::StealItem { .. },
+        ) => {
             None
         }
         (FeasibilityStrategy::SellCheck, GoalKind::SellCommodity { commodity }) => {

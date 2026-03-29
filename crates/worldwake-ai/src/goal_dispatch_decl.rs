@@ -10,6 +10,7 @@ pub enum InvalidationStrategy {
     NeedWithPosition(HomeostaticNeedId),
     CombatTarget,
     DangerReduction,
+    FactionRegroup,
     TreatWounds,
     ProduceCommodity,
     PositionAndCommodity,
@@ -65,11 +66,13 @@ const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::MoveCargo,
 ];
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Attack];
+const RAID_TARGET_OPS: &[PlannerOpKind] = &[PlannerOpKind::Attack];
 const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Defend,
     PlannerOpKind::Heal,
 ];
+const REGROUP_WITH_FACTION_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel];
 const TREAT_WOUNDS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Heal,
@@ -176,11 +179,25 @@ static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::CombatTarget,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
+static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "RaidTarget",
+    provenance_family: Some(RankedGoalProvenanceFamily::Danger),
+    relevant_ops: RAID_TARGET_OPS,
+    invalidation_strategy: InvalidationStrategy::CombatTarget,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+};
 static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ReduceDanger",
     provenance_family: Some(RankedGoalProvenanceFamily::Danger),
     relevant_ops: REDUCE_DANGER_OPS,
     invalidation_strategy: InvalidationStrategy::DangerReduction,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
+static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "RegroupWithFaction",
+    provenance_family: None,
+    relevant_ops: REGROUP_WITH_FACTION_OPS,
+    invalidation_strategy: InvalidationStrategy::FactionRegroup,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
 static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
@@ -301,7 +318,9 @@ impl GoalDispatchKey {
             Self::Relieve => &DECL_RELIEVE,
             Self::Wash => &DECL_WASH,
             Self::EngageHostile => &DECL_ENGAGE_HOSTILE,
+            Self::RaidTarget => &DECL_RAID_TARGET,
             Self::ReduceDanger => &DECL_REDUCE_DANGER,
+            Self::RegroupWithFaction => &DECL_REGROUP_WITH_FACTION,
             Self::TreatWounds => &DECL_TREAT_WOUNDS,
             Self::ProduceCommodity => &DECL_PRODUCE_COMMODITY,
             Self::SellCommodity => &DECL_SELL_COMMODITY,
@@ -339,7 +358,9 @@ mod tests {
         GoalDispatchKey::Relieve,
         GoalDispatchKey::Wash,
         GoalDispatchKey::EngageHostile,
+        GoalDispatchKey::RaidTarget,
         GoalDispatchKey::ReduceDanger,
+        GoalDispatchKey::RegroupWithFaction,
         GoalDispatchKey::TreatWounds,
         GoalDispatchKey::ProduceCommodity,
         GoalDispatchKey::SellCommodity,
@@ -389,7 +410,11 @@ mod tests {
             GoalDispatchKey::Relieve => GoalKind::Relieve,
             GoalDispatchKey::Wash => GoalKind::Wash,
             GoalDispatchKey::EngageHostile => GoalKind::EngageHostile { target },
+            GoalDispatchKey::RaidTarget => GoalKind::RaidTarget { target },
             GoalDispatchKey::ReduceDanger => GoalKind::ReduceDanger,
+            GoalDispatchKey::RegroupWithFaction => GoalKind::RegroupWithFaction {
+                faction: office,
+            },
             GoalDispatchKey::TreatWounds => GoalKind::TreatWounds { patient: target },
             GoalDispatchKey::ProduceCommodity => GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(11),
@@ -452,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 24);
+        assert_eq!(ALL_KEYS.len(), 26);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -528,6 +553,7 @@ mod tests {
                 | InvalidationStrategy::AcquireRestock
                 | InvalidationStrategy::CombatTarget
                 | InvalidationStrategy::DangerReduction
+                | InvalidationStrategy::FactionRegroup
                 | InvalidationStrategy::TreatWounds
                 | InvalidationStrategy::ProduceCommodity
                 | InvalidationStrategy::PositionAndCommodity
@@ -595,6 +621,14 @@ mod tests {
                 .declaration()
                 .invalidation_strategy,
             GoalDispatchKey::PunishExile
+                .declaration()
+                .invalidation_strategy
+        );
+        assert_ne!(
+            GoalDispatchKey::RegroupWithFaction
+                .declaration()
+                .invalidation_strategy,
+            GoalDispatchKey::ReduceDanger
                 .declaration()
                 .invalidation_strategy
         );

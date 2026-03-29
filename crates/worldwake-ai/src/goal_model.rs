@@ -193,7 +193,7 @@ fn payload_override_from_affordance(
     };
 
     match goal {
-        GoalKind::EngageHostile { target } => payload
+        GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target } => payload
             .as_combat()
             .filter(|combat| combat.target == *target)
             .map(|_| Some(payload.clone()))
@@ -222,7 +222,7 @@ fn build_attack_payload_override(
     targets: &[EntityId],
 ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
     match goal {
-        GoalKind::EngageHostile { target } => {
+        GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target } => {
             let Some(actual_target) = targets.first().copied() else {
                 return Err(GoalPayloadOverrideError::MissingTarget);
             };
@@ -421,7 +421,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Relieve
             | GoalKind::Wash
             | GoalKind::EngageHostile { .. }
+            | GoalKind::RaidTarget { .. }
             | GoalKind::ReduceDanger
+            | GoalKind::RegroupWithFaction { .. }
             | GoalKind::TreatWounds { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
@@ -884,7 +886,7 @@ impl GoalKindPlannerExt for GoalKind {
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
                 .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
-            GoalKind::EngageHostile { target } => {
+            GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target } => {
                 state.is_dead(*target) || !state.visible_hostiles_for(actor).contains(target)
             }
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
@@ -918,6 +920,7 @@ impl GoalKindPlannerExt for GoalKind {
                 None => false,
             },
             GoalKind::ProduceCommodity { .. }
+            | GoalKind::RegroupWithFaction { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
@@ -947,12 +950,15 @@ impl GoalKindPlannerExt for GoalKind {
                 places
             }
             GoalKind::Relieve => places_with_place_tag(state, PlaceTag::Latrine),
-            GoalKind::EngageHostile { target } | GoalKind::TreatWounds { patient: target } => {
+            GoalKind::EngageHostile { target }
+            | GoalKind::RaidTarget { target }
+            | GoalKind::TreatWounds { patient: target } => {
                 state.effective_place(*target).into_iter().collect()
             }
             GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
+            | GoalKind::RegroupWithFaction { .. }
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
             GoalKind::ClaimOffice { office } => {
                 if office_succession_law(state, *office) == Some(SuccessionLaw::Force) {
@@ -1113,6 +1119,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Relieve
             | GoalKind::Wash
             | GoalKind::ReduceDanger
+            | GoalKind::RegroupWithFaction { .. }
             | GoalKind::ProduceCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }
@@ -1123,6 +1130,7 @@ impl GoalKindPlannerExt for GoalKind {
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target }
+            | GoalKind::RaidTarget { target }
             | GoalKind::TreatWounds { patient: target }
             | GoalKind::StealItem {
                 target_item: target,
@@ -1622,6 +1630,20 @@ impl GroundedGoal {
                 GoalKind::InvestigateViolation { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::Attack => match &self.key.kind {
+                GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*target])
+                }
+                GoalKind::EngageHostile { .. } | GoalKind::RaidTarget { .. } => {
+                    RootCandidateSynthesis::NoSynthesisPath
+                }
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             PlannerOpKind::Tell => match &self.key.kind {
                 GoalKind::ShareBelief { listener, .. }
                     if matches!(
@@ -1905,6 +1927,24 @@ mod tests {
         };
 
         assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Attack]);
+    }
+
+    #[test]
+    fn raid_target_goal_relevant_ops_are_attack_only() {
+        let goal = GoalKind::RaidTarget {
+            target: entity_id(4, 1),
+        };
+
+        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Attack]);
+    }
+
+    #[test]
+    fn regroup_with_faction_goal_relevant_ops_are_travel_only() {
+        let goal = GoalKind::RegroupWithFaction {
+            faction: entity_id(4, 2),
+        };
+
+        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Travel]);
     }
 
     #[test]
@@ -4864,7 +4904,7 @@ mod tests {
 
     #[test]
     fn all_goal_kind_variants_have_goal_relevant_places_impl() {
-        // This test ensures exhaustive coverage by creating all 17 variants
+        // This test ensures exhaustive coverage by creating all GoalKind variants
         // and calling goal_relevant_places. If a new variant is added without
         // an arm in the match, this will fail to compile.
         let (view, actor, _place_a, place_b, _place_c) = spatial_view();
@@ -4884,7 +4924,11 @@ mod tests {
             GoalKind::Relieve,
             GoalKind::Wash,
             GoalKind::EngageHostile { target: entity(99) },
+            GoalKind::RaidTarget { target: entity(97) },
             GoalKind::ReduceDanger,
+            GoalKind::RegroupWithFaction {
+                faction: entity(96),
+            },
             GoalKind::TreatWounds {
                 patient: entity(99),
             },
@@ -4935,7 +4979,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 20);
+        assert_eq!(goals.len(), 22);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -4961,7 +5005,9 @@ mod tests {
             GoalKind::Relieve,
             GoalKind::Wash,
             GoalKind::EngageHostile { target: place_b },
+            GoalKind::RaidTarget { target: place_b },
             GoalKind::ReduceDanger,
+            GoalKind::RegroupWithFaction { faction: actor },
             GoalKind::TreatWounds { patient: place_b },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0),
@@ -5136,6 +5182,13 @@ mod tests {
             assert!(goal.matches_binding(&[id(5)], PlannerOpKind::Attack));
         }
 
+        #[test]
+        fn flexible_goal_regroup_with_faction() {
+            let goal = GoalKind::RegroupWithFaction { faction: id(5) };
+            assert!(goal.matches_binding(&[id(6)], PlannerOpKind::Attack));
+            assert!(goal.matches_binding(&[id(6)], PlannerOpKind::Travel));
+        }
+
         // ── EngageHostile ─────────────────────────────────────────────
 
         #[test]
@@ -5149,6 +5202,19 @@ mod tests {
         fn engage_hostile_mismatch() {
             let goal = GoalKind::EngageHostile { target: id(10) };
             assert!(!goal.matches_binding(&[id(11)], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn raid_target_match() {
+            let target = id(12);
+            let goal = GoalKind::RaidTarget { target };
+            assert!(goal.matches_binding(&[target], PlannerOpKind::Attack));
+        }
+
+        #[test]
+        fn raid_target_mismatch() {
+            let goal = GoalKind::RaidTarget { target: id(12) };
+            assert!(!goal.matches_binding(&[id(13)], PlannerOpKind::Attack));
         }
 
         // ── TreatWounds ──────────────────────────────────────────────

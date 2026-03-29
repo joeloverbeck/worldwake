@@ -22,13 +22,15 @@ Authoring beasts, hunger, roads, caravans, towns, offices, and bounty procedures
 
 ### 2. No Ungrounded Triggers or Probabilities
 
-No outcome may bottom out at a naked designer dial such as `chanceOfEncounter`, `spawnRate`, `crimeChance`, `questSpawnChance`, or `eventProbability`.
+No outcome may bottom out at a naked designer dial such as `chanceOfEncounter`, `questSpawnChance`, `interestingEventProbability`, or any similar drama lever.
 
-Randomness is allowed only when it stands in for hidden local microstate, noisy perception, uncertain execution, or real variation the simulation does not model explicitly. In those cases, the distribution must still be a function of concrete, local state. Randomness must be seeded, attributable, and never used as a drama generator. Given the same seed and the same causal history, the simulation should reproduce the same outcome. Different seeds may diverge, but only through those same declared local uncertainty paths.
+Probabilistic transitions are allowed only when they belong to an explicit world process or hidden local microstate: imperfect perception, noisy execution, variable travel delay, disease exposure, fertility, collapse risk, weather, or another declared source of uncertainty. In those cases the distribution must still be a function of concrete local or boundary state, elapsed time, and declared inputs. It may not exist solely to pace drama.
+
+Randomness must be seeded, attributable, and replayable. Given the same seed, initial state, schedule, and external inputs, the simulation should reproduce the same outcome. Different seeds may diverge, but only through those same declared uncertainty paths.
 
 Utility weights, need rates, fear sensitivity, memory fidelity, and skill parameters may exist as concrete agent properties. “Interesting thing happens here 30% of the time” may not.
 
-**Test**: If changing a single abstract constant can create or remove an event without any corresponding change in world state, the design violates this principle.
+**Test**: If changing a single abstract constant can create or remove an event without any corresponding change in a lawful local or boundary world process, the design violates this principle.
 
 ### 3. Concrete State Over Abstract Scores
 
@@ -45,6 +47,8 @@ Every meaningful thing in the simulation has stable identity while it exists: ag
 Movement, splitting, merging, damage, consumption, creation, transfer, and destruction must be explicit world processes. If gold leaves a stash, there must have been a theft, payment, transfer, misplacement, destruction, or prior accounting error. If a bounty exists, someone or some institution must have created it at a place and time. If a caravan no longer has cargo, that cargo must be somewhere else, destroyed, or consumed.
 
 For quantities the simulation treats as conserved or explicitly accounted — coin, goods, bodies, ingredients, outputs, or claim-like balances — every increase, decrease, split, merge, creation, destruction, and transformation must have an explicit source or sink path. Harvests draw from sources. Crafts transform inputs into outputs. Regeneration, decay, inheritance, spoilage, write-offs, births, and minting must be equally explicit if they exist.
+
+When one entity is created from another entity or from a world process — ore into bars, bars into a sword, a cargo stack split into two sacks, a notice copied from an original, a wound becoming a scar, a corpse becoming remains — the model should preserve derivation lineage wherever downstream systems may care. Source/sink accounting says where quantities went. Derivation lineage says what this thing came from.
 
 **Test**: If you cannot answer “where did it go?”, “where did it come from?”, “who changed it?”, or “is this the same entity as before?” the model is too abstract.
 
@@ -86,7 +90,17 @@ Whenever multiple actors can lawfully attempt the same scarce or exclusive affor
 
 **Test**: For any action or contested affordance, name its preconditions, its consumed resources, its occupied capacities, its duration, what can interrupt it, and how contention is resolved if more than one actor tries it. If you cannot, the action is too abstract.
 
-### 9. Outcomes Are Granular and Leave Aftermath
+### 9. Scheduling, Simultaneity, and Tie-Breaking Are Part of the World Model
+
+A causal world needs an authoritative clock, a declared update regime, and explicit tie-break rules. The simulation must specify its temporal resolution, what can happen concurrently, when perception is sampled, when commitments are reconsidered, when effects become visible, and how same-time conflicts are resolved.
+
+Synchronous, asynchronous, event-driven, fixed-step, hybrid, and queued models are all acceptable, but the choice must be explicit and justified as part of the world model, not left as accidental engine behavior. Tick order, thread order, frame delta, and container iteration order may not silently decide who saw the dropped coin first, who entered the doorway first, or whether two blows landed.
+
+For every contested or concurrent case, the world must define a lawful resolution path: ordering rule, initiative rule, arbitration artifact, simultaneous resolution window, or event-queue semantics. Scheduling is not just performance machinery. It changes history.
+
+**Test**: If changing system execution order, thread count, frame rate, or container iteration order changes world meaning without an explicit in-world reason, the design is invalid.
+
+### 10. Outcomes Are Granular and Leave Aftermath
 
 Actions are not binary success/fail toggles. They create partial outcomes, side effects, leftovers, and future hooks.
 
@@ -96,7 +110,7 @@ Failure is not a dead end. Failure is new state.
 
 **Test**: If an action leaves the world almost unchanged except for a boolean flag, the model is too thin to support emergence.
 
-### 10. Every Positive Feedback Loop Needs a Physical Dampener
+### 11. Every Positive Feedback Loop Needs a Physical Dampener
 
 Whenever A increases B and B increases A, a concrete limiting mechanism must exist in the world: resource exhaustion, fatigue, competition, seasonality, distance, maintenance cost, social pushback, succession rules, natural recovery, supply constraints, or other real dampeners.
 
@@ -104,7 +118,7 @@ Never solve runaway loops with invisible caps or clamps. If a crime wave cannot 
 
 **Test**: For every amplifying loop, identify the world mechanism that slows, reverses, or saturates it. If the only dampener is a numeric cap, the design violates this principle.
 
-### 11. Performance May Compress Computation, Never Causality
+### 12. Performance May Compress Computation, Never Causality
 
 Optimization is allowed. Causal cheating is not.
 
@@ -116,11 +130,21 @@ The rule is simple: performance may change how the machine computes a result, ne
 
 **Test**: If an optimization or boundary causes an agent to observe a state that could not have arisen from any legal sequence of world events, the optimization is invalid.
 
+### 13. Boundaries and External Inputs Are World Processes
+
+Worldwake may model a region, not the whole universe. Therefore map edges, neighboring settlements, migrating herds, imported goods, weather fronts, refugees, taxes from outside powers, and other extra-local influences must enter through explicit boundary processes.
+
+A border crossing, remote stock, scheduled convoy, seasonal influx, upstream event feed, or lower-fidelity neighboring region is valid only if it has named source regions, travel or transmission delay, capacities, observables, and failure modes. A hidden spawner that creates fully formed actors, goods, or threats with no accountable origin is not.
+
+Off-map is not nowhere. It is either a lower-fidelity part of the same world or an explicitly modeled external driver. The same locality, provenance, and source/sink rules apply across the boundary even if representation changes.
+
+**Test**: If an external arrival cannot answer “from where?”, “by what route or channel?”, “under what constraints?”, and “what evidence of that arrival exists?”, the boundary model is cheating.
+
 ---
 
 ## III. Knowledge, Belief, and Evidence
 
-### 12. World State Is Not Belief State
+### 14. World State Is Not Belief State
 
 Ground truth and agent knowledge are separate layers. Agents act on what they believe, remember, infer, suspect, and are told — not on what the simulation knows to be true.
 
@@ -128,17 +152,17 @@ A planner may consult only the agent’s accessible belief state, memory, and kn
 
 **Test**: If an agent can plan around a fact it has never perceived, inferred, remembered, or been told, the design violates this principle.
 
-### 13. Knowledge Is Acquired Locally and Travels Physically
+### 15. Knowledge Is Acquired Locally and Travels Physically
 
 Knowledge enters an agent through perception, memory retrieval, inference, testimony, documents, traces, and other explicit carriers. Knowledge then moves through the world by physical or social transmission, with delay, distortion, source attribution, and possible loss.
 
-Where relevance matters, beliefs must also carry provenance, acquisition time, confidence, and freshness or chain metadata sufficient for agents to discount stale rumor, prefer direct evidence, and reason about who said what.
+Where relevance matters, beliefs must also carry provenance, claimed event time, acquisition time, confidence, freshness, and source-chain metadata sufficient for agents to discount stale rumor, reason about transmission delay, prefer direct evidence, compare conflicting witnesses, and ask not only “what do I believe?” but also “when do I think it happened?” and “when did I learn it?”
 
 Witness testimony, posted notices, letters, ledgers, rumors, tracks, blood trails, empty shelves, missing items, and public speeches are not flavor. They are mechanisms of causal propagation.
 
 **Test**: For any belief that changes an agent’s plan, identify how it was acquired, how it traveled, and what makes it more or less trustworthy than competing claims. If the answer is “the AI system knew,” the design violates this principle.
 
-### 14. Ignorance, Uncertainty, and Contradiction Are First-Class
+### 16. Ignorance, Uncertainty, and Contradiction Are First-Class
 
 Agents must be able to not know, to suspect, to misremember, to hold stale beliefs, and to believe false or conflicting reports. Unknown is not false. Unobserved is not empty. Contradiction is not a system error.
 
@@ -148,7 +172,7 @@ The simulation must support cases where one witness says the beast fled east, an
 
 **Test**: If the architecture forces every proposition into a clean true/false value for each agent at all times, it is too crude for the target simulation.
 
-### 15. Surprise Comes From Violated Expectation
+### 17. Surprise Comes From Violated Expectation
 
 Agents notice anomalies relative to prior expectation, commitment, claim, count, reservation, or routine. A missing stash matters because the owner expected gold there. A market shortage matters because a shopper expected food to be available. A sudden dragon attack interrupts a trip because the agent expected the route to be survivable.
 
@@ -156,7 +180,7 @@ This principle forbids cheap omniscience about absences. Agents do not detect �
 
 **Test**: If an agent can report theft without a prior expectation, claim, or memory concerning the missing goods, the design violates this principle.
 
-### 16. Memory, Evidence, and Records Are World State
+### 18. Memory, Evidence, and Records Are World State
 
 Memories, accusations, warrants, contracts, notices, ledgers, titles, debts, and other records are not UI-only abstractions. They are state that can be created, copied, transmitted, forgotten, destroyed, forged, or contested.
 
@@ -168,15 +192,17 @@ Evidence also includes physical aftermath: corpses, tracks, broken locks, spille
 
 ## IV. Agents, Institutions, and Social Order
 
-### 17. Agent Symmetry
+### 19. Agent Symmetry
 
 The engine makes no rule distinction between human-controlled and AI-controlled agents. Both use the same bodies, inventories, actions, preconditions, consequences, social rules, and world constraints. `ControlSource` changes only who chooses the next action, never what reality allows.
 
 The human may swap into any agent without the world changing its laws.
 
+The same restriction applies to normal player-facing information. Outside explicit debug, authoring, or replay tools, the interface may surface only what the currently controlled agent could lawfully perceive, infer, remember, or obtain from records and testimony. UI convenience must not become an omniscient side channel.
+
 **Test**: Swap an agent from AI to human or human to AI. The simulation must continue with the same legal action set and the same rule enforcement.
 
-### 18. Resource-Bounded Practical Reasoning Over Scripts
+### 20. Resource-Bounded Practical Reasoning Over Scripts
 
 AI agents must reason as limited actors in a dynamic world, using beliefs, priorities, habits, skills, and commitments to choose actions. Plans exist to make reasoning tractable under limited time and limited knowledge, not to hard-script a performance.
 
@@ -184,9 +210,11 @@ Goals name desired world conditions, not privileged one-step solutions. Reaching
 
 The implementation may evolve — GOAP, utility systems, BDI, HTN, or hybrids are all acceptable — but the standard does not change: decisions must be explainable as what this agent, with this belief state and these priorities, would try to do.
 
+To remain tractable, agents may use agent-local summaries, heuristics, and bounded lookahead derived from their accessible belief state. These abstractions are legal because they are part of the agent’s reasoning apparatus, not substitutes for authoritative world state. They must remain explainable in terms of what this agent has perceived, remembered, been told, or inferred.
+
 **Test**: For any decision, you must be able to explain it as “Agent X chose Y because they believed Z and cared about Q.” If the explanation is “the behavior tree hit this node” or “the quest logic told them to,” the design violates this principle.
 
-### 19. Intentions Are Revisable Commitments
+### 21. Intentions Are Revisable Commitments
 
 Agents need commitments so they do not thrash between options every tick. But commitments are never rails. They are stable intentions held under assumptions.
 
@@ -196,7 +224,7 @@ Agents must monitor the assumptions beneath an active intention and suspend, rev
 
 **Test**: If an agent cannot abandon or revise a plan when its assumptions are broken by new information or by another actor legitimately taking the opportunity first, the architecture cannot support emergent interruption.
 
-### 20. Agent Diversity Through Concrete Variation
+### 22. Agent Diversity Through Concrete Variation
 
 Agents in the same role must differ in needs, skills, values, loyalties, courage, greed, patience, memory reliability, perception fidelity, and tolerance for risk or ambiguity. These differences come from concrete per-agent parameters, histories, injuries, relationships, and learned experience.
 
@@ -204,7 +232,7 @@ Homogeneous populations collapse into herd behavior and single-path outcomes. Di
 
 **Test**: Two agents with the same role and similar beliefs should still sometimes choose differently because they are not the same person.
 
-### 21. Roles, Offices, and Institutions Are World State
+### 23. Roles, Offices, and Institutions Are World State
 
 Authority is not a global singleton service. It is a socially recognized role embedded in places, organizations, rules, records, and material resources.
 
@@ -214,7 +242,7 @@ Institutions act through agents, artifacts, and rules — never through omniscie
 
 **Test**: If “the town” can do something without a specific office, rule, record, place, or actor that makes it happen, the design violates this principle.
 
-### 22. Ownership, Custody, Access, Obligation, and Jurisdiction Are Distinct
+### 24. Ownership, Custody, Access, Obligation, and Jurisdiction Are Distinct
 
 Possession is not ownership. Ownership is not permission. Permission is not capability. Debt is not payment. Claim is not custody. Jurisdiction is not universal.
 
@@ -231,7 +259,7 @@ This applies to places, containers, offices, and records as much as to goods.
 
 **Test**: If the model cannot represent “the gold is the guild’s, the chest holds it, my servant has the key, my office lets me open it, and the city watch has jurisdiction,” it is too coarse for the target world.
 
-### 23. Social Artifacts Are First-Class: Contracts, Notices, Bounties, Debts, Accusations, Rumors, Warrants
+### 25. Social Artifacts Are First-Class: Contracts, Notices, Bounties, Debts, Accusations, Rumors, Warrants
 
 There is no special quest system. There are only world entities and records that people create, discover, believe, dispute, ignore, accept, or fulfill.
 
@@ -245,23 +273,27 @@ If these are only UI abstractions or hidden controller state, emergence dies.
 
 ## V. System Architecture
 
-### 24. Systems Interact Through State, Not Through Each Other
+### 26. Systems Interact Through State, Not Through Each Other
 
-Systems do not call each other’s logic directly to force outcomes. They read world state, local beliefs, and prior records; they write new state, effects, and records. Influence travels through state mutation and event history, not through cross-system command paths.
+Systems do not imperatively command each other to force outcomes. They read authoritative state, local beliefs, and prior records; they write new state, effects, and records. Influence travels through state mutation and event history, not through hidden cross-system authority.
 
-Combat creates wounds. Needs react to wounds. Planning reacts to needs. Institutions react to reports. None of these systems should need to know each other’s internal logic.
+Shared domain services are allowed when they are generic computations over authoritative state — pathfinding, line-of-sight, legality checks, reservation arbitration, pricing calculations, ballistics, planner search, or similar solvers. Such services compute lawful consequences; they do not grant exceptions or bypass the world model.
 
-**Test**: If one system must directly invoke another system’s behavior to make the world work, the architecture is too coupled for maximal emergence.
+Combat creates wounds. Needs react to wounds. Planning reacts to needs. Institutions react to reports. None of these systems should need privileged knowledge of each other’s internals to make the world work.
 
-### 25. Derived Summaries Are Caches, Never Truth
+**Test**: If one system must directly invoke another system’s privileged behavior to make the world work, the architecture is too coupled for maximal emergence.
 
-Threat maps, route advisories, inventory summaries, market views, reputation views, reservation lists, and other aggregates may exist for performance, UI, or planning convenience. But they must be derived from concrete source state, invalidated when source state changes, and always replaceable by recomputation.
+### 27. Derived Summaries Are Caches, Never Truth
+
+Derived summaries used for performance, UI, or planning convenience — threat heatmaps, pathing cost fields, inventory rollups, market snapshots, planner-side reputation estimates, reservation indices, and similar aggregates — may exist only as views over concrete source state. They must be invalidated when source state changes and always remain replaceable by recomputation.
+
+Do not confuse caches with social artifacts. A posted warning, rumor, public notice, public reputation record, queue token, grant, or reservation artifact is not a cache if it exists as a concrete object, belief, notice, or record in the world. Such artifacts may be stale, false, disputed, or destroyed, but they are real world state precisely because agents can perceive and act on them.
 
 A cached danger estimate is acceptable. A danger estimate that becomes more real than the actual bandits is not.
 
 **Test**: Delete the cache and recompute from source state. If the world’s meaning changes, the cache was illegally promoted to truth.
 
-### 26. No Backward Compatibility in Live Authority Paths
+### 28. No Backward Compatibility in Live Authority Paths
 
 Do not preserve dead abstractions, alias paths, compatibility layers, deprecated shims, or legacy systems inside the live authoritative simulation simply because old code once depended on them. When the design changes, the live authority path changes with it. Broken callers get updated or removed.
 
@@ -271,7 +303,7 @@ This keeps the simulation honest and prevents fossilized logic from silently byp
 
 **Test**: If you are adding a wrapper so an obsolete abstraction can continue to mutate live world meaning beside the new one, stop and pay the migration cost now.
 
-### 27. Debuggability Is a Product Feature
+### 29. Debuggability Is a Product Feature
 
 Emergence without introspection is indistinguishable from bugs.
 
@@ -289,7 +321,7 @@ The answers must be reconstructable from state, beliefs, records, and causal his
 
 **Test**: For any nontrivial event chain, you must be able to inspect both the causal path and the knowledge path separately.
 
-### 28. Every New System Spec Must Declare Its Causal Hooks
+### 30. Every New System Spec Must Declare Its Causal Hooks
 
 Every system proposal must explicitly state:
 1. what concrete entities, relations, and records it introduces,
@@ -302,11 +334,25 @@ Every system proposal must explicitly state:
 8. what physical dampeners limit those loops,
 9. what derived views or optimizations are allowed,
 10. how agents can become wrong about it, how they can correct those errors, and what provenance or freshness markers matter,
-11. and what must survive save/load, replay, and offscreen compression without changing world meaning.
+11. what temporal and spatial resolution it assumes, what scheduling regime it depends on, and how simultaneity and tie-breaking are resolved,
+12. what boundary conditions, external drivers, or off-map interfaces affect it, and how those inputs are represented, delayed, observed, and rate-limited,
+13. what target patterns, invariants, regression cases, and falsification checks will be used to tell whether the system is behaving credibly,
+14. and what must survive save/load, replay, and offscreen compression without changing world meaning.
+15. and what must survive save/load, replay, and offscreen compression without changing world meaning.
 
 If a proposed system cannot answer those questions, it is not specified well enough to join this simulation.
 
 **Test**: A system spec that has behavior but no declared consequences, knowledge flow, contention rules, or failure states is incomplete by definition.
+
+### 31. Validation and Falsification Are First-Class
+
+Interesting-looking output is not evidence that the model is right. Every subsystem and every scenario class must declare the patterns it is supposed to reproduce, the artifacts it must never produce, the parameters most likely to destabilize it, and the traces by which developers will detect failure.
+
+Canonical scenario success is necessary but insufficient. The architecture must also support adversarial sampling, sensitivity sweeps, causal trace inspection, and comparison against simplified referents or prior implementations when appropriate.
+
+A believable run is not enough. The standard is fitness for purpose under explicit evaluation criteria.
+
+**Test**: If a feature can only be judged by “it looked plausible in a run I watched,” it is not validated enough to join the authoritative simulation.
 
 ---
 
@@ -393,6 +439,51 @@ The architecture must be able to produce this chain from explicit contention, sc
 8. Any resulting line, grant, blocker, or reservation is inspectable world state rather than invisible runtime magic.
 
 **Failure smell**: If selecting a plan secretly guarantees future access, if dead claimants continue blocking the line, or if contention is resolved only by hidden tick order with no inspectable world state, the architecture is wrong.
+
+### F. Office Vacancy -> Succession Delay -> Patrol Gap -> Route Predation
+
+The architecture must be able to produce this chain from generic institutions, succession, budgeting, labor allocation, and opportunism:
+
+1. A settlement office with real duties, jurisdiction, and assets exists through a specific office-holder or chain of delegated agents.
+2. The office-holder dies, disappears, resigns, is removed, or becomes incapacitated through ordinary world processes.
+3. The office becomes vacant or partially degraded according to actual succession rules, records, and local recognition.
+4. Duties previously coordinated through that office are delayed, partially performed, contested, or dropped.
+5. Patrol coverage, escort assignment, bounty approval, or treasury release weakens because of that vacancy rather than because a hidden scenario flag fired.
+6. Other agents notice the resulting gap only through local evidence, reports, changed routines, or observed non-performance.
+7. Opportunistic actors exploit the gap through ordinary planning and local information.
+8. The institution either recovers through succession, delegation, improvisation, outside intervention, or continued decline.
+
+**Failure smell**: If “the town” seamlessly continues performing office-dependent functions without a lawful successor, delegated actor, or record path, the institutional model is fake.
+
+### G. False Rumor -> Wrongful Accusation -> Contested Evidence -> Correction or Miscarriage
+
+The architecture must be able to produce this chain from generic belief propagation, contradiction, and institutional judgment:
+
+1. A false or distorted claim enters circulation through rumor, error, forgery, panic, bias, or deliberate deception.
+2. Different agents acquire that claim through explicit carriers, with source, age, and confidence metadata that may be incomplete or wrong.
+3. One or more agents act on the false claim by accusing, avoiding, pursuing, searching, denying access, or reporting it.
+4. Institutions or other agents respond according to their beliefs, procedures, incentives, and available evidence rather than omniscient truth.
+5. New evidence later appears through witness conflict, alibi, physical traces, ledger mismatch, confession, or failed prediction.
+6. Different actors update at different times depending on what information reaches them.
+7. The world supports both correction and non-correction: exoneration, apology, retaliation, bureaucratic inertia, stubborn belief, or punishment that continues despite the truth.
+8. The record of the accusation, the later evidence, and the timing of each must remain inspectable.
+
+**Failure smell**: If false reports cannot propagate into real downstream action, or if institutions are corrected instantly by ground truth without an information path, the belief architecture is too clean.
+
+### H. Remote Shock -> Delayed Arrival Failure -> Local Shortage -> Substitution or Exit
+
+The architecture must be able to produce this chain from boundary processes, transport delay, inventories, and replanning:
+
+1. A settlement depends in part on goods, people, animals, or information arriving from beyond the currently simulated core area.
+2. Those arrivals are represented through explicit boundary processes, remote stocks, and travel or transmission delay.
+3. A disruption occurs in the external region or along the boundary path through ordinary world processes: raid, storm, embargo, bridge collapse, disease, migration pressure, or upstream shortage.
+4. The expected arrival is delayed, reduced, rerouted, or canceled through that causal chain.
+5. Local agents continue to act on their prior expectations until local evidence or reports update them.
+6. Inventories tighten through actual consumption and failed replenishment, not a hidden scarcity flag.
+7. Buyers, institutions, and suppliers react by substitution, rationing, queueing, hoarding, theft, departure, repricing, or aid requests depending on beliefs and incentives.
+8. Recovery requires actual new inflow, local production, demand destruction, or population movement.
+
+**Failure smell**: If off-map dependence exists only when a content script wants drama, or if replacement goods appear without a lawful source path, the boundary model is fake.
 
 ---
 

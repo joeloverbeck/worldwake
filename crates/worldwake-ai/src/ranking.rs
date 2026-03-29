@@ -341,6 +341,8 @@ fn priority_class(
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
         | GoalKind::MoveCargo { .. }
+        | GoalKind::RaidTarget { .. }
+        | GoalKind::RegroupWithFaction { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Medium,
         GoalKind::Sleep => drive_priority(
@@ -512,6 +514,10 @@ fn motive_score(
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
+        GoalKind::RaidTarget { .. } | GoalKind::ClaimOffice { .. } => {
+            u32::from(context.utility.enterprise_weight.value())
+        }
+        GoalKind::RegroupWithFaction { .. } => u32::from(context.utility.social_weight.value()),
         GoalKind::TreatWounds { patient } => {
             let patient_pain = derive_pain_pressure(context.view, patient);
             if patient == context.agent {
@@ -556,7 +562,6 @@ fn motive_score(
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
-        GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
             .view
             .loyalty_to(context.agent, candidate)
@@ -1069,21 +1074,23 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::Relieve => 3,
         GoalKind::Wash => 4,
         GoalKind::EngageHostile { .. } => 5,
-        GoalKind::ReduceDanger => 6,
-        GoalKind::TreatWounds { .. } => 7,
-        GoalKind::ProduceCommodity { .. } => 8,
-        GoalKind::SellCommodity { .. } => 9,
-        GoalKind::RestockCommodity { .. } => 10,
-        GoalKind::MoveCargo { .. } => 11,
-        GoalKind::LootCorpse { .. } => 12,
-        GoalKind::BuryCorpse { .. } => 13,
-        GoalKind::ShareBelief { .. } => 14,
-        GoalKind::ClaimOffice { .. } => 15,
-        GoalKind::SupportCandidateForOffice { .. } => 16,
-        GoalKind::InvestigateViolation { .. } => 17,
-        GoalKind::StealItem { .. } => 18,
-        GoalKind::Accuse { .. } => 19,
-        GoalKind::PunishAccused { .. } => 20,
+        GoalKind::RaidTarget { .. } => 6,
+        GoalKind::ReduceDanger => 7,
+        GoalKind::RegroupWithFaction { .. } => 8,
+        GoalKind::TreatWounds { .. } => 9,
+        GoalKind::ProduceCommodity { .. } => 10,
+        GoalKind::SellCommodity { .. } => 11,
+        GoalKind::RestockCommodity { .. } => 12,
+        GoalKind::MoveCargo { .. } => 13,
+        GoalKind::LootCorpse { .. } => 14,
+        GoalKind::BuryCorpse { .. } => 15,
+        GoalKind::ShareBelief { .. } => 16,
+        GoalKind::ClaimOffice { .. } => 17,
+        GoalKind::SupportCandidateForOffice { .. } => 18,
+        GoalKind::InvestigateViolation { .. } => 19,
+        GoalKind::StealItem { .. } => 20,
+        GoalKind::Accuse { .. } => 21,
+        GoalKind::PunishAccused { .. } => 22,
     }
 }
 

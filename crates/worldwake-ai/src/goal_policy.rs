@@ -148,6 +148,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
 
         // --- Combat + enterprise goals (no suppression, no penalty, normal interrupt) ---
         GoalKind::EngageHostile { .. }
+        | GoalKind::RaidTarget { .. }
         | GoalKind::ProduceCommodity { .. }
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
@@ -166,6 +167,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
 
         // --- Corpse / social / political goals (suppressed under stress, normal interrupt) ---
         GoalKind::BuryCorpse { .. }
+        | GoalKind::RegroupWithFaction { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }

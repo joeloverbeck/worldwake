@@ -27,7 +27,13 @@ pub enum GoalKind {
     EngageHostile {
         target: EntityId,
     },
+    RaidTarget {
+        target: EntityId,
+    },
     ReduceDanger,
+    RegroupWithFaction {
+        faction: EntityId,
+    },
     TreatWounds {
         patient: EntityId,
     },
@@ -122,6 +128,7 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::SellCommodity { commodity }
             | GoalKind::RestockCommodity { commodity } => (Some(commodity), None, None),
             GoalKind::EngageHostile { target }
+            | GoalKind::RaidTarget { target }
             | GoalKind::TreatWounds { patient: target }
             | GoalKind::LootCorpse { corpse: target }
             | GoalKind::ClaimOffice { office: target }
@@ -145,6 +152,7 @@ impl From<GoalKind> for GoalKey {
                 burial_site,
             } => (None, Some(corpse), Some(burial_site)),
             GoalKind::ShareBelief { listener, .. } => (None, Some(listener), None),
+            GoalKind::RegroupWithFaction { faction } => (None, Some(faction), None),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 (None, Some(office), Some(candidate))
             }
@@ -250,6 +258,27 @@ mod tests {
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(target));
         assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_extracts_canonical_entity_for_raid_target() {
+        let target = entity_id(8, 3);
+        let key = GoalKey::from(&GoalKind::RaidTarget { target });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(target));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn raid_target_goal_roundtrips_through_bincode() {
+        let target = entity_id(21, 1);
+        let goal = GoalKind::RaidTarget { target };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
     }
 
     #[test]
@@ -456,6 +485,27 @@ mod tests {
         assert_eq!(key.commodity, None);
         assert_eq!(key.entity, Some(office));
         assert_eq!(key.place, Some(candidate));
+    }
+
+    #[test]
+    fn goal_key_extracts_faction_for_regroup_with_faction() {
+        let faction = entity_id(18, 2);
+        let key = GoalKey::from(GoalKind::RegroupWithFaction { faction });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(faction));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn regroup_with_faction_goal_roundtrips_through_bincode() {
+        let faction = entity_id(18, 3);
+        let goal = GoalKind::RegroupWithFaction { faction };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
     }
 
     #[test]

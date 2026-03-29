@@ -12,7 +12,9 @@ pub enum GoalDispatchKey {
     Relieve,
     Wash,
     EngageHostile,
+    RaidTarget,
     ReduceDanger,
+    RegroupWithFaction,
     TreatWounds,
     ProduceCommodity,
     SellCommodity,
@@ -31,7 +33,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 26] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -40,7 +42,9 @@ impl GoalDispatchKey {
         Self::Relieve,
         Self::Wash,
         Self::EngageHostile,
+        Self::RaidTarget,
         Self::ReduceDanger,
+        Self::RegroupWithFaction,
         Self::TreatWounds,
         Self::ProduceCommodity,
         Self::SellCommodity,
@@ -76,7 +80,9 @@ impl GoalDispatchKey {
             GoalKind::Relieve => Self::Relieve,
             GoalKind::Wash => Self::Wash,
             GoalKind::EngageHostile { .. } => Self::EngageHostile,
+            GoalKind::RaidTarget { .. } => Self::RaidTarget,
             GoalKind::ReduceDanger => Self::ReduceDanger,
+            GoalKind::RegroupWithFaction { .. } => Self::RegroupWithFaction,
             GoalKind::TreatWounds { .. } => Self::TreatWounds,
             GoalKind::ProduceCommodity { .. } => Self::ProduceCommodity,
             GoalKind::SellCommodity { .. } => Self::SellCommodity,
@@ -217,7 +223,11 @@ mod tests {
             GoalKind::Relieve,
             GoalKind::Wash,
             GoalKind::EngageHostile { target },
+            GoalKind::RaidTarget { target },
             GoalKind::ReduceDanger,
+            GoalKind::RegroupWithFaction {
+                faction: office,
+            },
             GoalKind::TreatWounds { patient: target },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(7),
@@ -269,7 +279,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 21);
+        assert_eq!(goals.len(), 23);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
         }
@@ -278,12 +288,32 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 24);
+        assert_eq!(GoalDispatchKey::all().len(), 26);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),
                 "duplicate key in exhaustive dispatch-key list: {key:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_goal_dispatch_key_assigns_distinct_bandit_goal_variants() {
+        let target = entity(40);
+        let faction = entity(41);
+
+        assert_eq!(
+            GoalDispatchKey::from(GoalKind::RaidTarget { target }),
+            GoalDispatchKey::RaidTarget
+        );
+        assert_eq!(
+            GoalDispatchKey::from(GoalKind::RegroupWithFaction { faction }),
+            GoalDispatchKey::RegroupWithFaction
+        );
+        assert_ne!(GoalDispatchKey::RaidTarget, GoalDispatchKey::EngageHostile);
+        assert_ne!(
+            GoalDispatchKey::RegroupWithFaction,
+            GoalDispatchKey::ReduceDanger
+        );
     }
 }
