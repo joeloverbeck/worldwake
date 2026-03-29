@@ -19,12 +19,14 @@ The AI ranking system needs to query observed activity from agent beliefs, but `
 5. `OmniscientBeliefView` at `crates/worldwake-sim/src/omniscient_belief_view.rs` implements `GoalBeliefView` directly (or via the macro) — must also implement the new methods.
 6. `BelievedEntityState` will have `believed_activity: Option<BelievedActivity>` after S35OBSACTSIG-001.
 7. `known_entity_beliefs()` returns `Vec<(EntityId, BelievedEntityState)>` — the `agents_active_at()` implementation will iterate this to filter by place, domain, and target.
+8. The recently landed perception-side `observe_active_actions()` helper in `crates/worldwake-systems/src/perception.rs` projects `believed_activity` correctly, but any future refactor that unifies passive/entity and active/activity direct-observation bookkeeping is a perception-layer concern, not a belief-view concern. This ticket should consume the belief shape as-is rather than absorb that refactor.
 
 ## Architecture Check
 
 1. Adding query methods to `GoalBeliefView` follows the established pattern — the trait is the AI's window into beliefs. All existing belief queries follow this pattern.
 2. `agents_active_at()` is a derived computation (iterates beliefs, filters) — never stored. Follows P25 (derived summaries are caches, never truth).
 3. No backward compatibility shims — new trait methods added directly.
+4. This ticket should not pull perception internals into `worldwake-sim`. If observation-path dedup becomes desirable, it belongs in a separate perception-focused ticket so the trait work stays narrowly about AI-facing read APIs.
 
 ## Verification Layers
 
@@ -78,6 +80,7 @@ Implement `agents_active_at()`: iterate `known_entity_beliefs`, filter for entit
 ## Out of Scope
 
 - Perception logic that populates `BelievedActivity` (S35OBSACTSIG-003)
+- Any perception-pipeline refactor that unifies passive/entity and active/activity direct-observation bookkeeping
 - Ranking discount that consumes these queries (S35OBSACTSIG-006)
 - `BelievedActivity` type definition (S35OBSACTSIG-001, prerequisite)
 - `PlanningState` / snapshot-level belief views — only runtime belief views are in scope

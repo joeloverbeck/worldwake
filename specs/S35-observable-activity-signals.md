@@ -186,7 +186,7 @@ Added as `pub competition_discount: Option<CompetitionDiscount>` on `RankedGoal`
 
 ### 7. Save/load
 
-`BelievedActivity` must serialize as part of `AgentBeliefStore` (via `BelievedEntityState`). No `SAVE_FORMAT_VERSION` bump needed if `BelievedActivity` is added as an `Option` field (deserializes as `None` for old saves). `activity_awareness_weight` on `UtilityProfile` similarly uses `#[serde(default)]`.
+`BelievedActivity` must serialize as part of `AgentBeliefStore` (via `BelievedEntityState`) when that field lands. `activity_awareness_weight` on `UtilityProfile` is a forward-only schema addition on an existing serialized component: current-head constructors, fixtures, scenarios, and save payloads must be updated to include the field. Do not use `#[serde(default)]` or any other backward-compatibility shim for the new `UtilityProfile` field.
 
 ## Component Registration
 

@@ -20,6 +20,7 @@ The full observable-activity pipeline needs an end-to-end golden test proving th
 6. The test scenario needs: two places each with a resource source, two agents with different `activity_awareness_weight`, one agent already harvesting at source A, second agent choosing between source A (occupied) and source B (unoccupied).
 7. Deterministic replay is verified via `replay_and_verify()` — standard golden test pattern.
 8. After all S35 tickets are complete, `perception_system()` will observe active actions, `rank_candidates()` will apply competition discount, and agents will prefer uncontested resources.
+9. Any future perception-layer cleanup that unifies passive/entity and active/activity direct-observation bookkeeping is not required to prove the end-to-end invariant in this ticket. This golden should verify behavior through the public pipeline, not absorb an internal refactor.
 
 ## Architecture Check
 
@@ -27,6 +28,7 @@ The full observable-activity pipeline needs an end-to-end golden test proving th
 2. Two resource sources at two places ensures the agent has a genuine alternative — not testing suppression, but redirection.
 3. Different `activity_awareness_weight` values demonstrate P20 (agent diversity).
 4. Replay companion ensures determinism (P11 — performance may compress computation, never causality).
+5. This ticket should remain proof-only. If the scenario exposes awkward perception internals, that follow-up belongs in a separate perception ticket rather than being smuggled into the golden.
 
 ## Verification Layers
 
@@ -71,6 +73,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` to regenerate tes
 ## Out of Scope
 
 - Any production code changes — this is test-only
+- Any perception-pipeline refactor that unifies passive/entity and active/activity direct-observation bookkeeping
 - Trade competition golden test (could be a follow-up)
 - Multi-agent competition beyond 2-3 agents
 - Performance benchmarking

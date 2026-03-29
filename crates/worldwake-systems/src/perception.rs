@@ -1,13 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    build_believed_entity_state, AgentBeliefStore, BelievedInstitutionalClaim, CauseRef,
-    ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
-    EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+    build_believed_entity_state, AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim,
+    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog,
+    EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, MismatchKind, PendingEvent, PerceptionSource, RelationDelta,
     RelationValue, SocialObservation, SocialObservationDetail, SocialObservationKind, StateDelta,
     TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
 };
-use worldwake_sim::{PerceptionTraceEvent, SystemError, SystemExecutionContext};
+use worldwake_sim::{
+    ActionDefRegistry, ActionInstance, ActionInstanceId, PerceptionTraceEvent, SystemError,
+    SystemExecutionContext,
+};
 
 #[derive(Copy, Clone)]
 struct DiscoveryContext {
@@ -21,8 +24,8 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         world,
         event_log,
         rng,
-        active_actions: _active_actions,
-        action_defs: _action_defs,
+        active_actions,
+        action_defs,
         politics_trace: _,
         mut perception_trace,
         tick,
@@ -32,6 +35,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     let mut updated_stores = BTreeMap::<EntityId, AgentBeliefStore>::new();
 
     observe_passive_local_entities(world, event_log, tick, rng, &mut updated_stores);
+    observe_active_actions(world, tick, rng, active_actions, action_defs, &mut updated_stores);
 
     for event_id in event_ids {
         let Some(record) = event_log.get(event_id).cloned() else {
@@ -248,6 +252,114 @@ fn observe_passive_local_entities(
             store.enforce_capacity(&profile, tick);
         } else {
             updated_stores.remove(&agent);
+        }
+    }
+}
+
+fn observe_active_actions(
+    world: &World,
+    tick: worldwake_core::Tick,
+    rng: &mut worldwake_sim::DeterministicRng,
+    active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
+    updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
+) {
+    let mut active_by_actor = BTreeMap::<EntityId, &ActionInstance>::new();
+    for instance in active_actions.values() {
+        active_by_actor.entry(instance.actor).or_insert(instance);
+    }
+
+    for (agent, _) in world.query_agent_data() {
+        if world.get_component_dead_at(agent).is_some() {
+            continue;
+        }
+        let Some(profile) = world.get_component_perception_profile(agent).copied() else {
+            continue;
+        };
+        let Some(place) = world.effective_place(agent) else {
+            continue;
+        };
+
+        let Some(base_store) = updated_stores
+            .get(&agent)
+            .cloned()
+            .or_else(|| world.get_component_agent_belief_store(agent).cloned())
+        else {
+            continue;
+        };
+
+        let mut store = base_store.clone();
+        let mut changed = false;
+
+        let directly_observed_subjects = base_store
+            .known_entities
+            .iter()
+            .filter_map(|(subject, belief)| {
+                if *subject == agent
+                    || belief.last_known_place != Some(place)
+                    || belief.observed_tick != tick
+                    || belief.source != PerceptionSource::DirectObservation
+                {
+                    return None;
+                }
+                Some(*subject)
+            })
+            .collect::<Vec<_>>();
+
+        for subject in directly_observed_subjects {
+            let next_activity = match active_by_actor.get(&subject) {
+                Some(instance) => {
+                    let Some(def) = action_defs.get(instance.def_id) else {
+                        continue;
+                    };
+                    Some(BelievedActivity {
+                        action_domain: def.domain,
+                        target: instance.targets.first().copied(),
+                        observed_tick: tick,
+                    })
+                }
+                None => None,
+            };
+
+            let current_activity = store
+                .get_entity(&subject)
+                .and_then(|belief| belief.believed_activity.clone());
+            if current_activity != next_activity {
+                if let Some(belief) = store.known_entities.get_mut(&subject) {
+                    belief.believed_activity = next_activity;
+                    changed = true;
+                }
+            }
+        }
+
+        let departed_subjects = base_store
+            .known_entities
+            .iter()
+            .filter_map(|(subject, belief)| {
+                if *subject == agent
+                    || belief.last_known_place != Some(place)
+                    || belief.believed_activity.is_none()
+                    || world.effective_place(*subject) == Some(place)
+                {
+                    return None;
+                }
+                Some(*subject)
+            })
+            .collect::<Vec<_>>();
+
+        for subject in departed_subjects {
+            if !passes_observation_check(profile.observation_fidelity.value(), rng) {
+                continue;
+            }
+            if let Some(belief) = store.known_entities.get_mut(&subject) {
+                if belief.believed_activity.take().is_some() {
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            updated_stores.insert(agent, store);
         }
     }
 }
@@ -764,9 +876,11 @@ mod tests {
     use super::{perception_system, resolve_witnesses, social_kind, social_observations_for_event};
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
-        BeliefConfidencePolicy, BelievedEntityState, CauseRef, CommodityKind, ComponentDelta,
+        ActionDefId, ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
+        CauseRef, CommodityKind, ComponentDelta,
         ComponentKind, ComponentValue, ControlSource, DeadAt, EntityKind, EventLog, EventPayload,
         EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, MismatchKind, ObservedEntitySnapshot, OfficeForceState,
@@ -776,7 +890,12 @@ mod tests {
         TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
         WorldTxn,
     };
-    use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
+    use worldwake_sim::{
+        ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, ReservationReq, SystemExecutionContext,
+        SystemId, TargetSpec,
+    };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
@@ -862,6 +981,347 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
         }));
+    }
+
+    fn register_test_action(
+        defs: &mut ActionDefRegistry,
+        domain: ActionDomain,
+        name: &str,
+    ) -> ActionDefId {
+        let id = ActionDefId(defs.len() as u32);
+        defs.register(ActionDef {
+            id,
+            name: name.to_string(),
+            domain,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::SpecificEntity(worldwake_core::EntityId {
+                slot: 999,
+                generation: 1,
+            })],
+            preconditions: vec![Precondition::TargetExists(0)],
+            reservation_requirements: vec![ReservationReq { target_index: 0 }],
+            duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![Precondition::TargetExists(0)],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        })
+    }
+
+    fn active_instance(
+        def_id: ActionDefId,
+        actor: worldwake_core::EntityId,
+        targets: Vec<worldwake_core::EntityId>,
+    ) -> ActionInstance {
+        ActionInstance {
+            instance_id: ActionInstanceId(0),
+            def_id,
+            payload: ActionPayload::None,
+            actor,
+            targets,
+            start_tick: Tick(3),
+            remaining_duration: ActionDuration::new(2),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: Some(ActionState::Empty),
+        }
+    }
+
+    fn stale_activity_belief(
+        place: worldwake_core::EntityId,
+        domain: ActionDomain,
+        target: Option<worldwake_core::EntityId>,
+    ) -> BelievedEntityState {
+        let mut state =
+            observed_snapshot(Some(place), 0).to_believed_entity_state(Tick(2), PerceptionSource::DirectObservation);
+        state.believed_activity = Some(BelievedActivity {
+            action_domain: domain,
+            target,
+            observed_tick: Tick(2),
+        });
+        state
+    }
+
+    #[test]
+    fn co_located_active_action_sets_believed_activity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            for entity in [observer, actor, target] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor, target)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x11; 32]));
+        let mut action_defs = ActionDefRegistry::new();
+        let def_id = register_test_action(&mut action_defs, ActionDomain::Production, "harvest");
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(0),
+            active_instance(def_id, actor, vec![target]),
+        )]);
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let believed = beliefs
+            .get_entity(&actor)
+            .expect("colocated actor should be directly observed");
+        assert_eq!(
+            believed.believed_activity,
+            Some(BelievedActivity {
+                action_domain: ActionDomain::Production,
+                target: Some(target),
+                observed_tick: Tick(3),
+            })
+        );
+    }
+
+    #[test]
+    fn active_action_respects_observation_fidelity_gate() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            for entity in [observer, actor, target] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(0))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor, target)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x12; 32]));
+        let mut action_defs = ActionDefRegistry::new();
+        let def_id = register_test_action(&mut action_defs, ActionDomain::Trade, "trade");
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(0),
+            active_instance(def_id, actor, vec![target]),
+        )]);
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should retain an empty belief store");
+        assert!(
+            beliefs.get_entity(&actor).is_none(),
+            "fidelity zero should prevent direct observation and activity projection"
+        );
+    }
+
+    #[test]
+    fn idle_colocated_subject_clears_believed_activity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, actor) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                actor,
+                stale_activity_belief(place, ActionDomain::Production, None),
+            );
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x13; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let believed = beliefs
+            .get_entity(&actor)
+            .expect("colocated subject should still be known");
+        assert_eq!(believed.believed_activity, None);
+        assert_eq!(believed.last_known_place, Some(place));
+    }
+
+    #[test]
+    fn departed_subject_clears_believed_activity_when_no_longer_colocated() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let other_place = *places.get(1).unwrap_or(&place);
+        assert_ne!(
+            place, other_place,
+            "prototype world needs at least two places for departure coverage"
+        );
+        let (observer, actor) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(actor, other_place).unwrap();
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(actor, stale_activity_belief(place, ActionDomain::Travel, None));
+            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, actor)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x14; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let believed = beliefs
+            .get_entity(&actor)
+            .expect("departed subject should remain known");
+        assert_eq!(believed.believed_activity, None);
+        assert_eq!(believed.last_known_place, Some(place));
+    }
+
+    #[test]
+    fn active_action_does_not_cross_place_boundaries_or_self_observe() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let remote_place = *places.get(1).unwrap_or(&place);
+        assert_ne!(
+            place, remote_place,
+            "prototype world needs at least two places for locality coverage"
+        );
+        let (observer, remote_actor, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let remote_actor = txn.create_agent("RemoteActor", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(remote_actor, remote_place).unwrap();
+            txn.set_ground_location(target, remote_place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, remote_actor, target)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x15; 32]));
+        let mut action_defs = ActionDefRegistry::new();
+        let def_id = register_test_action(&mut action_defs, ActionDomain::Travel, "travel");
+        let active_actions = BTreeMap::from([
+            (
+                ActionInstanceId(0),
+                active_instance(def_id, observer, vec![place]),
+            ),
+            (
+                ActionInstanceId(1),
+                active_instance(def_id, remote_actor, vec![target]),
+            ),
+        ]);
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        assert!(
+            beliefs.get_entity(&observer).is_none(),
+            "observers must not project their own active action into self belief entries"
+        );
+        assert!(
+            beliefs.get_entity(&remote_actor).is_none(),
+            "remote active actions must not project across place boundaries"
+        );
     }
 
     #[test]

@@ -20,6 +20,7 @@ Agents cannot factor observed competition into their goal ranking. When multiple
 6. `GoalBeliefView` will have `agents_active_at(place, domain, target)` after S35OBSACTSIG-004.
 7. `RankedGoal` will have `competition_discount: Option<CompetitionDiscount>` after S35OBSACTSIG-005.
 8. The discount formula per spec: `factor = 1000 - (weight * min(competitors, 3))`, `motive = (motive * factor / 1000).max(1)`.
+9. The perception-side observable-activity projection now exists in `crates/worldwake-systems/src/perception.rs`. Any future cleanup that deduplicates passive/entity and active/activity direct-observation bookkeeping remains outside this ticket; ranking should consume the belief-view contract, not reshape perception internals.
 
 ## Architecture Check
 
@@ -28,6 +29,7 @@ Agents cannot factor observed competition into their goal ranking. When multiple
 3. Capping competitors at 3 prevents extreme suppression. `.max(1)` ensures goals are never fully eliminated (P10 dampener).
 4. Domain-scoped: only Production and Trade goals are affected. Needs goals (eat, drink, sleep) are never discounted — survival cannot be discouraged by competition.
 5. No backward compatibility issues — new code path, default weight produces default behavior.
+6. The ideal architecture boundary here is still belief query -> ranking arithmetic. Pulling perception refactors into this ticket would blur layers and make the proof surface weaker.
 
 ## Verification Layers
 
@@ -90,6 +92,7 @@ Need to identify how `AcquireCommodity` goals are classified as trade-bound. Thi
 ## Out of Scope
 
 - Perception system changes (S35OBSACTSIG-003)
+- Any perception-pipeline refactor that unifies passive/entity and active/activity direct-observation bookkeeping
 - `GoalBeliefView` implementation (S35OBSACTSIG-004, prerequisite)
 - `BelievedActivity` type (S35OBSACTSIG-001)
 - `UtilityProfile` field definition (S35OBSACTSIG-002, prerequisite)
