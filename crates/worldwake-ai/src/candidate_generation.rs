@@ -662,6 +662,8 @@ fn emit_social_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
+    emit_regroup_with_faction_goals(candidates, diagnostics, ctx);
+
     let Some(place) = ctx.place else {
         return;
     };
@@ -796,6 +798,68 @@ fn emit_social_candidates(
                 trace,
             );
         }
+    }
+}
+
+fn emit_regroup_with_faction_goals(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(current_place) = ctx.place else {
+        return;
+    };
+
+    for faction in ctx.view.bandit_factions_of(ctx.agent) {
+        let InstitutionalBeliefRead::Certain(Some(rally_place)) =
+            ctx.view.believed_faction_rally_point(faction)
+        else {
+            continue;
+        };
+        if rally_place == current_place {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_place(rally_place);
+        evidence.entities.insert(faction);
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            let key = InstitutionalBeliefKey::FactionRallyPointOf { faction };
+            if let Some(belief) = ctx
+                .view
+                .institutional_belief_claims(ctx.agent, key)
+                .into_iter()
+                .filter(|belief| {
+                    matches!(
+                        belief.claim,
+                        InstitutionalClaim::FactionRallyPoint {
+                            faction: claim_faction,
+                            rally_place: Some(claim_rally_place),
+                            ..
+                        } if claim_faction == faction && claim_rally_place == rally_place
+                    )
+                })
+                .max_by_key(|belief| (belief.learned_tick, belief.learned_at))
+            {
+                trace
+                    .knowledge_path
+                    .institutional_beliefs
+                    .push(InstitutionalBeliefProvenance {
+                        claim: belief.claim,
+                        source: belief.source,
+                        learned_tick: belief.learned_tick,
+                        learned_at: belief.learned_at,
+                    });
+            }
+        }
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::RegroupWithFaction { faction },
+            OpportunityAnchor::Place(rally_place),
+            evidence,
+            trace,
+        );
     }
 }
 
@@ -3172,6 +3236,7 @@ mod tests {
         force_controller_beliefs:
             BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
+        faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         bandit_factions: BTreeSet<EntityId>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
@@ -3237,6 +3302,7 @@ mod tests {
                 office_holder_beliefs: BTreeMap::new(),
                 force_controller_beliefs: BTreeMap::new(),
                 factions_by_member: BTreeMap::new(),
+                faction_rally_point_beliefs: BTreeMap::new(),
                 bandit_factions: BTreeSet::new(),
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
@@ -3710,6 +3776,16 @@ mod tests {
             } else {
                 InstitutionalBeliefRead::Unknown
             }
+        }
+
+        fn believed_faction_rally_point(
+            &self,
+            faction: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.faction_rally_point_beliefs
+                .get(&faction)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
@@ -5109,6 +5185,102 @@ mod tests {
     }
 
     #[test]
+    fn regroup_with_faction_requires_rally_point_belief() {
+        let agent = entity(1);
+        let faction = entity(30);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::RegroupWithFaction { faction }
+        ));
+    }
+
+    #[test]
+    fn regroup_with_faction_emits_when_rally_point_belief_exists() {
+        let agent = entity(1);
+        let faction = entity(30);
+        let place = entity(10);
+        let rally_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.faction_rally_point_beliefs
+            .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
+        view.institutional_claims.insert(
+            (agent, InstitutionalBeliefKey::FactionRallyPointOf { faction }),
+            vec![BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::FactionRallyPoint {
+                    faction,
+                    rally_place: Some(rally_place),
+                    effective_tick: Tick(4),
+                },
+                source: InstitutionalKnowledgeSource::DirectObservation,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::RegroupWithFaction { faction }
+        ));
+        let trace = evidence_trace_for_goal(
+            &result.diagnostics,
+            GoalKey::from(GoalKind::RegroupWithFaction { faction }),
+        );
+        assert!(
+            trace
+                .knowledge_path
+                .institutional_beliefs
+                .contains(&InstitutionalBeliefProvenance {
+                    claim: InstitutionalClaim::FactionRallyPoint {
+                        faction,
+                        rally_place: Some(rally_place),
+                        effective_tick: Tick(4),
+                    },
+                    source: InstitutionalKnowledgeSource::DirectObservation,
+                    learned_tick: Tick(4),
+                    learned_at: Some(place),
+                }),
+            "regroup knowledge path should record rally doctrine provenance, got {:?}",
+            trace.knowledge_path.institutional_beliefs,
+        );
+    }
+
+    #[test]
     fn engage_hostile_is_suppressed_for_current_attackers() {
         let agent = entity(1);
         let hostile = entity(2);
@@ -6086,7 +6258,7 @@ mod tests {
     }
 
     #[test]
-    fn still_deferred_goal_kinds_are_not_emitted() {
+    fn sell_commodity_still_not_emitted_before_s04() {
         let agent = entity(1);
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);

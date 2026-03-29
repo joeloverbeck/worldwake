@@ -21,6 +21,9 @@ enum InstitutionalTellTopicKey {
         faction: EntityId,
         member: EntityId,
     },
+    FactionRallyPoint {
+        faction: EntityId,
+    },
     SupportDeclaration {
         supporter: EntityId,
         office: EntityId,
@@ -415,6 +418,27 @@ impl AgentBeliefStore {
     }
 
     #[must_use]
+    pub fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::FactionRallyPointOf { faction })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::FactionRallyPoint {
+                    faction: claim_faction,
+                    rally_place,
+                    ..
+                } if *claim_faction == faction => Some(*rally_place),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
     pub fn believed_support_declaration(
         &self,
         office: EntityId,
@@ -569,6 +593,9 @@ fn institutional_tell_topic_key(claim: InstitutionalClaim) -> InstitutionalTellT
         InstitutionalClaim::FactionMembership {
             faction, member, ..
         } => InstitutionalTellTopicKey::FactionMembership { faction, member },
+        InstitutionalClaim::FactionRallyPoint { faction, .. } => {
+            InstitutionalTellTopicKey::FactionRallyPoint { faction }
+        }
         InstitutionalClaim::SupportDeclaration {
             supporter, office, ..
         } => InstitutionalTellTopicKey::SupportDeclaration { supporter, office },
@@ -611,6 +638,7 @@ fn institutional_claim_effective_tick(claim: InstitutionalClaim) -> Tick {
         InstitutionalClaim::OfficeHolder { effective_tick, .. }
         | InstitutionalClaim::ForceControl { effective_tick, .. }
         | InstitutionalClaim::FactionMembership { effective_tick, .. }
+        | InstitutionalClaim::FactionRallyPoint { effective_tick, .. }
         | InstitutionalClaim::SupportDeclaration { effective_tick, .. }
         | InstitutionalClaim::Accusation { effective_tick, .. }
         | InstitutionalClaim::Verdict { effective_tick, .. } => effective_tick,
@@ -782,7 +810,8 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
         InstitutionalClaim::OfficeHolder { office, .. }
         | InstitutionalClaim::ForceControl { office, .. }
         | InstitutionalClaim::SupportDeclaration { office, .. } => office,
-        InstitutionalClaim::FactionMembership { faction, .. } => faction,
+        InstitutionalClaim::FactionMembership { faction, .. }
+        | InstitutionalClaim::FactionRallyPoint { faction, .. } => faction,
         InstitutionalClaim::Accusation { accused, .. }
         | InstitutionalClaim::Verdict { accused, .. } => accused,
     }
@@ -791,7 +820,8 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
 #[must_use]
 pub fn institutional_knowledge_chain_len(source: InstitutionalKnowledgeSource) -> u8 {
     match source {
-        InstitutionalKnowledgeSource::WitnessedEvent
+        InstitutionalKnowledgeSource::DirectObservation
+        | InstitutionalKnowledgeSource::WitnessedEvent
         | InstitutionalKnowledgeSource::RecordConsultation { .. }
         | InstitutionalKnowledgeSource::SelfDeclaration => 0,
         InstitutionalKnowledgeSource::Report { chain_len, .. } => chain_len,
@@ -957,6 +987,18 @@ fn institutional_claim_same_content(left: InstitutionalClaim, right: Institution
                 && left_member == right_member
                 && left_active == right_active
         }
+        (
+            InstitutionalClaim::FactionRallyPoint {
+                faction: left_faction,
+                rally_place: left_rally_place,
+                ..
+            },
+            InstitutionalClaim::FactionRallyPoint {
+                faction: right_faction,
+                rally_place: right_rally_place,
+                ..
+            },
+        ) => left_faction == right_faction && left_rally_place == right_rally_place,
         (
             InstitutionalClaim::SupportDeclaration {
                 supporter: left_supporter,
@@ -1586,6 +1628,23 @@ mod tests {
         }
     }
 
+    fn rally_point_belief(
+        faction: u32,
+        rally_place: Option<u32>,
+        learned_tick: u64,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::FactionRallyPoint {
+                faction: entity(faction),
+                rally_place: rally_place.map(entity),
+                effective_tick: Tick(learned_tick),
+            },
+            source: InstitutionalKnowledgeSource::DirectObservation,
+            learned_tick: Tick(learned_tick),
+            learned_at: Some(entity(15)),
+        }
+    }
+
     fn support_belief(
         office: u32,
         supporter: u32,
@@ -2082,6 +2141,40 @@ mod tests {
         assert_eq!(
             store.believed_membership(faction, entity(85)),
             InstitutionalBeliefRead::Conflicted(vec![false, true])
+        );
+    }
+
+    #[test]
+    fn believed_faction_rally_point_reads_matching_claims_only() {
+        let mut store = AgentBeliefStore::new();
+        let faction = entity(86);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionRallyPointOf { faction },
+            vec![
+                rally_point_belief(86, Some(87), 2),
+                membership_belief(86, 99, true, 3),
+                rally_point_belief(86, Some(87), 5),
+            ],
+        );
+
+        assert_eq!(
+            store.believed_faction_rally_point(faction),
+            InstitutionalBeliefRead::Certain(Some(entity(87)))
+        );
+    }
+
+    #[test]
+    fn believed_faction_rally_point_returns_conflicted_for_distinct_places() {
+        let mut store = AgentBeliefStore::new();
+        let faction = entity(88);
+        store.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionRallyPointOf { faction },
+            vec![rally_point_belief(88, Some(89), 2), rally_point_belief(88, None, 5)],
+        );
+
+        assert_eq!(
+            store.believed_faction_rally_point(faction),
+            InstitutionalBeliefRead::Conflicted(vec![None, Some(entity(89))])
         );
     }
 

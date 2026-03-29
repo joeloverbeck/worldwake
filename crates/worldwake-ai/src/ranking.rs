@@ -611,6 +611,10 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                             effective_tick,
                             ..
                         }
+                        | worldwake_core::InstitutionalClaim::FactionRallyPoint {
+                            effective_tick,
+                            ..
+                        }
                         | worldwake_core::InstitutionalClaim::SupportDeclaration {
                             effective_tick,
                             ..
@@ -632,7 +636,8 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
             .map_or(Permille::new_unchecked(0), |belief| {
                 belief_pressure_from_source(
                     match belief.source {
-                        worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent
+                        worldwake_core::InstitutionalKnowledgeSource::DirectObservation
+                        | worldwake_core::InstitutionalKnowledgeSource::WitnessedEvent
                         | worldwake_core::InstitutionalKnowledgeSource::RecordConsultation {
                             ..
                         }
@@ -1059,10 +1064,11 @@ fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u
     match claim {
         worldwake_core::InstitutionalClaim::ForceControl { .. } => 0,
         worldwake_core::InstitutionalClaim::OfficeHolder { .. } => 1,
-        worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 2,
-        worldwake_core::InstitutionalClaim::FactionMembership { .. } => 3,
-        worldwake_core::InstitutionalClaim::Accusation { .. } => 4,
-        worldwake_core::InstitutionalClaim::Verdict { .. } => 5,
+        worldwake_core::InstitutionalClaim::FactionRallyPoint { .. } => 2,
+        worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 3,
+        worldwake_core::InstitutionalClaim::FactionMembership { .. } => 4,
+        worldwake_core::InstitutionalClaim::Accusation { .. } => 5,
+        worldwake_core::InstitutionalClaim::Verdict { .. } => 6,
     }
 }
 

@@ -53,6 +53,12 @@ pub enum InstitutionalBeliefReadSummary {
     FactionMembershipClaims {
         claims: Vec<FactionMembershipClaimSummary>,
     },
+    FactionRallyPointCertain {
+        rally_place: Option<EntityId>,
+    },
+    FactionRallyPointConflicted {
+        rally_places: Vec<Option<EntityId>>,
+    },
     SupportDeclarationCertain {
         candidate: Option<EntityId>,
     },
@@ -263,6 +269,17 @@ pub fn summarize_institutional_read(
                 InstitutionalBeliefReadSummary::FactionMembershipClaims { claims }
             }
         }
+        InstitutionalBeliefKey::FactionRallyPointOf { faction } => {
+            match store.believed_faction_rally_point(faction) {
+                InstitutionalBeliefRead::Unknown => InstitutionalBeliefReadSummary::Unknown,
+                InstitutionalBeliefRead::Certain(rally_place) => {
+                    InstitutionalBeliefReadSummary::FactionRallyPointCertain { rally_place }
+                }
+                InstitutionalBeliefRead::Conflicted(rally_places) => {
+                    InstitutionalBeliefReadSummary::FactionRallyPointConflicted { rally_places }
+                }
+            }
+        }
         InstitutionalBeliefKey::SupportFor { supporter, office } => {
             match store.believed_support_declaration(office, supporter) {
                 InstitutionalBeliefRead::Unknown => InstitutionalBeliefReadSummary::Unknown,
@@ -308,6 +325,9 @@ fn institutional_belief_key(claim: worldwake_core::InstitutionalClaim) -> Instit
         }
         worldwake_core::InstitutionalClaim::FactionMembership { faction, .. } => {
             InstitutionalBeliefKey::FactionMembersOf { faction }
+        }
+        worldwake_core::InstitutionalClaim::FactionRallyPoint { faction, .. } => {
+            InstitutionalBeliefKey::FactionRallyPointOf { faction }
         }
         worldwake_core::InstitutionalClaim::SupportDeclaration {
             supporter, office, ..

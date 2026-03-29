@@ -226,6 +226,13 @@ pub trait GoalBeliefView {
         let _ = (faction, member);
         InstitutionalBeliefRead::Unknown
     }
+    fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        let _ = faction;
+        InstitutionalBeliefRead::Unknown
+    }
     fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
         let _ = claimant;
         Vec::new()
@@ -511,6 +518,13 @@ pub trait RuntimeBeliefView {
         member: EntityId,
     ) -> InstitutionalBeliefRead<bool> {
         let _ = (faction, member);
+        InstitutionalBeliefRead::Unknown
+    }
+    fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        let _ = faction;
         InstitutionalBeliefRead::Unknown
     }
     fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
@@ -1034,6 +1048,13 @@ macro_rules! impl_goal_belief_view {
                 member: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<bool> {
                 $crate::RuntimeBeliefView::believed_membership(self, faction, member)
+            }
+
+            fn believed_faction_rally_point(
+                &self,
+                faction: worldwake_core::EntityId,
+            ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
+                $crate::RuntimeBeliefView::believed_faction_rally_point(self, faction)
             }
 
             fn loyalty_to(

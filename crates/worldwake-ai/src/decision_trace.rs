@@ -1504,6 +1504,7 @@ fn format_perception_source(source: &PerceptionSource) -> String {
 
 fn format_institutional_knowledge_source(source: &InstitutionalKnowledgeSource) -> String {
     match source {
+        InstitutionalKnowledgeSource::DirectObservation => "DirectObservation".to_string(),
         InstitutionalKnowledgeSource::WitnessedEvent => "WitnessedEvent".to_string(),
         InstitutionalKnowledgeSource::Report { from, chain_len } => {
             format!("Report(from={from:?}, chain={chain_len})")
@@ -1590,6 +1591,17 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             "FactionMembership(faction={faction:?}, member={member:?}, active={active}, tick={})",
             effective_tick.0
         ),
+        InstitutionalClaim::FactionRallyPoint {
+            faction,
+            rally_place,
+            effective_tick,
+        } => {
+            let rally_str = rally_place.map_or_else(|| "none".to_string(), |p| format!("{p:?}"));
+            format!(
+                "FactionRallyPoint(faction={faction:?}, rally_place={rally_str}, tick={})",
+                effective_tick.0
+            )
+        }
         InstitutionalClaim::SupportDeclaration {
             office,
             supporter,

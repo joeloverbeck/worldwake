@@ -183,6 +183,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
         InstitutionalClaim::FactionMembership { faction, .. } => {
             InstitutionalBeliefKey::FactionMembersOf { faction }
         }
+        InstitutionalClaim::FactionRallyPoint { faction, .. } => {
+            InstitutionalBeliefKey::FactionRallyPointOf { faction }
+        }
         InstitutionalClaim::SupportDeclaration {
             supporter, office, ..
         } => InstitutionalBeliefKey::SupportFor { supporter, office },

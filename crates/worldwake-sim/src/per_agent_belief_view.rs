@@ -1045,6 +1045,13 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.belief_store.believed_membership(faction, member)
     }
 
+    fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        self.belief_store.believed_faction_rally_point(faction)
+    }
+
     fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
         if claimant != self.agent {
             return Vec::new();
@@ -2616,6 +2623,43 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::believed_membership(&view, faction, agent),
             InstitutionalBeliefRead::Certain(true)
+        );
+    }
+
+    #[test]
+    fn believed_faction_rally_point_reads_from_institutional_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let rally_place = *places.get(1).unwrap_or(&place);
+        let (agent, faction, rally_place) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let faction = txn.create_faction("River Pact").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            (agent, faction, rally_place)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.institutional_beliefs.insert(
+            InstitutionalBeliefKey::FactionRallyPointOf { faction },
+            vec![worldwake_core::BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::FactionRallyPoint {
+                    faction,
+                    rally_place: Some(rally_place),
+                    effective_tick: Tick(3),
+                },
+                source: InstitutionalKnowledgeSource::DirectObservation,
+                learned_tick: Tick(4),
+                learned_at: Some(place),
+            }],
+        );
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::believed_faction_rally_point(&view, faction),
+            InstitutionalBeliefRead::Certain(Some(rally_place))
         );
     }
 

@@ -239,13 +239,51 @@ fn observe_passive_local_entities(
             &batch,
             &profile,
         );
-        if !batch.observed_snapshots.is_empty() {
+        let doctrine_changed =
+            project_local_bandit_rally_doctrine(world, agent, batch.place, tick, &mut store, &profile);
+        if !batch.observed_snapshots.is_empty() || doctrine_changed {
             updated_stores.insert(agent, store);
         }
         batches.insert(agent, batch);
     }
 
     batches
+}
+
+fn project_local_bandit_rally_doctrine(
+    world: &World,
+    observer: EntityId,
+    place: EntityId,
+    tick: worldwake_core::Tick,
+    store: &mut AgentBeliefStore,
+    profile: &worldwake_core::PerceptionProfile,
+) -> bool {
+    let Some(camp) = world.get_component_bandit_camp(place) else {
+        return false;
+    };
+    if !world.factions_of(observer).contains(&camp.faction) {
+        return false;
+    }
+    let Some(policy) = world.get_component_bandit_faction_policy(camp.faction) else {
+        return false;
+    };
+
+    let key = InstitutionalBeliefKey::FactionRallyPointOf {
+        faction: camp.faction,
+    };
+    let belief = BelievedInstitutionalClaim {
+        claim: InstitutionalClaim::FactionRallyPoint {
+            faction: camp.faction,
+            rally_place: policy.rally_place,
+            effective_tick: tick,
+        },
+        source: InstitutionalKnowledgeSource::DirectObservation,
+        learned_tick: tick,
+        learned_at: Some(place),
+    };
+    let before = store.institutional_beliefs.get(&key).cloned();
+    store.replace_institutional_belief(key, belief.clone(), profile);
+    before.as_deref() != Some(std::slice::from_ref(&belief))
 }
 
 fn observe_active_actions(
@@ -870,15 +908,16 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_observed_entity_snapshot, build_prototype_world, ActionDefId, ActionDomain,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, CauseRef,
-        CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource, DeadAt,
+        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity, ActionDefId,
+        ActionDomain, AgentBeliefStore, BanditCamp, BanditFactionPolicy,
+        BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, CauseRef, CommodityKind,
+        ComponentDelta, ComponentKind, ComponentValue, Container, ControlSource, DeadAt,
         EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
-        ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MismatchKind, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
         PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource, Seed,
-        SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, Tick,
+        PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource,
+        Seed, SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, Tick,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
@@ -2589,6 +2628,161 @@ mod tests {
         .unwrap();
 
         assert!(discovery_records(&event_log).is_empty());
+    }
+
+    #[test]
+    fn passive_bandit_camp_observation_projects_rally_claim_for_colocated_member() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let camp_place = prototype_place_entity(PrototypePlace::BanditCamp);
+        let rally_place = prototype_place_entity(PrototypePlace::ForestPath);
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let faction = txn.create_faction("Forest Bandits").unwrap();
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.add_member(observer, faction).unwrap();
+            txn.set_ground_location(observer, camp_place).unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let supplies = txn
+                .create_container(Container {
+                    capacity: LoadUnits(2),
+                    allowed_commodities: None,
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
+                })
+                .unwrap();
+            txn.set_ground_location(supplies, camp_place).unwrap();
+            txn.set_component_bandit_faction_policy(
+                faction,
+                BanditFactionPolicy {
+                    min_regroup_count: 2,
+                    establishment_duration_ticks: NonZeroU32::new(3).unwrap(),
+                    abandonment_grace_ticks: NonZeroU32::new(2).unwrap(),
+                    flee_wound_threshold: Permille::new(650).unwrap(),
+                    rally_place: Some(rally_place),
+                },
+            )
+            .unwrap();
+            txn.set_component_bandit_camp(
+                camp_place,
+                BanditCamp {
+                    faction,
+                    supplies,
+                    empty_since_tick: None,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x33; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(2),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let faction = world.factions_of(observer)[0];
+        let beliefs = world.get_component_agent_belief_store(observer).unwrap();
+        assert_eq!(
+            beliefs.believed_faction_rally_point(faction),
+            worldwake_core::InstitutionalBeliefRead::Certain(Some(rally_place))
+        );
+    }
+
+    #[test]
+    fn passive_bandit_camp_observation_skips_remote_and_non_member_agents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let camp_place = prototype_place_entity(PrototypePlace::BanditCamp);
+        let remote_place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let rally_place = prototype_place_entity(PrototypePlace::ForestPath);
+        let (remote_observer, non_member_observer, faction) = {
+            let mut txn = new_txn(&mut world, 1);
+            let faction = txn.create_faction("Forest Bandits").unwrap();
+            let remote = txn.create_agent("Remote", ControlSource::Ai).unwrap();
+            let non_member = txn.create_agent("Outsider", ControlSource::Ai).unwrap();
+            let member = txn.create_agent("Member", ControlSource::Ai).unwrap();
+            for agent in [remote, non_member, member] {
+                txn.set_component_perception_profile(agent, profile(1000))
+                    .unwrap();
+            }
+            txn.add_member(remote, faction).unwrap();
+            txn.add_member(member, faction).unwrap();
+            txn.set_ground_location(remote, remote_place).unwrap();
+            txn.set_ground_location(non_member, camp_place).unwrap();
+            txn.set_ground_location(member, camp_place).unwrap();
+            let supplies = txn
+                .create_container(Container {
+                    capacity: LoadUnits(2),
+                    allowed_commodities: None,
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
+                })
+                .unwrap();
+            txn.set_ground_location(supplies, camp_place).unwrap();
+            txn.set_component_bandit_faction_policy(
+                faction,
+                BanditFactionPolicy {
+                    min_regroup_count: 2,
+                    establishment_duration_ticks: NonZeroU32::new(3).unwrap(),
+                    abandonment_grace_ticks: NonZeroU32::new(2).unwrap(),
+                    flee_wound_threshold: Permille::new(650).unwrap(),
+                    rally_place: Some(rally_place),
+                },
+            )
+            .unwrap();
+            txn.set_component_bandit_camp(
+                camp_place,
+                BanditCamp {
+                    faction,
+                    supplies,
+                    empty_since_tick: None,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (remote, non_member, faction)
+        };
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x34; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(2),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        for agent in [remote_observer, non_member_observer] {
+            let beliefs = world.get_component_agent_belief_store(agent).unwrap();
+            assert_eq!(
+                beliefs.believed_faction_rally_point(faction),
+                worldwake_core::InstitutionalBeliefRead::Unknown
+            );
+        }
     }
 
     #[test]

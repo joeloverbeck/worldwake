@@ -895,6 +895,11 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
             }),
+            GoalKind::RegroupWithFaction { faction } => matches!(
+                state.believed_faction_rally_point(*faction),
+                InstitutionalBeliefRead::Certain(Some(rally_place))
+                    if state.effective_place(actor) == Some(rally_place)
+            ),
             GoalKind::TreatWounds { patient } => state
                 .pain_summary(*patient)
                 .is_some_and(|pain| pain == Permille::new_unchecked(0)),
@@ -923,7 +928,6 @@ impl GoalKindPlannerExt for GoalKind {
                 None => false,
             },
             GoalKind::ProduceCommodity { .. }
-            | GoalKind::RegroupWithFaction { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
@@ -961,8 +965,13 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
-            | GoalKind::RegroupWithFaction { .. }
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
+            GoalKind::RegroupWithFaction { faction } => {
+                match state.believed_faction_rally_point(*faction) {
+                    InstitutionalBeliefRead::Certain(Some(rally_place)) => vec![rally_place],
+                    _ => Vec::new(),
+                }
+            }
             GoalKind::ClaimOffice { office } => {
                 if office_succession_law(state, *office) == Some(SuccessionLaw::Force) {
                     state.snapshot().jurisdiction(*office).into_iter().collect()
@@ -1719,10 +1728,11 @@ mod tests {
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
         ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState,
-        BlockedIntentMemory, BodyCostPerTick, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DemandObservationReason, DriveThresholds, EntityId,
-        EntityKind, EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
+        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EpistemicSubject,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
         ResourceSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
@@ -2251,11 +2261,14 @@ mod tests {
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
         known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        known_institutional_beliefs: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         ask_witness_memories: BTreeMap<(EntityId, AskWitnessMemoryKey), AskWitnessMemory>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         force_controller_beliefs:
             BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
+        faction_rally_point_beliefs:
+            BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
@@ -2293,10 +2306,12 @@ mod tests {
                 consultation_speed_factors: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 known_entity_beliefs: BTreeMap::new(),
+                known_institutional_beliefs: BTreeMap::new(),
                 epistemic_profiles: BTreeMap::new(),
                 ask_witness_memories: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 force_controller_beliefs: BTreeMap::new(),
+                faction_rally_point_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data_map: BTreeMap::new(),
             }
@@ -2330,6 +2345,16 @@ mod tests {
 
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.known_entity_beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn known_institutional_beliefs(
+            &self,
+            agent: EntityId,
+        ) -> Vec<BelievedInstitutionalClaim> {
+            self.known_institutional_beliefs
                 .get(&agent)
                 .cloned()
                 .unwrap_or_default()
@@ -2633,6 +2658,16 @@ mod tests {
         ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
             self.force_controller_beliefs
                 .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+
+        fn believed_faction_rally_point(
+            &self,
+            faction: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.faction_rally_point_beliefs
+                .get(&faction)
                 .cloned()
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
@@ -4261,6 +4296,34 @@ mod tests {
             commodity: CommodityKind::Bread,
             destination: place_b,
         };
+        assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_b]);
+    }
+
+    #[test]
+    fn regroup_with_faction_goal_relevant_places_use_believed_rally_point() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let faction = entity(30);
+        view.faction_rally_point_beliefs
+            .insert(faction, InstitutionalBeliefRead::Certain(Some(place_b)));
+        view.known_institutional_beliefs.insert(
+            actor,
+            vec![BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::FactionRallyPoint {
+                    faction,
+                    rally_place: Some(place_b),
+                    effective_tick: Tick(4),
+                },
+                source: InstitutionalKnowledgeSource::DirectObservation,
+                learned_tick: Tick(4),
+                learned_at: Some(place_b),
+            }],
+        );
+
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::RegroupWithFaction { faction };
+
         assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_b]);
     }
 
@@ -6282,6 +6345,73 @@ mod tests {
                 topic_entity: Some(subject_entity),
                 topic_commodity: Some(CommodityKind::Bread),
             }))
+        );
+    }
+
+    #[test]
+    fn search_regroup_goal_uses_believed_rally_point_as_travel_destination() {
+        let actor = entity(1);
+        let faction = entity(30);
+        let town = entity(10);
+        let rally = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town, rally]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.kinds.insert(rally, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.adjacent
+            .insert(town, vec![(rally, NonZeroU32::new(2).unwrap())]);
+        view.adjacent
+            .insert(rally, vec![(town, NonZeroU32::new(2).unwrap())]);
+        view.faction_rally_point_beliefs
+            .insert(faction, InstitutionalBeliefRead::Certain(Some(rally)));
+        view.known_institutional_beliefs.insert(
+            actor,
+            vec![BelievedInstitutionalClaim {
+                claim: InstitutionalClaim::FactionRallyPoint {
+                    faction,
+                    rally_place: Some(rally),
+                    effective_tick: Tick(4),
+                },
+                source: InstitutionalKnowledgeSource::DirectObservation,
+                learned_tick: Tick(4),
+                learned_at: Some(town),
+            }],
+        );
+
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(rally),
+            key: GoalKey::from(GoalKind::RegroupWithFaction { faction }),
+            evidence_entities: BTreeSet::from([faction]),
+            evidence_places: BTreeSet::from([rally]),
+        };
+        let (registry, handlers) = build_registry();
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([faction]), &BTreeSet::from([rally]), 1);
+        let plan = search_plan(
+            &snapshot,
+            &goal,
+            &build_semantics_table(&registry),
+            &registry,
+            &handlers,
+            &PlanningBudget::default(),
+            &RecipeRegistry::new(),
+            &BlockedIntentMemory::default(),
+            Tick(5),
+            None,
+            None,
+        )
+        .into_plan()
+        .expect("planner should find a regroup travel plan");
+
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+        assert_eq!(
+            plan.steps[0].targets,
+            vec![crate::PlanningEntityRef::Authoritative(rally)]
         );
     }
 

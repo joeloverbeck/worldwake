@@ -102,7 +102,8 @@ fn degrade_institutional_source(
     source: InstitutionalKnowledgeSource,
 ) -> InstitutionalKnowledgeSource {
     match source {
-        InstitutionalKnowledgeSource::WitnessedEvent
+        InstitutionalKnowledgeSource::DirectObservation
+        | InstitutionalKnowledgeSource::WitnessedEvent
         | InstitutionalKnowledgeSource::RecordConsultation { .. }
         | InstitutionalKnowledgeSource::SelfDeclaration => InstitutionalKnowledgeSource::Report {
             from: speaker,
@@ -127,6 +128,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
         }
         InstitutionalClaim::FactionMembership { faction, .. } => {
             InstitutionalBeliefKey::FactionMembersOf { faction }
+        }
+        InstitutionalClaim::FactionRallyPoint { faction, .. } => {
+            InstitutionalBeliefKey::FactionRallyPointOf { faction }
         }
         InstitutionalClaim::SupportDeclaration {
             supporter, office, ..

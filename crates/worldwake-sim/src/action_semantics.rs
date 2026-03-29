@@ -944,7 +944,7 @@ mod tests {
                     &ActionPayload::EstablishCamp(EstablishCampActionPayload { faction: ENTITY_B }),
                 )
                 .unwrap_err(),
-            format!("faction {} lacks BanditFactionPolicy", ENTITY_B)
+            format!("faction {ENTITY_B} lacks BanditFactionPolicy")
         );
         assert_eq!(
             DurationExpr::ActorDefendStance

@@ -147,6 +147,37 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        let values = self
+            .snapshot
+            .actor_known_institutional_beliefs
+            .iter()
+            .filter_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::FactionRallyPoint {
+                    faction: claim_faction,
+                    rally_place,
+                    ..
+                } if claim_faction == faction => Some(rally_place),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+
+        match values.len() {
+            0 => InstitutionalBeliefRead::Unknown,
+            1 => InstitutionalBeliefRead::Certain(
+                *values
+                    .iter()
+                    .next()
+                    .expect("single rally-point read should contain a value"),
+            ),
+            _ => InstitutionalBeliefRead::Conflicted(values.into_iter().collect()),
+        }
+    }
+
+    #[must_use]
     pub fn succession_law(&self, office: EntityId) -> Option<SuccessionLaw> {
         self.snapshot.succession_law(office)
     }
@@ -1684,6 +1715,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
         PlanningState::believed_office_holder(self, office)
     }
 
+    fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        PlanningState::believed_faction_rally_point(self, faction)
+    }
+
     fn believed_support_declaration(
         &self,
         office: EntityId,
@@ -1819,6 +1857,8 @@ mod tests {
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        faction_rally_point_beliefs:
+            BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data: BTreeMap<EntityId, OfficeData>,
@@ -1867,6 +1907,7 @@ mod tests {
                 facility_grants: BTreeMap::new(),
                 courages: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
+                faction_rally_point_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data: BTreeMap::new(),
             }
@@ -2137,6 +2178,16 @@ mod tests {
         ) -> InstitutionalBeliefRead<Option<EntityId>> {
             self.office_holder_beliefs
                 .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+
+        fn believed_faction_rally_point(
+            &self,
+            faction: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.faction_rally_point_beliefs
+                .get(&faction)
                 .cloned()
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
         }

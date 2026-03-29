@@ -48,10 +48,11 @@ fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u
     match claim {
         worldwake_core::InstitutionalClaim::ForceControl { .. } => 0,
         worldwake_core::InstitutionalClaim::OfficeHolder { .. } => 1,
-        worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 2,
-        worldwake_core::InstitutionalClaim::FactionMembership { .. } => 3,
-        worldwake_core::InstitutionalClaim::Accusation { .. } => 4,
-        worldwake_core::InstitutionalClaim::Verdict { .. } => 5,
+        worldwake_core::InstitutionalClaim::FactionRallyPoint { .. } => 2,
+        worldwake_core::InstitutionalClaim::SupportDeclaration { .. } => 3,
+        worldwake_core::InstitutionalClaim::FactionMembership { .. } => 4,
+        worldwake_core::InstitutionalClaim::Accusation { .. } => 5,
+        worldwake_core::InstitutionalClaim::Verdict { .. } => 6,
     }
 }
 

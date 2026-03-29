@@ -27,6 +27,11 @@ pub enum InstitutionalClaim {
         active: bool,
         effective_tick: Tick,
     },
+    FactionRallyPoint {
+        faction: EntityId,
+        rally_place: Option<EntityId>,
+        effective_tick: Tick,
+    },
     SupportDeclaration {
         office: EntityId,
         supporter: EntityId,
@@ -182,6 +187,9 @@ pub enum InstitutionalBeliefKey {
     FactionMembersOf {
         faction: EntityId,
     },
+    FactionRallyPointOf {
+        faction: EntityId,
+    },
     SupportFor {
         supporter: EntityId,
         office: EntityId,
@@ -202,6 +210,7 @@ pub struct BelievedInstitutionalClaim {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum InstitutionalKnowledgeSource {
+    DirectObservation,
     WitnessedEvent,
     Report {
         from: EntityId,
