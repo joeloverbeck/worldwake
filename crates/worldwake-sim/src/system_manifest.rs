@@ -17,7 +17,8 @@ macro_rules! define_system_ids {
             /// - `Needs` runs first so deprivation and wound pressure are visible before economic systems act.
             /// - `Production` runs before `Trade` so newly created goods exist before market exchange.
             /// - `Trade` runs before `Combat` so economic resolution happens before violence mutates the world.
-            /// - `Combat` runs before `FacilityQueue` so completed exclusive actions can free the next turn.
+            /// - `Combat` runs before `BanditCamp` so combat deaths can contribute to same-tick camp abandonment.
+            /// - `BanditCamp` runs before `FacilityQueue` so abandonment is visible before later world-state systems.
             /// - `FacilityQueue` runs before `Politics` so completed exclusive actions can free resources before political resolution.
             /// - `Politics` runs before `Perception` so institutional state changes (`OfficeController`, contested state)
             ///   are visible to co-located observers in the same tick via `force_control_claims_for_event()`.
@@ -54,6 +55,7 @@ define_system_ids! {
     (FacilityQueue, "facility_queue"),
     (Politics, "politics"),
     (Perception, "perception"),
+    (BanditCamp, "bandit_camp"),
 }
 
 impl fmt::Display for SystemId {
@@ -85,11 +87,21 @@ impl SystemManifest {
 
     /// Returns the authoritative per-tick system order.
     ///
-    /// This must stay aligned with [`SystemId::ALL`]. Reordering it changes the
-    /// simulation's causal sequencing and should only happen with an explicit
-    /// architecture decision.
+    /// This is the authoritative per-tick execution order. It may differ from
+    /// [`SystemId::ALL`] when execution order must change without renumbering
+    /// existing system ordinals.
     pub fn canonical() -> Self {
-        Self::new(SystemId::ALL).expect("canonical system order must not contain duplicates")
+        Self::new([
+            SystemId::Needs,
+            SystemId::Production,
+            SystemId::Trade,
+            SystemId::Combat,
+            SystemId::BanditCamp,
+            SystemId::FacilityQueue,
+            SystemId::Politics,
+            SystemId::Perception,
+        ])
+        .expect("canonical system order must not contain duplicates")
     }
 
     pub fn ordered_ids(&self) -> &[SystemId] {
@@ -141,6 +153,7 @@ mod tests {
         assert_eq!(SystemId::Production.to_string(), "production");
         assert_eq!(SystemId::Trade.to_string(), "trade");
         assert_eq!(SystemId::Combat.to_string(), "combat");
+        assert_eq!(SystemId::BanditCamp.to_string(), "bandit_camp");
         assert_eq!(SystemId::FacilityQueue.to_string(), "facility_queue");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::Politics.to_string(), "politics");
@@ -158,6 +171,7 @@ mod tests {
                 SystemId::FacilityQueue,
                 SystemId::Politics,
                 SystemId::Perception,
+                SystemId::BanditCamp,
             ]
         );
     }
@@ -218,6 +232,7 @@ mod tests {
                 SystemId::Production,
                 SystemId::Trade,
                 SystemId::Combat,
+                SystemId::BanditCamp,
                 SystemId::FacilityQueue,
                 SystemId::Politics,
                 SystemId::Perception,

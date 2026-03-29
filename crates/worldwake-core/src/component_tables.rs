@@ -377,6 +377,7 @@ mod tests {
             BanditCamp {
                 faction: entity(30),
                 supplies: entity(32),
+                empty_since_tick: Some(Tick(12)),
             },
         );
         tables.insert_bandit_faction_policy(
@@ -689,6 +690,7 @@ mod tests {
         let camp = BanditCamp {
             faction: entity(35),
             supplies: entity(36),
+            empty_since_tick: Some(Tick(17)),
         };
 
         assert_eq!(tables.insert_bandit_camp(id, camp.clone()), None);

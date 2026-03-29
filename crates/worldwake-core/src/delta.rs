@@ -461,6 +461,7 @@ mod tests {
             ComponentValue::BanditCamp(BanditCamp {
                 faction: entity(40),
                 supplies: entity(41),
+                empty_since_tick: Some(Tick(9)),
             }),
             ComponentValue::BanditFactionPolicy(BanditFactionPolicy {
                 min_regroup_count: 3,

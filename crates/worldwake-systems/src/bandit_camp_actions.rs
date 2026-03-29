@@ -340,6 +340,7 @@ fn commit_establish_camp(
             BanditCamp {
                 faction: validated.faction,
                 supplies: container,
+                empty_since_tick: None,
             },
         )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -612,6 +613,7 @@ mod tests {
                 BanditCamp {
                     faction: harness.faction,
                     supplies: container,
+                    empty_since_tick: None,
                 },
             )
             .unwrap();
@@ -648,6 +650,7 @@ mod tests {
                 BanditCamp {
                     faction: harness.rival_faction,
                     supplies: container,
+                    empty_since_tick: None,
                 },
             )
             .unwrap();
@@ -684,6 +687,7 @@ mod tests {
                 BanditCamp {
                     faction: harness.faction,
                     supplies: container,
+                    empty_since_tick: None,
                 },
             )
             .unwrap();

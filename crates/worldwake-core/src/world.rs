@@ -816,6 +816,7 @@ mod tests {
         BanditCamp {
             faction: entity(69),
             supplies: entity(70),
+            empty_since_tick: Some(Tick(13)),
         }
     }
 

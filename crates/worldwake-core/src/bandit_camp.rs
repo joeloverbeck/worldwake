@@ -1,4 +1,4 @@
-use crate::{Component, EntityId, Permille};
+use crate::{Component, EntityId, Permille, Tick};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -7,6 +7,7 @@ use std::num::NonZeroU32;
 pub struct BanditCamp {
     pub faction: EntityId,
     pub supplies: EntityId,
+    pub empty_since_tick: Option<Tick>,
 }
 
 impl Component for BanditCamp {}
@@ -26,7 +27,7 @@ impl Component for BanditFactionPolicy {}
 #[cfg(test)]
 mod tests {
     use super::{BanditCamp, BanditFactionPolicy};
-    use crate::{traits::Component, EntityId, Permille};
+    use crate::{traits::Component, EntityId, Permille, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
@@ -55,6 +56,7 @@ mod tests {
         let camp = BanditCamp {
             faction: entity(2),
             supplies: entity(4),
+            empty_since_tick: Some(Tick(7)),
         };
 
         let bytes = bincode::serialize(&camp).unwrap();

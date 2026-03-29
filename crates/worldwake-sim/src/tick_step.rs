@@ -2764,7 +2764,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(hook_log().lock().unwrap().systems, crate::SystemId::ALL);
+        assert_eq!(
+            hook_log().lock().unwrap().systems,
+            SystemManifest::canonical().ordered_ids()
+        );
     }
 
     #[test]
@@ -2817,7 +2820,7 @@ mod tests {
         .unwrap();
 
         let log = hook_log().lock().unwrap().clone();
-        assert_eq!(log.systems, crate::SystemId::ALL);
+        assert_eq!(log.systems, SystemManifest::canonical().ordered_ids());
         assert_eq!(
             log.system_active_action_counts,
             vec![1; crate::SystemId::ALL.len()]

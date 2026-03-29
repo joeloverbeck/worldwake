@@ -1956,6 +1956,7 @@ mod tests {
         BanditCamp {
             faction: entity(60),
             supplies: entity(61),
+            empty_since_tick: Some(Tick(10)),
         }
     }
 
@@ -3829,6 +3830,7 @@ mod tests {
         let after = BanditCamp {
             faction: entity(62),
             supplies: entity(63),
+            empty_since_tick: None,
         };
         world.insert_component_bandit_camp(place, before.clone()).unwrap();
 
