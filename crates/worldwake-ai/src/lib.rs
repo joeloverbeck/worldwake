@@ -48,6 +48,7 @@ pub use decision_trace::{
     CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
     CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
     CompetitionDiscount, DecisionOutcome, DecisionTraceSink, DesireFullyBlocked,
+    ExhaustionTraceEntry,
     ExecutionFailureReason, ExecutionTrace, GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus,
     InterruptTrace, PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome,
     PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,

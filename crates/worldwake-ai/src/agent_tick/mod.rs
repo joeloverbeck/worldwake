@@ -31,9 +31,9 @@ use planning::{
 
 use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
-    DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, FrameTransitionKind,
-    FrameTransitionTrace, InterruptTrace, PlanSearchTrace, PlanningPipelineTrace, SelectionTrace,
-    UnknownBlockerTrace,
+    DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry,
+    FrameTransitionKind, FrameTransitionTrace, InterruptTrace, PlanSearchTrace,
+    PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
 };
 use crate::{
     build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
@@ -732,6 +732,17 @@ fn process_agent(
                             target: i.blocker_key.target,
                             place: i.blocker_key.place,
                         })
+                    })
+                    .collect(),
+                exhaustion_snapshot: runtime
+                    .exhaustion_cache
+                    .iter()
+                    .map(|(opportunity, entry)| ExhaustionTraceEntry {
+                        opportunity: *opportunity,
+                        retry_state: entry.retry_state.clone(),
+                        consecutive_failures: entry.consecutive_failures,
+                        next_retry_tick: entry.next_retry_tick,
+                        retry_eligible: entry.is_retry_eligible(tick),
                     })
                     .collect(),
                 frame_transition: build_frame_transition_trace(&mut frame_transitions),

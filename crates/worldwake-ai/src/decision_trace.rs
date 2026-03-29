@@ -26,6 +26,7 @@ use crate::knowledge_path::{
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::ranking::RankedGoalComparison;
+use crate::ExhaustionRetryState;
 // ── Frame Transition Trace ──────────────────────────────────────
 
 /// One lifecycle event recorded for an `IntentionFrame` during a tick.
@@ -203,6 +204,8 @@ pub struct PlanningPipelineTrace {
     /// Active `BlockingFact::Unknown` blockers in `BlockedIntentMemory` at
     /// trace construction time. Derived view for debuggability (P27).
     pub unknown_blockers: Vec<UnknownBlockerTrace>,
+    /// Exhaustion cache state at trace construction time (P27).
+    pub exhaustion_snapshot: Vec<ExhaustionTraceEntry>,
     /// Frame lifecycle events recorded during this tick (P27).
     pub frame_transition: Option<FrameTransitionTrace>,
 }
@@ -225,6 +228,16 @@ pub struct UnknownBlockerTrace {
     pub op_kind: PlannerOpKind,
     pub target: Option<EntityId>,
     pub place: Option<EntityId>,
+}
+
+/// Snapshot of one opportunity's exhaustion state at trace time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExhaustionTraceEntry {
+    pub opportunity: OpportunityKey,
+    pub retry_state: ExhaustionRetryState,
+    pub consecutive_failures: u8,
+    pub next_retry_tick: Option<Tick>,
+    pub retry_eligible: bool,
 }
 
 // ── Stage 1: Candidate Generation + Ranking ─────────────────────
@@ -1731,6 +1744,7 @@ mod tests {
                 },
                 action_start_failures: Vec::new(),
                 unknown_blockers: Vec::new(),
+                exhaustion_snapshot: Vec::new(),
                 frame_transition: None,
             })),
         }
@@ -2207,6 +2221,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         };
 
@@ -2397,6 +2412,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
         let summary = outcome.summary();
@@ -2467,6 +2483,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2532,6 +2549,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2587,6 +2605,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2642,6 +2661,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2693,6 +2713,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2753,6 +2774,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2824,6 +2846,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2888,6 +2911,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -2969,6 +2993,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -3066,6 +3091,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: None,
         }));
 
@@ -3349,6 +3375,7 @@ mod tests {
             },
             action_start_failures: vec![],
             unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
             frame_transition: Some(FrameTransitionTrace {
                 transitions: vec![FrameTransitionKind::Created {
                     goal: GoalKey::new(GoalKind::Sleep),
@@ -3526,6 +3553,7 @@ mod tests {
                 },
                 action_start_failures: vec![],
                 unknown_blockers: vec![],
+                exhaustion_snapshot: vec![],
                 frame_transition: None,
             })),
         };

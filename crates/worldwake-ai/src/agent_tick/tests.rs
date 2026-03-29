@@ -3858,6 +3858,10 @@ fn trace_planning_outcome_for_hungry_agent() {
                 "hungry agent should generate at least one goal candidate"
             );
             assert!(
+                planning.exhaustion_snapshot.is_empty(),
+                "trace should not synthesize exhaustion state when the runtime cache is empty"
+            );
+            assert!(
                 !planning.candidates.ranked.is_empty(),
                 "hungry agent should have at least one ranked goal"
             );
@@ -3895,6 +3899,98 @@ fn trace_planning_outcome_for_hungry_agent() {
         }
         other => panic!("expected Planning outcome, got {other:?}"),
     }
+}
+
+#[test]
+fn trace_planning_outcome_includes_exhaustion_snapshot() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let place = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("actor should start at a concrete place");
+    let retry_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let frontier_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Water,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let retry_opportunity = exhaustion_key(retry_goal, OpportunityAnchor::Place(place));
+    let frontier_opportunity = default_opportunity(frontier_goal);
+
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            exhaustion_cache: BTreeMap::from([
+                (
+                    retry_opportunity,
+                    crate::ExhaustionEntry {
+                        retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
+                        invalidation_conditions: vec![
+                            ExhaustionInvalidationCondition::PositionChanged,
+                        ],
+                        baseline: ExhaustionBaseline {
+                            position: Some(place),
+                            ..ExhaustionBaseline::default()
+                        },
+                        next_retry_tick: Some(Tick(0)),
+                        consecutive_failures: 3,
+                    },
+                ),
+                (
+                    frontier_opportunity,
+                    crate::ExhaustionEntry {
+                        retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+                        invalidation_conditions: vec![
+                            ExhaustionInvalidationCondition::PositionChanged,
+                        ],
+                        baseline: ExhaustionBaseline {
+                            position: Some(place),
+                            ..ExhaustionBaseline::default()
+                        },
+                        next_retry_tick: None,
+                        consecutive_failures: 0,
+                    },
+                ),
+            ]),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let trace = harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled")
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert_eq!(
+        planning.exhaustion_snapshot,
+        vec![
+            crate::ExhaustionTraceEntry {
+                opportunity: retry_opportunity,
+                retry_state: crate::ExhaustionRetryState::BudgetRetryPending,
+                consecutive_failures: 3,
+                next_retry_tick: Some(Tick(0)),
+                retry_eligible: true,
+            },
+            crate::ExhaustionTraceEntry {
+                opportunity: frontier_opportunity,
+                retry_state: crate::ExhaustionRetryState::FrontierExhausted,
+                consecutive_failures: 0,
+                next_retry_tick: None,
+                retry_eligible: false,
+            },
+        ]
+    );
 }
 
 #[test]
