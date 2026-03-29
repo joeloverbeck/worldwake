@@ -17,7 +17,7 @@ use crate::{
 use super::frame::progress_op_kinds;
 use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
 use super::{
-    build_candidate_plans, persist_blocked_memory, plans_as_options, AgentTickContext,
+    build_candidate_plans, persist_blocked_memory, selection_candidates, AgentTickContext,
     FrameSwitchMarginSource,
 };
 
@@ -84,7 +84,7 @@ pub(super) fn handle_active_action_phase(
             &no_skip,
         )
     });
-    let planned_as_options = planned_candidates.as_ref().map(|p| plans_as_options(p));
+    let selection_plans = planned_candidates.as_ref().map(|p| selection_candidates(p));
     let active_goal_key = active_goal.map(|ag| ag.goal_key);
     let decision = evaluate_interrupt(
         runtime,
@@ -92,7 +92,7 @@ pub(super) fn handle_active_action_phase(
         jc.as_ref(),
         interruptibility,
         ranked_candidates,
-        planned_as_options.as_deref(),
+        selection_plans.as_deref(),
         plan_valid,
         default_switch_margin,
         frame_switch_margin,

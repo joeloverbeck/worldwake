@@ -1859,15 +1859,15 @@ mod tests {
         RankedGoal, RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
     use crate::{
-        decision_trace::CompetitionDiscount,
-        build_planning_snapshot, build_semantics_table, search_plan, CommodityPurpose, GoalKey,
-        GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
-        PlanningBudget, PlanningState,
+        build_planning_snapshot, build_semantics_table, decision_trace::CompetitionDiscount,
+        search_plan, CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind,
+        PlannerOpSemantics, PlannerTransitionKind, PlanningBudget, PlanningState,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
+    use worldwake_core::ActionDomain;
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
         ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState,
@@ -1888,7 +1888,6 @@ mod tests {
         TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     };
     use worldwake_systems::build_full_action_registries;
-    use worldwake_core::ActionDomain;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 

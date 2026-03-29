@@ -303,13 +303,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .iter()
             .filter_map(|(entity, state)| {
                 (state.last_known_place == Some(place)
-                    && state
-                        .believed_activity
-                        .as_ref()
-                        .is_some_and(|activity| {
-                            activity.action_domain == domain
-                                && (target.is_none() || activity.target == target)
-                        }))
+                    && state.believed_activity.as_ref().is_some_and(|activity| {
+                        activity.action_domain == domain
+                            && (target.is_none() || activity.target == target)
+                    }))
                 .then_some(*entity)
             })
             .collect::<Vec<_>>();
@@ -1119,14 +1116,14 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, ActionDefId, ActionDomain,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick,
-        BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog,
-        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData,
-        PerceptionProfile, Permille, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory,
-        UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, Wound, WoundCause, WoundId,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
+        CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
+        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
+        TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1449,7 +1446,10 @@ mod tests {
             })
         );
         assert_eq!(RuntimeBeliefView::believed_activity_of(&view, agent), None);
-        assert_eq!(RuntimeBeliefView::believed_activity_of(&view, unknown), None);
+        assert_eq!(
+            RuntimeBeliefView::believed_activity_of(&view, unknown),
+            None
+        );
     }
 
     #[test]
@@ -1511,15 +1511,13 @@ mod tests {
             RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Trade, Some(source)),
             vec![b]
         );
-        assert!(
-            RuntimeBeliefView::agents_active_at(
-                &view,
-                other_place,
-                ActionDomain::Trade,
-                Some(source)
-            )
-            .is_empty()
-        );
+        assert!(RuntimeBeliefView::agents_active_at(
+            &view,
+            other_place,
+            ActionDomain::Trade,
+            Some(source)
+        )
+        .is_empty());
     }
 
     #[test]

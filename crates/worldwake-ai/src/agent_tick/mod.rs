@@ -25,7 +25,7 @@ use observation::{
     InFlightReconciliation, ReadPhaseContext,
 };
 use planning::{
-    build_candidate_plans, plan_and_validate_next_step_traced, plans_as_options,
+    build_candidate_plans, plan_and_validate_next_step_traced, selection_candidates,
     summarize_ranked_goal, summarize_step,
 };
 

@@ -12,6 +12,7 @@ use super::{
     effective_goal_switch_margin, handle_recoverable_travel_step_blockage, persist_blocked_memory,
     plan_and_validate_next_step_traced, update_frame_for_adopted_plan, AgentTickDriver,
 };
+use crate::plan_selection::SelectionCandidatePlan;
 use crate::PlanningBudget;
 use crate::{
     build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
@@ -3784,20 +3785,29 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
 
     assert_eq!(
         determine_selected_plan_source(
-            challenger_goal,
+            default_opportunity(challenger_goal),
             Some(current_goal),
             &[
-                (current_goal, Some(current_plan.clone())),
-                (challenger_goal, Some(challenger_plan)),
+                SelectionCandidatePlan {
+                    searched_opportunity: default_opportunity(current_goal),
+                    found_plan: Some(current_plan.clone()),
+                },
+                SelectionCandidatePlan {
+                    searched_opportunity: default_opportunity(challenger_goal),
+                    found_plan: Some(challenger_plan),
+                }
             ],
         ),
         crate::SelectedPlanSource::SearchSelection
     );
     assert_eq!(
         determine_selected_plan_source(
-            current_goal,
+            default_opportunity(current_goal),
             Some(current_goal),
-            &[(challenger_goal, None)],
+            &[SelectionCandidatePlan {
+                searched_opportunity: default_opportunity(challenger_goal),
+                found_plan: None,
+            }],
         ),
         crate::SelectedPlanSource::RetainedCurrentPlan
     );

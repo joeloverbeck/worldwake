@@ -5,6 +5,7 @@ use crate::decision_trace::{
     SelectedPlanTrace, SelectionTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
+use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
@@ -20,6 +21,32 @@ use worldwake_sim::{
 };
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
+
+#[derive(Clone, Debug)]
+pub(crate) struct CandidatePlanSearch {
+    pub opportunity: OpportunityKey,
+    pub result: PlanSearchResult,
+    pub binding_rejections: Vec<BindingRejection>,
+    pub expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
+}
+
+impl CandidatePlanSearch {
+    fn selected_plan(&self) -> Option<&PlannedPlan> {
+        match &self.result {
+            PlanSearchResult::Found(plan) => Some(plan.as_ref()),
+            PlanSearchResult::Unsupported
+            | PlanSearchResult::BudgetExhausted { .. }
+            | PlanSearchResult::FrontierExhausted { .. } => None,
+        }
+    }
+
+    fn selection_candidate(&self) -> SelectionCandidatePlan {
+        SelectionCandidatePlan {
+            searched_opportunity: self.opportunity,
+            found_plan: self.selected_plan().cloned(),
+        }
+    }
+}
 
 /// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
 pub(super) fn summarize_step(
@@ -65,19 +92,16 @@ pub(super) fn summarize_selected_plan(
 }
 
 pub(super) fn summarize_search_provenance(
-    plans: &[(
-        OpportunityKey,
-        PlanSearchResult,
-        Vec<BindingRejection>,
-        Vec<crate::decision_trace::SearchExpansionSummary>,
-    )],
+    plans: &[CandidatePlanSearch],
+    selected_opportunity: OpportunityKey,
 ) -> Option<SelectedPlanSearchProvenance> {
-    let (_, result, _, expansions) = plans
+    let expansions = &plans
         .iter()
-        .find(|(_, result, _, _)| matches!(result, PlanSearchResult::Found(_)))?;
-    if !matches!(result, PlanSearchResult::Found(_)) {
-        return None;
-    }
+        .find(|plan| {
+            plan.opportunity == selected_opportunity
+                && matches!(plan.result, PlanSearchResult::Found(_))
+        })?
+        .expansion_summaries;
     let root = expansions.first();
     Some(SelectedPlanSearchProvenance {
         expansions_used: expansions.len() as u16,
@@ -130,17 +154,20 @@ pub(super) fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
 }
 
 pub(super) fn determine_selected_plan_source(
-    selected_goal: worldwake_core::GoalKey,
+    selected_opportunity: OpportunityKey,
     current_goal_before_selection: Option<worldwake_core::GoalKey>,
-    plans: &[(worldwake_core::GoalKey, Option<PlannedPlan>)],
+    plans: &[SelectionCandidatePlan],
 ) -> SelectedPlanSource {
     if plans
         .iter()
-        .any(|(goal, plan)| *goal == selected_goal && plan.is_some())
+        .any(|plan| plan.searched_opportunity == selected_opportunity && plan.found_plan.is_some())
     {
         SelectedPlanSource::SearchSelection
     } else {
-        debug_assert_eq!(current_goal_before_selection, Some(selected_goal));
+        debug_assert_eq!(
+            current_goal_before_selection,
+            Some(selected_opportunity.goal_key)
+        );
         SelectedPlanSource::RetainedCurrentPlan
     }
 }
@@ -161,12 +188,7 @@ pub(super) fn build_candidate_plans(
     collect_rejections: bool,
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
-) -> Vec<(
-    OpportunityKey,
-    PlanSearchResult,
-    Vec<BindingRejection>,
-    Vec<crate::decision_trace::SearchExpansionSummary>,
-)> {
+) -> Vec<CandidatePlanSearch> {
     let view = runtime_belief_view(agent, world, scheduler, action_defs);
     let candidates_to_plan: Vec<_> = ranked_candidates
         .iter()
@@ -245,7 +267,12 @@ pub(super) fn build_candidate_plans(
             },
         );
         let found = result.is_found();
-        results.push((opportunity, result, rejections, expansions));
+        results.push(CandidatePlanSearch {
+            opportunity,
+            result,
+            binding_rejections: rejections,
+            expansion_summaries: expansions,
+        });
         if found {
             continue_same_goal_after_found = Some(opportunity.goal_key);
         }
@@ -253,19 +280,10 @@ pub(super) fn build_candidate_plans(
     results
 }
 
-/// Convert `PlanSearchResult` plans to `Option<PlannedPlan>` for APIs that
-/// only care about found plans (selection, interrupt evaluation).
-pub(super) fn plans_as_options(
-    plans: &[(
-        OpportunityKey,
-        PlanSearchResult,
-        Vec<BindingRejection>,
-        Vec<crate::decision_trace::SearchExpansionSummary>,
-    )],
-) -> Vec<(crate::GoalKey, Option<PlannedPlan>)> {
+pub(super) fn selection_candidates(plans: &[CandidatePlanSearch]) -> Vec<SelectionCandidatePlan> {
     plans
         .iter()
-        .map(|(opportunity, result, _, _)| (opportunity.goal_key, result.clone().into_plan()))
+        .map(CandidatePlanSearch::selection_candidate)
         .collect()
 }
 
@@ -311,29 +329,24 @@ fn record_exhausted_goals(
     view: &dyn GoalBeliefView,
     agent: worldwake_core::EntityId,
     recipe_registry: &RecipeRegistry,
-    plans: &[(
-        OpportunityKey,
-        PlanSearchResult,
-        Vec<BindingRejection>,
-        Vec<crate::decision_trace::SearchExpansionSummary>,
-    )],
+    plans: &[CandidatePlanSearch],
     _tick: Tick,
 ) {
-    for (key, result, _, _) in plans {
-        match result {
+    for plan in plans {
+        match &plan.result {
             crate::PlanSearchResult::BudgetExhausted { .. }
             | crate::PlanSearchResult::FrontierExhausted { .. } => {
                 let (invalidation_conditions, baseline) = derive_invalidation_conditions(
-                    &key.goal_key.kind,
+                    &plan.opportunity.goal_key.kind,
                     agent,
                     view,
                     recipe_registry,
                 );
                 let prev_count = runtime
                     .exhaustion_cache
-                    .get(key)
+                    .get(&plan.opportunity)
                     .map_or(0, |e| e.consecutive_budget_exhaustions);
-                let entry = match result {
+                let entry = match &plan.result {
                     crate::PlanSearchResult::BudgetExhausted { .. } => {
                         let mut e = ExhaustionEntry::budget_retry_pending(
                             invalidation_conditions,
@@ -349,10 +362,10 @@ fn record_exhausted_goals(
                         unreachable!("match guard excludes non-exhaustion results")
                     }
                 };
-                runtime.exhaustion_cache.insert(*key, entry);
+                runtime.exhaustion_cache.insert(plan.opportunity, entry);
             }
             crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => {
-                runtime.exhaustion_cache.remove(key);
+                runtime.exhaustion_cache.remove(&plan.opportunity);
             }
         }
     }
@@ -474,16 +487,16 @@ pub(super) fn plan_and_validate_next_step(
 
         // Record newly exhausted goals for next tick.
         record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick);
-        for (key, result, _, _) in &plans {
-            if result.is_found() {
-                runtime.exhaustion_cache.remove(key);
+        for plan in &plans {
+            if plan.result.is_found() {
+                runtime.exhaustion_cache.remove(&plan.opportunity);
             }
         }
-        let plans_options = plans_as_options(&plans);
+        let selection_plans = selection_candidates(&plans);
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
-            &plans_options,
+            &selection_plans,
             active_goal_key,
             runtime,
             jc.as_ref(),
@@ -656,29 +669,29 @@ pub(super) fn plan_and_validate_next_step_traced(
         );
 
         record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick);
-        for (key, result, _, _) in &plans {
-            if result.is_found() {
-                runtime.exhaustion_cache.remove(key);
+        for plan in &plans {
+            if plan.result.is_found() {
+                runtime.exhaustion_cache.remove(&plan.opportunity);
             }
         }
 
-        for (opportunity, result, rejections, expansions) in &plans {
+        for plan in &plans {
             plan_search_trace.attempts.push(plan_search_result_to_trace(
-                opportunity.goal_key,
-                opportunity.anchor,
-                result,
+                plan.opportunity.goal_key,
+                plan.opportunity.anchor,
+                &plan.result,
                 action_defs,
-                rejections.clone(),
-                expansions.clone(),
+                plan.binding_rejections.clone(),
+                plan.expansion_summaries.clone(),
             ));
         }
 
-        let plans_options = plans_as_options(&plans);
+        let selection_plans = selection_candidates(&plans);
         let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.goal_key);
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
-            &plans_options,
+            &selection_plans,
             current_goal_before_selection,
             runtime,
             jc.as_ref(),
@@ -686,14 +699,15 @@ pub(super) fn plan_and_validate_next_step_traced(
             frame_switch_margin,
         ) {
             let selected_goal = selected_plan.goal;
+            let selected_opportunity = selected_plan.opportunity;
             let selected_plan_source = determine_selected_plan_source(
-                selected_goal,
+                selected_opportunity,
                 current_goal_before_selection,
-                &plans_options,
+                &selection_plans,
             );
             let search_provenance =
                 matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
-                    .then(|| summarize_search_provenance(&plans))
+                    .then(|| summarize_search_provenance(&plans, selected_opportunity))
                     .flatten();
             selection_trace.selected_opportunity = Some(selected_plan.opportunity);
             selection_trace.selected_plan = Some(summarize_selected_plan(
@@ -825,7 +839,10 @@ pub(super) fn plan_search_result_to_trace(
 
 #[cfg(test)]
 mod tests {
-    use super::{has_pending_budget_retry, record_exhausted_goals, summarize_ranked_goal};
+    use super::{
+        has_pending_budget_retry, record_exhausted_goals, summarize_ranked_goal,
+        CandidatePlanSearch,
+    };
     use crate::{
         build_semantics_table, decision_trace::CompetitionDiscount, feasibility::FeasibilityHint,
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
@@ -893,6 +910,15 @@ mod tests {
             anchor,
             evidence_entities,
             evidence_places,
+        }
+    }
+
+    fn searched_plan(opportunity: OpportunityKey, result: PlanSearchResult) -> CandidatePlanSearch {
+        CandidatePlanSearch {
+            opportunity,
+            result,
+            binding_rejections: Vec::new(),
+            expansion_summaries: Vec::new(),
         }
     }
 
@@ -1090,18 +1116,18 @@ mod tests {
             &BTreeMap::new(),
         );
 
-        let (goal, result, _, _) = plans
+        let first = plans
             .first()
             .expect("primary admitted candidate should be searched");
         assert_eq!(
-            goal.goal_key,
+            first.opportunity.goal_key,
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
             })
         );
         assert!(
-            !result.is_found(),
+            !first.result.is_found(),
             "AcquireCommodity(Bread) search should not be able to use the remote seller evidence attached only to a different admitted candidate"
         );
     }
@@ -1178,14 +1204,20 @@ mod tests {
             2,
             "same-goal sibling opportunities should both be admitted in ranked order"
         );
-        assert_eq!(plans[0].0.anchor, OpportunityAnchor::Place(market));
+        assert_eq!(
+            plans[0].opportunity.anchor,
+            OpportunityAnchor::Place(market)
+        );
         assert!(
-            !plans[0].1.is_found(),
+            !plans[0].result.is_found(),
             "the first sibling opportunity should fail with its own isolated evidence"
         );
-        assert_eq!(plans[1].0.anchor, OpportunityAnchor::Place(origin));
+        assert_eq!(
+            plans[1].opportunity.anchor,
+            OpportunityAnchor::Place(origin)
+        );
         assert!(
-            !matches!(plans[1].1, PlanSearchResult::Unsupported),
+            !matches!(plans[1].result, PlanSearchResult::Unsupported),
             "the later sibling opportunity should still be searched rather than suppressed before search"
         );
     }
@@ -1270,11 +1302,88 @@ mod tests {
             1,
             "an exhausted sibling should be skipped without suppressing later same-goal opportunities"
         );
-        assert_eq!(plans[0].0.anchor, OpportunityAnchor::Place(origin));
+        assert_eq!(
+            plans[0].opportunity.anchor,
+            OpportunityAnchor::Place(origin)
+        );
         assert!(
-            !matches!(plans[0].1, PlanSearchResult::Unsupported),
+            !matches!(plans[0].result, PlanSearchResult::Unsupported),
             "the non-exhausted sibling should still reach search"
         );
+    }
+
+    #[test]
+    fn summarize_search_provenance_uses_selected_opportunity() {
+        let goal = GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        });
+        let local = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(place_entity(51)),
+        };
+        let remote = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(place_entity(52)),
+        };
+        let mut local_plan = searched_plan(
+            local,
+            PlanSearchResult::Found(Box::new(PlannedPlan::new(
+                local,
+                goal,
+                Vec::new(),
+                PlanTerminalKind::GoalSatisfied,
+            ))),
+        );
+        local_plan
+            .expansion_summaries
+            .push(crate::decision_trace::SearchExpansionSummary {
+                depth: 0,
+                remaining_travel_ticks: 2,
+                combined_places_count: 1,
+                prerequisite_places_count: 0,
+                candidates_generated: 1,
+                candidates_skipped: 0,
+                terminal_successors: 0,
+                non_terminal_before_beam: 1,
+                non_terminal_after_beam: 1,
+                found_goal_satisfied: true,
+                travel_pruning: None,
+                prerequisite_guidance: None,
+                root_candidates: Vec::new(),
+                root_omissions: Vec::new(),
+            });
+        let mut remote_plan = searched_plan(
+            remote,
+            PlanSearchResult::Found(Box::new(PlannedPlan::new(
+                remote,
+                goal,
+                Vec::new(),
+                PlanTerminalKind::GoalSatisfied,
+            ))),
+        );
+        remote_plan
+            .expansion_summaries
+            .push(crate::decision_trace::SearchExpansionSummary {
+                depth: 0,
+                remaining_travel_ticks: 7,
+                combined_places_count: 1,
+                prerequisite_places_count: 0,
+                candidates_generated: 1,
+                candidates_skipped: 0,
+                terminal_successors: 0,
+                non_terminal_before_beam: 1,
+                non_terminal_after_beam: 1,
+                found_goal_satisfied: true,
+                travel_pruning: None,
+                prerequisite_guidance: None,
+                root_candidates: Vec::new(),
+                root_omissions: Vec::new(),
+            });
+
+        let provenance =
+            super::summarize_search_provenance(&[local_plan, remote_plan], remote).unwrap();
+
+        assert_eq!(provenance.root_remaining_travel_ticks, 7);
     }
 
     #[test]
@@ -1396,13 +1505,11 @@ mod tests {
             },
         );
 
-        let plans = vec![(
+        let plans = vec![searched_plan(
             goal,
             PlanSearchResult::BudgetExhausted {
                 expansions_used: 12,
             },
-            Vec::new(),
-            Vec::new(),
         )];
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);
@@ -1442,13 +1549,11 @@ mod tests {
         }
         let view = PerAgentBeliefView::from_world(agent, &world);
 
-        let plans = vec![(
+        let plans = vec![searched_plan(
             goal,
             PlanSearchResult::BudgetExhausted {
                 expansions_used: 12,
             },
-            Vec::new(),
-            Vec::new(),
         )];
         record_exhausted_goals(
             &mut runtime,
@@ -1504,11 +1609,9 @@ mod tests {
             },
         );
 
-        let plans = vec![(
+        let plans = vec![searched_plan(
             solved_goal,
             PlanSearchResult::Found(Box::new(found_plan(solved_goal.goal_key))),
-            Vec::new(),
-            Vec::new(),
         )];
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);
@@ -1538,13 +1641,11 @@ mod tests {
     fn record_exhausted_goals_records_frontier_exhaustion_as_suppressing_retry_state() {
         let goal = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
         let mut runtime = AgentDecisionRuntime::default();
-        let plans = vec![(
+        let plans = vec![searched_plan(
             goal,
             PlanSearchResult::FrontierExhausted {
                 expansions_used: 12,
             },
-            Vec::new(),
-            Vec::new(),
         )];
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);

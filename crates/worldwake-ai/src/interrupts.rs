@@ -3,8 +3,9 @@ use crate::{
     frame_switch_policy::compare_relation_aware_goal_switch,
     goal_policy::{goal_family_policy, FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{compare_goal_switch, GoalSwitchKind},
+    plan_selection::SelectionCandidatePlan,
     AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalKey, GoalPriorityClass,
-    PlannedPlan, RankedGoal,
+    RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{IntentionFrame, Permille};
@@ -33,7 +34,7 @@ pub fn evaluate_interrupt(
     jc: Option<&IntentionFrame>,
     current_action_interruptibility: Interruptibility,
     ranked_candidates: &[RankedGoal],
-    planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
+    planned_candidates: Option<&[SelectionCandidatePlan]>,
     plan_valid: bool,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
@@ -90,7 +91,7 @@ fn interrupt_freely(
     jc: Option<&IntentionFrame>,
     challenger: &RankedGoal,
     ranked_candidates: &[RankedGoal],
-    planned_candidates: Option<&[(GoalKey, Option<PlannedPlan>)]>,
+    planned_candidates: Option<&[SelectionCandidatePlan]>,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
     decision_context: DecisionContext,
@@ -172,7 +173,7 @@ fn relation_aware_interrupt_candidate<'a>(
     active_goal: Option<GoalKey>,
     jc: Option<&IntentionFrame>,
     ranked_candidates: &'a [RankedGoal],
-    planned_candidates: Option<&'a [(GoalKey, Option<PlannedPlan>)]>,
+    planned_candidates: Option<&'a [SelectionCandidatePlan]>,
     current_class: GoalPriorityClass,
     current_motive: Option<u32>,
     default_switch_margin: Permille,
@@ -181,7 +182,12 @@ fn relation_aware_interrupt_candidate<'a>(
     let planned_candidates = planned_candidates?;
     let planned_by_goal = planned_candidates
         .iter()
-        .filter_map(|(goal, plan)| plan.as_ref().map(|plan| (*goal, plan)))
+        .filter_map(|selection_plan| {
+            selection_plan
+                .found_plan
+                .as_ref()
+                .map(|plan| (selection_plan.searched_opportunity.goal_key, plan))
+        })
         .collect::<BTreeMap<_, _>>();
 
     for challenger in ranked_candidates {
@@ -251,6 +257,7 @@ fn current_priority(
 #[cfg(test)]
 mod tests {
     use super::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
+    use crate::plan_selection::SelectionCandidatePlan;
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, DecisionContext, GoalKey, GoalPriorityClass,
         GroundedGoal, PlannedPlan, RankedGoal,
@@ -313,6 +320,13 @@ mod tests {
         DecisionContext {
             max_self_care_class: GoalPriorityClass::Background,
             danger_class: GoalPriorityClass::Background,
+        }
+    }
+
+    fn selection_plan(goal: GoalKey, plan: Option<PlannedPlan>) -> SelectionCandidatePlan {
+        SelectionCandidatePlan {
+            searched_opportunity: opportunity(goal),
+            found_plan: plan,
         }
     }
 
@@ -758,7 +772,7 @@ mod tests {
                 1_350,
             ),
         ];
-        let planned_candidates = vec![(
+        let planned_candidates = vec![selection_plan(
             challenger_goal,
             Some(PlannedPlan::new(
                 opportunity(challenger_goal),
@@ -969,7 +983,7 @@ mod tests {
             ),
         ];
         let planned_candidates = vec![
-            (
+            selection_plan(
                 abandon_goal,
                 Some(PlannedPlan::new(
                     opportunity(abandon_goal),
@@ -986,7 +1000,7 @@ mod tests {
                     crate::PlanTerminalKind::GoalSatisfied,
                 )),
             ),
-            (
+            selection_plan(
                 detour_goal,
                 Some(PlannedPlan::new(
                     opportunity(detour_goal),

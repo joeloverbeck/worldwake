@@ -66,9 +66,9 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
-        ControlSource, EntityId, EventTag, ReservationId, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource,
+        EntityId, EventTag, ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
 
     fn sample_instance() -> ActionInstance {

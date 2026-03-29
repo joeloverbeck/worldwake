@@ -235,9 +235,9 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
-        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView,
-        Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CommodityKind,
+        ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView, Quantity, Seed, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

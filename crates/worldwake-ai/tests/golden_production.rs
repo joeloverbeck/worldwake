@@ -16,8 +16,8 @@ use worldwake_core::{
     DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind, EntityId,
     EventTag, EventView, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
     MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
-    WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionStartFailureReason, ActionTraceKind, RequestAttemptTrace, RequestBindingKind,

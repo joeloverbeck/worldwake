@@ -7,9 +7,15 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use worldwake_core::{IntentionFrame, OpportunityKey, Permille};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectionCandidatePlan {
+    pub searched_opportunity: OpportunityKey,
+    pub found_plan: Option<PlannedPlan>,
+}
+
 pub fn select_best_plan(
     candidates: &[RankedGoal],
-    plans: &[(GoalKey, Option<PlannedPlan>)],
+    plans: &[SelectionCandidatePlan],
     active_goal: Option<GoalKey>,
     current: &AgentDecisionRuntime,
     jc: Option<&IntentionFrame>,
@@ -31,10 +37,12 @@ pub fn select_best_plan(
 
     let mut available = plans
         .iter()
-        .filter_map(|(_, plan)| {
-            let plan = plan.as_ref()?;
-            let (priority_class, motive_score) =
-                candidate_scores.get(&plan.opportunity).copied()?;
+        .filter_map(|selection_plan| {
+            let plan = selection_plan.found_plan.as_ref()?;
+            let (priority_class, motive_score) = candidate_scores
+                .get(&selection_plan.searched_opportunity)
+                .copied()?;
+            debug_assert_eq!(plan.opportunity, selection_plan.searched_opportunity);
             Some((priority_class, motive_score, plan.clone()))
         })
         .collect::<Vec<_>>();
@@ -43,7 +51,7 @@ pub fn select_best_plan(
     let has_current_goal_plan = active_goal.is_some_and(|goal| {
         plans
             .iter()
-            .any(|(_, plan)| plan.as_ref().is_some_and(|plan| plan.goal == goal))
+            .any(|plan| plan.searched_opportunity.goal_key == goal && plan.found_plan.is_some())
     });
 
     let Some(current_plan) = current.current_plan.clone() else {
@@ -105,7 +113,7 @@ fn compare_ranked_plans(
 
 #[cfg(test)]
 mod tests {
-    use super::select_best_plan;
+    use super::{select_best_plan, SelectionCandidatePlan};
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
@@ -164,9 +172,17 @@ mod tests {
         )
     }
 
-    fn plan_at(goal: GoalKey, anchor: worldwake_core::OpportunityAnchor, def_id: u32, ticks: u32) -> PlannedPlan {
+    fn plan_at(
+        goal: GoalKey,
+        anchor: worldwake_core::OpportunityAnchor,
+        def_id: u32,
+        ticks: u32,
+    ) -> PlannedPlan {
         PlannedPlan::new(
-            worldwake_core::OpportunityKey { goal_key: goal, anchor },
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor,
+            },
             goal,
             vec![PlannedStep {
                 def_id: ActionDefId(def_id),
@@ -187,6 +203,27 @@ mod tests {
 
     fn route_switch_margin() -> Permille {
         Permille::new(300).unwrap()
+    }
+
+    fn selection_plan(goal: GoalKey, plan: Option<PlannedPlan>) -> SelectionCandidatePlan {
+        SelectionCandidatePlan {
+            searched_opportunity: opportunity(goal),
+            found_plan: plan,
+        }
+    }
+
+    fn selection_plan_at(
+        goal: GoalKey,
+        anchor: worldwake_core::OpportunityAnchor,
+        plan: Option<PlannedPlan>,
+    ) -> SelectionCandidatePlan {
+        SelectionCandidatePlan {
+            searched_opportunity: worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor,
+            },
+            found_plan: plan,
+        }
     }
 
     #[test]
@@ -210,8 +247,8 @@ mod tests {
             ),
         ];
         let plans = vec![
-            (sleep_goal, Some(plan(sleep_goal, 1, 1))),
-            (eat_goal, Some(plan(eat_goal, 2, 9))),
+            selection_plan(sleep_goal, Some(plan(sleep_goal, 1, 1))),
+            selection_plan(eat_goal, Some(plan(eat_goal, 2, 9))),
         ];
 
         let selected = select_best_plan(
@@ -264,8 +301,12 @@ mod tests {
             },
         ];
         let plans = vec![
-            (goal, Some(plan_at(goal, local_anchor, 1, 1))),
-            (goal, Some(plan_at(goal, remote_anchor, 2, 2))),
+            selection_plan_at(goal, local_anchor, Some(plan_at(goal, local_anchor, 1, 1))),
+            selection_plan_at(
+                goal,
+                remote_anchor,
+                Some(plan_at(goal, remote_anchor, 2, 2)),
+            ),
         ];
 
         let selected = select_best_plan(
@@ -313,8 +354,8 @@ mod tests {
             ),
         ];
         let plans = vec![
-            (current_goal, Some(current_plan.clone())),
-            (challenger_goal, Some(challenger_plan)),
+            selection_plan(current_goal, Some(current_plan.clone())),
+            selection_plan(challenger_goal, Some(challenger_plan)),
         ];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan.clone()),
@@ -356,8 +397,8 @@ mod tests {
         let slower = plan(first_goal, 4, 3);
         let faster = plan(second_goal, 3, 2);
         let plans = vec![
-            (first_goal, Some(slower)),
-            (second_goal, Some(faster.clone())),
+            selection_plan(first_goal, Some(slower)),
+            selection_plan(second_goal, Some(faster.clone())),
         ];
 
         let first = select_best_plan(
@@ -425,7 +466,7 @@ mod tests {
             GoalPriorityClass::High,
             900,
         )];
-        let plans = vec![(goal, Some(refreshed_plan.clone()))];
+        let plans = vec![selection_plan(goal, Some(refreshed_plan.clone()))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(stale_plan),
             current_step_index: 1,
@@ -470,7 +511,7 @@ mod tests {
             800,
         )];
         let actionable = plan(eat_goal, 1, 3);
-        let plans = vec![(eat_goal, Some(actionable.clone()))];
+        let plans = vec![selection_plan(eat_goal, Some(actionable.clone()))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(empty_plan(eat_goal)),
             dirty: crate::DirtySet::default(),
@@ -511,7 +552,7 @@ mod tests {
         )];
         let current = plan(eat_goal, 1, 3);
         let challenger = plan(eat_goal, 2, 1);
-        let plans = vec![(eat_goal, Some(challenger.clone()))];
+        let plans = vec![selection_plan(eat_goal, Some(challenger.clone()))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current.clone()),
             dirty: crate::DirtySet::default(),
@@ -548,7 +589,7 @@ mod tests {
             GoalPriorityClass::High,
             800,
         )];
-        let plans = vec![(eat_goal, Some(empty_plan(eat_goal)))];
+        let plans = vec![selection_plan(eat_goal, Some(empty_plan(eat_goal)))];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(empty_plan(eat_goal)),
             dirty: crate::DirtySet::default(),
@@ -605,8 +646,8 @@ mod tests {
             ),
         ];
         let plans = vec![
-            (current_goal, Some(current_plan.clone())),
-            (challenger_goal, Some(challenger_plan.clone())),
+            selection_plan(current_goal, Some(current_plan.clone())),
+            selection_plan(challenger_goal, Some(challenger_plan.clone())),
         ];
         let jc = Some(IntentionFrame {
             goal: current_goal,
@@ -681,8 +722,8 @@ mod tests {
             ),
         ];
         let plans = vec![
-            (current_goal, None),
-            (fallback_goal, Some(fallback_plan.clone())),
+            selection_plan(current_goal, None),
+            selection_plan(fallback_goal, Some(fallback_plan.clone())),
         ];
         let runtime = AgentDecisionRuntime {
             current_plan: Some(current_plan),
@@ -780,9 +821,9 @@ mod tests {
             ),
         ];
         let plans = vec![
-            (abandon_goal, Some(abandon_plan)),
-            (detour_goal, Some(detour_plan.clone())),
-            (committed_goal, Some(current_plan.clone())),
+            selection_plan(abandon_goal, Some(abandon_plan)),
+            selection_plan(detour_goal, Some(detour_plan.clone())),
+            selection_plan(committed_goal, Some(current_plan.clone())),
         ];
         let jc = Some(IntentionFrame {
             goal: committed_goal,

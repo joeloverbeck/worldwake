@@ -53,9 +53,7 @@ impl PartialOrd for Affordance {
 #[cfg(test)]
 mod tests {
     use super::Affordance;
-    use crate::{
-        ActionDef, ActionHandlerId, ActionPayload, DurationExpr, Interruptibility,
-    };
+    use crate::{ActionDef, ActionHandlerId, ActionPayload, DurationExpr, Interruptibility};
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;

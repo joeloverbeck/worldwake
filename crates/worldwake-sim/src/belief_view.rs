@@ -11,8 +11,7 @@ use worldwake_core::{
     MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
     TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.

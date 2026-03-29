@@ -36,8 +36,8 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, EntityId, EntityKind,
-        EventTag, Permille, Quantity, VisibilitySpec,
+        ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag,
+        Permille, Quantity, VisibilitySpec,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

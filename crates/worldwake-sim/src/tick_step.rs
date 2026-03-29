@@ -848,23 +848,23 @@ mod tests {
         TickStepServices,
     };
     use crate::{
-        get_affordances, ActionDef, ActionDefRegistry, ActionError, ActionHandler,
-        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
-        ActionProgress, ActionRequestMode, ActionState, ActionStatus, ActionTraceDetail,
-        ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng,
-        DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry,
-        RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
-        RequestResolutionRejectionReason, RequestResolutionTraceSink, ReservationReq, Scheduler,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
-        TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
+        get_affordances, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
+        ActionRequestMode, ActionState, ActionStatus, ActionTraceDetail, ActionTraceKind,
+        ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng, DurationExpr, InputKind,
+        Interruptibility, Precondition, RecipeRegistry, RequestBindingKind, RequestProvenance,
+        RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceSink,
+        ReservationReq, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
+        SystemManifest, TargetSpec, TellActionPayload, TickInputContext, TickInputError,
+        TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
-        ControlSource, DeadAt, EntityId, EntityKind, EventLog, EventTag, EventView, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource,
+        DeadAt, EntityId, EntityKind, EventLog, EventTag, EventView, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

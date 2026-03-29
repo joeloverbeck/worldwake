@@ -1043,13 +1043,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .iter()
             .filter_map(|(entity, belief)| {
                 (belief.last_known_place == Some(place)
-                    && belief
-                        .believed_activity
-                        .as_ref()
-                        .is_some_and(|activity| {
-                            activity.action_domain == domain
-                                && (target.is_none() || activity.target == target)
-                        }))
+                    && belief.believed_activity.as_ref().is_some_and(|activity| {
+                        activity.action_domain == domain
+                            && (target.is_none() || activity.target == target)
+                    }))
                 .then_some(*entity)
             })
             .collect::<Vec<_>>();
@@ -1760,16 +1757,16 @@ mod tests {
     use crate::planning_snapshot::build_planning_snapshot;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
+    use worldwake_core::ActionDomain;
     use worldwake_core::{
         ActionDefId, BelievedActivity, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, GrantedFacilityUse,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity,
-        RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource,
-        SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-        TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
+        SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
         ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
@@ -1780,7 +1777,6 @@ mod tests {
         ReservationReq, RuntimeBeliefView, TargetSpec,
     };
     use worldwake_systems::register_office_actions;
-    use worldwake_core::ActionDomain;
 
     struct StubBeliefView {
         current_tick: Tick,
@@ -2749,7 +2745,10 @@ mod tests {
         let observed = entity(30);
         view.beliefs.insert(
             actor,
-            vec![(observed, belief_with_activity(town, ActionDomain::Production, Some(entity(40)), 9))],
+            vec![(
+                observed,
+                belief_with_activity(town, ActionDomain::Production, Some(entity(40)), 9),
+            )],
         );
 
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
@@ -2778,13 +2777,22 @@ mod tests {
         view.beliefs.insert(
             actor,
             vec![
-                (producer, belief_with_activity(town, ActionDomain::Production, Some(source), 9)),
-                (trader, belief_with_activity(town, ActionDomain::Trade, Some(source), 9)),
+                (
+                    producer,
+                    belief_with_activity(town, ActionDomain::Production, Some(source), 9),
+                ),
+                (
+                    trader,
+                    belief_with_activity(town, ActionDomain::Trade, Some(source), 9),
+                ),
                 (
                     other_target,
                     belief_with_activity(town, ActionDomain::Production, Some(other_source), 9),
                 ),
-                (remote, belief_with_activity(field, ActionDomain::Production, Some(source), 9)),
+                (
+                    remote,
+                    belief_with_activity(field, ActionDomain::Production, Some(source), 9),
+                ),
             ],
         );
 
@@ -2808,15 +2816,13 @@ mod tests {
             RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
             vec![trader]
         );
-        assert!(
-            RuntimeBeliefView::agents_active_at(
-                &state,
-                field,
-                ActionDomain::Trade,
-                Some(source)
-            )
-            .is_empty()
-        );
+        assert!(RuntimeBeliefView::agents_active_at(
+            &state,
+            field,
+            ActionDomain::Trade,
+            Some(source)
+        )
+        .is_empty());
     }
 
     #[test]

@@ -330,12 +330,9 @@ fn collect_direct_local_observation_batch(
         if !passes_observation_check(observation_fidelity, rng) {
             continue;
         }
-        if let Some(snapshot) = build_believed_entity_state(
-            world,
-            entity,
-            tick,
-            PerceptionSource::DirectObservation,
-        ) {
+        if let Some(snapshot) =
+            build_believed_entity_state(world, entity, tick, PerceptionSource::DirectObservation)
+        {
             observed_snapshots.insert(entity, snapshot);
         }
     }
@@ -377,14 +374,7 @@ fn apply_direct_local_observation_batch(
     profile: &worldwake_core::PerceptionProfile,
 ) {
     for (subject, snapshot) in &batch.observed_snapshots {
-        record_observed_snapshot(
-            event_log,
-            context,
-            store,
-            *subject,
-            snapshot.clone(),
-            false,
-        );
+        record_observed_snapshot(event_log, context, store, *subject, snapshot.clone(), false);
     }
 
     for subject in &batch.noticed_missing_subjects {
@@ -880,17 +870,16 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_observed_entity_snapshot, build_prototype_world, AgentBeliefStore,
-        ActionDefId, ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
-        CauseRef, CommodityKind, ComponentDelta,
-        ComponentKind, ComponentValue, ControlSource, DeadAt, EntityKind, EventLog, EventPayload,
-        EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, MismatchKind, ObservedEntitySnapshot, OfficeForceState,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
-        ResourceSource, Seed, SocialObservationDetail, SocialObservationKind, StateDelta,
-        TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn,
+        build_observed_entity_snapshot, build_prototype_world, ActionDefId, ActionDomain,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, CauseRef,
+        CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource, DeadAt,
+        EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind,
+        ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
+        PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource, Seed,
+        SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1037,8 +1026,8 @@ mod tests {
         domain: ActionDomain,
         target: Option<worldwake_core::EntityId>,
     ) -> BelievedEntityState {
-        let mut state =
-            observed_snapshot(Some(place), 0).to_believed_entity_state(Tick(2), PerceptionSource::DirectObservation);
+        let mut state = observed_snapshot(Some(place), 0)
+            .to_believed_entity_state(Tick(2), PerceptionSource::DirectObservation);
         state.believed_activity = Some(BelievedActivity {
             action_domain: domain,
             target,
@@ -1171,7 +1160,8 @@ mod tests {
                 actor,
                 stale_activity_belief(place, ActionDomain::Production, None),
             );
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();
@@ -1223,8 +1213,12 @@ mod tests {
             txn.set_ground_location(observer, place).unwrap();
             txn.set_ground_location(actor, other_place).unwrap();
             let mut beliefs = AgentBeliefStore::new();
-            beliefs.update_entity(actor, stale_activity_belief(place, ActionDomain::Travel, None));
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            beliefs.update_entity(
+                actor,
+                stale_activity_belief(place, ActionDomain::Travel, None),
+            );
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();
@@ -1276,8 +1270,12 @@ mod tests {
             txn.set_ground_location(observer, place).unwrap();
             txn.set_ground_location(actor, other_place).unwrap();
             let mut beliefs = AgentBeliefStore::new();
-            beliefs.update_entity(actor, stale_activity_belief(place, ActionDomain::Travel, None));
-            txn.set_component_agent_belief_store(observer, beliefs).unwrap();
+            beliefs.update_entity(
+                actor,
+                stale_activity_belief(place, ActionDomain::Travel, None),
+            );
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
             let mut log = EventLog::new();

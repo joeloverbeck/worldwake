@@ -24,8 +24,8 @@
 //! This policy is enforced by integration tests that scan source files for
 //! forbidden patterns.
 
-pub mod allocator;
 pub mod action_domain;
+pub mod allocator;
 pub mod belief;
 pub mod blocked_intent;
 pub mod canonical;
@@ -73,8 +73,8 @@ pub mod world;
 pub mod world_txn;
 pub mod wounds;
 
-pub use allocator::EntityAllocator;
 pub use action_domain::ActionDomain;
+pub use allocator::EntityAllocator;
 pub use belief::{
     belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
     current_institutional_belief_topics, institutional_claim_same_memory_lane,
@@ -83,10 +83,10 @@ pub use belief::{
     social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
     to_shared_belief_snapshot, AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey,
     BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, HeardBeliefDisposition,
-    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile,
-    PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
-    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
+    TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,

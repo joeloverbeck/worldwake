@@ -314,6 +314,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
+    use worldwake_core::ActionDomain;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
         DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
@@ -323,10 +324,9 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, DeterministicRng,
-        DurationExpr, Interruptibility, SystemExecutionContext, SystemId,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, DeterministicRng, DurationExpr,
+        Interruptibility, SystemExecutionContext, SystemId,
     };
-    use worldwake_core::ActionDomain;
 
     fn pm(value: u16) -> Permille {
         Permille::new(value).unwrap()

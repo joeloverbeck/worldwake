@@ -1,6 +1,7 @@
 use crate::{
-    assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
+    assess_danger, classify_band,
     decision_trace::CompetitionDiscount,
+    derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
     theft::assess_theft_deterrence,
@@ -92,7 +93,8 @@ pub fn rank_candidates(
             continue;
         }
         let provenance = goal_ranking_provenance(candidate, &context, recipes);
-        let priority_class = ranked_priority_class(candidate, &context, recipes, provenance.as_ref());
+        let priority_class =
+            ranked_priority_class(candidate, &context, recipes, provenance.as_ref());
         let motive_score = ranked_motive_score(candidate, &context, recipes, provenance.as_ref());
         let competition_discount = apply_competition_discount(candidate, &context, motive_score);
         let scored = RankedGoal {
@@ -1087,25 +1089,25 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_competition_discount, build_decision_context, rank_candidates, RankingContext};
+    use super::{
+        apply_competition_discount, build_decision_context, rank_candidates, RankingContext,
+    };
     use crate::{
-        decision_trace::CompetitionDiscount,
-        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
-        RankedPriorityAdjustment,
+        decision_trace::CompetitionDiscount, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
+        RankedDriveKind, RankedGoalProvenance, RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         belief_confidence, ActionDomain, BeliefConfidencePolicy, BelievedActivity,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DemandObservationReason, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
-        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OpportunityAnchor, PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId,
-        ResourceSource, TellTopic, TheftDispositionProfile, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        BelievedEntityState, BodyCostPerTick, BodyPart, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, CommodityPurpose, DemandObservation, DemandObservationReason,
+        DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+        HomeostaticNeeds, InTransitOnEdge, JusticeDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OpportunityAnchor, PerceptionSource, Permille,
+        PunishmentKind, Quantity, RecipeId, ResourceSource, TellTopic, TheftDispositionProfile,
+        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -1177,13 +1179,10 @@ mod tests {
                 .flat_map(|beliefs| beliefs.iter())
                 .filter_map(|(entity, state)| {
                     (state.last_known_place == Some(place)
-                        && state
-                            .believed_activity
-                            .as_ref()
-                            .is_some_and(|activity| {
-                                activity.action_domain == domain
-                                    && (target.is_none() || activity.target == target)
-                            }))
+                        && state.believed_activity.as_ref().is_some_and(|activity| {
+                            activity.action_domain == domain
+                                && (target.is_none() || activity.target == target)
+                        }))
                     .then_some(*entity)
                 })
                 .collect::<Vec<_>>();
@@ -1821,18 +1820,28 @@ mod tests {
         view.beliefs.insert(
             agent,
             vec![
-                (entity(10), observed_activity_state(market, ActionDomain::Production, None)),
-                (entity(11), observed_activity_state(market, ActionDomain::Production, None)),
-                (entity(12), observed_activity_state(market, ActionDomain::Production, None)),
-                (entity(13), observed_activity_state(market, ActionDomain::Production, None)),
+                (
+                    entity(10),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+                (
+                    entity(11),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+                (
+                    entity(12),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+                (
+                    entity(13),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
             ],
         );
 
         let ranked = rank(
             &[goal_at_place(
-                GoalKind::ProduceCommodity {
-                    recipe_id,
-                },
+                GoalKind::ProduceCommodity { recipe_id },
                 market,
             )],
             &view,
@@ -1911,9 +1920,18 @@ mod tests {
         view.beliefs.insert(
             agent,
             vec![
-                (entity(10), observed_activity_state(market, ActionDomain::Production, None)),
-                (entity(11), observed_activity_state(market, ActionDomain::Production, None)),
-                (entity(12), observed_activity_state(market, ActionDomain::Production, None)),
+                (
+                    entity(10),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+                (
+                    entity(11),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
+                (
+                    entity(12),
+                    observed_activity_state(market, ActionDomain::Production, None),
+                ),
             ],
         );
         let mut aggressive_awareness = utility();

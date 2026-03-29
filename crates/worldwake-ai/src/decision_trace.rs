@@ -3,8 +3,8 @@
 //! Records per-agent per-tick decision reasoning for diagnostic
 //! and test query purposes. See spec S08 for design rationale.
 
-use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
