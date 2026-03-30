@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     belief_confidence, CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, GoalKey,
     GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
-    WorkstationTag,
+    WorkstationTag, OUTDOOR_RELIEF_TAGS,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -990,7 +990,18 @@ impl GoalKindPlannerExt for GoalKind {
                 places_with_sellers(state, *commodity, &mut places);
                 places
             }
-            GoalKind::Relieve => places_with_place_tag(state, PlaceTag::Latrine),
+            GoalKind::Relieve => {
+                let mut places = places_with_place_tag(state, PlaceTag::Latrine);
+                // Include outdoor places where wilderness relief is available.
+                for (&id, place) in &state.snapshot().places {
+                    if place.tags.iter().any(|t| OUTDOOR_RELIEF_TAGS.contains(*t)) {
+                        places.push(id);
+                    }
+                }
+                places.sort_unstable();
+                places.dedup();
+                places
+            }
             GoalKind::EngageHostile { target }
             | GoalKind::RaidTarget { target }
             | GoalKind::TreatWounds { patient: target } => {
@@ -4757,6 +4768,44 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
         assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn relieve_goal_relevant_places_includes_outdoor() {
+        let (mut view, actor, _place_a, place_b, place_c) = spatial_view();
+        // place_b has a latrine, place_c has a forest (outdoor relief tag).
+        view.place_tags
+            .insert(place_b, BTreeSet::from([worldwake_core::PlaceTag::Latrine]));
+        view.place_tags
+            .insert(place_c, BTreeSet::from([worldwake_core::PlaceTag::Forest]));
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
+        assert!(places.contains(&place_b), "latrine place should be included");
+        assert!(places.contains(&place_c), "outdoor place should be included");
+    }
+
+    #[test]
+    fn relieve_goal_relevant_places_deduplicates() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        // place_b is both a latrine and a road — should appear only once.
+        view.place_tags.insert(
+            place_b,
+            BTreeSet::from([
+                worldwake_core::PlaceTag::Latrine,
+                worldwake_core::PlaceTag::Road,
+            ]),
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
+        assert_eq!(
+            places.iter().filter(|&&p| p == place_b).count(),
+            1,
+            "duplicate place should be deduplicated"
+        );
     }
 
     #[test]

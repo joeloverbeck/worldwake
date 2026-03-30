@@ -1,6 +1,6 @@
 # E20COMBEH-005: Planner integration for wilderness relief
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — worldwake-ai (planner_ops.rs, goal_model.rs)
@@ -107,3 +107,13 @@ Import `OUTDOOR_RELIEF_TAGS` from `worldwake_core::topology`.
 1. `cargo test -p worldwake-ai`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**:
+  - `crates/worldwake-ai/src/goal_model.rs`: Added `OUTDOOR_RELIEF_TAGS` import; expanded `goal_relevant_places` for `GoalKind::Relieve` to include places with any outdoor relief tag (Forest, Trail, Field, Farm, Road), with sort + dedup for determinism. Added 2 tests (`relieve_goal_relevant_places_includes_outdoor`, `relieve_goal_relevant_places_deduplicates`).
+- **Deviations from plan**:
+  - Deliverable #1 (`classify_action_def` match arm) was already present from E20COMBEH-004 — no change needed.
+  - Ticket proposed `for tag in OUTDOOR_RELIEF_TAGS` iteration, but `PlaceTagSet` is a u16 bitset with no `iter()`. Used place-side iteration with `OUTDOOR_RELIEF_TAGS.contains()` instead.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.
