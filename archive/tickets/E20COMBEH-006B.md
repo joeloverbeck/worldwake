@@ -1,6 +1,6 @@
 # E20COMBEH-006B: Document outdoor-place affordance trap in golden testing guide
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — documentation only
@@ -83,3 +83,10 @@ Multi-hop travel (e.g., VillageSquare → SouthGate → EastFieldTrail → Orcha
 ### Commands
 
 1. Manual review of `docs/golden-e2e-testing.md` changes against `crates/worldwake-core/src/topology.rs` (OUTDOOR_RELIEF_TAGS, prototype place specs)
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**: Added two subsections to `docs/golden-e2e-testing.md` — "Outdoor Place Affordance Trap" (documenting that `relieve_wilderness` is available at any outdoor place and listing indoor vs outdoor prototype places) and "Multi-Hop Travel Observation" (documenting inter-leg replan gaps in multi-hop travel).
+- **Deviations**: None.
+- **Verification**: Manual review confirmed documentation matches `OUTDOOR_RELIEF_TAGS` constant and prototype topology. No code changes.

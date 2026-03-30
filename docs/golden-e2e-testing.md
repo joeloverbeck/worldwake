@@ -153,6 +153,26 @@ For social goldens, also document subject choice explicitly. Agent subjects can 
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 When a focused planning test is specifically about a planner failure boundary, assert the exact failure mode your scenario is meant to prove instead of only asserting "no plan". Use `BudgetExhausted`, `FrontierExhausted`, or another concrete planner-owned boundary as appropriate. Generic non-success is too weak because it also matches unrelated earlier contract breaks.
 
+## Outdoor Place Affordance Trap
+
+When designing golden scenarios that require an agent to travel for relief (bladder, dirtiness), be aware that `relieve_wilderness` is available at any place with an `OUTDOOR_RELIEF_TAGS` tag (Forest, Trail, Field, Farm, Road). The planner will prefer it over traveling to a distant latrine because it has zero travel cost.
+
+Outdoor places in the prototype world (at least one tag in `OUTDOOR_RELIEF_TAGS`): EastFieldTrail (Trail + Field), OrchardFarm (Farm + Field), ForestPath (Forest + Trail), NorthCrossroads (Crossroads + Road), SouthGate (Gate + Road), BanditCamp (Camp + Forest).
+
+Indoor places (no outdoor relief tags): VillageSquare (Village), GeneralStore (Store + Village), CommonHouse (Inn + Village), RulersHall (Hall + Village), GuardPost (Barracks + Village), PublicLatrine (Latrine + Village).
+
+To force travel for relief:
+- Start the agent at an indoor place (no wilderness relief available)
+- Or use a different need driver (hunger, thirst) where the resource is distant
+
+This generalizes: any scenario that relies on travel must ensure no local affordance satisfies the motivating goal at the starting place.
+
+The canonical source is `OUTDOOR_RELIEF_TAGS` in `crates/worldwake-core/src/topology.rs`.
+
+## Multi-Hop Travel Observation
+
+Multi-hop travel (e.g., VillageSquare → SouthGate → EastFieldTrail → OrchardFarm) creates one travel action per leg. Between legs, the agent replans (~1 tick gap). Tests counting total travel ticks must tolerate inter-leg gaps rather than breaking out of the observation loop after the first leg ends.
+
 ## Belief Seeding After Political State Changes
 
 Politics runs before Perception in the tick loop (`system_manifest.rs`). When an agent is co-located during a political state transition (e.g., controller establishment, contested state activation), Perception projects the political event into the agent's institutional belief store in the same tick.
