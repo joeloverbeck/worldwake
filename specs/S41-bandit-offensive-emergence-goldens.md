@@ -4,7 +4,7 @@
 
 ## Summary
 
-Three golden E2E suites covering the offensive/economic half of E18 bandit dynamics. The existing T22 suite proves the *defensive* chain (external attack → camp destruction → regrouping → re-establishment). These suites prove the *offensive* chain: hunger-driven raids, downstream belief-based economic impact, and physical dampening of raid spirals.
+Three golden E2E suites covering the offensive/economic half of E18 bandit dynamics. The existing T22 suite proves the *defensive* chain (external attack → camp destruction → regrouping → re-establishment). Reassessment against the live code shows Suite 2's route-danger and social-transport substrate already exists, while Suite 1's scarcity-driven raid motive and Suite 3's wound-only raid dampening still require architecture alignment before the final intended goldens can truthfully claim those behaviors.
 
 ## Motivation
 
@@ -13,7 +13,7 @@ E18 implemented a rich emergent system — bandit camps where raids, looting, ro
 | Behavior | Systems Involved | Why It Matters |
 |----------|-----------------|----------------|
 | Bandit-initiated raids (`RaidTarget` goal) | AI candidate gen, Combat, Loot | Core offensive behavior — bandits never raid in any golden test |
-| Supply pressure driving raid motivation | Needs, AI ranking, Combat | The emergent economic loop: hunger drives raids, not schedules |
+| Supply pressure driving raid motivation | Needs, AI ranking, Combat | Intended offensive emergence, but the live `RaidTarget` ranking path no longer uses hunger/enterprise motive directly |
 | Merchant route adaptation from raid beliefs | Beliefs, Enterprise, Travel, Trade | Downstream economic impact from information locality |
 | Wound accumulation dampening raid frequency | Combat, Wounds, AI pressure | Physical dampener (FND-10) — never golden-tested for any system |
 
@@ -40,10 +40,10 @@ All completed:
 | FND-2 (No Ungrounded Triggers) | No `raidChance` or `encounterRate` — raid candidate emission requires concrete co-location of bandit and non-faction target |
 | FND-3 (Concrete State Over Abstract Scores) | Route danger assessed from agent beliefs about observed threats, never stored on edges |
 | FND-7 (Locality) | Merchant learns about raids through perception or Tell, not global query. Information travels by physical carrier with delay |
-| FND-10 (Physical Dampeners) | Wound accumulation limits raid frequency through concrete physical state, not numeric cooldowns or caps |
+| FND-10 (Physical Dampeners) | Intended target: wound accumulation should limit raid frequency through concrete physical state, not numeric cooldowns or caps |
 | FND-12 (World State != Belief State) | Merchant acts on stale or propagated beliefs, not omniscient knowledge of bandit positions |
 | FND-17 (Agent Symmetry) | Bandits use the same attack action, combat system, and AI planner as all other agents |
-| FND-24 (Systems Interact Through State) | Needs system creates hunger → AI reads hunger → selects raid → combat creates wounds → AI reads wounds. No cross-system imperative calls |
+| FND-24 (Systems Interact Through State) | Intended chain: needs scarcity and combat aftermath should interact through shared state rather than direct system calls |
 | FND-25 (Derived Summaries Are Caches) | Route danger estimates are planning heuristics derived from beliefs, never authoritative stored state |
 
 ---
@@ -77,7 +77,7 @@ All completed:
 #### Proves
 
 1. **Candidate generation**: At least one bandit generates `GoalKind::RaidTarget { target: traveler }` as a goal candidate when the non-faction traveler is co-located. Verified via decision traces: `candidates.generated` contains `RaidTarget`.
-2. **Goal selection**: The raid goal is selected over alternative goals (production, needs-consumption) when hunger pressure is high and a target is available. Verified via decision traces: `selection.selected_goal` matches `RaidTarget`.
+2. **Goal selection**: Under the live code, the raid goal only ranks non-zero when the raider has a lawful hostility/danger surface for the target. The eventual golden must either prove that live path explicitly or land a follow-up architecture change that restores proactive scarcity-driven raid motive before claiming hunger-selected raids.
 3. **Combat execution**: The raid resolves through the standard `attack` action lifecycle — Started → Committed. Verified via action traces: `ActionTraceKind::Committed` for `"attack"` by a bandit targeting the traveler.
 4. **Post-combat loot**: After combat victory, the surviving bandit generates `LootCorpse` goal and executes loot action. Verified via action traces: `"loot"` committed by a bandit.
 5. **Conservation**: Total commodity quantity (Apple + Bread) is conserved across the raid-loot chain. Verified via `verify_live_lot_conservation()`.
@@ -86,13 +86,14 @@ All completed:
 #### Chain
 
 ```
-camp supplies low → hunger pressure rises → traveler arrives at camp →
-perception observes non-faction agent → candidate_generation emits RaidTarget →
-ranking selects RaidTarget (hunger motive) → plan search finds Attack plan →
+camp supplies low → bandit remains motivated to seek supplies →
+traveler arrives at camp → perception observes non-faction agent →
+candidate_generation emits RaidTarget → live ranking currently requires a lawful hostility/danger surface for RaidTarget to rank non-zero →
+plan search finds Attack plan →
 attack action starts → combat resolves → loot action → supplies acquired
 ```
 
-**Causal depth**: 5 (hunger → raid selection → combat → loot → supply state change)
+**Causal depth**: 5 (supply pressure / target availability / hostility surface -> raid selection -> combat -> loot -> supply state change)
 
 **Systems**: Needs, AI (candidate gen + ranking + search), Combat, Corpse/Loot, Conservation
 
@@ -112,9 +113,9 @@ attack action starts → combat resolves → loot action → supplies acquired
 
 **Information-path**: Bandit perceives traveler through direct observation (co-located). Hunger state is internal authoritative component. No global queries involved.
 
-**Positive-feedback loop**: Successful raid → more supplies → sustained camp → more bandits healthy → more raids. This is the core amplifying loop.
+**Positive-feedback loop**: Successful raid → more supplies → sustained camp → more bandits healthy → more raids. This is the intended amplifying loop, but the live ranking substrate for `RaidTarget` should be checked against that claim before implementation.
 
-**Concrete dampener**: Combat wounds. Each raid exposes the raiding bandit to injury. Wounds raise `ReduceDanger` pressure which competes with hunger-driven raid goals. This dampener is tested explicitly in Suite 3.
+**Concrete dampener**: Intended target is combat wounds. Each raid exposes the raiding bandit to injury. Reassessment shows the live code does not currently let wounds alone dampen raids once hostiles disappear, so Suite 3 remains an explicit engine-gap item.
 
 **Stored state vs. derived**: `HomeostaticNeeds.hunger` (stored), `WoundList` (stored), `BanditCamp.supplies` (stored container). Raid target eligibility is derived from co-location + faction membership queries at candidate-generation time.
 
@@ -150,7 +151,7 @@ attack action starts → combat resolves → loot action → supplies acquired
 1. **Raid occurs**: Bandits raid the co-located traveler. Verified via action traces: `"attack"` committed by a bandit at DangerousRoad.
 2. **Witness forms danger belief**: The witness agent, co-located during the raid, forms a `BelievedActivity { action_domain: ActionDomain::Combat }` belief about a bandit. Verified via belief store inspection after the raid tick.
 3. **Belief propagation to merchant**: The witness travels to Market and executes `Tell` to the merchant, propagating the danger belief. Alternatively, the merchant travels through DangerousRoad and directly observes aftermath. Verified via action traces: `"tell"` committed with `listener: merchant` and `subject: bandit`, OR merchant belief store contains danger belief after traversal.
-4. **Merchant route adaptation**: After acquiring the danger belief, the merchant's next restock plan avoids DangerousRoad — selecting the longer SafeRoute instead. Verified via decision traces: `planning.selection.selected_plan` contains Travel steps to SafeRoute/RemoteFarm, not through DangerousRoad.
+4. **Merchant route adaptation**: After acquiring the danger belief, the merchant's next restock plan avoids DangerousRoad — selecting the longer SafeRoute instead. This depends on the already-live route-threat substrate in `route_threat.rs` / `planning_snapshot.rs`, which T22 already partially proves for traveler rerouting.
 5. **No omniscient rerouting**: Before acquiring the danger belief, the merchant selects the shorter DangerousRoad route (if tested in the initial tick). Verified via decision traces in pre-belief ticks.
 
 #### Chain
@@ -181,7 +182,7 @@ merchant selects longer SafeRoute for trade trip
 
 #### FND-01 Section H Analysis
 
-**Information-path**: Raid → witness perceives at same place → witness travels physically to Market → Tell action at Market → merchant receives belief through social Tell. Every hop is traceable. No global broadcast.
+**Information-path**: Raid → witness perceives at same place → witness travels physically to Market → Tell action at Market → merchant receives belief through social Tell. Every hop is traceable. No global broadcast. This reuses the existing generic `ShareBelief` / `TellTopic::EntityBelief` transport path rather than a combat-only exception.
 
 **Positive-feedback loop**: None in this suite's scope. The merchant's avoidance does not amplify the raid frequency.
 
@@ -215,24 +216,23 @@ merchant selects longer SafeRoute for trade trip
 
 #### Proves
 
-1. **First raid succeeds with wounds**: Bandit raids first target, wins, but sustains wounds. Verified via action traces: `"attack"` committed + `WoundList` non-empty after combat.
-2. **Second raid occurs despite wounds**: Hunger pressure still exceeds wound-danger pressure after first raid. Bandit raids second target. Verified via decision traces: `RaidTarget` still selected, ranking shows hunger motive > danger motive.
-3. **Wound accumulation shifts priority**: After multiple combats, accumulated wound load raises `ReduceDanger` pressure above raid/hunger pressure. Verified via decision traces: candidate generation still emits `RaidTarget` (target is co-located), but ranking now places `ReduceDanger` or `ConsumeOwnedCommodity` above `RaidTarget`. The bandit chooses survival over raiding.
-4. **No numeric cap**: The suppression is NOT caused by a counter, cooldown, or clamp. It emerges from wound-load permille exceeding `flee_wound_threshold * (1000 - courage) / 1000`. Verified by inspecting wound_list total load vs. combat profile thresholds.
-5. **Dampening is physical**: The behavior change traces back to concrete wound state (stored `WoundList`), not an abstract "raid fatigue" or "cooldown timer." Verified: no `BlockedIntentMemory` for raiding exists — the suppression happens at the ranking layer through priority class ordering, not through blocked-intent filtering.
+1. **Current gap**: Under the live code, a victorious bandit with lingering wounds but no current attackers / visible hostiles does not gain `danger_pressure` from those wounds alone.
+2. **Current gap**: `derive_pain_pressure()` only feeds `TreatWounds`; it does not currently suppress or demote `RaidTarget`.
+3. **Current gap**: `RaidTarget` is never stress-suppressed in `goal_policy.rs`, and `emit_raid_target_goals()` only gates on `danger_pressure >= thresholds.danger.high()`.
+4. **Required follow-up**: Before this suite is implemented, the engine needs one canonical architecture for wound-driven raid deterrence. The fix should not be documented here as a one-off candidate-generation patch; it should align the shared combat/raid motive substrate so the same rule is visible to ranking, interruption, and diagnostics.
+5. **Dampening remains the intended invariant**: when that follow-up lands, the suite should prove the behavior change traces back to concrete `WoundList` state rather than cooldowns or abstract fatigue counters.
 
 #### Chain
 
 ```
-raid 1 → combat → wounds sustained → hunger persists →
-raid 2 → combat → more wounds → wound-load pressure rises →
-ReduceDanger priority class exceeds raid motive →
-bandit stops raiding despite available targets and continued hunger
+wound-producing raids → accumulated concrete injury →
+shared combat/raid deterrence substrate changes the selected behavior →
+bandit stops raiding despite continued opportunity
 ```
 
-**Causal depth**: 4 (repeated raids → wound accumulation → priority shift → behavioral suppression)
+**Causal depth**: 4 (repeated raids → wound accumulation → deterrence signal → behavioral suppression)
 
-**Systems**: Combat (repeated), Wounds (accumulation), AI (pressure derivation + priority ranking), Needs (hunger competition), Feedback dampening
+**Systems**: Combat (repeated), Wounds (accumulation), AI (shared combat/raid motive or deterrence substrate), Feedback dampening
 
 #### Metadata Annotation
 
@@ -248,11 +248,11 @@ bandit stops raiding despite available targets and continued hunger
 
 #### FND-01 Section H Analysis
 
-**Information-path**: Wound state is internal authoritative component on the bandit agent. Pressure derivation reads wound_list locally. No cross-agent information transfer needed for the dampening mechanism.
+**Information-path**: Wound state is an internal authoritative component on the bandit agent. The future deterrence mechanism must read that local state canonically, with no cross-agent information transfer needed.
 
 **Positive-feedback loop identified**: Successful raid → loot → sustained hunger satisfaction → more raids → more wounds → MORE raids (if wounds don't accumulate). This is the amplifying loop that the dampener must break.
 
-**Concrete dampener**: Wound accumulation. Each combat produces wounds via the combat system. Wounds raise pain/danger permille (computed in `pressure.rs`). When wound-load exceeds the `flee_wound_threshold` modulated by agent `courage`, `ReduceDanger` enters a higher priority class than hunger-driven goals. This is a physical world process (combat → tissue damage → pain → behavioral change), not a numeric clamp. The dampener strength scales with the agent's concrete wound state and combat profile parameters.
+**Concrete dampener**: Wound accumulation remains the intended physical dampener. Each combat produces wounds via the combat system. Reassessment showed the live code does not yet connect wound-only state to raid deterrence once hostiles disappear, so the canonical fix still needs to be designed and implemented before this suite can assert the final behavior.
 
 **Stored state vs. derived**: `WoundList` (stored — authoritative wound records). Pain/danger permille (derived from wound_list at ranking time). Priority class ordering (derived from pressure permille thresholds). Raid target eligibility (derived from co-location). No derived value is stored as authoritative state.
 
@@ -270,7 +270,7 @@ Per `docs/golden-e2e-testing.md` assertion hierarchy:
 |-------|--------------------------|-----------|
 | S47 (Raid Emergence) | Action traces (raid started/committed) | Decision traces (candidate emission), authoritative state (conservation) |
 | S48 (Economic Cascade) | Decision traces (route selection before/after belief) | Action traces (tell committed), belief store inspection |
-| S49 (Wound Dampening) | Decision traces (ranking shift across raids) | Authoritative state (wound list growth), action traces (raid count) |
+| S49 (Wound Dampening) | Future shared deterrence proof surface after engine alignment | Authoritative state (wound list growth), action traces (raid count) |
 
 ## Verification
 
