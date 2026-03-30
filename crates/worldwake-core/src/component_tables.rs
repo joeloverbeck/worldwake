@@ -275,7 +275,8 @@ mod tests {
 
     fn sample_patrol_profile() -> PatrolProfile {
         PatrolProfile {
-            base_patrol_interval: 9,
+            base_dwell_ticks: 9,
+            dwell_vigilance_scale_ticks: 9,
             vigilance: Permille::new(625).unwrap(),
             route_adaptation_sensitivity: Permille::new(400).unwrap(),
             patrol_motive_weight: Permille::new(575).unwrap(),

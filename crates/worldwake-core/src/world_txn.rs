@@ -2007,7 +2007,8 @@ mod tests {
 
     fn sample_patrol_profile() -> PatrolProfile {
         PatrolProfile {
-            base_patrol_interval: 7,
+            base_dwell_ticks: 7,
+            dwell_vigilance_scale_ticks: 7,
             vigilance: Permille::new(680).unwrap(),
             route_adaptation_sensitivity: Permille::new(360).unwrap(),
             patrol_motive_weight: Permille::new(590).unwrap(),
@@ -4173,7 +4174,8 @@ mod tests {
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
         let before = PatrolProfile {
-            base_patrol_interval: 10,
+            base_dwell_ticks: 10,
+            dwell_vigilance_scale_ticks: 10,
             vigilance: Permille::new(500).unwrap(),
             route_adaptation_sensitivity: Permille::new(250).unwrap(),
             patrol_motive_weight: Permille::new(450).unwrap(),

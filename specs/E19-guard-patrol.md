@@ -44,10 +44,12 @@ New per-agent profile component in `worldwake-core/src/patrol.rs`:
 
 ```rust
 pub struct PatrolProfile {
-    /// Base ticks between patrol legs (travel start to next travel start).
-    /// Higher = slower patrol cadence. Per-agent variation enables Principle 22
-    /// (agent diversity): a diligent guard patrols more frequently than a lazy one.
-    pub base_patrol_interval: u32,
+    /// Minimum patrol dwell at each waypoint.
+    /// Higher = guard spends more time standing watch before advancing.
+    pub base_dwell_ticks: u32,
+    /// Additional dwell contributed by vigilance at each waypoint.
+    /// Final dwell is `base_dwell_ticks + vigilance * dwell_vigilance_scale_ticks / 1000`.
+    pub dwell_vigilance_scale_ticks: u32,
     /// How thoroughly a guard observes at each stop (0–1000).
     /// Higher vigilance = longer dwell time at each waypoint, increasing the
     /// chance of witnessing crimes or receiving reports, but slowing route completion.
@@ -63,7 +65,7 @@ pub struct PatrolProfile {
 ```
 
 - Registered in `component_schema.rs` for `EntityKind::Agent`.
-- Guards differ in patrol speed, attentiveness, and adaptability through concrete per-agent parameters.
+- Guards differ in patrol dwell, attentiveness, and adaptability through concrete per-agent parameters.
 
 ### 3. Patrol Action
 
@@ -79,7 +81,7 @@ New action registered in `worldwake-systems` (new file: `patrol_actions.rs`), re
 - Actor is at the current waypoint (`assigned_places[current_index]`), OR the planner's Travel op gets the guard there first.
 
 **Duration:**
-- Dwell phase: `dwell_ticks = base_dwell + (vigilance.value() * dwell_scale / 1000)` where `base_dwell` and `dwell_scale` are defined on `PatrolProfile` or derived from it. The dwell represents the guard standing watch, observing, and being available for reports.
+- Dwell phase: `dwell_ticks = base_dwell_ticks + (vigilance.value() * dwell_vigilance_scale_ticks / 1000)`. The dwell represents the guard standing watch, observing, and being available for reports.
 - The full patrol cycle is: Travel to waypoint (separate Travel action) → Patrol dwell (this action) → advance `current_index` → next cycle via replanning.
 
 **Cost:**

@@ -1193,11 +1193,9 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
-        DurationExpr::ActorPatrolProfile => view
-            .patrol_profile(actor)
-            .map(|profile| {
-                ActionDuration::new(crate::action_semantics::patrol_duration_ticks(&profile))
-            }),
+        DurationExpr::ActorPatrolProfile => view.patrol_profile(actor).map(|profile| {
+            ActionDuration::new(crate::action_semantics::patrol_duration_ticks(&profile))
+        }),
         DurationExpr::ActorTheftDisposition => view
             .theft_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.steal_duration_ticks.get())),
@@ -1321,7 +1319,8 @@ mod tests {
             txn.set_component_patrol_profile(
                 actor,
                 PatrolProfile {
-                    base_patrol_interval: 8,
+                    base_dwell_ticks: 8,
+                    dwell_vigilance_scale_ticks: 8,
                     vigilance: Permille::new(625).unwrap(),
                     route_adaptation_sensitivity: Permille::new(400).unwrap(),
                     patrol_motive_weight: Permille::new(550).unwrap(),

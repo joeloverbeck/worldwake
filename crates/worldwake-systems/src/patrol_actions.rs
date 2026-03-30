@@ -61,7 +61,8 @@ fn patrol_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
 }
 
 fn current_waypoint(route: &PatrolRoute) -> Result<EntityId, ActionError> {
-    route.assigned_places
+    route
+        .assigned_places
         .get(route.current_index)
         .copied()
         .ok_or_else(|| {
@@ -77,9 +78,12 @@ fn patrol_route_and_waypoint(
     txn: &WorldTxn<'_>,
     actor: EntityId,
 ) -> Result<(PatrolRoute, EntityId), ActionError> {
-    let route = txn.get_component_patrol_route(actor).cloned().ok_or_else(|| {
-        ActionError::PreconditionFailed(format!("actor {actor} lacks PatrolRoute"))
-    })?;
+    let route = txn
+        .get_component_patrol_route(actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("actor {actor} lacks PatrolRoute"))
+        })?;
     if route.assigned_places.is_empty() {
         return Err(ActionError::PreconditionFailed(format!(
             "actor {actor} has an empty PatrolRoute"
@@ -178,18 +182,17 @@ fn abort_patrol(
 #[cfg(test)]
 mod tests {
     use super::register_patrol_action;
+    use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, ControlSource, EventLog,
-        EventTag, EventView, PatrolProfile, PatrolRoute, Permille, PrototypePlace, Seed, Tick,
+        build_prototype_world, prototype_place_entity, CauseRef, ControlSource, EventLog, EventTag,
+        EventView, PatrolProfile, PatrolRoute, Permille, PrototypePlace, Seed, Tick,
         VisibilitySpec, World, WorldTxn,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionError, ActionExecutionAuthority,
-        ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, DeterministicRng, InterruptReason, TickOutcome, interrupt_action,
-        start_action, tick_action,
+        interrupt_action, start_action, tick_action, ActionDefRegistry, ActionError,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
+        ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason, TickOutcome,
     };
-    use std::collections::BTreeMap;
 
     use super::*;
 
@@ -214,9 +217,10 @@ mod tests {
         DeterministicRng::new(Seed([0x23; 32]))
     }
 
-    fn patrol_profile(base_patrol_interval: u32, vigilance: u16) -> PatrolProfile {
+    fn patrol_profile(base_dwell_ticks: u32, vigilance: u16) -> PatrolProfile {
         PatrolProfile {
-            base_patrol_interval,
+            base_dwell_ticks,
+            dwell_vigilance_scale_ticks: base_dwell_ticks,
             vigilance: Permille::new(vigilance).unwrap(),
             route_adaptation_sensitivity: Permille::new(400).unwrap(),
             patrol_motive_weight: Permille::new(550).unwrap(),
@@ -250,7 +254,11 @@ mod tests {
         (world, actor)
     }
 
-    fn patrol_affordance(def_id: ActionDefId, actor: EntityId, place: EntityId) -> worldwake_sim::Affordance {
+    fn patrol_affordance(
+        def_id: ActionDefId,
+        actor: EntityId,
+        place: EntityId,
+    ) -> worldwake_sim::Affordance {
         worldwake_sim::Affordance {
             def_id,
             actor,
@@ -314,10 +322,8 @@ mod tests {
             assigned_places: vec![square],
             current_index: 0,
         };
-        let (low_world, low_actor) =
-            setup_world(route.clone(), Some(patrol_profile(8, 0)), square);
-        let (high_world, high_actor) =
-            setup_world(route, Some(patrol_profile(8, 1000)), square);
+        let (low_world, low_actor) = setup_world(route.clone(), Some(patrol_profile(8, 0)), square);
+        let (high_world, high_actor) = setup_world(route, Some(patrol_profile(8, 1000)), square);
         let def = defs.get(patrol_id).unwrap();
 
         let low = def
@@ -382,7 +388,10 @@ mod tests {
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(
-            world.get_component_patrol_route(actor).unwrap().current_index,
+            world
+                .get_component_patrol_route(actor)
+                .unwrap()
+                .current_index,
             1
         );
         let patrol_events = log.events_by_tag(EventTag::Patrol);
@@ -440,7 +449,10 @@ mod tests {
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(
-            world.get_component_patrol_route(actor).unwrap().current_index,
+            world
+                .get_component_patrol_route(actor)
+                .unwrap()
+                .current_index,
             0
         );
     }
@@ -492,7 +504,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_patrol_route(actor).unwrap().current_index,
+            world
+                .get_component_patrol_route(actor)
+                .unwrap()
+                .current_index,
             0
         );
         assert!(active_actions.is_empty());

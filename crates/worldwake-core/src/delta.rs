@@ -326,7 +326,8 @@ mod tests {
                 current_index: 1,
             }),
             ComponentValue::PatrolProfile(PatrolProfile {
-                base_patrol_interval: 8,
+                base_dwell_ticks: 8,
+                dwell_vigilance_scale_ticks: 8,
                 vigilance: Permille::new(650).unwrap(),
                 route_adaptation_sensitivity: Permille::new(375).unwrap(),
                 patrol_motive_weight: Permille::new(550).unwrap(),

@@ -319,8 +319,8 @@ impl DurationExpr {
 
 #[must_use]
 pub(crate) fn patrol_duration_ticks(profile: &PatrolProfile) -> u32 {
-    let base = profile.base_patrol_interval.max(1);
-    let scaled = u32::from(profile.vigilance.value()) * base / 1000;
+    let base = profile.base_dwell_ticks.max(1);
+    let scaled = u32::from(profile.vigilance.value()) * profile.dwell_vigilance_scale_ticks / 1000;
     base.saturating_add(scaled).max(1)
 }
 
@@ -343,8 +343,8 @@ pub enum Interruptibility {
 #[cfg(test)]
 mod tests {
     use super::{
-        Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
-        Precondition, ReservationReq, TargetSpec,
+        patrol_duration_ticks, Constraint, ConsumableEffect, DurationExpr, Interruptibility,
+        MetabolismDurationKind, Precondition, ReservationReq, TargetSpec,
     };
     use crate::{
         ActionDuration, ActionPayload, CombatActionPayload, EstablishCampActionPayload,
@@ -780,7 +780,8 @@ mod tests {
             txn.set_component_patrol_profile(
                 actor,
                 PatrolProfile {
-                    base_patrol_interval: 8,
+                    base_dwell_ticks: 8,
+                    dwell_vigilance_scale_ticks: 8,
                     vigilance: pm(625),
                     route_adaptation_sensitivity: pm(400),
                     patrol_motive_weight: pm(550),
@@ -1171,5 +1172,18 @@ mod tests {
     fn serialized_indices_are_single_byte_fields() {
         assert_eq!(mem::size_of::<u8>(), 1);
         assert_eq!(mem::size_of::<ReservationReq>(), 1);
+    }
+
+    #[test]
+    fn patrol_duration_ticks_uses_explicit_base_and_scale_fields() {
+        let profile = PatrolProfile {
+            base_dwell_ticks: 5,
+            dwell_vigilance_scale_ticks: 12,
+            vigilance: pm(500),
+            route_adaptation_sensitivity: pm(400),
+            patrol_motive_weight: pm(550),
+        };
+
+        assert_eq!(patrol_duration_ticks(&profile), 11);
     }
 }

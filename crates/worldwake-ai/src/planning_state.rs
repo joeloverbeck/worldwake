@@ -3866,7 +3866,8 @@ mod tests {
         view.patrol_profiles.insert(
             actor,
             PatrolProfile {
-                base_patrol_interval: 8,
+                base_dwell_ticks: 8,
+                dwell_vigilance_scale_ticks: 8,
                 vigilance: pm(625),
                 route_adaptation_sensitivity: pm(400),
                 patrol_motive_weight: pm(550),

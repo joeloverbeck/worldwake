@@ -15,7 +15,8 @@ impl Component for PatrolRoute {}
 /// Stable per-agent parameters that shape patrol behavior.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PatrolProfile {
-    pub base_patrol_interval: u32,
+    pub base_dwell_ticks: u32,
+    pub dwell_vigilance_scale_ticks: u32,
     pub vigilance: Permille,
     pub route_adaptation_sensitivity: Permille,
     pub patrol_motive_weight: Permille,
@@ -50,7 +51,8 @@ mod tests {
 
     fn sample_patrol_profile() -> PatrolProfile {
         PatrolProfile {
-            base_patrol_interval: 12,
+            base_dwell_ticks: 12,
+            dwell_vigilance_scale_ticks: 12,
             vigilance: pm(700),
             route_adaptation_sensitivity: pm(450),
             patrol_motive_weight: pm(550),
