@@ -96,18 +96,24 @@ pub(super) fn summarize_search_provenance(
     plans: &[CandidatePlanSearch],
     selected_opportunity: OpportunityKey,
 ) -> Option<SelectedPlanSearchProvenance> {
-    let expansions = &plans
+    let selected_plan = plans
         .iter()
         .find(|plan| {
             plan.opportunity == selected_opportunity
                 && matches!(plan.result, PlanSearchResult::Found(_))
-        })?
-        .expansion_summaries;
+        })?;
+    let expansions = &selected_plan.expansion_summaries;
     let root = expansions.first();
     Some(SelectedPlanSearchProvenance {
         expansions_used: expansions.len() as u16,
         root_remaining_travel_ticks: root.map_or(0, |summary| summary.remaining_travel_ticks),
         root_travel_pruning: root.and_then(|summary| summary.travel_pruning.clone()),
+        selected_root_travel_destination: selected_plan
+            .selected_plan()
+            .and_then(|plan| plan.steps.first())
+            .filter(|step| step.op_kind == crate::PlannerOpKind::Travel)
+            .and_then(|step| step.targets.first().copied())
+            .and_then(crate::authoritative_target),
     })
 }
 
@@ -930,13 +936,14 @@ mod tests {
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlanningBudget, RankedGoal,
+        PlannedStep, PlanningBudget, RankedGoal,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, ActionDomain, CauseRef, CommodityKind, CommodityPurpose,
-        ControlSource, EventLog, HomeostaticNeeds, MerchandiseProfile, Permille, Place, Quantity,
-        Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, CauseRef, CommodityKind,
+        CommodityPurpose, ControlSource, EventLog, HomeostaticNeeds, MerchandiseProfile,
+        Permille, Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
@@ -1458,6 +1465,7 @@ mod tests {
             goal_key: goal,
             anchor: OpportunityAnchor::Place(place_entity(52)),
         };
+        let remote_destination = place_entity(77);
         let mut local_plan = searched_plan(
             local,
             PlanSearchResult::Found(Box::new(PlannedPlan::new(
@@ -1490,7 +1498,17 @@ mod tests {
             PlanSearchResult::Found(Box::new(PlannedPlan::new(
                 remote,
                 goal,
-                Vec::new(),
+                vec![PlannedStep {
+                    def_id: ActionDefId(9),
+                    targets: vec![crate::PlanningEntityRef::Authoritative(
+                        remote_destination,
+                    )],
+                    payload_override: None,
+                    op_kind: crate::PlannerOpKind::Travel,
+                    estimated_ticks: 2,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                }],
                 PlanTerminalKind::GoalSatisfied,
             ))),
         );
@@ -1517,6 +1535,10 @@ mod tests {
             super::summarize_search_provenance(&[local_plan, remote_plan], remote).unwrap();
 
         assert_eq!(provenance.root_remaining_travel_ticks, 7);
+        assert_eq!(
+            provenance.selected_root_travel_destination,
+            Some(remote_destination)
+        );
     }
 
     #[test]

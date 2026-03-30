@@ -47,6 +47,7 @@ Today the explicit synthesis surface is:
 - `GoalKind::InvestigateViolation` -> `PlannerOpKind::Investigate`
 - `GoalKind::Accuse` -> `PlannerOpKind::Accuse`
 - `GoalKind::ClaimOffice` -> `PlannerOpKind::PressForceClaim`
+- `GoalKind::EstablishBanditCamp` -> `PlannerOpKind::EstablishCamp`
 - exact local trade goals backed by one grounded evidence entity:
   `GoalKind::AcquireCommodity`, `GoalKind::ConsumeOwnedCommodity`, `GoalKind::RestockCommodity`, and `GoalKind::TreatWounds` -> `PlannerOpKind::Trade`
 
@@ -76,9 +77,11 @@ The live inventory is:
 
 - `TargetConsumable`
 - `ActorMetabolism`
+- `BanditCampEstablishmentProfile`
 - `ActorTradeDisposition`
 - `ActorTheftDisposition`
 - `ActorInvestigationDisposition`
+- `ActorWitnessQueryDisposition`
 - `ActorDefendStance`
 - `CombatWeapon`
 - `TargetTreatment`
@@ -103,6 +106,7 @@ The governing symbols are:
 - [`PlanningSnapshot::min_travel_ticks()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
 - [`PlanningSnapshot::min_perceived_travel_cost_to_any()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
 - [`PlanningSnapshot::direct_perceived_travel_cost()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`PlanningSnapshot::direct_perceived_travel_breakdown()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
 - [`route_threat::route_threat_estimate()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/route_threat.rs)
 - [`search::heuristic::compute_heuristic()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/heuristic.rs)
 - [`search::heuristic::prune_travel_away_from_goal()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/heuristic.rs)
@@ -119,6 +123,22 @@ The contract is:
 - Ignorance remains first-class: when the actor lacks relevant danger beliefs, perceived travel cost collapses back to raw travel cost.
 
 When reassessing a travel-planning ticket, state explicitly whether the claim concerns authoritative travel duration, planner-local perceived travel cost, or both. Do not collapse them into one vague "route cost" claim.
+
+### Comparative travel-branch traceability
+
+The live comparative route-choice trace contract lives in:
+
+- [`TravelSuccessorTrace`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+- [`TravelPruningTrace`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+- [`SelectedPlanSearchProvenance`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs)
+- [`summarize_search_provenance()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs)
+
+The contract is:
+
+- Comparative route diagnostics reuse the existing planner-owned travel-pruning and selected-plan provenance path. There is no second route-debug subsystem.
+- Each traced travel successor must stay concrete: destination, raw edge ticks, perceived threat contribution, penalty ticks, resulting direct perceived cost, remaining perceived cost to goal, and projected total perceived cost.
+- The selected-plan summary may additionally expose the winning root travel destination when the chosen plan starts with travel. This identifies which retained branch actually won without mutating the raw root expansion record after the fact.
+- These fields explain the current live planner arithmetic only. They must not introduce a parallel "route quality" score or authoritative threat read.
 
 ## 3. Traceability For Omitted Operators And Missing Prerequisites
 

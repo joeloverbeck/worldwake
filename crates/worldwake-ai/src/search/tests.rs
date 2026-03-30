@@ -3599,6 +3599,117 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
 }
 
 #[test]
+fn prune_travel_trace_records_perceived_cost_components_for_retained_rivals() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let dangerous_waypoint = entity(11);
+    let safe_waypoint = entity(12);
+    let market = entity(13);
+    let hostile = entity(30);
+
+    let mut view = TestBeliefView {
+        current_tick: Tick(10),
+        ..TestBeliefView::default()
+    };
+    view.alive
+        .extend([actor, origin, dangerous_waypoint, safe_waypoint, market]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(dangerous_waypoint, EntityKind::Place);
+    view.kinds.insert(safe_waypoint, EntityKind::Place);
+    view.kinds.insert(market, EntityKind::Place);
+    view.effective_places.insert(actor, origin);
+    view.entities_at.insert(origin, vec![actor]);
+    view.adjacent.insert(
+        origin,
+        vec![
+            (dangerous_waypoint, NonZeroU32::new(1).unwrap()),
+            (safe_waypoint, NonZeroU32::new(1).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        dangerous_waypoint,
+        vec![
+            (origin, NonZeroU32::new(1).unwrap()),
+            (market, NonZeroU32::new(1).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        safe_waypoint,
+        vec![
+            (origin, NonZeroU32::new(1).unwrap()),
+            (market, NonZeroU32::new(2).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        market,
+        vec![
+            (dangerous_waypoint, NonZeroU32::new(1).unwrap()),
+            (safe_waypoint, NonZeroU32::new(2).unwrap()),
+        ],
+    );
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(hostile, combat_belief_at(dangerous_waypoint, Tick(10)))],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([market]),
+        2,
+    );
+
+    let travel_dangerous_id = ActionDefId(100);
+    let travel_safe_id = ActionDefId(101);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_dangerous_id, travel_semantics());
+    semantics_table.insert(travel_safe_id, travel_semantics());
+
+    let mut candidates = vec![
+        make_travel_candidate(travel_dangerous_id, dangerous_waypoint),
+        make_travel_candidate(travel_safe_id, safe_waypoint),
+    ];
+
+    let pruning = prune_travel_away_from_goal(
+        &mut candidates,
+        origin,
+        &[market],
+        &snapshot,
+        &semantics_table,
+    )
+    .expect("retained rival travel branches should still record a comparative pruning trace");
+
+    assert_eq!(pruning.current_place, origin);
+    assert_eq!(pruning.current_remaining_travel_ticks, 3);
+    assert_eq!(pruning.pruned, Vec::new());
+    assert_eq!(
+        pruning.retained,
+        vec![
+            crate::decision_trace::TravelSuccessorTrace {
+                destination: dangerous_waypoint,
+                base_ticks: 1,
+                threat_permille: Permille::new(950).unwrap(),
+                penalty_ticks: 1,
+                direct_perceived_cost: 2,
+                remaining_travel_ticks: 2,
+                projected_total_cost: 4,
+            },
+            crate::decision_trace::TravelSuccessorTrace {
+                destination: safe_waypoint,
+                base_ticks: 1,
+                threat_permille: Permille::new(0).unwrap(),
+                penalty_ticks: 0,
+                direct_perceived_cost: 1,
+                remaining_travel_ticks: 2,
+                projected_total_cost: 3,
+            },
+        ],
+    );
+}
+
+#[test]
 fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
     let actor = entity(1);
     let origin = entity(10);
@@ -3962,7 +4073,12 @@ fn prune_travel_keeps_only_toward_goal() {
         pruning.retained,
         vec![crate::decision_trace::TravelSuccessorTrace {
             destination: east,
+            base_ticks: 5,
+            threat_permille: Permille::new(0).unwrap(),
+            penalty_ticks: 0,
+            direct_perceived_cost: 5,
             remaining_travel_ticks: 2,
+            projected_total_cost: 7,
         }]
     );
     assert_eq!(
@@ -3970,11 +4086,21 @@ fn prune_travel_keeps_only_toward_goal() {
         vec![
             crate::decision_trace::TravelSuccessorTrace {
                 destination: south,
+                base_ticks: 4,
+                threat_permille: Permille::new(0).unwrap(),
+                penalty_ticks: 0,
+                direct_perceived_cost: 4,
                 remaining_travel_ticks: 11,
+                projected_total_cost: 15,
             },
             crate::decision_trace::TravelSuccessorTrace {
                 destination: north,
+                base_ticks: 3,
+                threat_permille: Permille::new(0).unwrap(),
+                penalty_ticks: 0,
+                direct_perceived_cost: 3,
                 remaining_travel_ticks: 10,
+                projected_total_cost: 13,
             },
         ]
     );

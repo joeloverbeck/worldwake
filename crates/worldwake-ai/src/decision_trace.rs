@@ -667,7 +667,12 @@ pub struct PrerequisiteGuidanceTrace {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TravelSuccessorTrace {
     pub destination: EntityId,
+    pub base_ticks: u32,
+    pub threat_permille: Permille,
+    pub penalty_ticks: u32,
+    pub direct_perceived_cost: u32,
     pub remaining_travel_ticks: u32,
+    pub projected_total_cost: u32,
 }
 
 /// Structured summary of spatial pruning at one expansion boundary.
@@ -774,6 +779,7 @@ pub struct SelectedPlanSearchProvenance {
     pub expansions_used: u16,
     pub root_remaining_travel_ticks: u32,
     pub root_travel_pruning: Option<TravelPruningTrace>,
+    pub selected_root_travel_destination: Option<EntityId>,
 }
 
 /// Provenance for the final selected plan surface.
@@ -1434,8 +1440,14 @@ fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvena
                 .iter()
                 .map(|successor| {
                     format!(
-                        "{:?}@{}",
-                        successor.destination, successor.remaining_travel_ticks
+                        "{:?}[base={}, threat={}, penalty={}, direct={}, remain={}, total={}]",
+                        successor.destination,
+                        successor.base_ticks,
+                        successor.threat_permille.value(),
+                        successor.penalty_ticks,
+                        successor.direct_perceived_cost,
+                        successor.remaining_travel_ticks,
+                        successor.projected_total_cost
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1445,8 +1457,14 @@ fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvena
                 .iter()
                 .map(|successor| {
                     format!(
-                        "{:?}@{}",
-                        successor.destination, successor.remaining_travel_ticks
+                        "{:?}[base={}, threat={}, penalty={}, direct={}, remain={}, total={}]",
+                        successor.destination,
+                        successor.base_ticks,
+                        successor.threat_permille.value(),
+                        successor.penalty_ticks,
+                        successor.direct_perceived_cost,
+                        successor.remaining_travel_ticks,
+                        successor.projected_total_cost
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1457,9 +1475,13 @@ fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvena
             )
         },
     );
+    let selected = provenance.selected_root_travel_destination.map_or_else(
+        || "none".to_string(),
+        |destination| format!("{destination:?}"),
+    );
     format!(
-        "expansions={}, root_remaining={}, pruning={pruning}",
-        provenance.expansions_used, provenance.root_remaining_travel_ticks
+        "expansions={}, root_remaining={}, selected_root_travel={}, pruning={pruning}",
+        provenance.expansions_used, provenance.root_remaining_travel_ticks, selected
     )
 }
 
@@ -2524,16 +2546,27 @@ mod tests {
                     search_provenance: Some(SelectedPlanSearchProvenance {
                         expansions_used: 3,
                         root_remaining_travel_ticks: 7,
+                        selected_root_travel_destination: Some(entity(12)),
                         root_travel_pruning: Some(TravelPruningTrace {
                             current_place: entity(11),
                             current_remaining_travel_ticks: 7,
                             retained: vec![TravelSuccessorTrace {
                                 destination: entity(12),
+                                base_ticks: 2,
+                                threat_permille: Permille::new(0).unwrap(),
+                                penalty_ticks: 0,
+                                direct_perceived_cost: 2,
                                 remaining_travel_ticks: 5,
+                                projected_total_cost: 7,
                             }],
                             pruned: vec![TravelSuccessorTrace {
                                 destination: entity(13),
+                                base_ticks: 4,
+                                threat_permille: Permille::new(0).unwrap(),
+                                penalty_ticks: 0,
+                                direct_perceived_cost: 4,
                                 remaining_travel_ticks: 9,
+                                projected_total_cost: 13,
                             }],
                         }),
                     }),
@@ -2563,6 +2596,7 @@ mod tests {
         assert!(summary.contains("Sleep]") || summary.contains("path=Sleep"));
         assert!(summary.contains("expansions=3"));
         assert!(summary.contains("root_remaining=7"));
+        assert!(summary.contains("selected_root_travel=EntityId"));
         assert!(summary.contains("pruned=["));
     }
 
@@ -3346,11 +3380,21 @@ mod tests {
                 current_remaining_travel_ticks: 4,
                 retained: vec![TravelSuccessorTrace {
                     destination: entity(2),
+                    base_ticks: 2,
+                    threat_permille: Permille::new(0).unwrap(),
+                    penalty_ticks: 0,
+                    direct_perceived_cost: 2,
                     remaining_travel_ticks: 2,
+                    projected_total_cost: 4,
                 }],
                 pruned: vec![TravelSuccessorTrace {
                     destination: entity(3),
+                    base_ticks: 3,
+                    threat_permille: Permille::new(0).unwrap(),
+                    penalty_ticks: 0,
+                    direct_perceived_cost: 3,
                     remaining_travel_ticks: 6,
+                    projected_total_cost: 9,
                 }],
             }),
             prerequisite_guidance: None,

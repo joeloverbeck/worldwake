@@ -125,6 +125,14 @@ pub(crate) struct SnapshotLifecycle {
     pub(crate) incapacitated: bool,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DirectPerceivedTravelCostBreakdown {
+    pub base_ticks: u32,
+    pub threat: Permille,
+    pub penalty_ticks: u32,
+    pub perceived_cost: u32,
+}
+
 /// Compact all-pairs shortest distance matrix using a flat `Vec<u32>`.
 /// Place IDs are mapped to dense indices for O(1) lookups instead of
 /// `BTreeMap<(EntityId, EntityId), u32>` which has O(log n) per lookup.
@@ -511,6 +519,16 @@ impl PlanningSnapshot {
         from: EntityId,
         to: EntityId,
     ) -> Option<u32> {
+        self.direct_perceived_travel_breakdown(from, to)
+            .map(|breakdown| breakdown.perceived_cost)
+    }
+
+    #[must_use]
+    pub(crate) fn direct_perceived_travel_breakdown(
+        &self,
+        from: EntityId,
+        to: EntityId,
+    ) -> Option<DirectPerceivedTravelCostBreakdown> {
         let base_ticks = self
             .places
             .get(&from)?
@@ -519,14 +537,19 @@ impl PlanningSnapshot {
             .find(|(adjacent, _)| *adjacent == to)
             .map(|(_, ticks)| ticks.get())?;
         let threat = crate::route_threat::route_threat_estimate(self, from, to);
-        let penalty = if threat.value() == 0 {
+        let penalty_ticks = if threat.value() == 0 {
             0
         } else {
             base_ticks
                 .saturating_mul(u32::from(threat.value()))
                 .div_ceil(1000)
         };
-        Some(base_ticks.saturating_add(penalty))
+        Some(DirectPerceivedTravelCostBreakdown {
+            base_ticks,
+            threat,
+            penalty_ticks,
+            perceived_cost: base_ticks.saturating_add(penalty_ticks),
+        })
     }
 }
 
