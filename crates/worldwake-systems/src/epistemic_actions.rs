@@ -279,7 +279,7 @@ fn validate_ask_witness_context(
 
 fn start_ask_witness(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

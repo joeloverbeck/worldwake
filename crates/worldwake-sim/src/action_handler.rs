@@ -80,7 +80,7 @@ pub enum TellBeliefDeltaKind {
 
 pub type ActionStartFn = for<'w> fn(
     &ActionDef,
-    &ActionInstance,
+    &mut ActionInstance,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<Option<ActionState>, ActionError>;
@@ -467,7 +467,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn noop_start(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -564,7 +564,7 @@ mod tests {
         );
 
         assert_eq!(
-            (handler.on_start)(&def, &instance, &mut rng, &mut txn).unwrap(),
+            (handler.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
         assert_eq!(

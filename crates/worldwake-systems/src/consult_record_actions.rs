@@ -207,7 +207,7 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
 
 fn start_consult_record(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

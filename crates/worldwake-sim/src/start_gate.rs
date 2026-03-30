@@ -91,7 +91,7 @@ pub fn start_action(
         reservation_ids,
     );
 
-    instance.local_state = match (handler.on_start)(def, &instance, rng, &mut txn) {
+    instance.local_state = match (handler.on_start)(def, &mut instance, rng, &mut txn) {
         Ok(local_state) => local_state,
         Err(err) => {
             release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -267,7 +267,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn start_empty(
         _def: &ActionDef,
-        _instance: &crate::ActionInstance,
+        _instance: &mut crate::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -277,7 +277,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn start_none(
         _def: &ActionDef,
-        _instance: &crate::ActionInstance,
+        _instance: &mut crate::ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {

@@ -214,7 +214,7 @@ fn set_actor_needs(
 #[allow(clippy::unnecessary_wraps)]
 fn start_noop(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

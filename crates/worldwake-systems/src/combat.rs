@@ -566,7 +566,7 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
 #[allow(clippy::unnecessary_wraps)]
 fn start_defend(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -995,7 +995,7 @@ fn resolve_attack_wound(
 
 fn start_attack(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1008,7 +1008,7 @@ fn start_attack(
 #[allow(clippy::unnecessary_wraps)]
 fn start_heal(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1075,7 +1075,7 @@ fn transferable_loot_entity(
 #[allow(clippy::unnecessary_wraps)]
 fn start_loot(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1087,7 +1087,7 @@ fn start_loot(
 #[allow(clippy::unnecessary_wraps)]
 fn start_bury(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

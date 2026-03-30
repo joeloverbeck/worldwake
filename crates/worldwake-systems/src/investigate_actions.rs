@@ -64,7 +64,7 @@ fn investigate_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
 
 fn start_investigate(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

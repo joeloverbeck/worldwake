@@ -623,7 +623,7 @@ fn validate_yield_force_claim_payload_authoritatively(
 #[allow(clippy::unnecessary_wraps)]
 fn start_bribe(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -681,7 +681,7 @@ fn abort_bribe(
 #[allow(clippy::unnecessary_wraps)]
 fn start_threaten(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -740,7 +740,7 @@ fn abort_threaten(
 #[allow(clippy::unnecessary_wraps)]
 fn start_declare_support(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -806,7 +806,7 @@ fn abort_declare_support(
 #[allow(clippy::unnecessary_wraps)]
 fn start_press_force_claim(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -858,7 +858,7 @@ fn abort_press_force_claim(
 #[allow(clippy::unnecessary_wraps)]
 fn start_yield_force_claim(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

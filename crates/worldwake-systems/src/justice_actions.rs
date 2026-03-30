@@ -438,7 +438,7 @@ fn validate_accuse_payload_authoritatively(
 
 fn start_accuse(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -975,7 +975,7 @@ fn validate_exile_start(
 
 fn start_fine(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -985,7 +985,7 @@ fn start_fine(
 
 fn start_exile(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1708,11 +1708,11 @@ mod tests {
         }
         let def = defs.get(id).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let instance = fx.instance(id, fx.accused);
+        let mut instance = fx.instance(id, fx.accused);
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(1);
 
-        let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded"))
@@ -1747,11 +1747,11 @@ mod tests {
         }
         let def = defs.get(id).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let instance = fx.instance(id, fx.accused);
+        let mut instance = fx.instance(id, fx.accused);
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(11);
 
-        let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded"))
@@ -1764,11 +1764,11 @@ mod tests {
         let mut fx = JusticeFixture::new();
         let def = defs.get(id).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let instance = fx.instance(id, fx.accused);
+        let mut instance = fx.instance(id, fx.accused);
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(2);
 
-        let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("lacks subjective theft evidence"))
@@ -1896,7 +1896,7 @@ mod tests {
         let mut fx = PunishmentFixture::new();
         let def = defs.get(fine_id).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let instance = fx.punishment_instance(
+        let mut instance = fx.punishment_instance(
             fine_id,
             PunishmentKind::Fine {
                 commodity: worldwake_core::CommodityKind::Bread,
@@ -1922,7 +1922,7 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(1);
 
-        let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
 
         assert!(matches!(
             err,
@@ -1936,7 +1936,7 @@ mod tests {
     fn fine_accepts_unpossessed_owned_ground_stock() {
         let (defs, handlers, fine_id, _exile_id) = setup_punishment_registries();
         let mut fx = PunishmentFixture::new();
-        let instance = fx.punishment_instance(
+        let mut instance = fx.punishment_instance(
             fine_id,
             PunishmentKind::Fine {
                 commodity: worldwake_core::CommodityKind::Bread,
@@ -1964,7 +1964,7 @@ mod tests {
         let handler = handlers.get(def.handler).unwrap();
         let mut start_txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut start_rng = test_rng(5);
-        (handler.on_start)(def, &instance, &mut start_rng, &mut start_txn).unwrap();
+        (handler.on_start)(def, &mut instance, &mut start_rng, &mut start_txn).unwrap();
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, fine_id, &instance, 7, 3);
 
@@ -2021,7 +2021,7 @@ mod tests {
         let mut fx = PunishmentFixture::new();
         let def = defs.get(exile_id).unwrap();
         let handler = handlers.get(def.handler).unwrap();
-        let instance = fx.punishment_instance(
+        let mut instance = fx.punishment_instance(
             exile_id,
             PunishmentKind::Exile {
                 from_faction: fx.faction,
@@ -2036,7 +2036,7 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(2);
 
-        let err = (handler.on_start)(def, &instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("does not hold office"))

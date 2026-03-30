@@ -130,7 +130,7 @@ pub struct SubstituteTradeCandidate {
 #[allow(clippy::unnecessary_wraps)]
 fn start_trade(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {

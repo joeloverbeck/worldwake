@@ -229,7 +229,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn start_none(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {

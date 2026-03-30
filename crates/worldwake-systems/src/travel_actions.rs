@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, Tick, TravelEdgeId,
+    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, Permille, Tick, TravelEdgeId,
     VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
@@ -103,7 +103,7 @@ fn resolve_travel(
 
 fn start_travel(
     _def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -140,6 +140,38 @@ fn start_travel(
     )
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_tag(EventTag::Travel);
+
+    // Resolve per-agent travel body cost from MetabolismProfile.
+    // Cost = basal_rate * travel_multiplier / 1000 for each need.
+    if let Some(profile) = txn.get_component_metabolism_profile(instance.actor) {
+        let fatigue_val = u16::try_from(
+            u32::from(profile.fatigue_rate.value())
+                * u32::from(profile.travel_fatigue_multiplier.value())
+                / 1000,
+        )
+        .unwrap_or(1000);
+        let thirst_val = u16::try_from(
+            u32::from(profile.thirst_rate.value())
+                * u32::from(profile.travel_thirst_multiplier.value())
+                / 1000,
+        )
+        .unwrap_or(1000);
+        let bladder_val = u16::try_from(
+            u32::from(profile.bladder_rate.value())
+                * u32::from(profile.travel_bladder_multiplier.value())
+                / 1000,
+        )
+        .unwrap_or(1000);
+        let zero = Permille::new_unchecked(0);
+        let cost = BodyCostPerTick::new(
+            zero,
+            Permille::new_unchecked(thirst_val),
+            Permille::new_unchecked(fatigue_val),
+            Permille::new_unchecked(bladder_val),
+            zero,
+        );
+        instance.body_cost_override = Some(cost);
+    }
 
     Ok(Some(ActionState::Travel {
         edge_id,
@@ -202,10 +234,11 @@ fn abort_travel(
 mod tests {
     use super::register_travel_actions;
     use std::collections::BTreeMap;
+    use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, AgentBeliefStore, CauseRef, Container, ControlSource,
-        EventLog, EventView, InTransitOnEdge, LoadUnits, PerceptionSource, Place, Quantity, Seed,
-        Topology, TravelEdge, WitnessData, World,
+        EventLog, EventView, InTransitOnEdge, LoadUnits, MetabolismProfile, PerceptionSource,
+        Place, Quantity, Seed, Topology, TravelEdge, WitnessData, World,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -634,5 +667,101 @@ mod tests {
             .get(log.events_by_tag(EventTag::ActionAborted)[0])
             .unwrap();
         assert!(record.tags().contains(&EventTag::Travel));
+    }
+
+    fn pm(value: u16) -> Permille {
+        Permille::new(value).unwrap()
+    }
+
+    fn nz(value: u32) -> NonZeroU32 {
+        NonZeroU32::new(value).unwrap()
+    }
+
+    #[test]
+    fn start_travel_sets_body_cost_from_metabolism_profile() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        // Set a MetabolismProfile with non-zero travel multipliers.
+        // fatigue_rate=10, travel_fatigue_multiplier=500 → 10*500/1000 = 5
+        // thirst_rate=20, travel_thirst_multiplier=300 → 20*300/1000 = 6
+        // bladder_rate=15, travel_bladder_multiplier=200 → 15*200/1000 = 3
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_metabolism_profile(
+                actor,
+                MetabolismProfile::new(
+                    pm(1),   // hunger_rate
+                    pm(20),  // thirst_rate
+                    pm(10),  // fatigue_rate
+                    pm(15),  // bladder_rate
+                    pm(1),   // dirtiness_rate
+                    pm(40),  // rest_efficiency
+                    nz(10),  // starvation_tolerance_ticks
+                    nz(10),  // dehydration_tolerance_ticks
+                    nz(10),  // exhaustion_collapse_ticks
+                    nz(10),  // bladder_accident_tolerance_ticks
+                    nz(2),   // toilet_ticks
+                    nz(3),   // wash_ticks
+                    pm(500), // travel_fatigue_multiplier
+                    pm(300), // travel_thirst_multiplier
+                    pm(200), // travel_bladder_multiplier
+                    pm(0),   // wilderness_relief_dirtiness_penalty
+                ),
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+        let instance = active_actions.get(&instance_id).unwrap();
+        let override_cost = instance.body_cost_override.as_ref().unwrap();
+        assert_eq!(override_cost.hunger_delta, pm(0));
+        assert_eq!(override_cost.thirst_delta, pm(6));
+        assert_eq!(override_cost.fatigue_delta, pm(5));
+        assert_eq!(override_cost.bladder_delta, pm(3));
+        assert_eq!(override_cost.dirtiness_delta, pm(0));
+    }
+
+    #[test]
+    fn start_travel_zero_multipliers_produce_zero_cost() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        // Set a MetabolismProfile with default (zero) travel multipliers.
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_component_metabolism_profile(
+                actor,
+                MetabolismProfile::default(),
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+        let instance = active_actions.get(&instance_id).unwrap();
+        let override_cost = instance.body_cost_override.as_ref().unwrap();
+        assert_eq!(*override_cost, BodyCostPerTick::zero());
     }
 }

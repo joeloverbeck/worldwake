@@ -457,7 +457,7 @@ fn subject_is_listener_observable_entity_belief_in_world(
 #[allow(clippy::unnecessary_wraps)]
 fn start_tell(
     def: &ActionDef,
-    instance: &ActionInstance,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1776,7 +1776,7 @@ mod tests {
         let handler = handlers.get(tell.handler).unwrap();
         let (mut world, _place, speaker, listener, subject) =
             world_with_speaker_listener_and_subject(PerceptionSource::DirectObservation);
-        let instance = ActionInstance {
+        let mut instance = ActionInstance {
             instance_id: worldwake_sim::ActionInstanceId(0),
             def_id: tell_id,
             payload: ActionPayload::Tell(TellActionPayload {
@@ -1796,7 +1796,7 @@ mod tests {
         let mut txn = new_txn(&mut world, 5);
 
         assert_eq!(
-            (handler.on_start)(tell, &instance, &mut rng, &mut txn).unwrap(),
+            (handler.on_start)(tell, &mut instance, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
     }

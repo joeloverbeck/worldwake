@@ -1,6 +1,6 @@
 # E20COMBEH-003: Travel body cost wiring via MetabolismProfile multipliers
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — worldwake-systems (travel_actions.rs)
@@ -100,3 +100,13 @@ If the current `StartHandler` signature does not allow mutating the `ActionInsta
 1. `cargo test -p worldwake-systems`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**:
+  - `ActionStartFn` signature changed from `&ActionInstance` to `&mut ActionInstance` across ~30 handler functions in 20+ files (framework adjustment enabling start handlers to set instance fields)
+  - `start_travel` in `travel_actions.rs` now reads the actor's `MetabolismProfile`, computes `BodyCostPerTick` via `basal_rate * travel_multiplier / 1000` for fatigue/thirst/bladder, and sets `instance.body_cost_override`
+  - Two focused tests added: `start_travel_sets_body_cost_from_metabolism_profile`, `start_travel_zero_multipliers_produce_zero_cost`
+- **Deviations**: None. The ticket anticipated the framework adjustment need; `&mut ActionInstance` was chosen over a callback-based approach for simplicity.
+- **Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.

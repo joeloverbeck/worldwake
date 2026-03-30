@@ -116,7 +116,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn start_a(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -126,7 +126,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn start_b(
         _def: &ActionDef,
-        _instance: &ActionInstance,
+        _instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -198,7 +198,7 @@ mod tests {
 
         let retrieved_first = registry.get(first_id).unwrap();
         let retrieved_second = registry.get(second_id).unwrap();
-        let instance = sample_instance();
+        let mut instance = sample_instance();
         let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut rng = DeterministicRng::new(Seed([0x66; 32]));
@@ -213,11 +213,11 @@ mod tests {
         );
 
         assert_eq!(
-            (retrieved_first.on_start)(&def, &instance, &mut rng, &mut txn).unwrap(),
+            (retrieved_first.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
             None
         );
         assert_eq!(
-            (retrieved_second.on_start)(&def, &instance, &mut rng, &mut txn).unwrap(),
+            (retrieved_second.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -228,7 +228,7 @@ mod tests {
         registry.register(ActionHandler::new(start_a, tick_a, commit_a, abort_a));
         registry.register(ActionHandler::new(start_b, tick_a, commit_b, abort_a));
 
-        let instance = sample_instance();
+        let mut instance = sample_instance();
         let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut rng = DeterministicRng::new(Seed([0x67; 32]));
@@ -243,7 +243,7 @@ mod tests {
         );
         let starts = registry
             .iter()
-            .map(|handler| (handler.on_start)(&def, &instance, &mut rng, &mut txn).unwrap())
+            .map(|handler| (handler.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap())
             .collect::<Vec<_>>();
 
         assert_eq!(starts, vec![None, Some(ActionState::Empty)]);

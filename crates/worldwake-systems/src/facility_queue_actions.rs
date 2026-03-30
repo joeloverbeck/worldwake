@@ -172,7 +172,7 @@ pub(crate) fn exclusive_facility_workstation_tag(def: &ActionDef) -> Option<Work
 #[allow(clippy::unnecessary_wraps)]
 fn start_queue_for_facility_use(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    _instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {

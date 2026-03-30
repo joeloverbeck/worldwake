@@ -923,7 +923,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn start_record(
         _def: &ActionDef,
-        instance: &ActionInstance,
+        instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -933,7 +933,7 @@ mod tests {
 
     fn start_abort_requested(
         _def: &ActionDef,
-        instance: &ActionInstance,
+        instance: &mut ActionInstance,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
