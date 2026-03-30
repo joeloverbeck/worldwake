@@ -19,6 +19,10 @@ use worldwake_core::{
 
 const EAST_FIELD_TRAIL: worldwake_core::EntityId =
     prototype_place_entity(PrototypePlace::EastFieldTrail);
+const COMMON_HOUSE: worldwake_core::EntityId =
+    prototype_place_entity(PrototypePlace::CommonHouse);
+const FOREST_PATH: worldwake_core::EntityId =
+    prototype_place_entity(PrototypePlace::ForestPath);
 
 // ---------------------------------------------------------------------------
 // Shared setup: place an apple-producing workstation at OrchardFarm so
@@ -676,5 +680,518 @@ fn golden_travel_interrupt_from_bladder_escalation() {
     assert!(
         relief_committed,
         "agent should have committed a relief action (toilet or relieve_wilderness)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 5: Latrine Preferred — toilet at Latrine place
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: PublicLatrine
+// Principles: 1, 8, 20
+//
+// Setup: One agent at PublicLatrine (Latrine + Village tags) with critical
+//   bladder (pm(950)). PublicLatrine has no outdoor tags, so only
+//   `toilet` is afforded (not `relieve_wilderness`). The agent has a
+//   non-zero wilderness_relief_dirtiness_penalty to confirm dirtiness
+//   is NOT applied (toilet path, not wilderness path).
+//
+// Proves: When an agent is at a latrine, GoalKind::Relieve resolves to
+//   the `toilet` action. Bladder resets to pm(0), dirtiness is unchanged
+//   (no wilderness penalty), and waste is created at the place. This is
+//   the latrine branch of the relief decision tree.
+//
+// Chain: critical bladder pressure -> Relieve goal ranked highest ->
+//   toilet afforded at Latrine-tagged place -> toilet committed ->
+//   bladder=0, dirtiness unchanged, waste created.
+
+#[test]
+fn golden_latrine_preferred() {
+    let mut h = GoldenHarness::new(Seed([94; 32]));
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(10),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty — non-zero to confirm it's NOT applied
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "LatrineUser",
+        PUBLIC_LATRINE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+
+    // Run until toilet commits. Toilet takes toilet_ticks (8) to complete,
+    // plus a few ticks for planning. Bladder keeps rising after relief,
+    // so we check outcomes at the commit boundary, not at a fixed tick count.
+    let mut toilet_committed_tick = None;
+    for tick in 0..40u64 {
+        h.step_once();
+
+        if toilet_committed_tick.is_none() {
+            let sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            let committed = sink.events_for(agent).iter().any(|e| {
+                matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+                    && h.defs
+                        .get(e.def_id)
+                        .map(|d| d.name.as_str() == "toilet")
+                        .unwrap_or(false)
+            });
+            if committed {
+                toilet_committed_tick = Some(tick);
+                break;
+            }
+        }
+    }
+
+    // --- Verification Layer 1: Decision trace shows Relieve goal ---
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let traces = decision_sink.traces_for(agent);
+    let relieve_appeared = traces.iter().any(|trace| {
+        if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
+            p.candidates
+                .ranked
+                .iter()
+                .any(|c| matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve))
+        } else {
+            false
+        }
+    });
+    assert!(
+        relieve_appeared,
+        "GoalKind::Relieve should have appeared in decision trace candidates"
+    );
+
+    // --- Verification Layer 2: Action trace shows toilet committed (not relieve_wilderness) ---
+    assert!(
+        toilet_committed_tick.is_some(),
+        "agent should have committed a toilet action at PublicLatrine within 40 ticks"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let agent_events = action_sink.events_for(agent);
+
+    let wilderness_committed = agent_events.iter().any(|e| {
+        matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+            && h.defs
+                .get(e.def_id)
+                .map(|d| d.name.as_str() == "relieve_wilderness")
+                .unwrap_or(false)
+    });
+    assert!(
+        !wilderness_committed,
+        "relieve_wilderness should NOT have been committed at a Latrine-tagged place"
+    );
+
+    // --- Verification Layer 3: Authoritative state — bladder reset at commit, dirtiness unchanged ---
+    // Bladder is pm(0) at commit time. We broke out immediately after commit,
+    // but one more tick may have elapsed. Check bladder is low (basal drift only).
+    assert!(
+        h.agent_bladder(agent).value() <= 20,
+        "bladder ({}) should be near pm(0) right after toilet commit",
+        h.agent_bladder(agent).value(),
+    );
+
+    // Dirtiness should only have basal drift (1/tick), NOT wilderness penalty.
+    // The wilderness penalty is pm(200). Basal drift over ~10 ticks is ~10.
+    let final_dirtiness = h.agent_dirtiness(agent);
+    assert!(
+        final_dirtiness.value() < initial_dirtiness.value() + 100,
+        "dirtiness ({}) should not have the wilderness penalty applied (initial={}, penalty=200)",
+        final_dirtiness.value(),
+        initial_dirtiness.value(),
+    );
+
+    // --- Verification Layer 4: Waste created at PublicLatrine ---
+    let waste_at_latrine = h
+        .world
+        .entities_effectively_at(PUBLIC_LATRINE)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        });
+    assert!(
+        waste_at_latrine,
+        "waste should have been created at PublicLatrine after toilet"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 6: Wilderness Fallback — relieve_wilderness at outdoor place
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: ForestPath
+// Principles: 1, 8, 20
+//
+// Setup: One agent at ForestPath (Forest + Trail tags, both outdoor) with
+//   critical bladder (pm(950)). ForestPath has no Latrine tag, so `toilet`
+//   is NOT afforded — only `relieve_wilderness`. Agent has non-zero
+//   wilderness_relief_dirtiness_penalty (pm(200)).
+//
+// Proves: When an agent is at an outdoor place with no latrine,
+//   GoalKind::Relieve resolves to `relieve_wilderness`. Bladder resets
+//   to pm(0), dirtiness increases by wilderness_relief_dirtiness_penalty,
+//   and waste is created at the place.
+//
+// Chain: critical bladder pressure -> Relieve goal ranked highest ->
+//   relieve_wilderness afforded at outdoor place (no latrine) ->
+//   relieve_wilderness committed -> bladder=0, dirtiness+=penalty,
+//   waste created.
+
+#[test]
+fn golden_wilderness_fallback() {
+    let mut h = GoldenHarness::new(Seed([95; 32]));
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(10),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "ForestReliever",
+        FOREST_PATH,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+
+    // Run until relieve_wilderness commits. Break early to avoid
+    // bladder re-escalating and confusing post-commit assertions.
+    let mut wilderness_committed_tick = None;
+    for tick in 0..40u64 {
+        h.step_once();
+
+        if wilderness_committed_tick.is_none() {
+            let sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            let committed = sink.events_for(agent).iter().any(|e| {
+                matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+                    && h.defs
+                        .get(e.def_id)
+                        .map(|d| d.name.as_str() == "relieve_wilderness")
+                        .unwrap_or(false)
+            });
+            if committed {
+                wilderness_committed_tick = Some(tick);
+                break;
+            }
+        }
+    }
+
+    // --- Verification Layer 1: Decision trace shows Relieve goal ---
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let traces = decision_sink.traces_for(agent);
+    let relieve_appeared = traces.iter().any(|trace| {
+        if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
+            p.candidates
+                .ranked
+                .iter()
+                .any(|c| matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve))
+        } else {
+            false
+        }
+    });
+    assert!(
+        relieve_appeared,
+        "GoalKind::Relieve should have appeared in decision trace candidates"
+    );
+
+    // --- Verification Layer 2: Action trace shows relieve_wilderness committed ---
+    assert!(
+        wilderness_committed_tick.is_some(),
+        "agent should have committed relieve_wilderness at ForestPath within 40 ticks"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let agent_events = action_sink.events_for(agent);
+
+    let toilet_committed = agent_events.iter().any(|e| {
+        matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+            && h.defs
+                .get(e.def_id)
+                .map(|d| d.name.as_str() == "toilet")
+                .unwrap_or(false)
+    });
+    assert!(
+        !toilet_committed,
+        "toilet should NOT have been committed at ForestPath (no Latrine tag)"
+    );
+
+    // --- Verification Layer 3: Authoritative state — bladder reset, dirtiness increased ---
+    // Broke out right after commit; bladder may have re-escalated by 1 tick.
+    assert!(
+        h.agent_bladder(agent).value() <= 20,
+        "bladder ({}) should be near pm(0) right after relieve_wilderness commit",
+        h.agent_bladder(agent).value(),
+    );
+
+    let final_dirtiness = h.agent_dirtiness(agent);
+    // Dirtiness should have increased by at least the wilderness penalty (200).
+    // Basal dirtiness rate is 1/tick, so over ~10 ticks, basal drift ≤ 10.
+    // The wilderness penalty (200) is the dominant contributor.
+    assert!(
+        final_dirtiness.value() >= initial_dirtiness.value() + 200,
+        "dirtiness ({}) should include wilderness_relief_dirtiness_penalty (200) above initial ({})",
+        final_dirtiness.value(),
+        initial_dirtiness.value(),
+    );
+
+    // --- Verification Layer 4: Waste created at ForestPath ---
+    let waste_at_forest = h
+        .world
+        .entities_effectively_at(FOREST_PATH)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        });
+    assert!(
+        waste_at_forest,
+        "waste should have been created at ForestPath after relieve_wilderness"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 7: Deprivation Accident — no relief option available
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: CommonHouse
+// Principles: 1, 8, 20, 26
+//
+// Setup: One agent at CommonHouse (Inn + Village tags — indoor, no Latrine,
+//   no outdoor tags). Neither `toilet` nor `relieve_wilderness` is afforded.
+//   Bladder starts at pm(950) (critical). bladder_rate=50 keeps escalating.
+//   bladder_accident_tolerance_ticks=nz(1) fires after 1 tick of critical
+//   exposure. Needs system runs before AI in tick order, so the accident
+//   fires before the agent can plan or start travel to a reachable latrine.
+//
+// Proves: When no relief action is available and the agent cannot reach
+//   one, the needs system's deprivation accident fires after
+//   bladder_accident_tolerance_ticks of critical bladder exposure.
+//   Waste is created, bladder resets to pm(0), dirtiness increases by
+//   the bladder pressure at accident time. No relief action is committed.
+//
+// Chain: critical bladder pressure -> Relieve goal ranked -> planner
+//   finds no relief affordance -> no action started -> needs system
+//   tracks critical exposure ticks -> tolerance exceeded -> deprivation
+//   accident fires -> waste created, bladder=0, dirtiness+=bladder.
+
+#[test]
+fn golden_deprivation_accident() {
+    let mut h = GoldenHarness::new(Seed([96; 32]));
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    // bladder_accident_tolerance_ticks=1 so the accident fires on the
+    // very first tick. Needs system runs before AI in the tick order,
+    // so the accident fires before the agent can plan/start travel.
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(50),  // bladder_rate — fast escalation
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(1),   // bladder_accident_tolerance_ticks — fires after 1 critical tick
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Desperate",
+        COMMON_HOUSE,
+        // Bladder at pm(950) — already above critical threshold (930).
+        // Each tick adds 50 more (capped at 1000).
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    // Override deprivation exposure to start at 0 critical ticks
+    // (seed_agent already sets DeprivationExposure::default() which is all zeros).
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+
+    // Run enough ticks for the accident to fire.
+    // Bladder starts at 950 (above critical 930). Each tick increments
+    // bladder_critical_ticks. After 1 tick of critical exposure,
+    // the accident fires.
+    for _ in 0..30 {
+        h.step_once();
+
+        // Early exit once we see the accident effects.
+        let bladder = h.agent_bladder(agent);
+        let dirtiness = h.agent_dirtiness(agent);
+        if bladder == pm(0) && dirtiness.value() > initial_dirtiness.value() + 100 {
+            break;
+        }
+    }
+
+    // --- Verification Layer 1: No relief action committed ---
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let agent_events = action_sink.events_for(agent);
+
+    let relief_committed = agent_events.iter().any(|e| {
+        matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+            && h.defs
+                .get(e.def_id)
+                .map(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
+                .unwrap_or(false)
+    });
+    assert!(
+        !relief_committed,
+        "no relief action should have been committed at CommonHouse (indoor, no latrine)"
+    );
+
+    // --- Verification Layer 2: Authoritative state — bladder reset after accident ---
+    // After the accident, bladder should be reset to pm(0).
+    // The accident fires when bladder_critical_ticks >= 3 (tolerance).
+    assert_eq!(
+        h.agent_bladder(agent),
+        pm(0),
+        "bladder should be pm(0) after deprivation accident"
+    );
+
+    // --- Verification Layer 3: Dirtiness increased significantly ---
+    // The accident adds the bladder pressure (which was at or near 1000) to dirtiness.
+    // Starting dirtiness was pm(0). Even with basal drift (1/tick * ~30 ticks = 30),
+    // the accident adds a large amount (the bladder value at accident time, likely 1000).
+    let final_dirtiness = h.agent_dirtiness(agent);
+    assert!(
+        final_dirtiness.value() >= 500,
+        "dirtiness ({}) should be very high after deprivation accident (bladder pressure added)",
+        final_dirtiness.value(),
+    );
+
+    // --- Verification Layer 4: Waste created at agent's effective place ---
+    // The accident creates waste at the agent's effective_place when it fires.
+    // Due to tick ordering (actions process before systems), the agent may have
+    // traveled from CommonHouse before the accident fired. We check wherever
+    // the agent ended up.
+    let agent_place = h
+        .world
+        .effective_place(agent)
+        .expect("agent should have an effective place");
+    let waste_at_agent_place = h
+        .world
+        .entities_effectively_at(agent_place)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        });
+    assert!(
+        waste_at_agent_place,
+        "waste should have been created at the agent's location after deprivation accident"
     );
 }

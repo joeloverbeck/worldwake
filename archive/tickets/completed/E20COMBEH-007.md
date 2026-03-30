@@ -1,6 +1,6 @@
 # E20COMBEH-007: Golden tests — relief fallback (latrine preferred, wilderness, deprivation)
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — tests only
@@ -93,3 +93,25 @@ The wilderness relief fallback feature needs golden E2E coverage to verify that:
 3. `cargo test -p worldwake-ai golden_deprivation`
 4. `cargo test -p worldwake-ai`
 5. `cargo test --workspace`
+
+## Outcome
+
+- Completion date: 2026-03-30
+- What changed:
+  - Added three golden tests to `crates/worldwake-ai/tests/golden_travel_physiology.rs` (Scenarios 5, 6, 7):
+    - `golden_latrine_preferred` — agent at PublicLatrine with critical bladder commits `toilet`, not `relieve_wilderness`; bladder resets, dirtiness unchanged, waste created
+    - `golden_wilderness_fallback` — agent at ForestPath (outdoor, no latrine) commits `relieve_wilderness`; bladder resets, dirtiness increases by `wilderness_relief_dirtiness_penalty`, waste created
+    - `golden_deprivation_accident` — agent at CommonHouse (indoor, no latrine, no outdoor tags) with `bladder_accident_tolerance_ticks=1`; no relief action commits, needs system fires deprivation accident, bladder resets, dirtiness spikes, waste created
+  - Added constants `COMMON_HOUSE` and `FOREST_PATH` to the test file
+- Deviations from original plan:
+  - Ticket assumed `bladder_accident_tolerance_ticks=nz(3)` was sufficient for deprivation isolation. Actual tick ordering (actions process before systems) means the agent can travel away from CommonHouse before the needs system fires. Changed to `nz(1)` and checked waste at agent's effective_place rather than hardcoded CommonHouse.
+  - Latrine preference and wilderness fallback tests use a break-at-commit loop instead of fixed tick count, because needs values are transient (basal drift re-escalates after relief commit).
+  - `PerceptionProfile` not needed, as stated in ticket assumption 5 — confirmed correct.
+  - Filed follow-up `tickets/GOLDOC-001.md` to document the ordering trap and transient-state assertion pattern in `docs/golden-e2e-testing.md`.
+- Verification results:
+  - `cargo test -p worldwake-ai --test golden_travel_physiology golden_latrine_preferred` passed
+  - `cargo test -p worldwake-ai --test golden_travel_physiology golden_wilderness_fallback` passed
+  - `cargo test -p worldwake-ai --test golden_travel_physiology golden_deprivation_accident` passed
+  - `cargo test -p worldwake-ai` passed (all 888 tests)
+  - `cargo test --workspace` passed
+  - `cargo clippy -p worldwake-ai` passed (no warnings)
