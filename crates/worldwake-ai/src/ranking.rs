@@ -4,6 +4,7 @@ use crate::{
     derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
+    pressure::is_bandit_raid_deterred_by_wounds,
     theft::assess_theft_deterrence,
     DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
     RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
@@ -837,6 +838,10 @@ fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) ->
         unreachable!("raid_target_motive requires RaidTarget");
     };
 
+    if is_bandit_raid_deterred_by_wounds(context.view, context.agent) {
+        return 0;
+    }
+
     CommodityKind::ALL
         .iter()
         .copied()
@@ -1165,6 +1170,7 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
+        courage: BTreeMap<EntityId, Permille>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
@@ -1176,6 +1182,8 @@ mod tests {
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
+        factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
+        bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -1265,6 +1273,9 @@ mod tests {
         ) -> Vec<EntityId> {
             Vec::new()
         }
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
+        }
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
             self.item_lot_commodities.get(&entity).copied()
         }
@@ -1327,6 +1338,9 @@ mod tests {
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
         }
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courage.get(&agent).copied()
+        }
         fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
             *self
                 .confidence_policies
@@ -1368,6 +1382,12 @@ mod tests {
         }
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
+        }
+        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.factions_by_member
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
         }
         fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
             self.hostiles.get(&agent).cloned().unwrap_or_default()
@@ -3398,6 +3418,55 @@ mod tests {
         );
 
         assert!(ranked.into_ranked().is_empty());
+    }
+
+    #[test]
+    fn raid_target_is_zero_motive_when_wound_deterrence_is_active() {
+        let agent = entity(1);
+        let target = entity(7);
+        let faction = entity(8);
+        let mut view = base_view(agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.alive.insert(target);
+        view.place_entities
+            .entry(view.effective_places[&agent])
+            .or_default()
+            .push(target);
+        view.effective_places.insert(target, view.effective_places[&agent]);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.commodity_quantities
+            .insert((target, CommodityKind::Apple), Quantity(4));
+        view.courage.insert(agent, pm(200));
+        view.wounds.insert(agent, vec![wound(120), wound(120)]);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_flee_thresholds.insert(faction, pm(300));
+
+        let ranked = rank(
+            &[goal(GoalKind::RaidTarget { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert!(ranked.into_ranked().is_empty());
+
+        view.wounds.insert(agent, vec![wound(120), wound(100)]);
+        let ranked = rank(
+            &[goal(GoalKind::RaidTarget { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
     }
 
     #[test]

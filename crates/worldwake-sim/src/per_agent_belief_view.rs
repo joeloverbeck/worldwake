@@ -458,6 +458,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.authoritative_local_controlled_lots_for(agent, place, commodity)
     }
 
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        self.world
+            .get_component_bandit_faction_policy(faction)
+            .map(|policy| policy.flee_wound_threshold)
+    }
+
     fn bandit_camp_establishment_ticks(
         &self,
         faction: EntityId,

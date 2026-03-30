@@ -111,6 +111,10 @@ pub trait GoalBeliefView {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId>;
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        let _ = faction;
+        None
+    }
     fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
         let _ = faction;
         None
@@ -370,6 +374,10 @@ pub trait RuntimeBeliefView {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId>;
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        let _ = faction;
+        None
+    }
     fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
         let _ = faction;
         None
@@ -784,6 +792,13 @@ macro_rules! impl_goal_belief_view {
                 commodity: worldwake_core::CommodityKind,
             ) -> Vec<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::local_controlled_lots_for(self, agent, place, commodity)
+            }
+
+            fn bandit_flee_wound_threshold(
+                &self,
+                faction: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::Permille> {
+                $crate::RuntimeBeliefView::bandit_flee_wound_threshold(self, faction)
             }
 
             fn item_lot_commodity(

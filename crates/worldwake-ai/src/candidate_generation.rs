@@ -13,6 +13,7 @@ use crate::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
         SelfKnowledgeProvenance,
     },
+    pressure::is_bandit_raid_deterred_by_wounds,
     theft::assess_theft_deterrence,
     GroundedGoal,
 };
@@ -1434,6 +1435,10 @@ fn emit_raid_target_goals(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
+    if is_bandit_raid_deterred_by_wounds(ctx.view, ctx.agent) {
+        return;
+    }
+
     if ctx
         .view
         .drive_thresholds(ctx.agent)
@@ -3285,6 +3290,7 @@ mod tests {
         homeostatic_needs: BTreeMap<EntityId, HomeostaticNeeds>,
         drive_thresholds: BTreeMap<EntityId, DriveThresholds>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
+        courage: BTreeMap<EntityId, Permille>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         sellers: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
@@ -3307,6 +3313,7 @@ mod tests {
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         bandit_factions: BTreeSet<EntityId>,
+        bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
         local_bandit_camps: BTreeMap<EntityId, EntityId>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         support_declarations: BTreeMap<(EntityId, EntityId), EntityId>,
@@ -3353,6 +3360,7 @@ mod tests {
                 homeostatic_needs: BTreeMap::new(),
                 drive_thresholds: BTreeMap::new(),
                 wounds: BTreeMap::new(),
+                courage: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 attackers: BTreeMap::new(),
                 sellers: BTreeMap::new(),
@@ -3374,6 +3382,7 @@ mod tests {
                 factions_by_member: BTreeMap::new(),
                 faction_rally_point_beliefs: BTreeMap::new(),
                 bandit_factions: BTreeSet::new(),
+                bandit_flee_thresholds: BTreeMap::new(),
                 local_bandit_camps: BTreeMap::new(),
                 loyalties: BTreeMap::new(),
                 support_declarations: BTreeMap::new(),
@@ -3618,6 +3627,12 @@ mod tests {
 
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.drive_thresholds.get(&agent).copied()
+        }
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courage.get(&agent).copied()
+        }
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
         }
         fn belief_confidence_policy(
             &self,
@@ -5233,6 +5248,55 @@ mod tests {
         assert!(!contains_goal(
             &candidates,
             GoalKind::RaidTarget { target: ally }
+        ));
+    }
+
+    #[test]
+    fn bandit_raid_target_is_suppressed_by_wound_deterrence() {
+        let agent = entity(1);
+        let traveler = entity(2);
+        let faction = entity(30);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, traveler]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(traveler, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(traveler, place);
+        view.entities_at.insert(place, vec![agent, traveler]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.bandit_flee_thresholds.insert(faction, pm(300));
+        view.courage.insert(agent, pm(200));
+        view.wounds.insert(agent, vec![wound(120), wound(120)]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::RaidTarget { target: traveler }
+        ));
+
+        view.wounds.insert(agent, vec![wound(120), wound(100)]);
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::RaidTarget { target: traveler }
         ));
     }
 

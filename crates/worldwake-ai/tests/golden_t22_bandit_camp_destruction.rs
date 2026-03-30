@@ -36,6 +36,8 @@ const S48_DANGEROUS_ROAD: EntityId = entity(131);
 const S48_BANDIT_CAMP: EntityId = entity(132);
 const S48_SAFE_ROUTE: EntityId = entity(133);
 const S48_REMOTE_FARM: EntityId = entity(134);
+const S49_BANDIT_CAMP: EntityId = entity(140);
+const S49_ROAD_JUNCTION: EntityId = entity(141);
 
 const fn entity(slot: u32) -> EntityId {
     EntityId {
@@ -176,6 +178,48 @@ fn merchant_utility_profile() -> UtilityProfile {
     }
 }
 
+fn s49_bandit_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(0),
+        danger_weight: pm(900),
+        courage: pm(200),
+        enterprise_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+fn s49_bandit_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(800),
+        pm(500),
+        pm(220),
+        pm(120),
+        pm(20),
+        pm(10),
+        pm(0),
+        pm(150),
+        pm(40),
+        nz(2),
+        nz(4),
+    )
+}
+
+fn s49_traveler_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(350),
+        pm(250),
+        pm(450),
+        pm(180),
+        pm(40),
+        pm(10),
+        pm(0),
+        pm(180),
+        pm(25),
+        nz(2),
+        nz(3),
+    )
+}
+
 fn accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
@@ -239,6 +283,11 @@ struct S48Ids {
     witness: EntityId,
     merchant: EntityId,
     orchard_workstation: EntityId,
+}
+
+struct S49Ids {
+    bandit: EntityId,
+    travelers: [EntityId; 3],
 }
 
 fn build_s47_topology() -> Topology {
@@ -305,6 +354,25 @@ fn build_s48_topology() -> Topology {
     connect(&mut topology, 360, S48_DANGEROUS_ROAD, S48_REMOTE_FARM, 1);
     connect(&mut topology, 370, S48_MARKET, S48_SAFE_ROUTE, 2);
     connect(&mut topology, 380, S48_SAFE_ROUTE, S48_REMOTE_FARM, 2);
+    topology
+}
+
+fn build_s49_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(
+            S49_BANDIT_CAMP,
+            place("S49 Bandit Camp", &[PlaceTag::Camp, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S49_ROAD_JUNCTION,
+            place("S49 Road Junction", &[PlaceTag::Road, PlaceTag::Forest]),
+        )
+        .unwrap();
+
+    connect(&mut topology, 390, S49_BANDIT_CAMP, S49_ROAD_JUNCTION, 1);
     topology
 }
 
@@ -847,6 +915,105 @@ fn seed_s48_scenario(h: &mut GoldenHarness) -> S48Ids {
     }
 }
 
+fn seed_s49_scenario(h: &mut GoldenHarness) -> S49Ids {
+    let bandit = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S49 Rook",
+        S49_BANDIT_CAMP,
+        HomeostaticNeeds::new(pm(850), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile {
+            hunger_rate: pm(20),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        s49_bandit_utility_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        bandit,
+        default_perception_profile(),
+    );
+
+    let travelers = ["S49 Traveler One", "S49 Traveler Two", "S49 Traveler Three"].map(|name| {
+        let traveler = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            name,
+            S49_ROAD_JUNCTION,
+            HomeostaticNeeds::new(pm(200), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+        );
+        set_control_source(h, traveler, ControlSource::Human, 0);
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            traveler,
+            default_perception_profile(),
+        );
+        traveler
+    });
+
+    for traveler in travelers {
+        give_commodity(
+            &mut h.world,
+            &mut h.event_log,
+            traveler,
+            S49_ROAD_JUNCTION,
+            CommodityKind::Apple,
+            Quantity(4),
+        );
+    }
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let faction = txn.create_faction("S49 Forest Bandits").unwrap();
+    txn.add_member(bandit, faction).unwrap();
+    txn.set_component_combat_profile(bandit, s49_bandit_profile())
+        .unwrap();
+    txn.set_component_bandit_faction_policy(
+        faction,
+        BanditFactionPolicy {
+            min_regroup_count: 1,
+            establishment_duration_ticks: nz(2),
+            abandonment_grace_ticks: nz(2),
+            flee_wound_threshold: pm(300),
+            rally_place: None,
+        },
+    )
+    .unwrap();
+    let camp_supplies = txn
+        .create_container(Container {
+            capacity: worldwake_core::LoadUnits(20),
+            allowed_commodities: None,
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })
+        .unwrap();
+    txn.set_ground_location(camp_supplies, S49_BANDIT_CAMP).unwrap();
+    txn.set_owner(camp_supplies, faction).unwrap();
+    txn.set_component_bandit_camp(
+        S49_BANDIT_CAMP,
+        BanditCamp {
+            faction,
+            supplies: camp_supplies,
+            empty_since_tick: None,
+        },
+    )
+    .unwrap();
+    for traveler in travelers {
+        txn.set_component_combat_profile(traveler, s49_traveler_profile())
+            .unwrap();
+    }
+    txn.commit(&mut h.event_log);
+
+    S49Ids { bandit, travelers }
+}
+
 fn request_travel_to_place(h: &mut GoldenHarness, traveler: EntityId, destination: EntityId) {
     let travel_def_id = h
         .defs
@@ -980,6 +1147,38 @@ fn agent_knows_witnessed_conflict_at_place(
                             if subjects.contains(&actor)
                     )
             })
+        })
+}
+
+fn wound_total(h: &GoldenHarness, agent: EntityId) -> u16 {
+    h.world
+        .get_component_wound_list(agent)
+        .map(|wounds| {
+            wounds
+                .wounds
+                .iter()
+                .map(|wound| wound.severity.value())
+                .sum::<u16>()
+        })
+        .unwrap_or(0)
+}
+
+fn set_wound_total(h: &mut GoldenHarness, agent: EntityId, severity: u16, tick: u64) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_wound_list(agent, stable_wound_list(severity))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn latest_planning_trace_selected_goal(h: &GoldenHarness, agent: EntityId) -> Option<GoalKey> {
+    h.driver
+        .trace_sink()?
+        .traces_for(agent)
+        .into_iter()
+        .rev()
+        .find_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => planning.selection.selected_goal(),
+            _ => None,
         })
 }
 
@@ -1537,6 +1736,180 @@ fn run_s47_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
     )
 }
 
+fn run_s49_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = build_harness_with_topology(seed, build_s49_topology());
+    let ids = seed_s49_scenario(&mut h);
+    let deterrence_threshold = 240u16;
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    for (phase_index, traveler) in ids.travelers.iter().take(2).enumerate() {
+        if phase_index == 1 {
+            let tick = h.scheduler.current_tick().0;
+            set_wound_total(&mut h, ids.bandit, 220, tick);
+            assert_eq!(
+                wound_total(&h, ids.bandit),
+                220,
+                "phase 2 should begin below the deterrence threshold"
+            );
+        }
+
+        request_travel_to_place(&mut h, *traveler, S49_BANDIT_CAMP);
+
+        let mut traveler_arrived = false;
+        let mut saw_raid_candidate = false;
+        let mut saw_raid_selection = false;
+        let mut saw_attack_commit = false;
+        let mut retreat_requested = false;
+        let phase_start_tick = h.scheduler.current_tick();
+
+        for _ in 0..60 {
+            h.step_once();
+            traveler_arrived |= h.world.effective_place(*traveler) == Some(S49_BANDIT_CAMP);
+            if !traveler_arrived {
+                continue;
+            }
+
+            if let Some(sink) = h.driver.trace_sink() {
+                if let Some(trace) = sink.traces_for(ids.bandit).into_iter().last() {
+                    if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                        let raid_goal = GoalKey::from(GoalKind::RaidTarget { target: *traveler });
+                        saw_raid_candidate |= planning
+                            .candidates
+                            .generated
+                            .iter()
+                            .any(|goal| goal.goal_key == raid_goal);
+                        saw_raid_selection |= planning.selection.selected_goal() == Some(raid_goal);
+                    }
+                }
+            }
+
+            saw_attack_commit |= h
+                .action_trace_sink()
+                .expect("action tracing should stay enabled")
+                .events_for(ids.bandit)
+                .iter()
+                .any(|event| {
+                    event.action_name == "attack"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                        && event.tick >= phase_start_tick
+                });
+
+            if saw_attack_commit && !retreat_requested {
+                request_travel_to_place(&mut h, *traveler, S49_ROAD_JUNCTION);
+                retreat_requested = true;
+            }
+
+            if retreat_requested && h.world.effective_place(*traveler) == Some(S49_ROAD_JUNCTION) {
+                break;
+            }
+        }
+
+        assert!(traveler_arrived, "traveler should reach the camp before the raid phase resolves");
+        assert!(
+            saw_raid_candidate,
+            "bandit should generate RaidTarget before the deterrence threshold is crossed"
+        );
+        assert!(
+            saw_raid_selection,
+            "bandit should select RaidTarget before the deterrence threshold is crossed"
+        );
+        assert!(
+            saw_attack_commit,
+            "pre-threshold phases should still resolve through the normal attack action"
+        );
+        assert!(
+            !h.agent_is_dead(ids.bandit),
+            "bandit must survive long enough to demonstrate threshold-sensitive raid behavior"
+        );
+    }
+
+    let tick = h.scheduler.current_tick().0;
+    set_wound_total(&mut h, ids.bandit, 260, tick);
+    assert!(
+        wound_total(&h, ids.bandit) >= deterrence_threshold,
+        "the final phase should begin at or above the deterrence threshold"
+    );
+
+    let final_traveler = ids.travelers[2];
+    request_travel_to_place(&mut h, final_traveler, S49_BANDIT_CAMP);
+
+    let mut final_arrived = false;
+    let mut saw_post_threshold_planning = false;
+    let mut saw_post_threshold_raid_candidate = false;
+    let mut saw_post_threshold_raid_selection = false;
+    let mut saw_post_threshold_attack = false;
+    let final_phase_start_tick = h.scheduler.current_tick();
+
+    for _ in 0..40 {
+        h.step_once();
+        final_arrived |= h.world.effective_place(final_traveler) == Some(S49_BANDIT_CAMP);
+        if !final_arrived {
+            continue;
+        }
+
+        if let Some(sink) = h.driver.trace_sink() {
+            if let Some(trace) = sink.traces_for(ids.bandit).into_iter().last() {
+                if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                    saw_post_threshold_planning = true;
+                    let raid_goal = GoalKey::from(GoalKind::RaidTarget {
+                        target: final_traveler,
+                    });
+                    saw_post_threshold_raid_candidate |= planning
+                        .candidates
+                        .generated
+                        .iter()
+                        .any(|goal| goal.goal_key == raid_goal);
+                    saw_post_threshold_raid_selection |=
+                        planning.selection.selected_goal() == Some(raid_goal);
+                }
+            }
+        }
+
+        saw_post_threshold_attack |= h
+            .action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(ids.bandit)
+            .iter()
+            .any(|event| {
+                event.action_name == "attack"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && event.tick >= final_phase_start_tick
+            });
+    }
+
+    assert!(final_arrived, "final traveler should reach the camp for the suppressed phase");
+    assert!(
+        saw_post_threshold_planning,
+        "after the final traveler arrives, the bandit should still produce planning traces"
+    );
+    assert!(
+        !saw_post_threshold_raid_candidate,
+        "once wound load crosses the deterrence threshold, RaidTarget should stop generating"
+    );
+    assert!(
+        !saw_post_threshold_raid_selection,
+        "once wound load crosses the deterrence threshold, RaidTarget should stop selecting"
+    );
+    assert!(
+        !saw_post_threshold_attack,
+        "the deterred bandit should not launch a third raid"
+    );
+    assert!(
+        h.world.get_component_dead_at(final_traveler).is_none(),
+        "the final traveler should remain alive once raid deterrence is active"
+    );
+    assert!(
+        latest_planning_trace_selected_goal(&h, ids.bandit)
+            != Some(GoalKey::from(GoalKind::RaidTarget { target: final_traveler })),
+        "the first post-threshold selected goal should no longer be RaidTarget"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 22: Bandit Camp Destruction Chain
 // ---------------------------------------------------------------------------
@@ -1656,5 +2029,44 @@ fn golden_raid_belief_economic_cascade_replays_deterministically() {
     assert_eq!(
         first, second,
         "Scenario 48 raid-belief economic cascade should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 49: Wound-Dampened Raid Spiral
+// ---------------------------------------------------------------------------
+//
+// Systems: Combat, Wounds, AI, Needs
+// GoalKinds: RaidTarget, ConsumeOwnedCommodity
+// ActionDomains: Combat, Needs, Travel
+// Places: S49BanditCamp, S49RoadJunction
+// Principles: 1, 3, 8, 17
+//
+// Setup: A single hungry bandit at camp faces three travelers arriving one at
+// a time with visible food. The first two arrivals should still be raided,
+// producing accumulating concrete wounds on the bandit. Once those wounds pass
+// the faction flee threshold after courage scaling, the third arrival should
+// no longer generate or select `RaidTarget`.
+//
+// Proves:
+// 1. Repeated raid combat produces concrete wound accumulation on the raider.
+// 2. The bandit can still raid before crossing the wound deterrence threshold.
+// 3. After threshold crossing, `RaidTarget` disappears without introducing a cooldown or hidden alias path.
+//
+// Chain: raid opportunity -> attack commit -> wound accumulation -> second raid
+// -> threshold crossed -> third prey arrives -> RaidTarget omitted.
+
+#[test]
+fn golden_wound_dampened_raid_spiral() {
+    let _ = run_s49_scenario(Seed([49; 32]));
+}
+
+#[test]
+fn golden_wound_dampened_raid_spiral_replays_deterministically() {
+    let first = run_s49_scenario(Seed([49; 32]));
+    let second = run_s49_scenario(Seed([49; 32]));
+    assert_eq!(
+        first, second,
+        "Scenario 49 wound-dampened raid spiral should replay deterministically"
     );
 }

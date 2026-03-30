@@ -66,6 +66,26 @@ pub fn derive_pain_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permi
         })
 }
 
+pub fn bandit_raid_wound_threshold(view: &dyn GoalBeliefView, agent: EntityId) -> Option<Permille> {
+    let courage = u32::from(view.courage(agent)?.value());
+
+    view.bandit_factions_of(agent)
+        .into_iter()
+        .filter_map(|faction| view.bandit_flee_wound_threshold(faction))
+        .map(|threshold| {
+            let scaled = u32::from(threshold.value())
+                .saturating_mul(1000u32.saturating_sub(courage))
+                / 1000;
+            Permille::new(u16::try_from(scaled).unwrap()).unwrap()
+        })
+        .min_by_key(|threshold| threshold.value())
+}
+
+pub fn is_bandit_raid_deterred_by_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
+    bandit_raid_wound_threshold(view, agent)
+        .is_some_and(|threshold| derive_pain_pressure(view, agent) >= threshold)
+}
+
 pub fn derive_danger_pressure(view: &dyn GoalBeliefView, agent: EntityId) -> Permille {
     assess_danger(view, agent).pressure
 }
@@ -92,7 +112,10 @@ fn sorted_unique_entities(mut entities: Vec<EntityId>) -> Vec<EntityId> {
 
 #[cfg(test)]
 mod tests {
-    use super::{assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure};
+    use super::{
+        assess_danger, bandit_raid_wound_threshold, classify_band, derive_danger_pressure,
+        derive_pain_pressure, is_bandit_raid_deterred_by_wounds,
+    };
     use crate::GoalPriorityClass;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -113,6 +136,9 @@ mod tests {
         hostile_targets: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         incapacitated: BTreeSet<EntityId>,
+        courage: BTreeMap<EntityId, Permille>,
+        bandit_membership: BTreeMap<EntityId, Vec<EntityId>>,
+        bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -163,6 +189,9 @@ mod tests {
             _commodity: CommodityKind,
         ) -> Vec<EntityId> {
             Vec::new()
+        }
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
         }
         fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
             None
@@ -226,6 +255,9 @@ mod tests {
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
         }
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courage.get(&agent).copied()
+        }
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
@@ -255,6 +287,12 @@ mod tests {
         }
         fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
             self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.bandit_membership
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
         }
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
@@ -478,6 +516,34 @@ mod tests {
 
         assert_eq!(assessment.pressure, thresholds.danger.high());
         assert_eq!(derive_danger_pressure(&view, agent), assessment.pressure);
+    }
+
+    #[test]
+    fn bandit_raid_wound_threshold_scales_by_courage() {
+        let agent = entity(1);
+        let faction = entity(7);
+        let mut view = TestBeliefView::default();
+        view.courage.insert(agent, pm(200));
+        view.bandit_membership.insert(agent, vec![faction]);
+        view.bandit_flee_thresholds.insert(faction, pm(300));
+
+        assert_eq!(bandit_raid_wound_threshold(&view, agent), Some(pm(240)));
+    }
+
+    #[test]
+    fn bandit_raid_deterrence_triggers_only_when_pain_meets_threshold() {
+        let agent = entity(1);
+        let faction = entity(7);
+        let mut view = TestBeliefView::default();
+        view.courage.insert(agent, pm(200));
+        view.bandit_membership.insert(agent, vec![faction]);
+        view.bandit_flee_thresholds.insert(faction, pm(300));
+        view.wounds.insert(agent, vec![wound(120), wound(100)]);
+
+        assert!(!is_bandit_raid_deterred_by_wounds(&view, agent));
+
+        view.wounds.insert(agent, vec![wound(120), wound(120)]);
+        assert!(is_bandit_raid_deterred_by_wounds(&view, agent));
     }
 
     #[test]
