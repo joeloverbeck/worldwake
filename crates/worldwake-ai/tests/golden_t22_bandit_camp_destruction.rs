@@ -1153,14 +1153,13 @@ fn agent_knows_witnessed_conflict_at_place(
 fn wound_total(h: &GoldenHarness, agent: EntityId) -> u16 {
     h.world
         .get_component_wound_list(agent)
-        .map(|wounds| {
+        .map_or(0, |wounds| {
             wounds
                 .wounds
                 .iter()
                 .map(|wound| wound.severity.value())
                 .sum::<u16>()
         })
-        .unwrap_or(0)
 }
 
 fn set_wound_total(h: &mut GoldenHarness, agent: EntityId, severity: u16, tick: u64) {
@@ -1921,23 +1920,23 @@ fn run_s49_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
 // Principles: 1, 4, 7, 12, 17, 25
 //
 // Setup: A custom five-place topology makes the danger-cost flip legible.
-// Bandits occupy an active camp with faction policy and rally doctrine. Two
-// otherwise identical hungry travelers hold the same source and threat
-// beliefs. One plans immediately under fresh danger beliefs; one stays
-// inactive until those same beliefs age to zero confidence. External guards
-// attack the camp, survivors disperse, regroup, and re-establish camp at a
-// rally glen.
+//   Bandits occupy an active camp with faction policy and rally doctrine. Two
+//   otherwise identical hungry travelers hold the same source and threat
+//   beliefs. One plans immediately under fresh danger beliefs; one stays
+//   inactive until those same beliefs age to zero confidence. External guards
+//   attack the camp, survivors disperse, regroup, and re-establish camp at a
+//   rally glen.
 //
 // Proves:
-// 1. Rally doctrine is acquired locally at the active camp and not by remote faction members.
-// 2. External attack can break camp cohesion, produce abandonment, and leave concrete aftermath.
-// 3. Survivors can later select RegroupWithFaction, travel, and re-establish camp elsewhere.
-// 4. Fresh danger beliefs steer food acquisition toward the safe source, while stale beliefs later
-//    reopen the shorter abandoned-camp route.
+//   1. Rally doctrine is acquired locally at the active camp and not by remote faction members.
+//   2. External attack can break camp cohesion, produce abandonment, and leave concrete aftermath.
+//   3. Survivors can later select RegroupWithFaction, travel, and re-establish camp elsewhere.
+//   4. Fresh danger beliefs steer food acquisition toward the safe source, while stale beliefs later
+//      reopen the shorter abandoned-camp route.
 //
 // Chain: active camp -> local rally belief -> external attack -> death / departure
-// -> abandonment -> regroup travel -> establish camp -> stale danger decay
-// -> downstream travel-route reversal.
+//   -> abandonment -> regroup travel -> establish camp -> stale danger decay
+//   -> downstream travel-route reversal.
 
 #[test]
 fn golden_t22_bandit_camp_destruction() {
@@ -1965,18 +1964,18 @@ fn golden_t22_bandit_camp_destruction_replays_deterministically() {
 // Principles: 1, 4, 7, 17, 24
 //
 // Setup: Hungry bandits occupy a camp with a nearly empty bread supply and a
-// local orchard row as the lawful non-raid alternative. A traveler carrying
-// apples reaches the camp through an ordinary travel request. The raid should
-// emerge only after co-location and local loot visibility make `RaidTarget`
-// more valuable than the background harvest path.
+//   local orchard row as the lawful non-raid alternative. A traveler carrying
+//   apples reaches the camp through an ordinary travel request. The raid should
+//   emerge only after co-location and local loot visibility make `RaidTarget`
+//   more valuable than the background harvest path.
 //
 // Proves:
-// 1. `RaidTarget` is a proactive offensive path for co-located non-faction prey.
-// 2. The raid resolves through ordinary `attack` and `loot` actions.
-// 3. Local harvest remains lawful before prey arrives, so the raid is emergent rather than scripted.
+//   1. `RaidTarget` is a proactive offensive path for co-located non-faction prey.
+//   2. The raid resolves through ordinary `attack` and `loot` actions.
+//   3. Local harvest remains lawful before prey arrives, so the raid is emergent rather than scripted.
 //
 // Chain: scarce camp supplies -> non-raid self-supply behavior -> traveler arrives
-// with visible food -> RaidTarget generated/selected -> attack commit -> corpse loot.
+//   with visible food -> RaidTarget generated/selected -> attack commit -> corpse loot.
 
 #[test]
 fn golden_pressure_driven_raid_emergence() {
@@ -2004,18 +2003,18 @@ fn golden_pressure_driven_raid_emergence_replays_deterministically() {
 // Principles: 3, 7, 12, 14
 //
 // Setup: Bandits raid a traveler at a dangerous road while a witness observes.
-// The witness then reaches the market through ordinary travel and relays the
-// danger belief to an otherwise idle merchant who already knows a lawful remote
-// apple source. After the tell commits, the merchant's next restock plan should
-// prefer the longer safe route instead of the shorter dangerous road.
+//   The witness then reaches the market through ordinary travel and relays the
+//   danger belief to an otherwise idle merchant who already knows a lawful remote
+//   apple source. After the tell commits, the merchant's next restock plan should
+//   prefer the longer safe route instead of the shorter dangerous road.
 //
 // Proves:
-// 1. Witnessed raid danger can propagate through the generic `tell` path.
-// 2. Merchant route adaptation happens only after lawful information transfer.
-// 3. The route flip is planner-local perceived travel cost, not authoritative edge state.
+//   1. Witnessed raid danger can propagate through the generic `tell` path.
+//   2. Merchant route adaptation happens only after lawful information transfer.
+//   3. The route flip is planner-local perceived travel cost, not authoritative edge state.
 //
 // Chain: raid -> witness combat belief -> witness travel to market -> tell ->
-// merchant danger belief -> safe-route restock selection.
+//   merchant danger belief -> safe-route restock selection.
 
 #[test]
 fn golden_raid_belief_economic_cascade() {
@@ -2043,18 +2042,18 @@ fn golden_raid_belief_economic_cascade_replays_deterministically() {
 // Principles: 1, 3, 8, 17
 //
 // Setup: A single hungry bandit at camp faces three travelers arriving one at
-// a time with visible food. The first two arrivals should still be raided,
-// producing accumulating concrete wounds on the bandit. Once those wounds pass
-// the faction flee threshold after courage scaling, the third arrival should
-// no longer generate or select `RaidTarget`.
+//   a time with visible food. The first two arrivals should still be raided,
+//   producing accumulating concrete wounds on the bandit. Once those wounds pass
+//   the faction flee threshold after courage scaling, the third arrival should
+//   no longer generate or select `RaidTarget`.
 //
 // Proves:
-// 1. Repeated raid combat produces concrete wound accumulation on the raider.
-// 2. The bandit can still raid before crossing the wound deterrence threshold.
-// 3. After threshold crossing, `RaidTarget` disappears without introducing a cooldown or hidden alias path.
+//   1. Repeated raid combat produces concrete wound accumulation on the raider.
+//   2. The bandit can still raid before crossing the wound deterrence threshold.
+//   3. After threshold crossing, `RaidTarget` disappears without introducing a cooldown or hidden alias path.
 //
 // Chain: raid opportunity -> attack commit -> wound accumulation -> second raid
-// -> threshold crossed -> third prey arrives -> RaidTarget omitted.
+//   -> threshold crossed -> third prey arrives -> RaidTarget omitted.
 
 #[test]
 fn golden_wound_dampened_raid_spiral() {

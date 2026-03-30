@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 63
+- Scenario blocks with explicit metadata: 66
 - Files contributing scenario metadata: 11
-- `golden_*` tests associated with scenario blocks: 177
+- `golden_*` tests associated with scenario blocks: 183
 
 ## Scenario Inventory
 
@@ -75,7 +75,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:3156` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
 | `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1932` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan`<br>`golden_stale_prerequisite_ask_witness_chain` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`<br>`golden_stale_prerequisite_ask_witness_chain_replays_deterministically` |
-| `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:683` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
+| `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:1913` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
+| `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:1957` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
+| `48` | Raid-Belief Economic Cascade | `golden_t22_bandit_camp_destruction.rs:1996` | `golden_raid_belief_economic_cascade` | `golden_raid_belief_economic_cascade_replays_deterministically` |
+| `49` | Wound-Dampened Raid Spiral | `golden_t22_bandit_camp_destruction.rs:2035` | `golden_wound_dampened_raid_spiral` | `golden_wound_dampened_raid_spiral_replays_deterministically` |
 | `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:881` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
 | `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:916` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
 | `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:951` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
@@ -1054,7 +1057,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 22: Bandit Camp Destruction Chain
 
-- Source: `golden_t22_bandit_camp_destruction.rs:683`
+- Source: `golden_t22_bandit_camp_destruction.rs:1913`
 - Systems: Combat, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: ReduceDanger, RegroupWithFaction, AcquireCommodity(SelfConsume)
 - ActionDomains: Combat, Generic, Production, Travel
@@ -1064,11 +1067,65 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Replay tests: `golden_t22_bandit_camp_destruction_replays_deterministically`
 - All tests: `golden_t22_bandit_camp_destruction`, `golden_t22_bandit_camp_destruction_replays_deterministically`
 
-**Setup**: A custom five-place topology makes the danger-cost flip legible.
+**Setup**: A custom five-place topology makes the danger-cost flip legible. Bandits occupy an active camp with faction policy and rally doctrine. Two otherwise identical hungry travelers hold the same source and threat beliefs. One plans immediately under fresh danger beliefs; one stays inactive until those same beliefs age to zero confidence. External guards attack the camp, survivors disperse, regroup, and re-establish camp at a rally glen.
 
-**Proves**: 
+**Proves**: 1. Rally doctrine is acquired locally at the active camp and not by remote faction members. 2. External attack can break camp cohesion, produce abandonment, and leave concrete aftermath. 3. Survivors can later select RegroupWithFaction, travel, and re-establish camp elsewhere. 4. Fresh danger beliefs steer food acquisition toward the safe source, while stale beliefs later reopen the shorter abandoned-camp route.
 
-**Cross-system chain**: active camp -> local rally belief -> external attack -> death / departure
+**Cross-system chain**: active camp -> local rally belief -> external attack -> death / departure -> abandonment -> regroup travel -> establish camp -> stale danger decay -> downstream travel-route reversal.
+
+### Scenario 47: Pressure-Driven Raid Emergence
+
+- Source: `golden_t22_bandit_camp_destruction.rs:1957`
+- Systems: Needs, AI, Combat, Loot, Conservation
+- GoalKinds: RaidTarget, LootCorpse, AcquireCommodity(SelfConsume)
+- ActionDomains: Combat, Corpse, Production, Travel
+- Places: S47BanditCamp, S47RoadJunction, S47SafeVillage
+- Principles: 1, 4, 7, 17, 24
+- Primary tests: `golden_pressure_driven_raid_emergence`
+- Replay tests: `golden_pressure_driven_raid_emergence_replays_deterministically`
+- All tests: `golden_pressure_driven_raid_emergence`, `golden_pressure_driven_raid_emergence_replays_deterministically`
+
+**Setup**: Hungry bandits occupy a camp with a nearly empty bread supply and a local orchard row as the lawful non-raid alternative. A traveler carrying apples reaches the camp through an ordinary travel request. The raid should emerge only after co-location and local loot visibility make `RaidTarget` more valuable than the background harvest path.
+
+**Proves**: 1. `RaidTarget` is a proactive offensive path for co-located non-faction prey. 2. The raid resolves through ordinary `attack` and `loot` actions. 3. Local harvest remains lawful before prey arrives, so the raid is emergent rather than scripted.
+
+**Cross-system chain**: scarce camp supplies -> non-raid self-supply behavior -> traveler arrives with visible food -> RaidTarget generated/selected -> attack commit -> corpse loot.
+
+### Scenario 48: Raid-Belief Economic Cascade
+
+- Source: `golden_t22_bandit_camp_destruction.rs:1996`
+- Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI
+- GoalKinds: RaidTarget, ShareBelief, RestockCommodity
+- ActionDomains: Combat, Social, Travel, Production
+- Places: S48Market, S48DangerousRoad, S48BanditCamp, S48SafeRoute, S48RemoteFarm
+- Principles: 3, 7, 12, 14
+- Primary tests: `golden_raid_belief_economic_cascade`
+- Replay tests: `golden_raid_belief_economic_cascade_replays_deterministically`
+- All tests: `golden_raid_belief_economic_cascade`, `golden_raid_belief_economic_cascade_replays_deterministically`
+
+**Setup**: Bandits raid a traveler at a dangerous road while a witness observes. The witness then reaches the market through ordinary travel and relays the danger belief to an otherwise idle merchant who already knows a lawful remote apple source. After the tell commits, the merchant's next restock plan should prefer the longer safe route instead of the shorter dangerous road.
+
+**Proves**: 1. Witnessed raid danger can propagate through the generic `tell` path. 2. Merchant route adaptation happens only after lawful information transfer. 3. The route flip is planner-local perceived travel cost, not authoritative edge state.
+
+**Cross-system chain**: raid -> witness combat belief -> witness travel to market -> tell -> merchant danger belief -> safe-route restock selection.
+
+### Scenario 49: Wound-Dampened Raid Spiral
+
+- Source: `golden_t22_bandit_camp_destruction.rs:2035`
+- Systems: Combat, Wounds, AI, Needs
+- GoalKinds: RaidTarget, ConsumeOwnedCommodity
+- ActionDomains: Combat, Needs, Travel
+- Places: S49BanditCamp, S49RoadJunction
+- Principles: 1, 3, 8, 17
+- Primary tests: `golden_wound_dampened_raid_spiral`
+- Replay tests: `golden_wound_dampened_raid_spiral_replays_deterministically`
+- All tests: `golden_wound_dampened_raid_spiral`, `golden_wound_dampened_raid_spiral_replays_deterministically`
+
+**Setup**: A single hungry bandit at camp faces three travelers arriving one at a time with visible food. The first two arrivals should still be raided, producing accumulating concrete wounds on the bandit. Once those wounds pass the faction flee threshold after courage scaling, the third arrival should no longer generate or select `RaidTarget`.
+
+**Proves**: 1. Repeated raid combat produces concrete wound accumulation on the raider. 2. The bandit can still raid before crossing the wound deterrence threshold. 3. After threshold crossing, `RaidTarget` disappears without introducing a cooldown or hidden alias path.
+
+**Cross-system chain**: raid opportunity -> attack commit -> wound accumulation -> second raid -> threshold crossed -> third prey arrives -> RaidTarget omitted.
 
 ### Scenario 2b: Buyer-Driven Trade Acquisition
 

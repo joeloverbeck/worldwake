@@ -2877,7 +2877,7 @@ fn first_travel_destination(plan: &crate::PlannedPlan) -> Option<EntityId> {
             .flatten()
             .and_then(|target| match target {
                 PlanningEntityRef::Authoritative(entity) => Some(entity),
-                _ => None,
+                PlanningEntityRef::Hypothetical(_) => None,
             })
     })
 }

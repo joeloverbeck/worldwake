@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 11
 - Files contributing `golden_*` tests: 11
-- Total `golden_*` tests: 188
+- Total `golden_*` tests: 194
 
 ## Per-File Inventory
 
@@ -22,7 +22,7 @@ Do not hand-edit it.
 | `golden_production.rs` | 24 |
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 6 |
-| `golden_t22_bandit_camp_destruction.rs` | 2 |
+| `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 6 |
 
 ### `golden_ai_decisions.rs`
@@ -236,6 +236,12 @@ Do not hand-edit it.
 
 - `golden_t22_bandit_camp_destruction`
 - `golden_t22_bandit_camp_destruction_replays_deterministically`
+- `golden_pressure_driven_raid_emergence`
+- `golden_pressure_driven_raid_emergence_replays_deterministically`
+- `golden_raid_belief_economic_cascade`
+- `golden_raid_belief_economic_cascade_replays_deterministically`
+- `golden_wound_dampened_raid_spiral`
+- `golden_wound_dampened_raid_spiral_replays_deterministically`
 
 ### `golden_trade.rs`
 
