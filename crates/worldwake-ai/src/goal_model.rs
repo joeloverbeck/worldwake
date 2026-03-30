@@ -1647,6 +1647,7 @@ impl GroundedGoal {
         &self,
         def: &ActionDef,
         semantics: PlannerOpSemantics,
+        actor_place: Option<EntityId>,
     ) -> RootCandidateSynthesis {
         match semantics.op_kind {
             PlannerOpKind::Trade => match &self.key.kind {
@@ -1677,11 +1678,15 @@ impl GroundedGoal {
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
             PlannerOpKind::Investigate => match &self.key.kind {
+                // Investigate is lawful as a direct root only when the actor is
+                // already co-located with the violation place. Remote investigate
+                // must flow through travel prerequisites instead of an impossible
+                // direct ActorPlace root.
                 GoalKind::InvestigateViolation { place, .. }
                     if matches!(
                         def.targets.as_slice(),
                         [worldwake_sim::TargetSpec::ActorPlace]
-                    ) =>
+                    ) && actor_place == Some(*place) =>
                 {
                     RootCandidateSynthesis::Targets(vec![*place])
                 }
@@ -3388,7 +3393,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![listener])
         );
     }
@@ -3431,7 +3436,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![accused])
         );
     }
@@ -3472,7 +3477,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![rally_place])
         );
     }
@@ -3516,7 +3521,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![seller])
         );
     }
@@ -3559,7 +3564,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::TargetDerivationFailed
         );
     }
@@ -3599,7 +3604,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::UnsupportedGoalOp
         );
     }
@@ -3640,7 +3645,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::NoSynthesisPath
         );
     }
@@ -3681,7 +3686,57 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics),
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_investigate_root_targets_only_when_colocated() {
+        let place = entity(10);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(place),
+            key: GoalKey::from(GoalKind::InvestigateViolation {
+                violation_id: worldwake_core::ViolationId(7),
+                place,
+            }),
+            evidence_entities: BTreeSet::from([entity(11)]),
+            evidence_places: BTreeSet::from([place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(25),
+            name: "investigate".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Investigate,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(place)),
+            RootCandidateSynthesis::Targets(vec![place])
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::NoSynthesisPath
         );
     }

@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 71
+- Scenario blocks with explicit metadata: 72
 - Files contributing scenario metadata: 12
-- `golden_*` tests associated with scenario blocks: 189
+- `golden_*` tests associated with scenario blocks: 190
 
 ## Scenario Inventory
 
@@ -68,11 +68,12 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2281` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
 | `20` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2665` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
 | `21` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2930` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
-| `52` | Patrol Cycle Wraps Route | `golden_patrol.rs:290` | `golden_patrol_cycle_wraps_route` | `golden_patrol_cycle_wraps_route_replays_deterministically` |
-| `53` | Patrol Interruption Preserves Waypoint Until Resume | `golden_patrol.rs:321` | `golden_patrol_interruption_preserves_waypoint_until_resume` | — |
-| `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:459` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
-| `55` | Patrol Route Adaptation Retargets After Local Report | `golden_patrol.rs:576` | `golden_patrol_route_adaptation_retargets_after_local_report` | — |
-| `56` | Patrol Locality Requires Guard-Local Report | `golden_patrol.rs:664` | `golden_patrol_locality_requires_guard_local_report` | — |
+| `52` | Patrol Cycle Wraps Route | `golden_patrol.rs:302` | `golden_patrol_cycle_wraps_route` | `golden_patrol_cycle_wraps_route_replays_deterministically` |
+| `53` | Patrol Interruption Preserves Waypoint Until Resume | `golden_patrol.rs:333` | `golden_patrol_interruption_preserves_waypoint_until_resume` | — |
+| `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:471` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
+| `55` | Patrol Route Adaptation Retargets After Local Report | `golden_patrol.rs:588` | `golden_patrol_route_adaptation_retargets_after_local_report` | — |
+| `56` | Patrol Locality Requires Guard-Local Report | `golden_patrol.rs:676` | `golden_patrol_locality_requires_guard_local_report` | — |
+| `57` | Patrol-Driven Crime Discovery Chain | `golden_patrol.rs:765` | `golden_patrol_driven_crime_discovery` | — |
 | `3` | Resource Contention with Conservation | `golden_production.rs:2506` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback` | — |
 | `3b` | Observed Harvest Competition Redirects To Remote Sibling | `golden_production.rs:2661` | `golden_observed_harvest_competition_redirects_to_remote_sibling`<br>`golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_grant_expiry_before_intended_action`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`<br>`golden_facility_queue_patience_timeout_replays_deterministically` |
 | `4` | Materialization Barrier Chain | `golden_production.rs:2899` | `golden_materialization_barrier_chain` | — |
@@ -940,7 +941,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 52: Patrol Cycle Wraps Route
 
-- Source: `golden_patrol.rs:290`
+- Source: `golden_patrol.rs:302`
 - Systems: AI, Travel, Patrol
 - GoalKinds: Patrol
 - ActionDomains: Travel, Generic
@@ -958,7 +959,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 53: Patrol Interruption Preserves Waypoint Until Resume
 
-- Source: `golden_patrol.rs:321`
+- Source: `golden_patrol.rs:333`
 - Systems: AI, Needs, Patrol
 - GoalKinds: Patrol, ConsumeOwnedCommodity
 - ActionDomains: Generic, Needs
@@ -974,7 +975,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 54: Patrol Belief Urgency Scales From Local Crime And Vacancy
 
-- Source: `golden_patrol.rs:459`
+- Source: `golden_patrol.rs:471`
 - Systems: AI, Patrol, Institutional beliefs
 - GoalKinds: Patrol
 - ActionDomains: Generic
@@ -990,7 +991,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 55: Patrol Route Adaptation Retargets After Local Report
 
-- Source: `golden_patrol.rs:576`
+- Source: `golden_patrol.rs:588`
 - Systems: Patrol adaptation, AI, Travel
 - GoalKinds: Patrol
 - ActionDomains: Travel, Generic
@@ -1006,7 +1007,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 56: Patrol Locality Requires Guard-Local Report
 
-- Source: `golden_patrol.rs:664`
+- Source: `golden_patrol.rs:676`
 - Systems: Patrol adaptation, AI
 - GoalKinds: Patrol
 - ActionDomains: Generic
@@ -1019,6 +1020,22 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Setup**: Another agent holds a theft report for GeneralStore, but the guard does not. The guard has the same baseline patrol route and profile.
 
 **Proves**: The guard's motive remains baseline and the route does not adapt from another agent's memory or from authoritative truth alone.
+
+### Scenario 57: Patrol-Driven Crime Discovery Chain
+
+- Source: `golden_patrol.rs:765`
+- Systems: AI, Travel, Patrol, Perception, Investigation
+- GoalKinds: Patrol, InvestigateViolation
+- ActionDomains: Travel, Generic
+- Places: VillageSquare, GeneralStore
+- Principles: 1, 7, 14, 17
+- Primary tests: `golden_patrol_driven_crime_discovery`
+- Replay tests: None
+- All tests: `golden_patrol_driven_crime_discovery`
+
+**Setup**: One guard patrols between VillageSquare and GeneralStore. The guard begins with a stale direct belief that a bread lot is at GeneralStore. Before the guard arrives there, the lot is lawfully relocated to a different non-local place the guard cannot currently observe.
+
+**Proves**: Patrol creates lawful arrival, local perception detects the violated expectation as `EntityMissing`, AI selects `InvestigateViolation`, and the investigation records `WitnessedAbsence` without upgrading the incident to `SuspectedTheft` for a non-owner investigator.
 
 ### Scenario 3: Resource Contention with Conservation
 

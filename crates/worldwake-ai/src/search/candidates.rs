@@ -163,6 +163,7 @@ pub(super) fn search_candidates(
     );
     candidates.extend(goal_synthesized_candidates(
         goal,
+        &node.state,
         registry,
         semantics_table,
         relevant_defs,
@@ -172,6 +173,7 @@ pub(super) fn search_candidates(
     if let Some(root_omissions) = root_omissions.as_mut() {
         record_root_operator_omissions(
             goal,
+            &node.state,
             registry,
             semantics_table,
             &candidates,
@@ -181,7 +183,14 @@ pub(super) fn search_candidates(
             root_omissions.push(trace);
         }
     } else {
-        record_root_operator_omissions(goal, registry, semantics_table, &candidates, None);
+        record_root_operator_omissions(
+            goal,
+            &node.state,
+            registry,
+            semantics_table,
+            &candidates,
+            None,
+        );
     }
     let mut root_candidates = root_candidates;
     let mut binding_rejections = binding_rejections;
@@ -268,11 +277,13 @@ pub(super) fn search_candidates(
 
 fn goal_synthesized_candidates(
     goal: &GroundedGoal,
+    state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     relevant_defs: &BTreeSet<ActionDefId>,
     existing_candidates: &[SearchCandidate],
 ) -> Vec<SearchCandidate> {
+    let actor_place = state.effective_place(state.snapshot().actor());
     relevant_defs
         .iter()
         .filter(|def_id| {
@@ -283,7 +294,7 @@ fn goal_synthesized_candidates(
         .filter_map(|def_id| {
             let def = registry.get(*def_id)?;
             let semantics = semantics_table.get(def_id)?;
-            match goal.synthesized_root_candidate_targets(def, *semantics) {
+            match goal.synthesized_root_candidate_targets(def, *semantics, actor_place) {
                 RootCandidateSynthesis::Targets(authoritative_targets) => Some(SearchCandidate {
                     def_id: *def_id,
                     authoritative_targets: authoritative_targets.clone(),
@@ -305,6 +316,7 @@ fn goal_synthesized_candidates(
 
 fn record_root_operator_omissions(
     goal: &GroundedGoal,
+    state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     candidates: &[SearchCandidate],
@@ -313,6 +325,7 @@ fn record_root_operator_omissions(
     let Some(sink) = sink else {
         return;
     };
+    let actor_place = state.effective_place(state.snapshot().actor());
     let candidate_ops = candidates
         .iter()
         .filter_map(|candidate| {
@@ -348,7 +361,7 @@ fn record_root_operator_omissions(
             let Some(semantics) = semantics_table.get(&def_id) else {
                 continue;
             };
-            match goal.synthesized_root_candidate_targets(def, *semantics) {
+            match goal.synthesized_root_candidate_targets(def, *semantics, actor_place) {
                 RootCandidateSynthesis::TargetDerivationFailed => {
                     saw_target_derivation_failure = true;
                 }

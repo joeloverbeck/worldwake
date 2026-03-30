@@ -8,10 +8,10 @@ use worldwake_core::{
     prototype_place_entity, AgentBeliefStore, BeliefConfidencePolicy, CommodityKind, GoalKind,
     HomeostaticNeeds, InstitutionalKnowledgeSource, PatrolProfile, PatrolRoute, PerceptionProfile,
     PerceptionSource, Permille, PrototypePlace, Quantity, RecordedViolation, Seed,
-    SocialObservation, SocialObservationDetail, TheftFacts, Tick, UtilityProfile, ViolationId,
-    ViolationKind, ViolationMemory,
+    SocialObservation, SocialObservationDetail, TheftFacts, Tick, UtilityProfile,
+    ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceDetail, ActionTraceKind};
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
@@ -48,6 +48,18 @@ fn set_patrol_state(
     txn.set_component_agent_belief_store(agent, AgentBeliefStore::default())
         .unwrap();
     txn.set_component_violation_memory(agent, ViolationMemory::default())
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_violation_profile(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    profile: ViolationDispositionProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_violation_disposition_profile(agent, profile)
         .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
@@ -746,5 +758,277 @@ fn golden_patrol_locality_requires_guard_local_report() {
             .assigned_places
             .contains(&general_store),
         "guard route must not adapt from another agent's report"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 57: Patrol-Driven Crime Discovery Chain
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Patrol, Perception, Investigation
+// GoalKinds: Patrol, InvestigateViolation
+// ActionDomains: Travel, Generic
+// Places: VillageSquare, GeneralStore
+// Principles: 1, 7, 14, 17
+//
+// Setup: One guard patrols between VillageSquare and GeneralStore. The guard
+//   begins with a stale direct belief that a bread lot is at GeneralStore.
+//   Before the guard arrives there, the lot is lawfully relocated to a
+//   different non-local place the guard cannot currently observe.
+//
+// Proves: Patrol creates lawful arrival, local perception detects the violated
+//   expectation as `EntityMissing`, AI selects `InvestigateViolation`, and the
+//   investigation records `WitnessedAbsence` without upgrading the incident to
+//   `SuspectedTheft` for a non-owner investigator.
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn golden_patrol_driven_crime_discovery() {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let common_house = prototype_place_entity(PrototypePlace::CommonHouse);
+
+    let mut h = GoldenHarness::new(Seed([0x56; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let guard = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Guard",
+        village_square,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let mut sharp_perception = default_perception_profile();
+    sharp_perception.observation_fidelity = pm(1000);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, guard, sharp_perception);
+    set_patrol_state(
+        &mut h,
+        guard,
+        PatrolRoute {
+            assigned_places: vec![general_store],
+            current_index: 0,
+        },
+        patrol_profile(2, 0, 600),
+        0,
+    );
+    set_violation_profile(
+        &mut h,
+        guard,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    let bread_lot = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(lot, general_store).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        lot
+    };
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        guard,
+        bread_lot,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    worldwake_core::verify_live_lot_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+
+    h.step_once();
+
+    let opening_planning = planning_trace_at(&h, guard, Tick(0));
+    assert!(
+        opening_planning.selection.selected_goal_is(patrol_goal(general_store)),
+        "guard should open by selecting patrol for the remote waypoint"
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_ground_location(bread_lot, common_house).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    worldwake_core::verify_live_lot_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+
+    let mut arrival_tick = None;
+    let mut generated_violation_id = None;
+    let mut saw_unresolved_entity_missing = false;
+    let mut investigate_commit_seen = false;
+
+    for _ in 0..60 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        worldwake_core::verify_live_lot_conservation(&h.world, CommodityKind::Bread, 1).unwrap();
+
+        if h.world.effective_place(guard) == Some(general_store) && arrival_tick.is_none() {
+            arrival_tick = Some(tick_before);
+        }
+
+        if let Some(trace) = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should stay enabled")
+            .trace_at(guard, tick_before)
+        {
+            if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                let planning = planning.as_ref();
+                if generated_violation_id.is_none() {
+                    generated_violation_id =
+                        planning.candidates.generated.iter().find_map(|goal| match goal.goal_key.kind {
+                            GoalKind::InvestigateViolation { violation_id, place }
+                                if place == general_store =>
+                            {
+                                Some(violation_id)
+                            }
+                            _ => None,
+                        });
+                }
+            }
+        }
+
+        if generated_violation_id.is_some_and(|violation_id| {
+            h.world
+                .get_component_violation_memory(guard)
+                .is_some_and(|memory| {
+                    memory.unresolved_by_id(violation_id, h.scheduler.current_tick()).is_some()
+                })
+        }) {
+            saw_unresolved_entity_missing = true;
+        }
+
+        let events = h
+            .action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(guard);
+        investigate_commit_seen = generated_violation_id.is_some_and(|violation_id| {
+            events.iter().any(|event| {
+                event.action_name == "investigate"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && event.detail == Some(ActionTraceDetail::Investigate { violation_id })
+            })
+        });
+        if arrival_tick.is_some() && generated_violation_id.is_some() && investigate_commit_seen {
+            break;
+        }
+    }
+
+    let arrival_tick = arrival_tick.expect("guard should eventually arrive at GeneralStore");
+    let generated_violation_id =
+        generated_violation_id.expect("arrival should generate an investigate-violation goal");
+    assert!(
+        investigate_commit_seen,
+        "guard should eventually commit investigate for the discovered missing lot; action_events={:?}",
+        h.action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(guard)
+    );
+    assert!(
+        saw_unresolved_entity_missing,
+        "patrol arrival should expose an unresolved entity-missing violation before investigation resolves it"
+    );
+
+    let action_events = h
+        .action_trace_sink()
+        .expect("action tracing should stay enabled")
+        .events_for(guard)
+        .into_iter()
+        .collect::<Vec<_>>();
+    assert!(
+        action_events.iter().any(|event| {
+            event.action_name == "travel"
+                && matches!(event.kind, ActionTraceKind::Started { ref targets } if targets == &[general_store])
+        }),
+        "guard should start travel toward the GeneralStore waypoint"
+    );
+    assert!(
+        action_events.iter().any(|event| {
+            event.action_name == "patrol"
+                && matches!(event.kind, ActionTraceKind::Started { ref targets } if targets == &[general_store])
+        }),
+        "patrol should start once the guard reaches GeneralStore"
+    );
+    assert_eq!(
+        h.world.effective_place(guard),
+        Some(general_store),
+        "guard should investigate only after patrol lawfully reaches GeneralStore"
+    );
+
+    let planning_after_arrival = planning_trace_at(&h, guard, arrival_tick);
+    assert!(
+        planning_after_arrival.selection.selected_goal_is(patrol_goal(general_store))
+            || planning_after_arrival
+                .candidates
+                .generated
+                .iter()
+                .any(|goal| matches!(
+                    goal.goal_key.kind,
+                    GoalKind::InvestigateViolation { violation_id, place }
+                        if violation_id == generated_violation_id && place == general_store
+                )),
+        "the arrival tick should still reflect patrol locality and/or the generated local investigate branch"
+    );
+
+    let final_memory = h
+        .world
+        .get_component_violation_memory(guard)
+        .expect("guard should keep violation memory");
+    let entity_missing_record = final_memory
+        .violations
+        .iter()
+        .find(|record| record.id == generated_violation_id)
+        .expect("generated violation should remain recorded after investigation");
+    assert_eq!(
+        entity_missing_record.kind,
+        ViolationKind::EntityMissing {
+            entity: bread_lot,
+            expected_place: general_store,
+        },
+        "patrol discovery should record the missing-lot mismatch at the guarded place"
+    );
+    assert!(
+        entity_missing_record.resolved_tick.is_some(),
+        "the original entity-missing violation should be resolved after investigate commits"
+    );
+    assert!(
+        final_memory
+            .violations
+            .iter()
+            .all(|record| !matches!(record.kind, ViolationKind::SuspectedTheft { .. })),
+        "non-owner patrol investigation must not mint suspected-theft violation records"
+    );
+
+    let final_store = h
+        .world
+        .get_component_agent_belief_store(guard)
+        .expect("guard should keep a belief store");
+    assert!(
+        final_store.social_observations.iter().any(|observation| {
+            observation.detail
+                == SocialObservationDetail::WitnessedAbsence {
+                    missing_entity: bread_lot,
+                    expected_place: general_store,
+                }
+                && observation.place == general_store
+        }),
+        "investigation should leave a witnessed-absence social observation for the missing lot"
+    );
+    assert!(
+        final_store.social_observations.iter().all(|observation| {
+            !matches!(
+                observation.detail,
+                SocialObservationDetail::SuspectedTheft { .. }
+            )
+        }),
+        "non-owner patrol investigation must not infer suspected theft directly"
     );
 }
