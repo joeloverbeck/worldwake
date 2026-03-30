@@ -6,7 +6,8 @@ use worldwake_core::{
     DemandObservation, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PatrolProfile, Permille, PlaceTag, Quantity, RecipeId, RecordData, ResourceSource,
+    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData,
+    ResourceSource,
     SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
     TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
     ViolationDispositionProfile, WorkstationTag, Wound,
@@ -51,6 +52,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
     pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
     pub(crate) patrol_profile: Option<PatrolProfile>,
+    pub(crate) patrol_route: Option<PatrolRoute>,
     pub(crate) theft_disposition_profile: Option<TheftDispositionProfile>,
     pub(crate) justice_disposition_profile: Option<JusticeDispositionProfile>,
     pub(crate) violation_disposition_profile: Option<ViolationDispositionProfile>,
@@ -95,6 +97,7 @@ impl Default for SnapshotEntity {
             metabolism_profile: None,
             trade_disposition_profile: None,
             patrol_profile: None,
+            patrol_route: None,
             theft_disposition_profile: None,
             justice_disposition_profile: None,
             violation_disposition_profile: None,
@@ -637,6 +640,7 @@ fn build_snapshot_entity(
         metabolism_profile: view.metabolism_profile(entity),
         trade_disposition_profile: view.trade_disposition_profile(entity),
         patrol_profile: view.patrol_profile(entity),
+        patrol_route: view.patrol_route(entity),
         theft_disposition_profile: view.theft_disposition_profile(entity),
         justice_disposition_profile: view.justice_disposition_profile(entity),
         violation_disposition_profile: view.violation_disposition_profile(entity),
@@ -847,9 +851,9 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
         EligibilityRule, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, PatrolProfile, Permille, Quantity, RecipeId, ResourceSource, SuccessionLaw,
-        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound,
+        OfficeData, PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId, ResourceSource,
+        SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
@@ -871,6 +875,7 @@ mod tests {
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
+        patrol_routes: BTreeMap<EntityId, PatrolRoute>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs: SupportDeclarationBeliefs,
         office_data: BTreeMap<EntityId, OfficeData>,
@@ -893,6 +898,7 @@ mod tests {
                 tell_profiles: BTreeMap::new(),
                 told_beliefs: BTreeMap::new(),
                 confidence_policies: BTreeMap::new(),
+                patrol_routes: BTreeMap::new(),
                 office_holder_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data: BTreeMap::new(),
@@ -1074,6 +1080,10 @@ mod tests {
 
         fn patrol_profile(&self, _agent: EntityId) -> Option<PatrolProfile> {
             None
+        }
+
+        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+            self.patrol_routes.get(&agent).cloned()
         }
 
         fn intention_disposition_profile(

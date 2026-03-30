@@ -11,10 +11,8 @@ use std::ops::{BitOr, BitOrAssign};
 ///
 /// Three domain categories:
 /// - **Structural** (bits 0–5): plan lifecycle events (no plan, plan finished, etc.)
-/// - **Snapshot** (bits 6–11): observation dimensions (position, needs, wounds, etc.)
-/// - **Frame** (bits 12–14): frame lifecycle events introduced by S22
-///
-/// Bit 15 is reserved and unused.
+/// - **Snapshot** (bits 6–12): observation dimensions (position, needs, wounds, etc.)
+/// - **Frame** (bits 13–15): frame lifecycle events introduced by S22
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DirtySet(u16);
 
@@ -37,7 +35,7 @@ impl DirtySet {
     pub const QUEUE_PATIENCE: DirtySet = DirtySet(1 << 5);
 
     // -----------------------------------------------------------------------
-    // Snapshot bits (6–11)
+    // Snapshot bits (6–12)
     // -----------------------------------------------------------------------
 
     /// Agent's effective place changed.
@@ -52,17 +50,19 @@ impl DirtySet {
     pub const UNIQUE_ITEMS: DirtySet = DirtySet(1 << 10);
     /// Facility access signature changed.
     pub const FACILITIES: DirtySet = DirtySet(1 << 11);
+    /// Patrol route or current waypoint changed.
+    pub const PATROL_ROUTE: DirtySet = DirtySet(1 << 12);
 
     // -----------------------------------------------------------------------
-    // Frame lifecycle bits (12–14)
+    // Frame lifecycle bits (13–15)
     // -----------------------------------------------------------------------
 
     /// Frame blocked (S22 frame lifecycle).
-    pub const FRAME_BLOCKAGE: DirtySet = DirtySet(1 << 12);
+    pub const FRAME_BLOCKAGE: DirtySet = DirtySet(1 << 13);
     /// Frame patience exhausted (S22 frame lifecycle).
-    pub const FRAME_PATIENCE: DirtySet = DirtySet(1 << 13);
+    pub const FRAME_PATIENCE: DirtySet = DirtySet(1 << 14);
     /// Frame assumption failed (S22 frame lifecycle).
-    pub const ASSUMPTION_FAILED: DirtySet = DirtySet(1 << 14);
+    pub const ASSUMPTION_FAILED: DirtySet = DirtySet(1 << 15);
 
     // -----------------------------------------------------------------------
     // Aggregate masks
@@ -72,12 +72,20 @@ impl DirtySet {
     pub const STRUCTURAL_MASK: DirtySet =
         DirtySet((1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5));
 
-    /// All snapshot bits (6–11).
+    /// All snapshot bits (6–12).
     pub const SNAPSHOT_MASK: DirtySet =
-        DirtySet((1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11));
+        DirtySet(
+            (1 << 6)
+                | (1 << 7)
+                | (1 << 8)
+                | (1 << 9)
+                | (1 << 10)
+                | (1 << 11)
+                | (1 << 12),
+        );
 
-    /// All frame lifecycle bits (12–14).
-    pub const FRAME_MASK: DirtySet = DirtySet((1 << 12) | (1 << 13) | (1 << 14));
+    /// All frame lifecycle bits (13–15).
+    pub const FRAME_MASK: DirtySet = DirtySet((1 << 13) | (1 << 14) | (1 << 15));
 
     // -----------------------------------------------------------------------
     // Methods
@@ -130,9 +138,10 @@ impl DirtySet {
             (1 << 9, "COMMODITY"),
             (1 << 10, "UNIQUE_ITEMS"),
             (1 << 11, "FACILITIES"),
-            (1 << 12, "FRAME_BLOCKAGE"),
-            (1 << 13, "FRAME_PATIENCE"),
-            (1 << 14, "ASSUMPTION_FAILED"),
+            (1 << 12, "PATROL_ROUTE"),
+            (1 << 13, "FRAME_BLOCKAGE"),
+            (1 << 14, "FRAME_PATIENCE"),
+            (1 << 15, "ASSUMPTION_FAILED"),
         ];
 
         if self.is_empty() {
@@ -240,15 +249,16 @@ mod tests {
     }
 
     #[test]
-    fn dirty_set_snapshot_mask_covers_six_bits() {
+    fn dirty_set_snapshot_mask_covers_seven_bits() {
         let mask = DirtySet::SNAPSHOT_MASK;
-        // Contains all 6 snapshot bits.
+        // Contains all 7 snapshot bits.
         assert!(mask.contains(DirtySet::POSITION));
         assert!(mask.contains(DirtySet::NEEDS));
         assert!(mask.contains(DirtySet::WOUNDS));
         assert!(mask.contains(DirtySet::COMMODITY));
         assert!(mask.contains(DirtySet::UNIQUE_ITEMS));
         assert!(mask.contains(DirtySet::FACILITIES));
+        assert!(mask.contains(DirtySet::PATROL_ROUTE));
         // Does not contain structural or frame bits.
         assert!(!mask.contains(DirtySet::NO_PLAN));
         assert!(!mask.contains(DirtySet::FRAME_BLOCKAGE));

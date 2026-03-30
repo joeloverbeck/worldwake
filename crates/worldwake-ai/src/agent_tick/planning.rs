@@ -371,7 +371,16 @@ fn try_continue_snapshot_plan(
 
     let current_goal_still_top = ranked_candidates
         .first()
-        .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
+        .is_some_and(|top| {
+            Some(top.grounded.key) == active_goal_key
+                && runtime.current_plan.as_ref().is_some_and(|plan| {
+                    plan.opportunity
+                        == crate::OpportunityKey {
+                            goal_key: top.grounded.key,
+                            anchor: top.grounded.anchor,
+                        }
+                })
+        });
     if !current_goal_still_top {
         return None;
     }

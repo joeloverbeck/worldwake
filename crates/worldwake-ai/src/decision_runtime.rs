@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-    IntentionDomain, IntentionFrame, OpportunityKey, Quantity, Tick, UniqueItemKind, Wound,
+    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, Tick,
+    UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -150,6 +151,7 @@ pub struct AgentDecisionRuntime {
     pub last_commodity_signature: Vec<(CommodityKind, Quantity)>,
     pub last_unique_item_signature: Vec<(UniqueItemKind, u32)>,
     pub last_facility_access_signature: Vec<(EntityId, bool, Option<ActionDefId>)>,
+    pub last_patrol_route: Option<PatrolRoute>,
     /// Whether the agent was in transit on the last observed tick.
     pub last_in_transit: bool,
     pub materialization_bindings: MaterializationBindings,
@@ -281,8 +283,8 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         BodyPart, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-        IntentionDomain, IntentionFrame, Quantity, Tick, UniqueItemKind, Wound, WoundCause,
-        WoundId,
+        IntentionDomain, IntentionFrame, PatrolRoute, Quantity, Tick, UniqueItemKind, Wound,
+        WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -352,6 +354,7 @@ mod tests {
         assert!(runtime.last_wounds.is_empty());
         assert!(runtime.last_commodity_signature.is_empty());
         assert!(runtime.last_unique_item_signature.is_empty());
+        assert_eq!(runtime.last_patrol_route, None);
         assert!(runtime
             .materialization_bindings
             .hypothetical_to_authoritative
@@ -438,6 +441,10 @@ mod tests {
             last_commodity_signature: vec![(CommodityKind::Bread, Quantity(3))],
             last_unique_item_signature: vec![(UniqueItemKind::SimpleTool, 1)],
             last_facility_access_signature: vec![(entity(12), true, Some(ActionDefId(6)))],
+            last_patrol_route: Some(PatrolRoute {
+                assigned_places: vec![entity(13), entity(14)],
+                current_index: 1,
+            }),
             last_in_transit: true,
             materialization_bindings: MaterializationBindings {
                 hypothetical_to_authoritative: BTreeMap::from([
@@ -497,6 +504,7 @@ mod tests {
             decoded.last_facility_access_signature,
             runtime.last_facility_access_signature
         );
+        assert_eq!(decoded.last_patrol_route, runtime.last_patrol_route);
         assert_eq!(decoded.last_in_transit, runtime.last_in_transit);
         assert_eq!(
             decoded.materialization_bindings,

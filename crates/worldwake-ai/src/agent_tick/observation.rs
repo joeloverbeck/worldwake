@@ -460,6 +460,9 @@ pub(super) fn observation_snapshot_changed(
     if runtime.last_facility_access_signature != facility_access_signature(view, agent) {
         result.insert(crate::DirtySet::FACILITIES);
     }
+    if runtime.last_patrol_route != view.patrol_route(agent) {
+        result.insert(crate::DirtySet::PATROL_ROUTE);
+    }
     result
 }
 
@@ -474,6 +477,7 @@ pub(super) fn update_runtime_observation_snapshot(
     runtime.last_commodity_signature = commodity_signature(view, agent);
     runtime.last_unique_item_signature = unique_item_signature(view, agent);
     runtime.last_facility_access_signature = facility_access_signature(view, agent);
+    runtime.last_patrol_route = view.patrol_route(agent);
     runtime.last_in_transit = view.in_transit_state(agent).is_some();
 }
 

@@ -1,5 +1,7 @@
 # E19: Guard & Patrol Adaptation
 
+**Status**: ✅ COMPLETED
+
 ## Epic Summary
 Implement guard patrol routes, belief-driven intensity scaling, threat-based route adaptation, and the public order feedback loop. Guard crime response (investigation, accusation, punishment) is already delivered by E17 and the standard AI pipeline — this epic adds only the patrol layer.
 
@@ -218,6 +220,24 @@ No guard acquires information without a traceable carrier path.
 Crime ↑ → Reports ↑ → Patrol motive ↑ → Guard presence ↑ → Crime ↓ → Reports ↓ → Patrol motive ↓
 
 This is a negative feedback loop, not positive. No dampener needed for the loop itself.
+
+## Outcome
+
+- Completion date: 2026-03-30
+- What actually changed:
+  - `PatrolRoute`/`PatrolProfile`, patrol action execution, patrol candidate generation/ranking, patrol route adaptation, and `public_order()` guard-presence contribution all landed in the live codebase.
+  - End-to-end patrol verification now lives in [`crates/worldwake-ai/tests/golden_patrol.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_patrol.rs), with replay, interruption, urgency-scaling, adaptation, and locality coverage.
+  - AI runtime/planning now snapshots patrol-route state explicitly, and patrol snapshot continuation is opportunity-scoped.
+  - Patrol affordance generation now matches authoritative legality by only surfacing patrol when the actor is at the current waypoint.
+- Deviations from original plan:
+  - The spec's full "public order feedback loop" was not completed as written. The live thief architecture still uses local witness deterrence rather than a canonical `public_order()` consumer, so the archived completion scope stops at guard-side patrol architecture plus the derived `public_order()` bonus.
+  - The route-adaptation proof surface settled on decision traces, action traces, and authoritative `PatrolRoute` state rather than a larger settlement-wide convergence scenario.
+- Verification results:
+  - `cargo test -p worldwake-systems patrol_actions -- --nocapture`
+  - `cargo test -p worldwake-ai golden_patrol -- --nocapture`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
 
 **Loop 2: Route Bloat (POSITIVE — requires dampener)**
 More crime reports → More waypoints added to route → Longer route completion time → Less time at each waypoint → Crimes go unwitnessed → More crime reports

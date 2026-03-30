@@ -169,6 +169,10 @@ impl AgentTickDriver {
             runtime
                 .last_facility_access_signature
                 .retain(|(entity, _, _)| world.is_alive(*entity));
+            runtime.last_patrol_route = runtime.last_patrol_route.take().filter(|route| {
+                route.current_index < route.assigned_places.len()
+                    && route.assigned_places.iter().all(|place| world.is_alive(*place))
+            });
             runtime.dirty = crate::DirtySet::STRUCTURAL_MASK
                 | crate::DirtySet::SNAPSHOT_MASK
                 | crate::DirtySet::FRAME_MASK;

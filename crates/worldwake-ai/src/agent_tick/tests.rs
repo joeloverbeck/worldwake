@@ -35,12 +35,12 @@ use worldwake_core::{
     ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FrameState,
     GrantedFacilityUse, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PendingEvent,
-    PerceptionProfile, PerceptionSource, Permille, Place, Quantity, QueuedFacilityIntent, RecipeId,
-    RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolRoute,
+    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+    QueuedFacilityIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry,
@@ -3389,6 +3389,66 @@ fn no_plan_always_marks_runtime_dirty() {
     );
 
     assert!(!runtime.dirty.is_empty());
+}
+
+#[test]
+fn patrol_route_change_marks_runtime_dirty() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let utility = harness
+        .world
+        .get_component_utility_profile(harness.actor)
+        .cloned()
+        .unwrap_or_default();
+    let place = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
+    let remote = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
+    let route = PatrolRoute {
+        assigned_places: vec![place, remote],
+        current_index: 0,
+    };
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_patrol_route(harness.actor, route.clone())
+        .unwrap();
+    commit_txn(txn);
+
+    let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+    let mut runtime = AgentDecisionRuntime::default();
+    update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
+
+    let mut txn = new_txn(&mut harness.world, 2);
+    txn.set_component_patrol_route(
+        harness.actor,
+        PatrolRoute {
+            current_index: 1,
+            ..route
+        },
+    )
+    .unwrap();
+    commit_txn(txn);
+
+    let mut blocked = BlockedIntentMemory::default();
+    let mut fi = FacilityQueueIntents::default();
+    let _ = refresh_runtime_for_read_phase(
+        &harness.world,
+        &harness.scheduler,
+        &harness.defs,
+        &mut runtime,
+        None,
+        &mut fi,
+        &mut blocked,
+        &mut ViolationMemory::default(),
+        harness.actor,
+        &[],
+        ReadPhaseContext {
+            recipe_registry: &harness.recipes,
+            utility: &utility,
+            tick: Tick(2),
+            travel_horizon: PlanningBudget::default().snapshot_travel_horizon,
+            structural_block_ticks: PlanningBudget::default().structural_block_ticks,
+        },
+        false,
+    );
+
+    assert!(runtime.dirty.contains(DirtySet::PATROL_ROUTE));
 }
 
 #[test]

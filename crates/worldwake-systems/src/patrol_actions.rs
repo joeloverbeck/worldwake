@@ -6,19 +6,18 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
-    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition,
+    RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_patrol_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_patrol,
-        tick_patrol,
-        commit_patrol,
-        abort_patrol,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(start_patrol, tick_patrol, commit_patrol, abort_patrol)
+            .with_affordance_targets(enumerate_patrol_targets),
+    );
     let id = ActionDefId(defs.len() as u32);
     defs.register(patrol_action_def(id, handler))
 }
@@ -99,6 +98,27 @@ fn patrol_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
         .first()
         .copied()
         .ok_or(ActionError::InvalidTarget(instance.actor))
+}
+
+fn enumerate_patrol_targets(
+    _def: &ActionDef,
+    actor: EntityId,
+    view: &dyn RuntimeBeliefView,
+) -> Vec<Vec<EntityId>> {
+    let Some(route) = view.patrol_route(actor) else {
+        return Vec::new();
+    };
+    if route.assigned_places.is_empty() {
+        return Vec::new();
+    }
+    if view.patrol_profile(actor).is_none() {
+        return Vec::new();
+    }
+    let Some(waypoint) = route.assigned_places.get(route.current_index).copied() else {
+        return Vec::new();
+    };
+    (view.effective_place(actor) == Some(waypoint)).then_some(vec![vec![waypoint]])
+        .unwrap_or_default()
 }
 
 fn start_patrol(
@@ -189,7 +209,7 @@ mod tests {
         VisibilitySpec, World, WorldTxn,
     };
     use worldwake_sim::{
-        interrupt_action, start_action, tick_action, ActionDefRegistry, ActionError,
+        get_affordances, interrupt_action, start_action, tick_action, ActionDefRegistry, ActionError,
         ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
         ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason, TickOutcome,
     };
@@ -268,6 +288,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_patrol_instance(
         world: &mut World,
         log: &mut EventLog,
@@ -338,6 +359,29 @@ mod tests {
         assert_eq!(low, worldwake_sim::ActionDuration::new(8));
         assert_eq!(high, worldwake_sim::ActionDuration::new(16));
         assert!(high.ticks() > low.ticks());
+    }
+
+    #[test]
+    fn patrol_affordance_is_omitted_when_actor_is_off_current_waypoint() {
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let gate = prototype_place_entity(PrototypePlace::SouthGate);
+        let route = PatrolRoute {
+            assigned_places: vec![square, gate],
+            current_index: 1,
+        };
+        let (world, actor) = setup_world(route, Some(patrol_profile(1, 0)), square);
+        let (defs, handlers, patrol_id) = setup_registries();
+        let view = worldwake_sim::PerAgentBeliefView::from_world(actor, &world);
+
+        let patrol_affordances = get_affordances(&view, actor, &defs, &handlers)
+            .into_iter()
+            .filter(|affordance| affordance.def_id == patrol_id)
+            .collect::<Vec<_>>();
+
+        assert!(
+            patrol_affordances.is_empty(),
+            "patrol should not expose an affordance until the actor reaches the current waypoint"
+        );
     }
 
     #[test]

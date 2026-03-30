@@ -175,7 +175,7 @@ S12 ✅ ──→ S40 (remote hostile pursuit reuses prerequisite-aware search)
 S36 ✅ ──→ S40 (remote hostile pursuit extends declaration-owned combat goal surfaces)
 S27 ✅ ──→ S34 ✅ (epistemic actions extend violation detection)
 S34 ✅, S35 ✅ (independent, can parallel with S33)
-E18 ✅, E19, E20 ──→ E22 (integration tests need everything)
+E18 ✅, E19 ✅, E20 ──→ E22 (integration tests need everything)
 S40 ──→ E22 (integration should cover lawful remote combat pursuit if adopted)
 
 S42 (no deps — per-agent reasoning style)
@@ -377,8 +377,8 @@ S36 ✅ ──→ S40
 **Step 14** (parallel):
 - **E18**: Bandit Camp Dynamics — ✅ COMPLETED
   - archived spec: `archive/specs/E18-bandit-dynamics.md`
-- **E19**: Guard & Patrol Adaptation
-  - needs ~~S02~~, E16, E16b, E16c, E17
+- **E19**: Guard & Patrol Adaptation — ✅ COMPLETED
+  - archived spec: `archive/specs/E19-guard-patrol.md`
 - **E20**: Companion Behaviors
   - needs ~~S02~~ (all deps met)
 
@@ -488,7 +488,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S25-feasibility-sketching.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S28-knowledge-path-traces.md`~~ | 3+ | 13.5 W2 | ✅ COMPLETED |
 | ~~`S29-planning-state-structural-sharing.md`~~ | 3+ | 13.5 W4 | ✅ COMPLETED |
-| `E19-guard-patrol.md` | 4 | 14 | E16, E16b, E16c, ~~S02~~, E17 |
+| ~~`E19-guard-patrol.md`~~ | 4 | 14 | ✅ COMPLETED |
 | `E20-companion-behaviors.md` | 4 | 14 | S02 |
 | `S40-remote-hostile-pursuit.md` | 4 | 14.5 | E18, S12, S36 |
 | `E22-integration-soak-tests.md` | 4 | 15 | E18, E19, E20, S40 |
@@ -528,6 +528,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
-| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | IN PROGRESS (E18 complete; E19, E20, S40, and E22 pending) |
+| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | IN PROGRESS (E18 and E19 complete; E20, S40, and E22 pending) |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |
 | 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | PENDING |
