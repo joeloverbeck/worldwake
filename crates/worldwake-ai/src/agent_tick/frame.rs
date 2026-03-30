@@ -1,6 +1,7 @@
 use crate::{
     authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
-    AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PlannedStep, PlannerOpKind,
+    AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PatrolRouteSnapshotTrace, PlannedStep,
+    PlannerOpKind,
     PlanningBudget,
 };
 use crate::{GoalPriorityClass, RankedGoal};
@@ -71,6 +72,7 @@ pub struct FrameDebugSnapshot {
     pub runtime: FrameRuntimeSnapshot,
     pub effective_switch_margin: Permille,
     pub switch_margin_source: FrameSwitchMarginSource,
+    pub patrol_route: PatrolRouteSnapshotTrace,
 }
 
 /// Updates the intention frame for a newly adopted plan.

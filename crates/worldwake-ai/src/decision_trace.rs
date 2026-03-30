@@ -8,8 +8,8 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, PunishmentFineSelectionTrace, SuspensionReason,
-    TellTopic, Tick,
+    OpportunityKey, PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace,
+    SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
@@ -175,9 +175,19 @@ impl DecisionOutcome {
                     });
                 let frame_suffix =
                     format_frame_transition_summary(planning.frame_transition.as_ref());
+                let patrol_suffix = planning.selected_patrol_anchor.map_or_else(String::new, |anchor| {
+                    format!(
+                        ", patrol_waypoint={}, patrol_anchor={}",
+                        planning
+                            .patrol_route
+                            .current_waypoint
+                            .map_or_else(|| "none".to_string(), |place| place.to_string()),
+                        format_opportunity_anchor(anchor)
+                    )
+                });
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}{patrol_suffix}"
                 )
             }
         }
@@ -208,6 +218,17 @@ pub struct PlanningPipelineTrace {
     pub exhaustion_snapshot: Vec<ExhaustionTraceEntry>,
     /// Frame lifecycle events recorded during this tick (P27).
     pub frame_transition: Option<FrameTransitionTrace>,
+    /// Planner-visible patrol-route snapshot used for patrol grounding on this tick.
+    pub patrol_route: PatrolRouteSnapshotTrace,
+    /// Selected patrol anchor when the chosen goal is a patrol branch.
+    pub selected_patrol_anchor: Option<OpportunityAnchor>,
+}
+
+/// Debugger-facing snapshot of the actor's patrol-route state.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PatrolRouteSnapshotTrace {
+    pub route: Option<PatrolRoute>,
+    pub current_waypoint: Option<EntityId>,
 }
 
 /// Summary of an action start failure for trace output.
@@ -1341,10 +1362,18 @@ fn format_goal_key(goal: &GoalKey) -> String {
 
 fn format_opportunity_key(opportunity: OpportunityKey) -> String {
     format!(
-        "{}@{:?}",
+        "{}@{}",
         format_goal_key(&opportunity.goal_key),
-        opportunity.anchor
+        format_opportunity_anchor(opportunity.anchor)
     )
+}
+
+fn format_opportunity_anchor(anchor: OpportunityAnchor) -> String {
+    match anchor {
+        OpportunityAnchor::Place(place) => format!("place:{place}"),
+        OpportunityAnchor::Entity(entity) => format!("entity:{entity}"),
+        OpportunityAnchor::None => "none".to_string(),
+    }
 }
 
 fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> String {
@@ -1834,6 +1863,8 @@ mod tests {
                 unknown_blockers: Vec::new(),
                 exhaustion_snapshot: Vec::new(),
                 frame_transition: None,
+                patrol_route: PatrolRouteSnapshotTrace::default(),
+                selected_patrol_anchor: None,
             })),
         }
     }
@@ -2378,6 +2409,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         };
 
         assert!(planning.candidates.generated_contains_goal(goal));
@@ -2582,6 +2615,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));
@@ -2655,6 +2690,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -2722,6 +2759,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -2779,6 +2818,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -2836,6 +2877,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -2889,6 +2932,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = format_outcome(&outcome, &ActionDefRegistry::new());
@@ -2951,6 +2996,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = format_outcome(&outcome, &ActionDefRegistry::new());
@@ -3024,6 +3071,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -3090,6 +3139,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -3173,6 +3224,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let summary = outcome.summary();
@@ -3272,6 +3325,8 @@ mod tests {
             unknown_blockers: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
 
         let mut action_defs = ActionDefRegistry::new();
@@ -3574,6 +3629,8 @@ mod tests {
                     assumptions_count: 1,
                 }],
             }),
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));
@@ -3746,6 +3803,8 @@ mod tests {
                 unknown_blockers: vec![],
                 exhaustion_snapshot: vec![],
                 frame_transition: None,
+                patrol_route: PatrolRouteSnapshotTrace::default(),
+                selected_patrol_anchor: None,
             })),
         };
         sink.record(trace);

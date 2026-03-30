@@ -652,6 +652,12 @@ fn golden_patrol_route_adaptation_retargets_after_local_report() {
         planning.selection.selected_goal_is(patrol_goal(general_store)),
         "retargeted planning tick should target the adapted waypoint"
     );
+    assert_eq!(planning.patrol_route.route, Some(adapted.clone()));
+    assert_eq!(planning.patrol_route.current_waypoint, Some(general_store));
+    assert_eq!(
+        planning.selected_patrol_anchor,
+        Some(OpportunityAnchor::Place(general_store))
+    );
 }
 
 // ---------------------------------------------------------------------------

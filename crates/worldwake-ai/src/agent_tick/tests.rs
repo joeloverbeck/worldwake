@@ -35,7 +35,8 @@ use worldwake_core::{
     ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FrameState,
     GrantedFacilityUse, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolRoute,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute,
     PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
     QueuedFacilityIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
     TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
@@ -72,6 +73,16 @@ fn default_opportunity(goal_key: GoalKey) -> OpportunityKey {
     OpportunityKey {
         goal_key,
         anchor: OpportunityAnchor::None,
+    }
+}
+
+fn patrol_profile(base_dwell_ticks: u32, vigilance: u16, motive: u16) -> PatrolProfile {
+    PatrolProfile {
+        base_dwell_ticks,
+        dwell_vigilance_scale_ticks: base_dwell_ticks,
+        vigilance: Permille::new(vigilance).unwrap(),
+        route_adaptation_sensitivity: Permille::new(1000).unwrap(),
+        patrol_motive_weight: Permille::new(motive).unwrap(),
     }
 }
 
@@ -2193,6 +2204,47 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
 }
 
 #[test]
+fn frame_snapshot_reports_patrol_route_provenance() {
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let home = world.topology().place_ids().next().unwrap();
+    let remote = world
+        .topology()
+        .place_ids()
+        .find(|candidate| *candidate != home)
+        .expect("prototype world should expose a second place");
+    let actor = {
+        let mut txn = new_txn(&mut world, 1);
+        let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(actor, home).unwrap();
+        txn.set_component_patrol_route(
+            actor,
+            PatrolRoute {
+                assigned_places: vec![home, remote],
+                current_index: 1,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        actor
+    };
+    let mut driver = AgentTickDriver::new(PlanningBudget::default());
+    driver
+        .runtime_by_agent
+        .insert(actor, AgentDecisionRuntime::default());
+
+    let snapshot = driver.frame_snapshot(&world, actor).unwrap();
+
+    assert_eq!(
+        snapshot.patrol_route.route,
+        Some(PatrolRoute {
+            assigned_places: vec![home, remote],
+            current_index: 1,
+        })
+    );
+    assert_eq!(snapshot.patrol_route.current_waypoint, Some(remote));
+}
+
+#[test]
 fn travel_led_plan_adoption_sets_intention_frame_anchor() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let destination = entity(11);
@@ -3449,6 +3501,72 @@ fn patrol_route_change_marks_runtime_dirty() {
     );
 
     assert!(runtime.dirty.contains(DirtySet::PATROL_ROUTE));
+}
+
+#[test]
+fn trace_planning_outcome_includes_patrol_route_provenance() {
+    let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    let home = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("harness actor should start at a place");
+    let remote = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|candidate| *candidate != home)
+        .expect("prototype world should expose a second place");
+
+    let mut txn = new_txn(&mut harness.world, 2);
+    txn.set_component_homeostatic_needs(harness.actor, HomeostaticNeeds::default())
+        .unwrap();
+    txn.set_component_patrol_route(
+        harness.actor,
+        PatrolRoute {
+            assigned_places: vec![home, remote],
+            current_index: 1,
+        },
+    )
+    .unwrap();
+    txn.set_component_patrol_profile(harness.actor, patrol_profile(2, 0, 900))
+        .unwrap();
+    commit_txn(txn);
+
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let trace = harness
+        .driver
+        .trace_sink()
+        .unwrap()
+        .traces_for(harness.actor)
+        .into_iter()
+        .next()
+        .expect("expected one decision trace");
+
+    match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => {
+            assert_eq!(
+                planning.patrol_route.route,
+                Some(PatrolRoute {
+                    assigned_places: vec![home, remote],
+                    current_index: 1,
+                })
+            );
+            assert_eq!(planning.patrol_route.current_waypoint, Some(remote));
+            assert_eq!(
+                planning.selected_patrol_anchor,
+                Some(OpportunityAnchor::Place(remote))
+            );
+            assert!(
+                planning.selection.selected_goal_is(GoalKey::from(GoalKind::Patrol {
+                    place: remote
+                })),
+                "selected goal should stay aligned with the patrol provenance surface"
+            );
+        }
+        other => panic!("expected Planning outcome, got {other:?}"),
+    }
 }
 
 #[test]

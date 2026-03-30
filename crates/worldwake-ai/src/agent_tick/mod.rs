@@ -32,8 +32,8 @@ use planning::{
 use crate::decision_trace::{
     ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
     DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry,
-    FrameTransitionKind, FrameTransitionTrace, InterruptTrace, PlanSearchTrace,
-    PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
+    FrameTransitionKind, FrameTransitionTrace, InterruptTrace, PatrolRouteSnapshotTrace,
+    PlanSearchTrace, PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
 };
 use crate::{
     build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
@@ -137,6 +137,7 @@ impl AgentTickDriver {
             runtime: frame_runtime_snapshot(frame, runtime),
             effective_switch_margin,
             switch_margin_source,
+            patrol_route: patrol_route_snapshot(&view, agent),
         })
     }
 
@@ -191,6 +192,20 @@ impl AgentTickDriver {
         self.semantics_cache = None;
         self.trace_sink = None;
         Ok(())
+    }
+}
+
+fn patrol_route_snapshot(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+) -> PatrolRouteSnapshotTrace {
+    let route = view.patrol_route(agent);
+    let current_waypoint = route
+        .as_ref()
+        .and_then(|route| route.assigned_places.get(route.current_index).copied());
+    PatrolRouteSnapshotTrace {
+        route,
+        current_waypoint,
     }
 }
 
@@ -680,6 +695,10 @@ fn process_agent(
         }
 
         tracing.then(|| {
+            let patrol_route = {
+                let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+                patrol_route_snapshot(&view, agent)
+            };
             let candidate_trace = CandidateTrace {
                 generated: read_result.generated_keys,
                 evidence: read_result.candidate_evidence,
@@ -701,6 +720,22 @@ fn process_agent(
                 omitted_social: read_result.omitted_social,
             };
 
+            let selection = selection_trace.unwrap_or(SelectionTrace {
+                selected_opportunity: None,
+                selected_plan: None,
+                selected_plan_source: None,
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            });
+            let selected_patrol_anchor = selection.selected_opportunity.and_then(|opportunity| {
+                matches!(
+                    opportunity.goal_key.kind,
+                    worldwake_core::GoalKind::Patrol { .. }
+                )
+                .then_some(opportunity.anchor)
+            });
+
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 dirty: runtime.dirty,
                 plan_continued,
@@ -709,14 +744,7 @@ fn process_agent(
                     attempts: Vec::new(),
                     same_goal_trace: None,
                 }),
-                selection: selection_trace.unwrap_or(SelectionTrace {
-                    selected_opportunity: None,
-                    selected_plan: None,
-                    selected_plan_source: None,
-                    goal_switch: None,
-                    previous_goal: None,
-                    plan_replacement: None,
-                }),
+                selection,
                 execution: execution_trace.unwrap_or(ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,
@@ -751,6 +779,8 @@ fn process_agent(
                     })
                     .collect(),
                 frame_transition: build_frame_transition_trace(&mut frame_transitions),
+                patrol_route,
+                selected_patrol_anchor,
             }))
         })
     };
