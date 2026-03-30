@@ -30,10 +30,11 @@ use planning::{
 };
 
 use crate::decision_trace::{
-    ActionStartFailureSummary, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
-    DecisionTraceSink, ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry,
-    FrameTransitionKind, FrameTransitionTrace, InterruptTrace, PatrolRouteSnapshotTrace,
-    PlanSearchTrace, PlanningPipelineTrace, SelectionTrace, UnknownBlockerTrace,
+    ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
+    CandidateTrace, DecisionOutcome, DecisionTraceSink, ExecutionFailureReason, ExecutionTrace,
+    ExhaustionTraceEntry, FrameTransitionKind, FrameTransitionTrace, InterruptTrace,
+    PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace, SelectionTrace,
+    UnknownBlockerTrace,
 };
 use crate::{
     build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
@@ -695,9 +696,30 @@ fn process_agent(
         }
 
         tracing.then(|| {
-            let patrol_route = {
+            let (patrol_route, affordance_trace) = {
                 let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
-                patrol_route_snapshot(&view, agent)
+                let patrol = patrol_route_snapshot(&view, agent);
+                let place = view.effective_place(agent);
+                let affordances = worldwake_sim::get_affordances(
+                    &view,
+                    agent,
+                    action_defs,
+                    action_handlers,
+                );
+                let trace = AffordanceTrace {
+                    available: affordances
+                        .iter()
+                        .map(|a| AffordanceSummary {
+                            def_id: a.def_id,
+                            action_name: action_defs
+                                .get(a.def_id)
+                                .map_or_else(|| "unknown".to_owned(), |d| d.name.clone()),
+                            target_count: a.bound_targets.len(),
+                        })
+                        .collect(),
+                    place,
+                };
+                (patrol, trace)
             };
             let candidate_trace = CandidateTrace {
                 generated: read_result.generated_keys,
@@ -737,6 +759,7 @@ fn process_agent(
             });
 
             DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                affordances: Some(affordance_trace),
                 dirty: runtime.dirty,
                 plan_continued,
                 candidates: candidate_trace,

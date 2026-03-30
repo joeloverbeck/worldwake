@@ -194,11 +194,33 @@ impl DecisionOutcome {
     }
 }
 
+// ── Affordance Trace ────────────────────────────────────────────
+
+/// Summary of one affordance available to the agent at decision time.
+#[derive(Clone, Debug)]
+pub struct AffordanceSummary {
+    pub def_id: ActionDefId,
+    pub action_name: String,
+    pub target_count: usize,
+}
+
+/// Trace of all affordances available to the agent at the start of the
+/// decision tick. This is the earliest causal input to the planning
+/// pipeline — it determines which actions the planner can consider.
+#[derive(Clone, Debug)]
+pub struct AffordanceTrace {
+    pub available: Vec<AffordanceSummary>,
+    pub place: Option<EntityId>,
+}
+
 // ── Planning Pipeline ───────────────────────────────────────────
 
 /// Full trace of the planning pipeline for one agent-tick.
 #[derive(Clone, Debug)]
 pub struct PlanningPipelineTrace {
+    /// Affordances available to the agent at decision time.
+    /// Populated only when tracing is enabled.
+    pub affordances: Option<AffordanceTrace>,
     pub dirty: crate::DirtySet,
     /// When true, the existing plan was revalidated instead of replanning from
     /// scratch. This happens when `dirty.is_snapshot_only()` is true
@@ -1249,6 +1271,24 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let mut out = format!(
                 "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{ranking}"
             );
+            if let Some(ref aff) = planning.affordances {
+                let place_str = aff
+                    .place
+                    .map_or_else(|| "none".to_string(), |p| format!("{p:?}"));
+                let _ = write!(out, "\n  Place: {place_str}");
+                let names: Vec<String> = aff
+                    .available
+                    .iter()
+                    .map(|a| {
+                        if a.target_count > 0 {
+                            format!("{}({} targets)", a.action_name, a.target_count)
+                        } else {
+                            a.action_name.clone()
+                        }
+                    })
+                    .collect();
+                let _ = write!(out, "\n  Affordances: [{}]", names.join(", "));
+            }
             for blocked in &planning.candidates.fully_blocked_desires {
                 let _ = write!(
                     out,
@@ -1828,6 +1868,7 @@ mod tests {
             agent: entity(1),
             tick,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                affordances: None,
                 dirty: crate::DirtySet::default(),
                 plan_continued,
                 candidates: CandidateTrace {
@@ -2357,6 +2398,7 @@ mod tests {
             anchor: OpportunityAnchor::Place(entity(12)),
         };
         let planning = PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2529,6 +2571,7 @@ mod tests {
     fn summary_planning_includes_candidate_count() {
         use worldwake_core::GoalKind;
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2638,6 +2681,7 @@ mod tests {
             commodity: worldwake_core::CommodityKind::Bread,
         });
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2708,6 +2752,7 @@ mod tests {
         let target = entity(41);
         let goal = GoalKey::new(GoalKind::EngageHostile { target });
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2776,6 +2821,7 @@ mod tests {
 
         let discount = sample_competition_discount();
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2835,6 +2881,7 @@ mod tests {
         use worldwake_core::GoalKind;
 
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2891,6 +2938,7 @@ mod tests {
         use worldwake_core::{GoalKind, OpportunityAnchor};
 
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -2949,6 +2997,7 @@ mod tests {
             purpose: CommodityPurpose::SelfConsume,
         });
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -3015,6 +3064,7 @@ mod tests {
         let winner = GoalKey::new(GoalKind::Sleep);
         let loser = GoalKey::new(GoalKind::Wash);
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -3087,6 +3137,7 @@ mod tests {
         use worldwake_core::GoalKind;
 
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -3154,6 +3205,7 @@ mod tests {
     #[test]
     fn summary_planning_includes_selected_drive_provenance() {
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -3240,6 +3292,7 @@ mod tests {
         use crate::planner_duration_contract::PlannerDurationDependency;
 
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -3587,6 +3640,7 @@ mod tests {
     #[test]
     fn frame_transition_in_planning_summary() {
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
             dirty: crate::DirtySet::NO_PLAN,
             plan_continued: false,
             candidates: CandidateTrace {
@@ -3761,6 +3815,7 @@ mod tests {
             agent,
             tick: Tick(5),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                affordances: None,
                 dirty: crate::DirtySet::default(),
                 plan_continued: false,
                 candidates: CandidateTrace {

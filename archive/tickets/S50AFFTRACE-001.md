@@ -1,6 +1,6 @@
 # S50AFFTRACE-001: Add affordance trace to decision trace pipeline
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-ai (decision trace), worldwake-sim (affordance query)
@@ -19,7 +19,7 @@ This violates Principle 29 (Debuggability Is a Product Feature): "The simulation
 1. **Affordance query**: `get_affordances()` in `crates/worldwake-sim/src/affordance_query.rs` returns `Vec<Affordance>` for an agent. Each `Affordance` contains the action `ActionDefId`, resolved targets, and constraint satisfaction. This is the data source for the trace.
 2. **Decision trace pipeline**: `AgentTickDriver` in `crates/worldwake-ai/src/agent_tick.rs` runs the decision pipeline per tick. Tracing is opt-in via `enable_tracing()`. The trace is stored in `DecisionTraceSink` (`crates/worldwake-ai/src/decision_trace.rs`).
 3. **Existing trace stages**: CandidateTrace (generated, ranked, suppressed), PlanSearchTrace (attempts, outcomes), SelectionTrace (selected plan), ExecutionTrace (action outcome). No affordance stage exists.
-4. **Performance**: `get_affordances()` is already called during candidate generation. The trace would capture the result of an existing call, not add a new one. The cost is the memory to store the affordance list per agent per tick, which is bounded by the number of registered action definitions × target combinations.
+4. **Performance**: Candidate generation calls `get_affordances_for_defs()` (a filtered variant taking a `BTreeSet<ActionDefId>` subset), not the full `get_affordances()`. The trace requires a new `get_affordances()` call to capture the complete affordance set, but this call is gated on `tracing == true` so zero-cost-when-disabled is preserved. The cost when tracing is the affordance query plus memory to store the affordance list per agent per tick, bounded by registered action definitions × target combinations.
 5. **Existing coverage for affordance correctness**: Focused unit tests in `crates/worldwake-systems/src/needs_actions.rs` (e.g., `relieve_wilderness_accepts_outdoor_places`, `relieve_wilderness_rejects_indoor_places`) and `crates/worldwake-sim/src/affordance_query.rs` test affordance constraint evaluation. The trace is for debugging golden/E2E scenarios, not for replacing focused coverage.
 6. **Single-layer ticket**: This ticket adds a new field to the decision trace struct and populates it from the existing affordance query result. No cross-system interaction.
 
@@ -86,7 +86,7 @@ Add an affordance section to the human-readable `dump_agent()` method in `Decisi
 ## Files to Touch
 
 - `crates/worldwake-ai/src/decision_trace.rs` (modify: add `AffordanceSummary`, `AffordanceTrace`, add field to `PlanningPipelineTrace`, update `dump_agent`)
-- `crates/worldwake-ai/src/agent_tick.rs` (modify: populate affordance trace from existing `get_affordances()` call)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify: populate affordance trace via new `get_affordances()` call gated on `tracing == true`)
 
 ## Out of Scope
 
@@ -123,3 +123,19 @@ Add an affordance section to the human-readable `dump_agent()` method in `Decisi
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`
 4. `scripts/verify.sh`
+
+## Outcome
+
+**Completion date**: 2026-03-30
+
+**What changed**:
+- `crates/worldwake-ai/src/decision_trace.rs`: Added `AffordanceSummary` and `AffordanceTrace` structs. Added `affordances: Option<AffordanceTrace>` field to `PlanningPipelineTrace`. Added affordance rendering to `format_outcome()` (place + available affordances with target counts).
+- `crates/worldwake-ai/src/agent_tick/mod.rs`: Calls `get_affordances()` inside `tracing.then()` closure in the planning path; builds and stores `AffordanceTrace`. Zero-cost when tracing disabled.
+- `crates/worldwake-ai/src/lib.rs`: Re-exported `AffordanceSummary` and `AffordanceTrace`.
+- `crates/worldwake-ai/src/agent_tick/tests.rs`: Two focused tests (`affordance_trace_populated_when_tracing_enabled`, `affordance_trace_absent_when_tracing_disabled`).
+
+**Deviations from original plan**:
+- Ticket assumed `get_affordances()` was already called during candidate generation. Actually, candidate generation uses `get_affordances_for_defs()` (filtered variant). A new `get_affordances()` call was added, gated on `tracing == true`.
+- File path corrected from `agent_tick.rs` to `agent_tick/mod.rs` (module directory structure).
+
+**Verification**: `cargo clippy --workspace` clean, `cargo test --workspace` all passing (888 AI lib tests + full workspace).

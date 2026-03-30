@@ -5728,3 +5728,55 @@ fn goal_completion_does_not_create_blocked_intent() {
             );
     }
 }
+
+// ── S50AFFTRACE-001: Affordance trace in decision trace pipeline ──
+
+#[test]
+fn affordance_trace_populated_when_tracing_enabled() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let traces = sink.traces_for(harness.actor);
+    assert_eq!(traces.len(), 1);
+
+    match &traces[0].outcome {
+        crate::DecisionOutcome::Planning(planning) => {
+            let aff = planning
+                .affordances
+                .as_ref()
+                .expect("affordance trace must be populated when tracing is enabled");
+            assert!(
+                !aff.available.is_empty(),
+                "agent at a place with resources should have at least one affordance"
+            );
+            // Verify each summary has a non-empty action name.
+            for summary in &aff.available {
+                assert!(
+                    !summary.action_name.is_empty(),
+                    "affordance summary action_name must not be empty"
+                );
+            }
+            // Place should be set for a placed agent.
+            assert!(
+                aff.place.is_some(),
+                "affordance trace place must be set for a placed agent"
+            );
+        }
+        other => panic!("expected Planning outcome, got {other:?}"),
+    }
+}
+
+#[test]
+fn affordance_trace_absent_when_tracing_disabled() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    // Do NOT enable tracing.
+    harness.step_once();
+
+    // No trace sink should exist.
+    assert!(
+        harness.driver.trace_sink().is_none(),
+        "trace sink should be None when tracing is disabled"
+    );
+}

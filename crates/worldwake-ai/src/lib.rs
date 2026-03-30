@@ -45,7 +45,8 @@ pub use decision_runtime::{
     ExhaustionRetryState, FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings,
 };
 pub use decision_trace::{
-    ActionStartFailureSummary, AgentDecisionTrace, AskWitnessOmissionDetail,
+    ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
+    AskWitnessOmissionDetail,
     BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily, BindingRejection,
     CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
     CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
