@@ -18,10 +18,11 @@ Guards must adapt their patrol routes based on their belief state: adding waypoi
 4. Spec says: crime report at new location adds that place to `assigned_places` if not already present, subject to `route_adaptation_sensitivity` threshold relative to report recency.
 5. Spec says: waypoints without recent crime reports may be moved to end of route or skipped. No permanent removal — only reordering.
 6. The live core route shape is intentionally minimal: `assigned_places` plus `current_index`. This ticket should first prove route adaptation against that contract. Do not introduce richer per-waypoint metadata unless the adaptation invariant cannot be expressed cleanly without it.
-7. The spec places route adaptation in candidate generation or a per-tick patrol system hook. The cleaner approach remains a per-tick patrol system hook because candidate generation should stay read-only.
-8. Route adaptation requires `WorldTxn` for mutation. If placed in candidate generation, this would be a direct architectural regression against the existing read-only candidate generation pattern.
-9. `RecordedViolation` does not expose a uniform top-level `place` field across all variants; implementation must extract only lawful place-bearing patrol signals from the exact violation kinds or other explicit belief surfaces instead of assuming one shared location field.
-10. No adjacent contradictions found.
+7. E19GUAPAT-002 delivered patrol identity only; it did not deliver route adaptation substrate. E19GUAPAT-004 is still responsible for emitting patrol candidates and replacing the current placeholder patrol motive with real patrol-profile-driven scoring before route adaptation should be golden-tested downstream.
+8. The spec places route adaptation in candidate generation or a per-tick patrol system hook. The cleaner approach remains a per-tick patrol system hook because candidate generation should stay read-only.
+9. Route adaptation requires `WorldTxn` for mutation. If placed in candidate generation, this would be a direct architectural regression against the existing read-only candidate generation pattern.
+10. `RecordedViolation` does not expose a uniform top-level `place` field across all variants; implementation must extract only lawful place-bearing patrol signals from the exact violation kinds or other explicit belief surfaces instead of assuming one shared location field.
+11. No adjacent contradictions found.
 
 ## Architecture Check
 
@@ -77,7 +78,7 @@ Define constants or derive from `PatrolProfile.route_adaptation_sensitivity`:
 ## Out of Scope
 
 - Patrol action handler (E19GUAPAT-003 — already delivered)
-- Patrol candidate generation (E19GUAPAT-004 — already delivered)
+- Patrol candidate generation and patrol motive scoring (E19GUAPAT-004)
 - Guard presence factor (E19GUAPAT-005)
 - Captain-mediated route reassignment (deferred per spec to future epic)
 - Permanent waypoint removal (spec explicitly defers this)

@@ -16,17 +16,19 @@ Guards with `PatrolRoute` and `PatrolProfile` components need to generate `GoalK
 2. `ViolationMemory` is accessible via `ctx.view` belief view interface. Method `unresolved_records()` returns unresolved violations (confirmed in `crates/worldwake-core/src/violation.rs` line 60+).
 3. `believed_office_holder()` is the E16c interface for querying institutional beliefs about office occupancy. Must verify this symbol exists in the belief view.
 4. `InstitutionalClaim::ForceControl` (E16b) is the mechanism for contested-office awareness. Must verify this exists in the belief/institutional modules.
-5. The live `GoalKind` under test is `GoalKind::Patrol { place: EntityId }` — new variant from E19GUAPAT-002.
-6. Candidate emission should produce a `RankedGoal` with motive derived from `PatrolProfile.patrol_motive_weight` multiplied by urgency modifiers.
-7. The spec says patrol uses `UtilityProfile` weighting system — `patrol_motive_weight` on `PatrolProfile` competes with other motive weights.
+5. The live `GoalKind` under test is `GoalKind::Patrol { place: EntityId }`, and E19GUAPAT-002 already delivered the patrol identity path (`GoalKind`, `PlannerOpKind`, `GoalDispatchKey`, `EventTag`) plus a temporary placeholder patrol motive in ranking.
+6. This ticket now owns replacing that placeholder with the real patrol-profile-driven motive arithmetic once patrol candidates are actually emitted. Do not layer a second temporary scoring path beside the placeholder.
+7. The spec says patrol uses `PatrolProfile.patrol_motive_weight` with belief-driven urgency modifiers. The live code should therefore score patrol from lawful patrol-profile data plus local beliefs, not from a hardcoded constant.
 8. Guard at remote location must NOT increase urgency for crimes they haven't heard about (Principle 7/14 — locality).
-9. No adjacent contradictions found. If `believed_office_holder()` or `InstitutionalClaim::ForceControl` do not yet exist, this ticket must note them as blockers from E16b/E16c.
+9. Planner identity for patrol is already wired by E19GUAPAT-002, so this ticket should not add a second direct goal-to-op mapping shortcut in `goal_model.rs`. The intended plan surface remains `[Travel(place), Patrol]` through the existing dispatch path.
+10. No adjacent contradictions found. If `believed_office_holder()` or `InstitutionalClaim::ForceControl` do not yet exist, this ticket must note them as blockers from E16b/E16c.
 
 ## Architecture Check
 
 1. Following the existing `emit_justice_candidates()` / `emit_need_candidates()` pattern ensures consistency. A new `emit_patrol_candidates()` function called from the main candidate generation entry point is the cleanest approach.
 2. Belief-driven urgency avoids querying world state (Principle 14). All modifiers come from the guard's `ViolationMemory` and institutional beliefs — information that reached the guard through lawful channels.
-3. No backwards-compatibility shims.
+3. Replace the current placeholder patrol motive instead of stacking another temporary path on top of it. One patrol motive path, no aliasing.
+4. No backwards-compatibility shims.
 
 ## Verification Layers
 
@@ -61,14 +63,14 @@ fn emit_patrol_candidates(
 
 Add `emit_patrol_candidates(candidates, diagnostics, ctx);` to `generate_candidates_with_travel_horizon()` alongside existing emitters.
 
-### 3. Planner support for Patrol goal → plan sequence
+### 3. Replace placeholder patrol ranking with real patrol motive arithmetic
 
-Ensure the goal model maps `GoalKind::Patrol { place }` to the plan sequence `[Travel(place), Patrol]`. This may require additions to `goal_model.rs` if not fully handled by E19GUAPAT-002.
+Update the live ranking surface so emitted patrol candidates score from `PatrolProfile.patrol_motive_weight` plus the belief-driven urgency modifiers introduced here. Do not leave patrol on the placeholder score from E19GUAPAT-002 once candidate emission is active.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — add `emit_patrol_candidates()` and call it)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — if plan sequence mapping needs refinement beyond E19GUAPAT-002)
+- `crates/worldwake-ai/src/ranking.rs` (modify — replace placeholder patrol motive with real patrol motive arithmetic if that remains the live boundary)
 
 ## Out of Scope
 
@@ -97,8 +99,9 @@ Ensure the goal model maps `GoalKind::Patrol { place }` to the plan sequence `[T
 
 1. Patrol candidate generation reads ONLY from belief state (ViolationMemory, institutional beliefs), never from `World` directly (Principle 14)
 2. No `HashMap` or `f32`/`f64` introduced
-3. Candidate motive uses `Permille` arithmetic
-4. Candidate generation does not mutate any state
+3. Candidate motive replaces the current placeholder patrol score with real patrol-profile-driven arithmetic
+4. Candidate motive uses deterministic integer / `Permille` arithmetic
+5. Candidate generation does not mutate any state
 
 ## Test Plan
 

@@ -20,6 +20,7 @@ pub enum InvalidationStrategy {
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
+    Patrol,
     PunishAccused,
 }
 
@@ -120,6 +121,7 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::DeclareSupport,
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
+const PATROL_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Patrol];
 const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
 const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
 const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
@@ -285,6 +287,13 @@ static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclara
     invalidation_strategy: InvalidationStrategy::InvestigateViolation,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
 };
+static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "Patrol",
+    provenance_family: None,
+    relevant_ops: PATROL_OPS,
+    invalidation_strategy: InvalidationStrategy::Patrol,
+    feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+};
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
     provenance_family: None,
@@ -341,6 +350,7 @@ impl GoalDispatchKey {
             Self::ClaimOffice => &DECL_CLAIM_OFFICE,
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
             Self::InvestigateViolation => &DECL_INVESTIGATE_VIOLATION,
+            Self::Patrol => &DECL_PATROL,
             Self::StealItem => &DECL_STEAL_ITEM,
             Self::Accuse => &DECL_ACCUSE,
             Self::PunishFine => &DECL_PUNISH_FINE,
@@ -352,7 +362,7 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
-    use crate::{GoalDispatchKey, GoalKindPlannerExt};
+    use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
         CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, PunishmentKind,
         Quantity, RecipeId, RecordEntryId, TellTopic, ViolationId,
@@ -382,6 +392,7 @@ mod tests {
         GoalDispatchKey::ClaimOffice,
         GoalDispatchKey::SupportCandidateForOffice,
         GoalDispatchKey::InvestigateViolation,
+        GoalDispatchKey::Patrol,
         GoalDispatchKey::StealItem,
         GoalDispatchKey::Accuse,
         GoalDispatchKey::PunishFine,
@@ -458,6 +469,7 @@ mod tests {
                 violation_id: ViolationId(1),
                 place: destination,
             },
+            GoalDispatchKey::Patrol => GoalKind::Patrol { place: destination },
             GoalDispatchKey::StealItem => GoalKind::StealItem {
                 target_item: target,
             },
@@ -488,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 27);
+        assert_eq!(ALL_KEYS.len(), 28);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -518,6 +530,19 @@ mod tests {
                 "relevant_ops mismatch for {key:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_patrol_declaration_uses_place_match_and_patrol_ops() {
+        let declaration = GoalDispatchKey::Patrol.declaration();
+
+        assert_eq!(declaration.trace_label, "Patrol");
+        assert_eq!(
+            declaration.relevant_ops,
+            &[PlannerOpKind::Travel, PlannerOpKind::Patrol]
+        );
+        assert_eq!(declaration.invalidation_strategy, InvalidationStrategy::Patrol);
+        assert_eq!(declaration.feasibility_strategy, FeasibilityStrategy::PlaceMatch);
     }
 
     #[test]
@@ -574,6 +599,7 @@ mod tests {
                 | InvalidationStrategy::ClaimOffice
                 | InvalidationStrategy::SupportCandidateForOffice
                 | InvalidationStrategy::InvestigateViolation
+                | InvalidationStrategy::Patrol
                 | InvalidationStrategy::PunishAccused => {}
                 InvalidationStrategy::NeedWithFacilities(need)
                 | InvalidationStrategy::NeedWithPosition(need) => {

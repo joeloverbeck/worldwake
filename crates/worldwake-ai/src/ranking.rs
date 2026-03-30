@@ -381,6 +381,7 @@ fn priority_class(
         | GoalKind::BuryCorpse { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::InvestigateViolation { .. }
+        | GoalKind::Patrol { .. }
         | GoalKind::StealItem { .. }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
@@ -563,7 +564,7 @@ fn motive_score(
             context.utility.social_weight,
             social_pressure_for_topic(context, topic),
         ),
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } | GoalKind::Patrol { .. } => 1,
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
@@ -1120,9 +1121,10 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::ClaimOffice { .. } => 18,
         GoalKind::SupportCandidateForOffice { .. } => 19,
         GoalKind::InvestigateViolation { .. } => 20,
-        GoalKind::StealItem { .. } => 21,
-        GoalKind::Accuse { .. } => 22,
-        GoalKind::PunishAccused { .. } => 23,
+        GoalKind::Patrol { .. } => 21,
+        GoalKind::StealItem { .. } => 22,
+        GoalKind::Accuse { .. } => 23,
+        GoalKind::PunishAccused { .. } => 24,
     }
 }
 

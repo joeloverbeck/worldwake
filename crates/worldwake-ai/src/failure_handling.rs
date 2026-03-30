@@ -131,7 +131,8 @@ fn derive_blocking_fact(
                 return BlockingFact::CombatTooRisky;
             }
         }
-        PlannerOpKind::Sleep
+        PlannerOpKind::Patrol
+        | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
@@ -356,6 +357,7 @@ fn classify_input_failure(
         PlannerOpKind::Heal => Some(CommodityKind::Medicine),
         PlannerOpKind::Consume => goal_key.commodity,
         PlannerOpKind::Travel
+        | PlannerOpKind::Patrol
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Trade
@@ -387,7 +389,7 @@ fn classify_input_failure(
 }
 
 fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
-    if matches!(step.op_kind, PlannerOpKind::Travel) {
+    if matches!(step.op_kind, PlannerOpKind::Travel | PlannerOpKind::Patrol) {
         return false;
     }
 
@@ -423,7 +425,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness => view.entity_kind(target).is_none() || view.is_dead(target),
-        PlannerOpKind::Travel => false,
+        PlannerOpKind::Travel | PlannerOpKind::Patrol => false,
     }
 }
 
@@ -649,6 +651,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
             .map(|payload| payload.target)
             .or_else(|| step.targets.first().copied().and_then(authoritative_target)),
         PlannerOpKind::Travel
+        | PlannerOpKind::Patrol
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
@@ -726,7 +729,8 @@ fn related_place(
         | PlannerOpKind::Heal
         | PlannerOpKind::Loot
         | PlannerOpKind::Attack
-        | PlannerOpKind::Defend => goal_key.place.or_else(|| view.effective_place(agent)),
+        | PlannerOpKind::Defend
+        | PlannerOpKind::Patrol => goal_key.place.or_else(|| view.effective_place(agent)),
         PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Bribe

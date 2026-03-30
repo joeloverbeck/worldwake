@@ -15,15 +15,16 @@ The patrol action (dwell phase at a waypoint) needs to be registered in the acti
 1. Action registration follows the pattern in `crates/worldwake-systems/src/action_registry.rs` (lines 21–47): a `register_X_action(defs, handlers)` function called from `register_all_actions()`.
 2. Action handler pattern (e.g., `investigate_actions.rs`): `start_X()`, `tick_X()`, `commit_X()`, `abort_X()` functions, plus `register_X_action()` and `X_action_def()`.
 3. `ActionPayload` in `crates/worldwake-sim/src/action_payload.rs` currently has 29 variants. Patrol needs a payload to carry the waypoint entity ID.
-4. `ActionDomain::Generic` is specified by the spec (line 72). Already exists — no new domain needed.
-5. `VisibilitySpec::SamePlace` is the spec's required visibility (line 98).
-6. `ActionDef` struct (from `action_def.rs`) requires: name, domain, constraints, preconditions, duration, body_cost, interruptibility, visibility, event_tags, payload, handler.
-7. Duration: dwell ticks derived from `PatrolProfile.vigilance`. Spec says `dwell_ticks = base_dwell + (vigilance.value() * dwell_scale / 1000)`. Both `base_dwell` and `dwell_scale` should come from `PatrolProfile` or be defined as profile fields.
-8. Commit behavior: advance `current_index` to `(current_index + 1) % assigned_places.len()` via `WorldTxn`.
-9. Abort behavior: do NOT advance `current_index` (guard resumes from same waypoint).
-10. `Interruptibility` — action must be interruptible (spec line 89–91).
-11. The implemented core route contract is intentionally still minimal: ordered `assigned_places` plus `current_index`. This ticket should consume that contract directly rather than introducing richer per-waypoint metadata, cached route-entry structs, or action-local aliases unless the action cannot express a concrete invariant without them.
-12. No adjacent contradictions found.
+4. E19GUAPAT-002 is now implemented and archived. `GoalKind::Patrol`, `PlannerOpKind::Patrol`, `EventTag::Patrol`, and planner classification for an action named exactly `"patrol"` already exist, so this ticket should reuse those identities rather than adding aliases or a second patrol-like action name.
+5. `ActionDomain::Generic` is specified by the spec (line 72). Already exists — no new domain needed.
+6. `VisibilitySpec::SamePlace` is the spec's required visibility (line 98).
+7. `ActionDef` struct (from `action_def.rs`) requires: name, domain, constraints, preconditions, duration, body_cost, interruptibility, visibility, event_tags, payload, handler.
+8. Duration: dwell ticks derived from `PatrolProfile.vigilance`. Spec says `dwell_ticks = base_dwell + (vigilance.value() * dwell_scale / 1000)`. Both `base_dwell` and `dwell_scale` should come from `PatrolProfile` or be defined as profile fields.
+9. Commit behavior: advance `current_index` to `(current_index + 1) % assigned_places.len()` via `WorldTxn`.
+10. Abort behavior: do NOT advance `current_index` (guard resumes from same waypoint).
+11. `Interruptibility` — action must be interruptible (spec line 89–91).
+12. The implemented core route contract is intentionally still minimal: ordered `assigned_places` plus `current_index`. This ticket should consume that contract directly rather than introducing richer per-waypoint metadata, cached route-entry structs, or action-local aliases unless the action cannot express a concrete invariant without them.
+13. No adjacent contradictions found.
 
 ## Architecture Check
 

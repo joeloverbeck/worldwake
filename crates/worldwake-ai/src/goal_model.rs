@@ -432,6 +432,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. }
             | GoalKind::InvestigateViolation { .. }
+            | GoalKind::Patrol { .. }
             | GoalKind::StealItem { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => Some(BTreeSet::new()),
@@ -487,6 +488,7 @@ impl GoalKindPlannerExt for GoalKind {
                     ConsultRecordActionPayload { record },
                 )))
             }
+            PlannerOpKind::Patrol => Ok(None),
             PlannerOpKind::Trade => {
                 let Some(counterparty) = targets.first().copied() else {
                     return Err(GoalPayloadOverrideError::MissingTarget);
@@ -787,6 +789,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Craft
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
+            | PlannerOpKind::Patrol
             | PlannerOpKind::Tell
             | PlannerOpKind::MoveCargo
             | PlannerOpKind::YieldForceClaim
@@ -817,6 +820,10 @@ impl GoalKindPlannerExt for GoalKind {
         if matches!(self, GoalKind::InvestigateViolation { .. })
             && step.op_kind == PlannerOpKind::Investigate
         {
+            return true;
+        }
+
+        if matches!(self, GoalKind::Patrol { .. }) && step.op_kind == PlannerOpKind::Patrol {
             return true;
         }
 
@@ -958,6 +965,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::InvestigateViolation { .. }
+            | GoalKind::Patrol { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => false,
         }
@@ -1035,7 +1043,9 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ShareBelief { listener, .. } => {
                 state.effective_place(*listener).into_iter().collect()
             }
-            GoalKind::InvestigateViolation { place, .. } => vec![*place],
+            GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
+                vec![*place]
+            }
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
@@ -1131,6 +1141,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Sleep
             | PlannerOpKind::Relieve
             | PlannerOpKind::Wash
+            | PlannerOpKind::Patrol
             | PlannerOpKind::Defend
             | PlannerOpKind::Bribe
             | PlannerOpKind::Threaten
@@ -1172,7 +1183,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. } => true,
 
-            GoalKind::InvestigateViolation { place, .. } => authoritative_targets.contains(place),
+            GoalKind::InvestigateViolation { place, .. }
+            | GoalKind::Patrol { place } => authoritative_targets.contains(place),
 
             // Exact-bound goals: target must match.
             GoalKind::EngageHostile { target }
@@ -5195,6 +5207,7 @@ mod tests {
             GoalKind::StealItem {
                 target_item: entity(97),
             },
+            GoalKind::Patrol { place: place_b },
             GoalKind::Accuse {
                 crime_register: entity(95),
                 accused: entity(96),
@@ -5210,7 +5223,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 22);
+        assert_eq!(goals.len(), 23);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -5267,6 +5280,7 @@ mod tests {
                 office: place_b,
                 candidate: actor,
             },
+            GoalKind::Patrol { place: place_b },
             GoalKind::StealItem {
                 target_item: place_b,
             },

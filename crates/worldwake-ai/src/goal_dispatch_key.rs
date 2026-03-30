@@ -27,6 +27,7 @@ pub enum GoalDispatchKey {
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
+    Patrol,
     StealItem,
     Accuse,
     PunishFine,
@@ -34,7 +35,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -58,6 +59,7 @@ impl GoalDispatchKey {
         Self::ClaimOffice,
         Self::SupportCandidateForOffice,
         Self::InvestigateViolation,
+        Self::Patrol,
         Self::StealItem,
         Self::Accuse,
         Self::PunishFine,
@@ -97,6 +99,7 @@ impl GoalDispatchKey {
             GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => Self::InvestigateViolation,
+            GoalKind::Patrol { .. } => Self::Patrol,
             GoalKind::StealItem { .. } => Self::StealItem,
             GoalKind::Accuse { .. } => Self::Accuse,
             GoalKind::PunishAccused { punishment, .. } => match punishment {
@@ -261,6 +264,7 @@ mod tests {
                 violation_id: ViolationId(1),
                 place: destination,
             },
+            GoalKind::Patrol { place: destination },
             GoalKind::StealItem {
                 target_item: target,
             },
@@ -280,16 +284,23 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 23);
+        assert_eq!(goals.len(), 24);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
         }
     }
 
     #[test]
+    fn test_goal_dispatch_key_maps_patrol_goal() {
+        let patrol = GoalKind::Patrol { place: entity(42) };
+
+        assert_eq!(GoalDispatchKey::from(patrol), GoalDispatchKey::Patrol);
+    }
+
+    #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 27);
+        assert_eq!(GoalDispatchKey::all().len(), 28);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

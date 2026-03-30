@@ -83,7 +83,9 @@ pub(crate) fn derive_invalidation_conditions(
         }
         InvalidationStrategy::CombatTarget => combat_target_conditions(goal, &mut conditions),
         InvalidationStrategy::DangerReduction => danger_reduction_conditions(&mut conditions),
-        InvalidationStrategy::FactionRegroup | InvalidationStrategy::InvestigateViolation => {
+        InvalidationStrategy::FactionRegroup
+        | InvalidationStrategy::InvestigateViolation
+        | InvalidationStrategy::Patrol => {
             conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
         }
         InvalidationStrategy::TreatWounds => treat_wounds_conditions(goal, &mut conditions),

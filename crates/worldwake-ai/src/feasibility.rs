@@ -184,12 +184,15 @@ fn goal_specific_feasibility(
             }
             None
         }
-        (FeasibilityStrategy::PlaceMatch, GoalKind::InvestigateViolation { place, .. }) => {
+        (
+            FeasibilityStrategy::PlaceMatch,
+            GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place },
+        ) => {
             let agent_place = view.effective_place(agent)?;
             if agent_place == *place {
                 Some(FeasibilityHint::Likely)
             } else {
-                None // Uncertain — needs travel
+                None
             }
         }
         (strategy, goal_kind) => {
@@ -908,6 +911,35 @@ mod tests {
             violation_id: worldwake_core::ViolationId(2),
             place,
         });
+        let blocked = empty_blocked_memory();
+
+        let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
+        assert_eq!(hint, FeasibilityHint::Uncertain);
+    }
+
+    #[test]
+    fn test_patrol_colocated_likely() {
+        let place = entity(12);
+        let view = MockView {
+            agent_place: Some(place),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::Patrol { place });
+        let blocked = empty_blocked_memory();
+
+        let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
+        assert_eq!(hint, FeasibilityHint::Likely);
+    }
+
+    #[test]
+    fn test_patrol_not_colocated_uncertain() {
+        let place = entity(12);
+        let other_place = entity(13);
+        let view = MockView {
+            agent_place: Some(other_place),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::Patrol { place });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));

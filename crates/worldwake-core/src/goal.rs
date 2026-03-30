@@ -76,6 +76,9 @@ pub enum GoalKind {
         violation_id: ViolationId,
         place: EntityId,
     },
+    Patrol {
+        place: EntityId,
+    },
     StealItem {
         target_item: EntityId,
     },
@@ -165,7 +168,9 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::ProduceCommodity { .. } => (None, None, None),
-            GoalKind::InvestigateViolation { place, .. } => (None, None, Some(place)),
+            GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
+                (None, None, Some(place))
+            }
         };
 
         Self {
@@ -531,6 +536,28 @@ mod tests {
         let goal = GoalKind::InvestigateViolation {
             violation_id: ViolationId(8),
             place,
+        };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_place_for_patrol() {
+        let place = entity_id(23, 1);
+        let key = GoalKey::from(GoalKind::Patrol { place });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, None);
+        assert_eq!(key.place, Some(place));
+    }
+
+    #[test]
+    fn patrol_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::Patrol {
+            place: entity_id(23, 2),
         };
 
         let bytes = bincode::serialize(&goal).unwrap();

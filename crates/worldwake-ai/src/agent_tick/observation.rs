@@ -394,6 +394,7 @@ fn reconcile_committed_facility_queue_intents(
             facility_intents.intents.remove(&facility);
         }
         crate::PlannerOpKind::Travel
+        | crate::PlannerOpKind::Patrol
         | crate::PlannerOpKind::Sleep
         | crate::PlannerOpKind::Relieve
         | crate::PlannerOpKind::EstablishCamp

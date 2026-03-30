@@ -20,7 +20,8 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 6. The feedback loop test requires both guards and a "thief" agent whose behavior is affected by guard presence. This depends on the thief's belief system from E17 — thieves avoid guarded places via their own beliefs.
 7. The spec's Canonical Regression Scenario F (Office Vacancy → Succession Delay → Patrol Gap → Route Predation) describes the target golden scenario class.
 8. The implemented core patrol route shape is still only `assigned_places` plus `current_index`. Golden tests should assert on that public authoritative contract and observable behavior, not invent stronger expectations about route-entry metadata that the engine does not yet model.
-9. No adjacent contradictions found.
+9. E19GUAPAT-002 only delivered patrol identity and a temporary patrol motive placeholder. Golden assertions about belief-driven patrol intensity should not be trusted until E19GUAPAT-004 replaces that placeholder with the real patrol-profile-driven motive path.
+10. No adjacent contradictions found.
 
 ## Architecture Check
 
@@ -36,6 +37,8 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 3. Route adaptation → authoritative world state: `PatrolRoute.assigned_places` grows after crime report
 4. Public order feedback → derived view: `public_order(place)` rises with guard presence, falls without
 5. Information locality → decision trace: guard at remote location has base urgency despite crimes elsewhere
+
+Before relying on layer 2, confirm E19GUAPAT-004 has replaced the current placeholder patrol score. Otherwise the golden should be corrected first rather than asserting on a provisional motive path.
 
 ## What to Change
 

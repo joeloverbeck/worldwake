@@ -10,6 +10,7 @@ use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, Materialization
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
     Travel,
+    Patrol,
     Consume,
     Sleep,
     Relieve,
@@ -71,6 +72,7 @@ pub fn build_semantics_table(
 fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
     match (def.domain, def.name.as_str()) {
         (ActionDomain::Travel, "travel") => Some(PlannerOpKind::Travel),
+        (ActionDomain::Generic, "patrol") => Some(PlannerOpKind::Patrol),
         (ActionDomain::Needs, "eat" | "drink") => Some(PlannerOpKind::Consume),
         (ActionDomain::Needs, "sleep") => Some(PlannerOpKind::Sleep),
         (ActionDomain::Needs, "toilet") => Some(PlannerOpKind::Relieve),
@@ -143,6 +145,12 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Heal => base_semantics(
             op_kind,
             true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+        ),
+        PlannerOpKind::Patrol => base_semantics(
+            op_kind,
+            false,
             false,
             PlannerTransitionKind::GoalModelFallback,
         ),
@@ -656,7 +664,7 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 mod tests {
     use super::{
         apply_hypothetical_transition, authoritative_target, authoritative_targets,
-        build_semantics_table, classify_action_def, planner_only_candidates,
+        build_semantics_table, classify_action_def, planner_only_candidates, semantics_for,
         resolve_planning_targets_with, ExpectedMaterialization, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
     };
@@ -667,11 +675,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        load_per_unit, ActionDefId, BodyCostPerTick, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TellTopic, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound,
+        load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, CommodityConsumableProfile,
+        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
+        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Permille, Quantity, RecipeId, ResourceSource, TellTopic, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
@@ -1277,6 +1285,7 @@ mod tests {
     fn planner_op_kind_covers_exactly_current_phase_two_families() {
         let all = [
             PlannerOpKind::Travel,
+            PlannerOpKind::Patrol,
             PlannerOpKind::Consume,
             PlannerOpKind::Sleep,
             PlannerOpKind::Relieve,
@@ -1300,7 +1309,7 @@ mod tests {
             PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 22);
+        assert_eq!(all.len(), 23);
     }
 
     #[test]
@@ -1519,6 +1528,46 @@ mod tests {
             tell_semantics.transition_kind,
             PlannerTransitionKind::GoalModelFallback
         );
+    }
+
+    #[test]
+    fn patrol_semantics_remain_leaf_only_non_barrier_fallback() {
+        let mut def = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .cloned()
+            .expect("establish_camp should exist in test registry");
+        def.id = ActionDefId(77);
+        def.name = "patrol".to_string();
+        def.domain = ActionDomain::Generic;
+        def.payload = ActionPayload::None;
+        def.targets.clear();
+
+        let semantics = semantics_for(
+            &def,
+            PlannerOpKind::Patrol,
+        );
+
+        assert_eq!(semantics.op_kind, PlannerOpKind::Patrol);
+        assert!(!semantics.may_appear_mid_plan);
+        assert!(!semantics.is_materialization_barrier);
+        assert_eq!(semantics.transition_kind, PlannerTransitionKind::GoalModelFallback);
+    }
+
+    #[test]
+    fn classify_action_def_maps_patrol_generic_action() {
+        let mut def = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .cloned()
+            .expect("establish_camp should exist in test registry");
+        def.id = ActionDefId(78);
+        def.name = "patrol".to_string();
+        def.domain = ActionDomain::Generic;
+        def.payload = ActionPayload::None;
+        def.targets.clear();
+
+        assert_eq!(classify_action_def(&def), Some(PlannerOpKind::Patrol));
     }
 
     #[test]

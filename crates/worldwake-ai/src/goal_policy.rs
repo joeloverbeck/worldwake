@@ -173,6 +173,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
         | GoalKind::InvestigateViolation { .. }
+        | GoalKind::Patrol { .. }
         | GoalKind::StealItem { .. }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalFamilyPolicy {
@@ -313,6 +314,9 @@ mod tests {
             },
             GoalKind::InvestigateViolation {
                 violation_id: ViolationId(1),
+                place: dummy_entity(),
+            },
+            GoalKind::Patrol {
                 place: dummy_entity(),
             },
             GoalKind::StealItem {
