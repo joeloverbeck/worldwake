@@ -4,8 +4,9 @@ use crate::{
     register_defend_action, register_establish_camp_action, register_exile_action,
     register_fine_action, register_harvest_actions, register_heal_action,
     register_investigate_action, register_loot_action, register_needs_actions,
-    register_office_actions, register_queue_for_facility_use_action, register_tell_action,
-    register_trade_action, register_transport_actions, register_travel_actions,
+    register_office_actions, register_patrol_action, register_queue_for_facility_use_action,
+    register_tell_action, register_trade_action, register_transport_actions,
+    register_travel_actions,
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
@@ -40,6 +41,7 @@ pub fn register_all_actions(
     let _ = register_heal_action(defs, handlers);
     let _ = register_establish_camp_action(defs, handlers);
     let _ = register_investigate_action(defs, handlers);
+    let _ = register_patrol_action(defs, handlers);
     let _ = register_ask_witness_action(defs, handlers);
     let _ = register_accuse_action(defs, handlers);
     let _ = register_fine_action(defs, handlers);
@@ -101,6 +103,7 @@ mod tests {
             "heal",
             "establish_camp",
             "investigate",
+            "patrol",
             "ask_witness",
             "accuse",
             "fine",

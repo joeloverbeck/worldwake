@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test-only ticket
-**Deps**: E19GUAPAT-001 through E19GUAPAT-006 (all patrol infrastructure must be delivered)
+**Deps**: E19GUAPAT-001 through E19GUAPAT-006, E19GUAPAT-008 (all patrol infrastructure plus final patrol timing contract must be delivered)
 
 ## Problem
 
@@ -21,14 +21,16 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 7. The spec's Canonical Regression Scenario F (Office Vacancy → Succession Delay → Patrol Gap → Route Predation) describes the target golden scenario class.
 8. The implemented core patrol route shape is still only `assigned_places` plus `current_index`. Golden tests should assert on that public authoritative contract and observable behavior, not invent stronger expectations about route-entry metadata that the engine does not yet model.
 9. E19GUAPAT-002 only delivered patrol identity and a temporary patrol motive placeholder. Golden assertions about belief-driven patrol intensity should not be trusted until E19GUAPAT-004 replaces that placeholder with the real patrol-profile-driven motive path.
-10. No adjacent contradictions found.
+10. E19GUAPAT-008 is now required to finalize the patrol timing data contract before these goldens should lock in patrol-cycle timing assumptions. The currently delivered patrol action uses `base_patrol_interval` as a dwell input only because `PatrolProfile` still overloads cadence and dwell semantics; goldens should not canonize that intermediate model.
+11. No adjacent contradictions found.
 
 ## Architecture Check
 
 1. Golden tests as integration tests in `crates/worldwake-ai/tests/` follow the established pattern. These tests exercise the full pipeline: candidate generation → plan search → action execution → world state mutation.
 2. Testing the feedback loop requires enough simulation ticks for convergence. The test should assert directional change (patrol motive increases after crime, decreases after period of no crime) rather than exact numeric values.
 3. Route assertions should stay at the current authoritative surface: waypoint order membership and `current_index`. If a future patrol ticket upgrades the route model, the golden tests can move with that new contract then.
-4. No backwards-compatibility shims.
+4. Patrol timing assertions should stay qualitative until E19GUAPAT-008 lands. After that ticket, the goldens may assert against the explicit dwell contract, not the interim overloaded `base_patrol_interval` behavior.
+5. No backwards-compatibility shims.
 
 ## Verification Layers
 
@@ -38,7 +40,7 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 4. Public order feedback → derived view: `public_order(place)` rises with guard presence, falls without
 5. Information locality → decision trace: guard at remote location has base urgency despite crimes elsewhere
 
-Before relying on layer 2, confirm E19GUAPAT-004 has replaced the current placeholder patrol score. Otherwise the golden should be corrected first rather than asserting on a provisional motive path.
+Before relying on layer 2, confirm E19GUAPAT-004 has replaced the current placeholder patrol score. Before relying on exact patrol dwell/cycle timing, confirm E19GUAPAT-008 has replaced the overloaded patrol timing field with the final explicit dwell contract.
 
 ## What to Change
 

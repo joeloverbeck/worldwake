@@ -434,6 +434,10 @@ pub trait RuntimeBeliefView {
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
+    fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
+        let _ = agent;
+        None
+    }
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
@@ -1189,6 +1193,11 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
+        DurationExpr::ActorPatrolProfile => view
+            .patrol_profile(actor)
+            .map(|profile| {
+                ActionDuration::new(crate::action_semantics::patrol_duration_ticks(&profile))
+            }),
         DurationExpr::ActorTheftDisposition => view
             .theft_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.steal_duration_ticks.get())),
@@ -1251,8 +1260,8 @@ mod tests {
     use super::estimate_duration_from_beliefs;
     use crate::{ActionPayload, DurationExpr, PerAgentBeliefView};
     use worldwake_core::{
-        build_prototype_world, AgentBeliefStore, CauseRef, ControlSource, EventLog, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, AgentBeliefStore, CauseRef, ControlSource, EventLog, PatrolProfile,
+        Permille, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -1296,6 +1305,43 @@ mod tests {
                 &ActionPayload::None,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn estimate_duration_from_beliefs_uses_patrol_profile_duration_contract() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_agent_belief_store(actor, AgentBeliefStore::default())
+                .unwrap();
+            txn.set_component_patrol_profile(
+                actor,
+                PatrolProfile {
+                    base_patrol_interval: 8,
+                    vigilance: Permille::new(625).unwrap(),
+                    route_adaptation_sensitivity: Permille::new(400).unwrap(),
+                    patrol_motive_weight: Permille::new(550).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            estimate_duration_from_beliefs(
+                &view,
+                actor,
+                &DurationExpr::ActorPatrolProfile,
+                &[],
+                &ActionPayload::None,
+            ),
+            Some(crate::ActionDuration::new(13))
         );
     }
 }

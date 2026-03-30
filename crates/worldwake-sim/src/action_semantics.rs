@@ -2,8 +2,8 @@ use crate::{ActionDuration, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, Permille,
-    PlaceTag, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
+    CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, PatrolProfile,
+    Permille, PlaceTag, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -114,6 +114,7 @@ pub enum DurationExpr {
         kind: MetabolismDurationKind,
     },
     ActorTradeDisposition,
+    ActorPatrolProfile,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
     ActorWitnessQueryDisposition,
@@ -136,6 +137,7 @@ impl DurationExpr {
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
+            | Self::ActorPatrolProfile
             | Self::ActorTheftDisposition
             | Self::ActorInvestigationDisposition
             | Self::ActorWitnessQueryDisposition
@@ -201,6 +203,10 @@ impl DurationExpr {
                 .get_component_trade_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
+            Self::ActorPatrolProfile => world
+                .get_component_patrol_profile(actor)
+                .map(|profile| ActionDuration::new(patrol_duration_ticks(profile)))
+                .ok_or_else(|| format!("actor {actor} lacks patrol profile")),
             Self::ActorTheftDisposition => world
                 .get_component_theft_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.steal_duration_ticks.get()))
@@ -311,6 +317,13 @@ impl DurationExpr {
     }
 }
 
+#[must_use]
+pub(crate) fn patrol_duration_ticks(profile: &PatrolProfile) -> u32 {
+    let base = profile.base_patrol_interval.max(1);
+    let scaled = u32::from(profile.vigilance.value()) * base / 1000;
+    base.saturating_add(scaled).max(1)
+}
+
 pub(crate) fn consultation_duration_ticks(
     consultation_ticks: u32,
     consultation_speed_factor: Permille,
@@ -343,9 +356,10 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, prototype_place_entity, BanditFactionPolicy, CauseRef,
         CombatProfile, CombatWeaponRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, PrototypePlace, Quantity,
-        RecipeId, RecordData, RecordKind, TheftDispositionProfile, Tick, TradeDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        EventLog, HomeostaticNeeds, MetabolismProfile, PatrolProfile, Permille, PrototypePlace,
+        Quantity, RecipeId, RecordData, RecordKind, TheftDispositionProfile, Tick,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -434,7 +448,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 14] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 15] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -444,6 +458,7 @@ mod tests {
             kind: MetabolismDurationKind::Wash,
         },
         DurationExpr::ActorTradeDisposition,
+        DurationExpr::ActorPatrolProfile,
         DurationExpr::ActorTheftDisposition,
         DurationExpr::ActorInvestigationDisposition,
         DurationExpr::ActorWitnessQueryDisposition,
@@ -506,6 +521,7 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
+        assert_eq!(DurationExpr::ActorPatrolProfile.fixed_ticks(), None);
         assert_eq!(DurationExpr::ActorTheftDisposition.fixed_ticks(), None);
         assert_eq!(
             DurationExpr::ActorInvestigationDisposition.fixed_ticks(),
@@ -761,6 +777,16 @@ mod tests {
                 },
             )
             .unwrap();
+            txn.set_component_patrol_profile(
+                actor,
+                PatrolProfile {
+                    base_patrol_interval: 8,
+                    vigilance: pm(625),
+                    route_adaptation_sensitivity: pm(400),
+                    patrol_motive_weight: pm(550),
+                },
+            )
+            .unwrap();
             txn.set_component_theft_disposition_profile(
                 actor,
                 TheftDispositionProfile {
@@ -815,6 +841,12 @@ mod tests {
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
             ActionDuration::new(11)
+        );
+        assert_eq!(
+            DurationExpr::ActorPatrolProfile
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(13)
         );
         assert_eq!(
             DurationExpr::ActorTheftDisposition
@@ -926,6 +958,12 @@ mod tests {
             actor
         };
 
+        assert_eq!(
+            DurationExpr::ActorPatrolProfile
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap_err(),
+            format!("actor {actor} lacks patrol profile")
+        );
         assert_eq!(
             DurationExpr::ActorInvestigationDisposition
                 .resolve_for(&world, actor, &[], &ActionPayload::None)

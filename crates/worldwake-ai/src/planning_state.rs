@@ -7,10 +7,10 @@ use worldwake_core::{
     BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource,
-    SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-    TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    PatrolProfile, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
@@ -1384,6 +1384,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
     }
 
+    fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.patrol_profile.clone())
+    }
+
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
@@ -1827,11 +1834,11 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, GrantedFacilityUse,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, Permille, Quantity, RecipeId,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
-        SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, Permille,
+        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource,
+        SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+        TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
@@ -1863,6 +1870,7 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
+        patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
@@ -1912,6 +1920,7 @@ mod tests {
                 thresholds: BTreeMap::new(),
                 metabolism_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
+                patrol_profiles: BTreeMap::new(),
                 epistemic_profiles: BTreeMap::new(),
                 theft_profiles: BTreeMap::new(),
                 justice_profiles: BTreeMap::new(),
@@ -2140,6 +2149,10 @@ mod tests {
 
         fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
             self.trade_profiles.get(&agent).cloned()
+        }
+
+        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+            self.patrol_profiles.get(&agent).cloned()
         }
 
         fn epistemic_disposition_profile(
@@ -3850,6 +3863,15 @@ mod tests {
                 demand_memory_retention_ticks: 12,
             },
         );
+        view.patrol_profiles.insert(
+            actor,
+            PatrolProfile {
+                base_patrol_interval: 8,
+                vigilance: pm(625),
+                route_adaptation_sensitivity: pm(400),
+                patrol_motive_weight: pm(550),
+            },
+        );
         view.epistemic_profiles.insert(
             actor,
             EpistemicDispositionProfile {
@@ -3938,6 +3960,10 @@ mod tests {
             view.trade_profiles.get(&actor).cloned()
         );
         assert_eq!(
+            RuntimeBeliefView::patrol_profile(&state, actor),
+            view.patrol_profiles.get(&actor).cloned()
+        );
+        assert_eq!(
             RuntimeBeliefView::epistemic_disposition_profile(&state, actor),
             view.epistemic_profiles.get(&actor).cloned()
         );
@@ -3985,6 +4011,11 @@ mod tests {
                 ),
                 PlannerDurationDependency::ActorTradeDisposition => (
                     DurationExpr::ActorTradeDisposition,
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::ActorPatrolProfile => (
+                    DurationExpr::ActorPatrolProfile,
                     Vec::new(),
                     ActionPayload::None,
                 ),

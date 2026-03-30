@@ -6,6 +6,7 @@ pub enum PlannerDurationDependency {
     ActorMetabolism,
     BanditCampEstablishmentProfile,
     ActorTradeDisposition,
+    ActorPatrolProfile,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
     ActorWitnessQueryDisposition,
@@ -16,11 +17,12 @@ pub enum PlannerDurationDependency {
     TravelToTarget,
 }
 
-pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 12] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 13] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
     PlannerDurationDependency::BanditCampEstablishmentProfile,
     PlannerDurationDependency::ActorTradeDisposition,
+    PlannerDurationDependency::ActorPatrolProfile,
     PlannerDurationDependency::ActorTheftDisposition,
     PlannerDurationDependency::ActorInvestigationDisposition,
     PlannerDurationDependency::ActorWitnessQueryDisposition,
@@ -42,6 +44,7 @@ impl PlannerDurationDependency {
             Self::ActorMetabolism => "ActorMetabolism",
             Self::BanditCampEstablishmentProfile => "BanditCampEstablishmentProfile",
             Self::ActorTradeDisposition => "ActorTradeDisposition",
+            Self::ActorPatrolProfile => "ActorPatrolProfile",
             Self::ActorTheftDisposition => "ActorTheftDisposition",
             Self::ActorInvestigationDisposition => "ActorInvestigationDisposition",
             Self::ActorWitnessQueryDisposition => "ActorWitnessQueryDisposition",
@@ -58,6 +61,7 @@ impl PlannerDurationDependency {
             DurationExpr::TargetConsumable { .. } => Some(Self::TargetConsumable),
             DurationExpr::ActorMetabolism { .. } => Some(Self::ActorMetabolism),
             DurationExpr::ActorTradeDisposition => Some(Self::ActorTradeDisposition),
+            DurationExpr::ActorPatrolProfile => Some(Self::ActorPatrolProfile),
             DurationExpr::ActorTheftDisposition => Some(Self::ActorTheftDisposition),
             DurationExpr::ActorInvestigationDisposition => {
                 Some(Self::ActorInvestigationDisposition)
