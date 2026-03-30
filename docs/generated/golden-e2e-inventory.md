@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 12
-- Files contributing `golden_*` tests: 12
-- Total `golden_*` tests: 202
+- Golden test files: 13
+- Files contributing `golden_*` tests: 13
+- Total `golden_*` tests: 209
 
 ## Per-File Inventory
 
@@ -25,6 +25,7 @@ Do not hand-edit it.
 | `golden_supply_chain.rs` | 6 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 6 |
+| `golden_travel_physiology.rs` | 7 |
 
 ### `golden_ai_decisions.rs`
 
@@ -263,3 +264,13 @@ Do not hand-edit it.
 - `golden_merchant_restock_return_stock_replays_deterministically`
 - `golden_local_trade_start_failure_recovers_via_production_fallback`
 - `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically`
+
+### `golden_travel_physiology.rs`
+
+- `golden_travel_escalation`
+- `golden_critical_bladder_local_relief`
+- `golden_agent_diversity`
+- `golden_travel_interrupt_from_bladder_escalation`
+- `golden_latrine_preferred`
+- `golden_wilderness_fallback`
+- `golden_deprivation_accident`

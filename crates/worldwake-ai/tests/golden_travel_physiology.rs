@@ -49,7 +49,7 @@ fn setup_food_at_orchard(h: &mut GoldenHarness) {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: Travel Need Escalation
+// Scenario 58: Travel Need Escalation
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI, Travel, Production
@@ -195,7 +195,7 @@ fn golden_travel_escalation() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 2: Critical Bladder Local Relief
+// Scenario 59: Critical Bladder Local Relief
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI
@@ -333,7 +333,7 @@ fn golden_critical_bladder_local_relief() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 3: Agent Diversity in Travel Escalation
+// Scenario 60: Agent Diversity in Travel Escalation
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI, Travel, Production
@@ -510,7 +510,7 @@ fn golden_agent_diversity() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 4: Travel Interrupt from Bladder Escalation
+// Scenario 61: Travel Interrupt from Bladder Escalation
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI, Travel, Production
@@ -684,7 +684,7 @@ fn golden_travel_interrupt_from_bladder_escalation() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 5: Latrine Preferred — toilet at Latrine place
+// Scenario 62: Latrine Preferred — toilet at Latrine place
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI
@@ -861,7 +861,7 @@ fn golden_latrine_preferred() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 6: Wilderness Fallback — relieve_wilderness at outdoor place
+// Scenario 63: Wilderness Fallback — relieve_wilderness at outdoor place
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI
@@ -1037,7 +1037,7 @@ fn golden_wilderness_fallback() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 7: Deprivation Accident — no relief option available
+// Scenario 64: Deprivation Accident — no relief option available
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI

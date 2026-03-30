@@ -1,6 +1,6 @@
 # GOLDOC-001: Add needs-assertion and system-ordering guidance to golden testing docs
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — documentation only
@@ -103,3 +103,13 @@ Place after the "Outdoor Place Affordance Trap" section. Content should cover:
 1. `cargo test --workspace`
 2. `python3 scripts/golden_inventory.py --write --check-docs`
 3. `scripts/verify.sh`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**:
+  - Added "Needs-State Assertion Guidance" section to `docs/golden-e2e-testing.md` after Assertion Hierarchy, covering transient vs. durable needs state, break-at-commit pattern, action-trace proof, and bounded tolerance.
+  - Added "Deprivation Ordering Trap" section after Outdoor Place Affordance Trap, covering actions-before-systems tick ordering, `effective_place` assertions, and Principle 9/26 references.
+  - Renumbered `golden_travel_physiology.rs` scenario identifiers from 1–7 to 58–64 to resolve duplicate scenario ID errors in `golden_inventory.py`.
+- **Deviations**: Scenario renumbering was not in the original ticket but was required to clear pre-existing `golden_inventory.py` duplicate-ID errors introduced by the same file.
+- **Verification**: `cargo test --workspace` passes; `python3 scripts/golden_inventory.py --write --check-docs` reports clean (79 scenario blocks, 0 duplicates).

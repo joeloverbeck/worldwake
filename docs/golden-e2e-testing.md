@@ -28,6 +28,29 @@ Prefer the strongest, most semantic assertion surface available:
 When multiple semantic surfaces could prove the invariant, prefer the earliest causal boundary that proves the contract. Only widen the golden to later execution or durable-state consequences when that later boundary is itself part of the promise under test.
 For delivery or restock scenarios, do not overstate the durable ownership boundary. If the live architecture lawfully satisfies the contract by materializing stock at the destination or home market, assert that destination-local stock exists there instead of forcing "item remains in actor inventory" as the success condition.
 
+## Needs-State Assertion Guidance
+
+Needs values (bladder, hunger, thirst, fatigue, dirtiness) are **transient concrete state** (Principle 3: Concrete State Over Abstract Scores). A relief action resets the value at commit (e.g., `toilet` sets bladder to `pm(0)`), but basal metabolism immediately resumes accumulating drift on every subsequent tick.
+
+Asserting `need == pm(0)` at an arbitrary tick count after relief will fail whenever basal drift has accumulated between the commit tick and the assertion tick.
+
+### Preferred patterns
+
+- **Break at commit**: loop ticks until action trace shows the relief action committed, then assert state immediately at that tick boundary. This is the strongest pattern because it asserts the reset at the exact causal moment.
+- **Action trace proof**: assert that the relief action committed (proving the need was reset) rather than sampling authoritative state at a later tick. This is appropriate when the contract is "relief happened" rather than "need is at a specific value."
+- **Bounded tolerance**: if testing post-commit state at a later tick, use `value <= basal_rate * max_ticks_since_commit` rather than exact equality. Name the basal rate and tick window explicitly in the test rationale.
+
+### Transient vs. durable distinction
+
+Not all consequences of a needs action are transient:
+
+- **Transient**: the need value itself (bladder, hunger, etc.) — continues evolving from basal metabolism after reset.
+- **Durable**: waste entity creation (persists as an `ItemLot`), dirtiness penalty from accidents (only removed by explicit wash action), deprivation wounds (persist until healed).
+
+When a golden test cares about the durable consequence (e.g., waste was created, wound exists), assert the durable entity or component directly. When the test cares about the transient need value, use the break-at-commit or bounded-tolerance patterns above.
+
+Reference: Principle 3 (Concrete State Over Abstract Scores) in `docs/FOUNDATIONS.md`.
+
 ## Ordering Rules
 
 When a test needs ordering, state explicitly which ordering is the contract:
@@ -168,6 +191,26 @@ To force travel for relief:
 This generalizes: any scenario that relies on travel must ensure no local affordance satisfies the motivating goal at the starting place.
 
 The canonical source is `OUTDOOR_RELIEF_TAGS` in `crates/worldwake-core/src/topology.rs`.
+
+## Deprivation Ordering Trap
+
+The tick execution order is: drain inputs → progress actions → run systems. Among systems, Needs runs first (`system_manifest.rs`), but **all actions complete before any system runs** (Principle 9: Scheduling, Simultaneity, and Tie-Breaking Are Part of the World Model).
+
+This means an agent can complete a 1-tick travel action within the same tick **before** the needs system fires deprivation consequences. A deprivation accident (e.g., waste creation from bladder failure) is created at the agent's `effective_place` at the time the needs system runs — which may not be the agent's starting place if travel completed first.
+
+This applies to any golden test where a system-level consequence must fire at a specific place. The agent's starting location is not guaranteed to be their location when systems execute in the same tick.
+
+### Preferred patterns
+
+- **Check agent's actual location**: use `h.world.effective_place(agent)` for waste or consequence location assertions rather than hardcoding the starting place. The waste appears where the agent is when the needs system runs, not where they were when the tick began.
+- **Race the accident**: set `bladder_accident_tolerance_ticks` to 1 so the accident fires on the first critical tick, but accept that travel may still complete first within that tick.
+- **No fully isolated indoor place exists**: every indoor prototype place is within planner budget of PublicLatrine. Deprivation accident tests cannot rely on isolation alone to prevent the agent from traveling away; they must use low tolerance values to trigger the accident before replanning can intervene.
+
+### Why this happens (Principle 26)
+
+The needs system reads state written by completed actions (Principle 26: Systems Interact Through State, Not Through Each Other). It does not coordinate with the travel system directly. If travel commits first (placing the agent at a new location) and then the needs system fires a deprivation consequence, that consequence lands at the new location because that is the authoritative placement when the system runs.
+
+Reference: `system_manifest.rs` for tick execution order; Principle 9 (Scheduling) and Principle 26 (Systems Interact Through State) in `docs/FOUNDATIONS.md`.
 
 ## Multi-Hop Travel Observation
 
