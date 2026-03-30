@@ -2610,6 +2610,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: Some(ActionState::Empty),
+            body_cost_override: None,
         });
         {
             let mut txn = new_txn(&mut world, 1);
@@ -2673,6 +2674,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: Some(ActionState::Empty),
+            body_cost_override: None,
         });
         reset_hooks();
 
@@ -2906,6 +2908,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: Some(ActionState::Empty),
+            body_cost_override: None,
         });
         scheduler.input_queue_mut().enqueue(
             Tick(0),

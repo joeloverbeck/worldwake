@@ -136,12 +136,13 @@ fn aggregate_body_costs(
         let def = action_defs
             .get(action.def_id)
             .ok_or_else(|| SystemError::new(format!("missing action def for {}", action.def_id)))?;
+        let cost = action.body_cost_override.unwrap_or(def.body_cost_per_tick);
         costs
             .entry(action.actor)
             .and_modify(|aggregated| {
-                *aggregated = combine_body_costs(*aggregated, def.body_cost_per_tick);
+                *aggregated = combine_body_costs(*aggregated, cost);
             })
-            .or_insert(def.body_cost_per_tick);
+            .or_insert(cost);
     }
 
     Ok(costs)
@@ -175,7 +176,7 @@ fn apply_action_body_cost(needs: HomeostaticNeeds, cost: BodyCostPerTick) -> Hom
         needs.hunger.saturating_add(cost.hunger_delta),
         needs.thirst.saturating_add(cost.thirst_delta),
         needs.fatigue.saturating_add(cost.fatigue_delta),
-        needs.bladder,
+        needs.bladder.saturating_add(cost.bladder_delta),
         needs.dirtiness.saturating_add(cost.dirtiness_delta),
     )
 }
@@ -310,7 +311,7 @@ fn critical_ticks(
 
 #[cfg(test)]
 mod tests {
-    use super::{needs_system, worsen_or_create_deprivation_wound};
+    use super::{aggregate_body_costs, apply_action_body_cost, needs_system, worsen_or_create_deprivation_wound};
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -318,7 +319,7 @@ mod tests {
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
-        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, EntityId,
         DeprivationKind, DriveThresholds, EventLog, EventTag, EventView, HomeostaticNeeds,
         MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
         WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
@@ -551,16 +552,16 @@ mod tests {
         seed_agent(
             &mut world,
             agent,
-            HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(0), pm(100)),
+            HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(50), pm(100)),
             DeprivationExposure::default(),
-            metabolism(1, 1, 1, 0, 1),
+            metabolism(1, 1, 1, 1, 1),
             DriveThresholds::default(),
         );
 
         let mut action_defs = ActionDefRegistry::new();
         register_action(
             &mut action_defs,
-            BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(0), pm(4)),
+            BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7), pm(4)),
         );
         let active_actions = BTreeMap::from([(
             ActionInstanceId(0),
@@ -575,6 +576,7 @@ mod tests {
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: Some(ActionState::Empty),
+                body_cost_override: None,
             },
         )]);
         let mut event_log = EventLog::new();
@@ -589,16 +591,88 @@ mod tests {
         ))
         .unwrap();
 
+        // basal(1 each) + body_cost(2,3,5,7,4) = +3,+4,+6,+8,+5
         assert_eq!(
             world.get_component_homeostatic_needs(agent),
             Some(&HomeostaticNeeds::new(
                 pm(103),
                 pm(104),
                 pm(106),
-                pm(0),
+                pm(58),
                 pm(105)
             ))
         );
+    }
+
+    #[test]
+    fn apply_action_body_cost_includes_bladder() {
+        let needs = HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(200), pm(100));
+        let cost = BodyCostPerTick::new(pm(0), pm(0), pm(0), pm(15), pm(0));
+        let result = apply_action_body_cost(needs, cost);
+        assert_eq!(result.bladder, pm(215));
+    }
+
+    #[test]
+    fn aggregate_body_costs_prefers_instance_override() {
+        let mut action_defs = ActionDefRegistry::new();
+        register_action(
+            &mut action_defs,
+            BodyCostPerTick::new(pm(10), pm(10), pm(10), pm(10), pm(10)),
+        );
+        let actor = EntityId {
+            slot: 1,
+            generation: 1,
+        };
+        let override_cost = BodyCostPerTick::new(pm(99), pm(88), pm(77), pm(66), pm(55));
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(0),
+            ActionInstance {
+                instance_id: ActionInstanceId(0),
+                def_id: ActionDefId(0),
+                payload: ActionPayload::None,
+                actor,
+                targets: Vec::new(),
+                start_tick: Tick(1),
+                remaining_duration: ActionDuration::new(1),
+                status: ActionStatus::Active,
+                reservation_ids: Vec::new(),
+                local_state: None,
+                body_cost_override: Some(override_cost),
+            },
+        )]);
+
+        let costs = aggregate_body_costs(&action_defs, &active_actions).unwrap();
+        assert_eq!(costs[&actor], override_cost);
+    }
+
+    #[test]
+    fn aggregate_body_costs_falls_back_to_def_when_no_override() {
+        let mut action_defs = ActionDefRegistry::new();
+        let def_cost = BodyCostPerTick::new(pm(10), pm(20), pm(30), pm(40), pm(50));
+        register_action(&mut action_defs, def_cost);
+        let actor = EntityId {
+            slot: 1,
+            generation: 1,
+        };
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(0),
+            ActionInstance {
+                instance_id: ActionInstanceId(0),
+                def_id: ActionDefId(0),
+                payload: ActionPayload::None,
+                actor,
+                targets: Vec::new(),
+                start_tick: Tick(1),
+                remaining_duration: ActionDuration::new(1),
+                status: ActionStatus::Active,
+                reservation_ids: Vec::new(),
+                local_state: None,
+                body_cost_override: None,
+            },
+        )]);
+
+        let costs = aggregate_body_costs(&action_defs, &active_actions).unwrap();
+        assert_eq!(costs[&actor], def_cost);
     }
 
     #[test]

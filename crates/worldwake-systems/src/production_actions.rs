@@ -1154,6 +1154,7 @@ mod tests {
             status: worldwake_sim::ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let err = harvest_payload(&def, &instance).unwrap_err();
@@ -1795,6 +1796,7 @@ mod tests {
             status: worldwake_sim::ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let err = craft_payload(&def, &instance).unwrap_err();

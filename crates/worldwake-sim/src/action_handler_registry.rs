@@ -86,6 +86,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(8)],
             local_state: None,
+            body_cost_override: None,
         }
     }
 

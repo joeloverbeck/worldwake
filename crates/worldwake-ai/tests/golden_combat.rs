@@ -1111,6 +1111,7 @@ fn build_living_combat_scenario(
         status: ActionStatus::Active,
         reservation_ids: Vec::new(),
         local_state: None,
+        body_cost_override: None,
     });
 
     let initial_coin_total = total_live_lot_quantity(&h.world, CommodityKind::Coin);
@@ -1248,6 +1249,7 @@ fn build_defend_changed_conditions_scenario(
         status: ActionStatus::Active,
         reservation_ids: Vec::new(),
         local_state: None,
+        body_cost_override: None,
     });
     let mut txn = new_txn(&mut h.world, 0);
     txn.set_component_combat_stance(defender, CombatStance::Defending)
@@ -1555,6 +1557,7 @@ fn golden_defend_replans_after_finite_stance_expires() {
         status: ActionStatus::Active,
         reservation_ids: Vec::new(),
         local_state: None,
+        body_cost_override: None,
     };
     h.scheduler.insert_action(defend_instance);
     let mut txn = new_txn(&mut h.world, 0);

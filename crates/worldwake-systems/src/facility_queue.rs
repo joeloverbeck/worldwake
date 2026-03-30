@@ -482,6 +482,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: Some(ActionState::Empty),
+            body_cost_override: None,
         }
     }
 

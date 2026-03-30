@@ -360,6 +360,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: vec![reservation],
             local_state: Some(ActionState::Empty),
+            body_cost_override: None,
         });
 
         let mut rng = DeterministicRng::new(Seed([0x44; 32]));

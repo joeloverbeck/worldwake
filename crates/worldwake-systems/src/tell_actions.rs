@@ -1012,6 +1012,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         }
     }
 
@@ -1789,6 +1790,7 @@ mod tests {
             status: worldwake_sim::ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let mut rng = test_rng(1);
         let mut txn = new_txn(&mut world, 5);
@@ -2373,6 +2375,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
@@ -2506,6 +2509,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
@@ -2570,6 +2574,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let second = ActionInstance {
             instance_id: worldwake_sim::ActionInstanceId(1),
@@ -2587,6 +2592,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &first, 1, 8);
@@ -2645,6 +2651,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
@@ -3480,6 +3487,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);

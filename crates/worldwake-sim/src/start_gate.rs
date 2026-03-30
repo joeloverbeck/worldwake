@@ -137,6 +137,7 @@ fn build_action_instance(
         status: ActionStatus::Active,
         reservation_ids,
         local_state: None,
+        body_cost_override: None,
     }
 }
 
@@ -1131,6 +1132,7 @@ mod tests {
                 status: crate::ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,
+                body_cost_override: None,
             },
         )]);
         let mut log = EventLog::new();

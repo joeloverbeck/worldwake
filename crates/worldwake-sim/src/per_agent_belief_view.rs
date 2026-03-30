@@ -1948,6 +1948,7 @@ mod tests {
                 status: ActionStatus::Active,
                 reservation_ids: Vec::new(),
                 local_state: None,
+                body_cost_override: None,
             },
         );
         let runtime = PerAgentBeliefRuntime::new(&actions, &defs);

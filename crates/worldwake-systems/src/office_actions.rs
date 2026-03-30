@@ -1899,6 +1899,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &instance, 1, 3);
@@ -1963,6 +1964,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(2);
@@ -2000,6 +2002,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(3);
@@ -2035,6 +2038,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, ids[1], &instance, 4, 3);
@@ -2071,6 +2075,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, ids[1], &instance, 5, 3);
@@ -2097,6 +2102,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let second_candidate;
@@ -2265,6 +2271,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let log = commit_action(&mut fx.world, &defs, &handlers, ids[3], &instance, 14, 3);
@@ -2421,6 +2428,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let log = commit_action(&mut fx.world, &defs, &handlers, ids[4], &instance, 15, 3);
@@ -2492,6 +2500,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &instance, 8, 3);
@@ -2527,6 +2536,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[1], &instance, 9, 3);
@@ -2565,6 +2575,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[2], &instance, 10, 3);
@@ -2605,6 +2616,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let threaten = ActionInstance {
             instance_id: ActionInstanceId(7),
@@ -2617,6 +2629,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let declare_support = ActionInstance {
             instance_id: ActionInstanceId(8),
@@ -2632,6 +2645,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let press_force_claim = ActionInstance {
             instance_id: ActionInstanceId(9),
@@ -2646,6 +2660,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
         let yield_force_claim = ActionInstance {
             instance_id: ActionInstanceId(10),
@@ -2660,6 +2675,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: Vec::new(),
             local_state: None,
+            body_cost_override: None,
         };
 
         let bribe_log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &bribe, 11, 3);

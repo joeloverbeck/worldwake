@@ -1,6 +1,6 @@
 # E20COMBEH-002: Instance-level body cost override and bladder cost wiring
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-sim (ActionInstance), worldwake-systems (needs system)
@@ -28,7 +28,7 @@ Body costs are currently read from the static `ActionDef.body_cost_per_tick` fie
 
 1. Bladder delta application → focused unit test (apply_action_body_cost with non-zero bladder_delta)
 2. Instance override precedence → focused unit test (aggregate prefers override over def)
-3. Combine includes bladder → focused unit test (combine_body_costs adds bladder_delta)
+3. ~~Combine includes bladder~~ → already done by E20COMBEH-001
 4. Existing body cost behavior unchanged → existing test updated + passes
 
 ## What to Change
@@ -63,9 +63,9 @@ fn apply_action_body_cost(needs: HomeostaticNeeds, cost: BodyCostPerTick) -> Hom
 }
 ```
 
-### 4. Wire `bladder_delta` into `combine_body_costs`
+### 4. ~~Wire `bladder_delta` into `combine_body_costs`~~ (ALREADY DONE)
 
-Update `combine_body_costs` to include `bladder_delta` in the saturating add.
+`combine_body_costs` already includes `bladder_delta` (line 155). Delivered by E20COMBEH-001. No change needed.
 
 ### 5. Fix all ActionInstance construction sites
 
@@ -114,3 +114,15 @@ Grep for `ActionInstance {` and add `body_cost_override: None` to every construc
 1. `cargo test -p worldwake-systems`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**:
+  - Added `body_cost_override: Option<BodyCostPerTick>` to `ActionInstance` (worldwake-sim) and set to `None` at all ~45 construction sites across 4 crates.
+  - `aggregate_body_costs` now uses `action.body_cost_override.unwrap_or(def.body_cost_per_tick)`.
+  - `apply_action_body_cost` now applies `cost.bladder_delta` instead of passing bladder through unchanged.
+  - Added 3 new tests: `apply_action_body_cost_includes_bladder`, `aggregate_body_costs_prefers_instance_override`, `aggregate_body_costs_falls_back_to_def_when_no_override`.
+  - Updated existing `needs_system_applies_active_action_body_costs` to use non-zero bladder values.
+- **Deviations**: Deliverable #4 (`combine_body_costs` bladder wiring) was already done by E20COMBEH-001 — skipped as no-op.
+- **Verification**: `cargo test --workspace` ✅, `cargo clippy --workspace` ✅

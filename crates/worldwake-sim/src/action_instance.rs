@@ -1,6 +1,6 @@
 use crate::{ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{ActionDefId, EntityId, ReservationId, Tick};
+use worldwake_core::{ActionDefId, BodyCostPerTick, EntityId, ReservationId, Tick};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionInstance {
@@ -14,6 +14,10 @@ pub struct ActionInstance {
     pub status: ActionStatus,
     pub reservation_ids: Vec<ReservationId>,
     pub local_state: Option<ActionState>,
+    /// Per-instance body cost override. When `Some`, the needs system uses this
+    /// instead of the static `ActionDef.body_cost_per_tick`. Set by action start
+    /// handlers that need dynamic body costs (e.g., travel exertion).
+    pub body_cost_override: Option<BodyCostPerTick>,
 }
 
 #[cfg(test)]
@@ -58,6 +62,7 @@ mod tests {
             status: ActionStatus::Active,
             reservation_ids: vec![ReservationId(13), ReservationId(21)],
             local_state,
+            body_cost_override: None,
         }
     }
 
