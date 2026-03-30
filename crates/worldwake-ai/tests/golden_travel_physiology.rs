@@ -191,32 +191,32 @@ fn golden_travel_escalation() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 2: Travel Interrupt from Critical Bladder
+// Scenario 2: Critical Bladder Local Relief
 // ---------------------------------------------------------------------------
 //
-// Systems: Needs, AI, Travel
-// GoalKinds: Relieve, AcquireCommodity(SelfConsume)
-// ActionDomains: Travel, Needs
-// Places: EastFieldTrail, SouthGate, VillageSquare, PublicLatrine
+// Systems: Needs, AI
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: EastFieldTrail
 // Principles: 8, 20, 26
 //
-// Setup: One agent at EastFieldTrail with high travel_bladder_multiplier
-//   (pm(800)) and initial bladder near critical threshold (pm(850)).
-//   Agent starts with high bladder — the Relieve goal dominates.
-//   EastFieldTrail is outdoor so relieve_wilderness is available.
-//   The agent relieves locally or, if it starts traveling first, the
-//   escalating bladder triggers interrupt and replan.
+// Setup: One agent at EastFieldTrail (outdoor: Trail + Field) with
+//   high travel_bladder_multiplier (pm(800)) and initial bladder near
+//   critical threshold (pm(850)). EastFieldTrail is outdoor so
+//   relieve_wilderness is locally available. The agent relieves
+//   locally without needing to travel.
 //
 // Proves: The AI detects critical bladder pressure and acts on
-//   GoalKind::Relieve. Either the agent relieves locally (wilderness)
-//   or, if travel is attempted, the interrupt system detects critical
-//   need escalation and aborts travel for replan.
+//   GoalKind::Relieve via locally available relieve_wilderness at
+//   an outdoor place. This proves the weaker invariant: critical
+//   bladder → immediate local relief. The stronger travel-interrupt
+//   invariant is covered by golden_travel_interrupt_from_bladder_escalation.
 //
 // Chain: high bladder pressure -> Relieve goal ranked highest ->
-//   agent acts on Relieve (wilderness or after travel interrupt).
+//   relieve_wilderness available locally -> agent relieves without travel.
 
 #[test]
-fn golden_travel_interrupt() {
+fn golden_critical_bladder_local_relief() {
     let mut h = GoldenHarness::new(Seed([91; 32]));
     h.enable_action_tracing();
     h.driver.enable_tracing();
@@ -502,5 +502,179 @@ fn golden_agent_diversity() {
         difference >= 5,
         "bladder difference ({difference}) should be at least 5 permille, \
          confirming multiplier-driven divergence",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 4: Travel Interrupt from Bladder Escalation
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Travel, Production
+// GoalKinds: Relieve, AcquireCommodity(SelfConsume)
+// ActionDomains: Travel, Needs, Production
+// Places: VillageSquare, SouthGate, EastFieldTrail, OrchardFarm
+// Principles: 8, 20, 22, 26
+//
+// Setup: One agent at VillageSquare (indoor: Village tag only, no
+//   wilderness relief, no latrine). Hunger at pm(800) (High priority,
+//   threshold >= 750) drives travel toward OrchardFarm. Bladder starts
+//   at pm(799) (Medium priority, threshold >= 600 and < 800 High).
+//   Hunger outranks Relieve initially (High > Medium).
+//   bladder_rate=70, travel_bladder_multiplier=900 → travel body cost
+//   = 70*900/1000 = 63/tick additional, total 133/tick during travel.
+//   First leg: VillageSquare → SouthGate (2 ticks). After tick 0
+//   systems run: bladder = 799 + 133 = 932 (Critical! >= 930).
+//   At tick 1, AI evaluates interrupt: Relieve at Critical priority
+//   vs active travel (InterruptibleWithPenalty). interrupt_with_penalty
+//   fires → travel aborted. Agent returned to VillageSquare (origin).
+//   Agent replans for Relieve, travels to PublicLatrine (1 tick) or
+//   finds another relief path.
+//
+// Proves: Travel body cost escalation causes bladder to cross the
+//   critical threshold during a single travel leg. The interrupt system
+//   detects critical survival pressure and aborts the InterruptibleWithPenalty
+//   travel action mid-leg. The agent replans for GoalKind::Relieve and
+//   performs a relief action. This is the stronger invariant missing from
+//   golden_critical_bladder_local_relief, which only proves local relief.
+//
+// Chain: hunger pressure (High) -> AcquireCommodity goal -> travel plan
+//   to OrchardFarm -> travel body cost override (133/tick) applied ->
+//   needs system escalates bladder past critical (799+133=932) after
+//   1 tick -> interrupt fires CriticalSurvival -> travel aborted ->
+//   agent replans for Relieve -> relief action committed.
+
+#[test]
+fn golden_travel_interrupt_from_bladder_escalation() {
+    let mut h = GoldenHarness::new(Seed([93; 32]));
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    setup_food_at_orchard(&mut h);
+
+    // bladder_rate=70, travel_bladder_multiplier=900
+    // Per tick during travel: basal 70 + travel (70 * 900 / 1000) = 70 + 63 = 133
+    // Starting at pm(799), critical at pm(930): crosses after 1 tick (799 + 133 = 932).
+    let aggressive_metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(70),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(900), // travel_bladder_multiplier
+        pm(0),   // wilderness_relief_dirtiness_penalty
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "TravelInterruptee",
+        VILLAGE_SQUARE,
+        // Hunger at pm(800) → High priority (threshold >= 750).
+        // Bladder at pm(799) → Medium priority (threshold >= 600, < 800 High).
+        // Hunger outranks bladder initially (High > Medium). During travel,
+        // 1 tick of body cost pushes bladder to 932 (Critical), triggering interrupt.
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(799), pm(0)),
+        aggressive_metabolism,
+        UtilityProfile {
+            hunger_weight: pm(950),
+            bladder_weight: pm(500),
+            ..UtilityProfile::default()
+        },
+    );
+
+    // Seed beliefs about the world so the planner can find OrchardFarm food.
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    // Run enough ticks for travel to start and then be interrupted.
+    for _ in 0..80 {
+        h.step_once();
+    }
+
+    // --- Verification Layer 1: Travel started ---
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let agent_events = action_sink.events_for(agent);
+
+    let travel_started = agent_events.iter().any(|e| {
+        matches!(e.kind, worldwake_sim::ActionTraceKind::Started { .. })
+            && h.defs.get(e.def_id).map(|d| d.name.as_str()) == Some("travel")
+    });
+    assert!(
+        travel_started,
+        "agent should have started a travel action from VillageSquare"
+    );
+
+    // --- Verification Layer 2: CriticalSurvival interrupt fired during travel ---
+    // The interrupt-based abort path does not emit an ActionTraceKind::Aborted
+    // event, so we prove the interrupt via the decision trace instead of action
+    // trace. The decision trace is the correct semantic surface for this contract
+    // (per golden-e2e-testing.md: "Use decision traces when proving AI reasoning").
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let traces = decision_sink.traces_for(agent);
+    let critical_survival_interrupt_during_travel = traces.iter().any(|trace| {
+        if let worldwake_ai::DecisionOutcome::ActiveAction {
+            ref interrupt, ..
+        } = trace.outcome
+        {
+            matches!(
+                interrupt.decision,
+                worldwake_ai::InterruptDecision::InterruptForReplan {
+                    trigger: worldwake_ai::InterruptTrigger::CriticalSurvival,
+                }
+            )
+        } else {
+            false
+        }
+    });
+    assert!(
+        critical_survival_interrupt_during_travel,
+        "CriticalSurvival interrupt should have fired during active travel"
+    );
+
+    // --- Verification Layer 3: Relieve goal appeared after interrupt ---
+    let relieve_appeared = traces.iter().any(|trace| {
+        if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
+            p.candidates.ranked.iter().any(|c| {
+                matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve)
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        relieve_appeared,
+        "GoalKind::Relieve should have appeared in decision trace after travel interrupt"
+    );
+
+    // --- Verification Layer 4: Relief action committed ---
+    let relief_committed = agent_events.iter().any(|e| {
+        matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+            && h.defs
+                .get(e.def_id)
+                .map(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
+                .unwrap_or(false)
+    });
+    assert!(
+        relief_committed,
+        "agent should have committed a relief action (toilet or relieve_wilderness)"
     );
 }

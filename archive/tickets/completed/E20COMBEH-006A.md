@@ -1,6 +1,6 @@
 # E20COMBEH-006A: Golden test gap — actual travel interrupt from critical bladder escalation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — tests only
@@ -99,3 +99,10 @@ The existing test proves that an agent at an outdoor place with critical bladder
 1. `cargo test -p worldwake-ai --test golden_travel_physiology`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**: Renamed `golden_travel_interrupt` to `golden_critical_bladder_local_relief` with updated scenario metadata. Added `golden_travel_interrupt_from_bladder_escalation` proving the spec-required travel-interrupt invariant: critical bladder escalation during active travel triggers `CriticalSurvival` interrupt, aborting the `InterruptibleWithPenalty` travel action, followed by replan to Relieve and relief action commit.
+- **Deviations from original plan**: The ticket's original arithmetic (bladder=860, bladder_rate=15, travel_bladder_multiplier=800, ~3 ticks to critical) was incorrect. SouthGate has Road tag (outdoor), making `relieve_wilderness` available after the 2-tick first leg before critical was reached. Corrected to: bladder=799 (Medium), bladder_rate=70, travel_bladder_multiplier=900 → 133/tick during travel, crossing critical (932) after 1 tick mid-leg. Assertion strategy also changed: interrupt-based abort does not emit `ActionTraceKind::Aborted`, so verification uses decision trace (`InterruptForReplan { trigger: CriticalSurvival }`) instead.
+- **Verification results**: `cargo test -p worldwake-ai --test golden_travel_physiology` (19 passed), `cargo test -p worldwake-ai` (36 passed), `cargo clippy --workspace` (clean).
