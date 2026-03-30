@@ -20,6 +20,7 @@ use crate::{
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
+    pursuit::PursuitProfile,
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,

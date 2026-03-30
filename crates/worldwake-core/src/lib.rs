@@ -61,6 +61,7 @@ pub mod numerics;
 pub mod offices;
 pub mod patrol;
 pub mod production;
+pub mod pursuit;
 pub mod relations;
 pub mod test_utils;
 pub mod topology;
@@ -158,6 +159,7 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
+pub use pursuit::PursuitProfile;
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,

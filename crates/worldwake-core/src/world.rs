@@ -9,7 +9,7 @@ use crate::{
     FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
     RelationTables, ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
@@ -606,7 +606,7 @@ mod tests {
         HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
         JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
+        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob, PursuitProfile,
         ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
         TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
@@ -6381,5 +6381,37 @@ mod tests {
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
         assert!(world.is_alive(place_id));
+    }
+
+    #[test]
+    fn pursuit_profile_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = PursuitProfile {
+            min_location_confidence: Permille::new(600).unwrap(),
+            max_pursuit_travel_ticks: std::num::NonZeroU32::new(10).unwrap(),
+        };
+
+        world
+            .insert_component_pursuit_profile(id, profile.clone())
+            .unwrap();
+
+        assert_eq!(world.get_component_pursuit_profile(id), Some(&profile));
+    }
+
+    #[test]
+    fn pursuit_profile_on_non_agent_errors() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let profile = PursuitProfile {
+            min_location_confidence: Permille::new(600).unwrap(),
+            max_pursuit_travel_ticks: std::num::NonZeroU32::new(10).unwrap(),
+        };
+
+        let err = world
+            .insert_component_pursuit_profile(place, profile)
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
     }
 }

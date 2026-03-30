@@ -1180,6 +1180,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                pursuit_profiles,
+                PursuitProfile,
+                insert_pursuit_profile,
+                get_pursuit_profile,
+                get_pursuit_profile_mut,
+                remove_pursuit_profile,
+                has_pursuit_profile,
+                iter_pursuit_profiles,
+                insert_component_pursuit_profile,
+                get_component_pursuit_profile,
+                get_component_pursuit_profile_mut,
+                remove_component_pursuit_profile,
+                has_component_pursuit_profile,
+                entities_with_pursuit_profile,
+                query_pursuit_profile,
+                count_with_pursuit_profile,
+                "PursuitProfile",
+                |kind| kind == EntityKind::Agent,
+                PursuitProfile,
+                crate::PursuitProfile,
+                set_component_pursuit_profile,
+                clear_component_pursuit_profile,
+                txn_simple_set
+            }
+            {
                 item_lots,
                 ItemLot,
                 insert_item_lot,

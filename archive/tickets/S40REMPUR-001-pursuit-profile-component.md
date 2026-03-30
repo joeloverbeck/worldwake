@@ -1,6 +1,6 @@
 # S40REMPUR-001: Add PursuitProfile component to worldwake-core
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new component type, component table entry, schema registration
@@ -102,3 +102,14 @@ Ensure `PursuitProfile` is publicly exported from `worldwake_core`.
 
 1. `cargo test -p worldwake-core test_pursuit_profile`
 2. `cargo clippy -p worldwake-core && cargo test -p worldwake-core`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**:
+  - New module `crates/worldwake-core/src/pursuit.rs` with `PursuitProfile` struct (`min_location_confidence: Permille`, `max_pursuit_travel_ticks: NonZeroU32`)
+  - Registered in `component_schema.rs` on `EntityKind::Agent`, `component_tables.rs` for typed storage, `delta.rs` for `ComponentKind`/`ComponentValue` enums
+  - Re-exported from `lib.rs`
+  - Tests: trait bounds, bincode roundtrip (in `pursuit.rs`), World round-trip on Agent, schema rejection on non-Agent (in `world.rs`), delta sample coverage (in `delta.rs`)
+- **Deviations from plan**: None — implemented exactly as specified
+- **Verification**: 875 worldwake-core tests pass, clippy clean, full workspace builds
