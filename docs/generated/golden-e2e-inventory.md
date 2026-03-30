@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 11
-- Files contributing `golden_*` tests: 11
-- Total `golden_*` tests: 194
+- Golden test files: 12
+- Files contributing `golden_*` tests: 12
+- Total `golden_*` tests: 200
 
 ## Per-File Inventory
 
@@ -19,6 +19,7 @@ Do not hand-edit it.
 | `golden_determinism.rs` | 9 |
 | `golden_emergent.rs` | 47 |
 | `golden_offices.rs` | 21 |
+| `golden_patrol.rs` | 6 |
 | `golden_production.rs` | 24 |
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 6 |
@@ -178,6 +179,15 @@ Do not hand-edit it.
 - `golden_contested_force_claim_resolves_after_yield_replays_deterministically`
 - `golden_force_control_locality_requires_tell`
 - `golden_force_control_locality_requires_tell_replays_deterministically`
+
+### `golden_patrol.rs`
+
+- `golden_patrol_cycle_wraps_route`
+- `golden_patrol_cycle_wraps_route_replays_deterministically`
+- `golden_patrol_interruption_preserves_waypoint_until_resume`
+- `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy`
+- `golden_patrol_route_adaptation_retargets_after_local_report`
+- `golden_patrol_locality_requires_guard_local_report`
 
 ### `golden_production.rs`
 

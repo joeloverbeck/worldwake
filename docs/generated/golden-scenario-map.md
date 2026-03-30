@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 66
-- Files contributing scenario metadata: 11
-- `golden_*` tests associated with scenario blocks: 183
+- Scenario blocks with explicit metadata: 71
+- Files contributing scenario metadata: 12
+- `golden_*` tests associated with scenario blocks: 189
 
 ## Scenario Inventory
 
@@ -68,6 +68,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2281` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
 | `20` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2665` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
 | `21` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2930` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
+| `52` | Patrol Cycle Wraps Route | `golden_patrol.rs:290` | `golden_patrol_cycle_wraps_route` | `golden_patrol_cycle_wraps_route_replays_deterministically` |
+| `53` | Patrol Interruption Preserves Waypoint Until Resume | `golden_patrol.rs:321` | `golden_patrol_interruption_preserves_waypoint_until_resume` | — |
+| `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:459` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
+| `55` | Patrol Route Adaptation Retargets After Local Report | `golden_patrol.rs:576` | `golden_patrol_route_adaptation_retargets_after_local_report` | — |
+| `56` | Patrol Locality Requires Guard-Local Report | `golden_patrol.rs:664` | `golden_patrol_locality_requires_guard_local_report` | — |
 | `3` | Resource Contention with Conservation | `golden_production.rs:2506` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback` | — |
 | `3b` | Observed Harvest Competition Redirects To Remote Sibling | `golden_production.rs:2661` | `golden_observed_harvest_competition_redirects_to_remote_sibling`<br>`golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_grant_expiry_before_intended_action`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`<br>`golden_facility_queue_patience_timeout_replays_deterministically` |
 | `4` | Materialization Barrier Chain | `golden_production.rs:2899` | `golden_materialization_barrier_chain` | — |
@@ -75,10 +80,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:3156` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
 | `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1932` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan`<br>`golden_stale_prerequisite_ask_witness_chain` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`<br>`golden_stale_prerequisite_ask_witness_chain_replays_deterministically` |
-| `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:1913` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
-| `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:1957` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
-| `48` | Raid-Belief Economic Cascade | `golden_t22_bandit_camp_destruction.rs:1996` | `golden_raid_belief_economic_cascade` | `golden_raid_belief_economic_cascade_replays_deterministically` |
-| `49` | Wound-Dampened Raid Spiral | `golden_t22_bandit_camp_destruction.rs:2035` | `golden_wound_dampened_raid_spiral` | `golden_wound_dampened_raid_spiral_replays_deterministically` |
+| `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:1979` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
+| `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:2023` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
+| `48` | Raid-Belief Economic Cascade | `golden_t22_bandit_camp_destruction.rs:2062` | `golden_raid_belief_economic_cascade` | `golden_raid_belief_economic_cascade_replays_deterministically` |
+| `49` | Wound-Dampened Raid Spiral | `golden_t22_bandit_camp_destruction.rs:2101` | `golden_wound_dampened_raid_spiral` | `golden_wound_dampened_raid_spiral_replays_deterministically` |
 | `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:881` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
 | `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:916` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
 | `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:951` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
@@ -933,6 +938,88 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: Public force-control event -> witness institutional belief update -> remote ignorance preserved -> tell commit -> remote belief update.
 
+### Scenario 52: Patrol Cycle Wraps Route
+
+- Source: `golden_patrol.rs:290`
+- Systems: AI, Travel, Patrol
+- GoalKinds: Patrol
+- ActionDomains: Travel, Generic
+- Places: VillageSquare, GuardPost
+- Principles: 8, 20, 21
+- Primary tests: `golden_patrol_cycle_wraps_route`
+- Replay tests: `golden_patrol_cycle_wraps_route_replays_deterministically`
+- All tests: `golden_patrol_cycle_wraps_route`, `golden_patrol_cycle_wraps_route_replays_deterministically`
+
+**Setup**: One guard at VillageSquare with a two-waypoint patrol route [VillageSquare, GuardPost].
+
+**Proves**: The guard selects patrol, completes patrol dwell, travels to the next waypoint, patrols again, and continues alternating after the route wraps.
+
+**Cross-system chain**: Patrol candidate -> plan selection -> patrol commit -> travel -> patrol commit -> authoritative route wrap -> continued alternating patrol.
+
+### Scenario 53: Patrol Interruption Preserves Waypoint Until Resume
+
+- Source: `golden_patrol.rs:321`
+- Systems: AI, Needs, Patrol
+- GoalKinds: Patrol, ConsumeOwnedCommodity
+- ActionDomains: Generic, Needs
+- Places: GuardPost
+- Principles: 8, 20, 21
+- Primary tests: `golden_patrol_interruption_preserves_waypoint_until_resume`
+- Replay tests: None
+- All tests: `golden_patrol_interruption_preserves_waypoint_until_resume`
+
+**Setup**: One guard is already patrolling at GuardPost with bread in inventory. Hunger is raised to the critical band after patrol starts.
+
+**Proves**: Patrol is interrupted for self-care, `current_index` does not advance during the interruption, and the guard later resumes patrol from the same waypoint before advancing.
+
+### Scenario 54: Patrol Belief Urgency Scales From Local Crime And Vacancy
+
+- Source: `golden_patrol.rs:459`
+- Systems: AI, Patrol, Institutional beliefs
+- GoalKinds: Patrol
+- ActionDomains: Generic
+- Places: VillageSquare
+- Principles: 7, 14, 20
+- Primary tests: `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy`
+- Replay tests: None
+- All tests: `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy`
+
+**Setup**: Two comparable guards share the same patrol route and profile. Only one holds a local suspected-theft memory and a vacancy belief for an office on the patrol jurisdiction.
+
+**Proves**: The informed guard's patrol motive is higher at the decision-trace layer without any authoritative world-state shortcut.
+
+### Scenario 55: Patrol Route Adaptation Retargets After Local Report
+
+- Source: `golden_patrol.rs:576`
+- Systems: Patrol adaptation, AI, Travel
+- GoalKinds: Patrol
+- ActionDomains: Travel, Generic
+- Places: VillageSquare, SouthGate, GeneralStore
+- Principles: 7, 20, 24
+- Primary tests: `golden_patrol_route_adaptation_retargets_after_local_report`
+- Replay tests: None
+- All tests: `golden_patrol_route_adaptation_retargets_after_local_report`
+
+**Setup**: One guard has a baseline patrol route but already holds a local suspected-theft social observation for GeneralStore.
+
+**Proves**: The authoritative patrol system adapts the route from the guard's local report, and later AI selection retargets patrol to the adapted place.
+
+### Scenario 56: Patrol Locality Requires Guard-Local Report
+
+- Source: `golden_patrol.rs:664`
+- Systems: Patrol adaptation, AI
+- GoalKinds: Patrol
+- ActionDomains: Generic
+- Places: VillageSquare, SouthGate, GeneralStore
+- Principles: 7, 14, 20
+- Primary tests: `golden_patrol_locality_requires_guard_local_report`
+- Replay tests: None
+- All tests: `golden_patrol_locality_requires_guard_local_report`
+
+**Setup**: Another agent holds a theft report for GeneralStore, but the guard does not. The guard has the same baseline patrol route and profile.
+
+**Proves**: The guard's motive remains baseline and the route does not adapt from another agent's memory or from authoritative truth alone.
+
 ### Scenario 3: Resource Contention with Conservation
 
 - Source: `golden_production.rs:2506`
@@ -1057,7 +1144,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 22: Bandit Camp Destruction Chain
 
-- Source: `golden_t22_bandit_camp_destruction.rs:1913`
+- Source: `golden_t22_bandit_camp_destruction.rs:1979`
 - Systems: Combat, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: ReduceDanger, RegroupWithFaction, AcquireCommodity(SelfConsume)
 - ActionDomains: Combat, Generic, Production, Travel
@@ -1075,7 +1162,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 47: Pressure-Driven Raid Emergence
 
-- Source: `golden_t22_bandit_camp_destruction.rs:1957`
+- Source: `golden_t22_bandit_camp_destruction.rs:2023`
 - Systems: Needs, AI, Combat, Loot, Conservation
 - GoalKinds: RaidTarget, LootCorpse, AcquireCommodity(SelfConsume)
 - ActionDomains: Combat, Corpse, Production, Travel
@@ -1093,7 +1180,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 48: Raid-Belief Economic Cascade
 
-- Source: `golden_t22_bandit_camp_destruction.rs:1996`
+- Source: `golden_t22_bandit_camp_destruction.rs:2062`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI
 - GoalKinds: RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Social, Travel, Production
@@ -1111,7 +1198,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 49: Wound-Dampened Raid Spiral
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2035`
+- Source: `golden_t22_bandit_camp_destruction.rs:2101`
 - Systems: Combat, Wounds, AI, Needs
 - GoalKinds: RaidTarget, ConsumeOwnedCommodity
 - ActionDomains: Combat, Needs, Travel

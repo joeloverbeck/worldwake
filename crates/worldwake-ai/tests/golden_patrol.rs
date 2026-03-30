@@ -287,7 +287,7 @@ fn run_patrol_cycle(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 47: Patrol Cycle Wraps Route
+// Scenario 52: Patrol Cycle Wraps Route
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Travel, Patrol
@@ -318,7 +318,7 @@ fn golden_patrol_cycle_wraps_route_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 48: Patrol Interruption Preserves Waypoint Until Resume
+// Scenario 53: Patrol Interruption Preserves Waypoint Until Resume
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Patrol
@@ -456,7 +456,7 @@ fn golden_patrol_interruption_preserves_waypoint_until_resume() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 49: Patrol Belief Urgency Scales From Local Crime And Vacancy
+// Scenario 54: Patrol Belief Urgency Scales From Local Crime And Vacancy
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Patrol, Institutional beliefs
@@ -573,7 +573,7 @@ fn golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 50: Patrol Route Adaptation Retargets After Local Report
+// Scenario 55: Patrol Route Adaptation Retargets After Local Report
 // ---------------------------------------------------------------------------
 //
 // Systems: Patrol adaptation, AI, Travel
@@ -661,7 +661,7 @@ fn golden_patrol_route_adaptation_retargets_after_local_report() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 51: Patrol Locality Requires Guard-Local Report
+// Scenario 56: Patrol Locality Requires Guard-Local Report
 // ---------------------------------------------------------------------------
 //
 // Systems: Patrol adaptation, AI
