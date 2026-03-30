@@ -530,11 +530,11 @@ impl GoalKindPlannerExt for GoalKind {
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::EstablishCamp => match self {
-                GoalKind::EstablishBanditCamp { faction } => Ok(Some(
-                    ActionPayload::EstablishCamp(worldwake_sim::EstablishCampActionPayload {
-                        faction: *faction,
-                    }),
-                )),
+                GoalKind::EstablishBanditCamp { faction } => {
+                    Ok(Some(ActionPayload::EstablishCamp(
+                        worldwake_sim::EstablishCampActionPayload { faction: *faction },
+                    )))
+                }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
@@ -909,7 +909,8 @@ impl GoalKindPlannerExt for GoalKind {
                 state.is_dead(*target) || !state.visible_hostiles_for(actor).contains(target)
             }
             GoalKind::RaidTarget { target } => {
-                state.is_dead(*target) || state.effective_place(actor) != state.effective_place(*target)
+                state.is_dead(*target)
+                    || state.effective_place(actor) != state.effective_place(*target)
             }
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
@@ -919,10 +920,12 @@ impl GoalKindPlannerExt for GoalKind {
                 InstitutionalBeliefRead::Certain(Some(rally_place))
                     if state.effective_place(actor) == Some(rally_place)
             ),
-            GoalKind::EstablishBanditCamp { faction } => state
-                .effective_place(actor)
-                .and_then(|place| state.bandit_camp_faction_at(place))
-                == Some(*faction),
+            GoalKind::EstablishBanditCamp { faction } => {
+                state
+                    .effective_place(actor)
+                    .and_then(|place| state.bandit_camp_faction_at(place))
+                    == Some(*faction)
+            }
             GoalKind::TreatWounds { patient } => state
                 .pain_summary(*patient)
                 .is_some_and(|pain| pain == Permille::new_unchecked(0)),
@@ -1752,8 +1755,8 @@ pub struct RankedGoal {
 mod tests {
     use super::{
         grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
-        GoalKindPlannerExt, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal,
-        RankedGoal, RankedGoalProvenanceFamily, RootCandidateSynthesis,
+        GoalKindPlannerExt, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal, RankedGoal,
+        RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
     use crate::{
         build_planning_snapshot, build_semantics_table, decision_trace::CompetitionDiscount,
@@ -1772,10 +1775,10 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
         DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EpistemicSubject,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
-        ResourceSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
+        SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        ViolationId, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -2308,8 +2311,7 @@ mod tests {
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         force_controller_beliefs:
             BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
-        faction_rally_point_beliefs:
-            BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
@@ -2392,10 +2394,7 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn known_institutional_beliefs(
-            &self,
-            agent: EntityId,
-        ) -> Vec<BelievedInstitutionalClaim> {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
             self.known_institutional_beliefs
                 .get(&agent)
                 .cloned()
@@ -6554,8 +6553,13 @@ mod tests {
             evidence_places: BTreeSet::from([rally]),
         };
         let (registry, handlers) = build_registry();
-        let snapshot =
-            build_planning_snapshot(&view, actor, &BTreeSet::from([faction]), &BTreeSet::from([rally]), 1);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([faction]),
+            &BTreeSet::from([rally]),
+            1,
+        );
         let plan = search_plan(
             &snapshot,
             &goal,
@@ -6625,7 +6629,10 @@ mod tests {
         .into_plan()
         .expect("planner should find a colocated raid attack plan");
 
-        assert_eq!(plan.terminal_kind, crate::PlanTerminalKind::CombatCommitment);
+        assert_eq!(
+            plan.terminal_kind,
+            crate::PlanTerminalKind::CombatCommitment
+        );
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Attack);
         assert_eq!(

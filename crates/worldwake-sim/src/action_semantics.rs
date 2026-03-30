@@ -341,11 +341,11 @@ mod tests {
     use std::mem;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, BanditFactionPolicy, CauseRef, CombatProfile, CombatWeaponRef,
-        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds,
-        MetabolismProfile, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
-        TheftDispositionProfile, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, prototype_place_entity,
+        build_prototype_world, prototype_place_entity, BanditFactionPolicy, CauseRef,
+        CombatProfile, CombatWeaponRef, CommodityKind, ControlSource, EntityId, EntityKind,
+        EventLog, HomeostaticNeeds, MetabolismProfile, Permille, PrototypePlace, Quantity,
+        RecipeId, RecordData, RecordKind, TheftDispositionProfile, Tick, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
     };
 
     const ENTITY_A: EntityId = EntityId {
@@ -515,7 +515,10 @@ mod tests {
             DurationExpr::ActorWitnessQueryDisposition.fixed_ticks(),
             None
         );
-        assert_eq!(DurationExpr::BanditCampEstablishmentProfile.fixed_ticks(), None);
+        assert_eq!(
+            DurationExpr::BanditCampEstablishmentProfile.fixed_ticks(),
+            None
+        );
         assert_eq!(DurationExpr::ActorDefendStance.fixed_ticks(), None);
         assert_eq!(DurationExpr::CombatWeapon.fixed_ticks(), None);
         assert_eq!(

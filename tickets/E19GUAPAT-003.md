@@ -22,13 +22,15 @@ The patrol action (dwell phase at a waypoint) needs to be registered in the acti
 8. Commit behavior: advance `current_index` to `(current_index + 1) % assigned_places.len()` via `WorldTxn`.
 9. Abort behavior: do NOT advance `current_index` (guard resumes from same waypoint).
 10. `Interruptibility` — action must be interruptible (spec line 89–91).
-11. No adjacent contradictions found.
+11. The implemented core route contract is intentionally still minimal: ordered `assigned_places` plus `current_index`. This ticket should consume that contract directly rather than introducing richer per-waypoint metadata, cached route-entry structs, or action-local aliases unless the action cannot express a concrete invariant without them.
+12. No adjacent contradictions found.
 
 ## Architecture Check
 
 1. Following the existing action module pattern (`investigate_actions.rs`, `justice_actions.rs`) keeps the codebase uniform. A new `patrol_actions.rs` file in `worldwake-systems` is cleaner than adding to an existing file because patrol is a distinct action domain.
 2. Patrol payload is minimal (just the waypoint EntityId) — follows the lightweight payload pattern of `InvestigateActionPayload`.
-3. No backwards-compatibility shims.
+3. The action should continue to treat patrol routes as `Vec<EntityId>` plus `current_index`. Adding richer waypoint entry types here would be speculative and would couple the action layer to route-shape concerns that E19 has not yet proven necessary.
+4. No backwards-compatibility shims.
 
 ## Verification Layers
 
@@ -85,6 +87,7 @@ The commit handler must mutate `PatrolRoute.current_index` through `WorldTxn`. F
 - Golden E2E tests (E19GUAPAT-007)
 - Travel-to-waypoint action (already exists as generic Travel action)
 - Patrol system tick function (patrol uses the standard action framework, not a per-tick system)
+- Any richer patrol route-entry metadata beyond the current `assigned_places` + `current_index` contract
 
 ## Acceptance Criteria
 

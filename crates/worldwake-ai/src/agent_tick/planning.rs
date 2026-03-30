@@ -96,12 +96,10 @@ pub(super) fn summarize_search_provenance(
     plans: &[CandidatePlanSearch],
     selected_opportunity: OpportunityKey,
 ) -> Option<SelectedPlanSearchProvenance> {
-    let selected_plan = plans
-        .iter()
-        .find(|plan| {
-            plan.opportunity == selected_opportunity
-                && matches!(plan.result, PlanSearchResult::Found(_))
-        })?;
+    let selected_plan = plans.iter().find(|plan| {
+        plan.opportunity == selected_opportunity
+            && matches!(plan.result, PlanSearchResult::Found(_))
+    })?;
     let expansions = &selected_plan.expansion_summaries;
     let root = expansions.first();
     Some(SelectedPlanSearchProvenance {
@@ -415,26 +413,26 @@ fn record_exhausted_goals(
                     recipe_registry,
                 );
                 let entry = match &plan.result {
-                    crate::PlanSearchResult::BudgetExhausted { .. } => match runtime
-                        .exhaustion_cache
-                        .get(&plan.opportunity)
-                    {
-                        Some(existing)
-                            if existing.retry_state == ExhaustionRetryState::BudgetRetryPending =>
-                        {
-                            let mut entry = existing.clone();
-                            entry.invalidation_conditions = invalidation_conditions;
-                            entry.baseline = baseline;
-                            entry.record_budget_exhaustion(tick, budget);
-                            entry
+                    crate::PlanSearchResult::BudgetExhausted { .. } => {
+                        match runtime.exhaustion_cache.get(&plan.opportunity) {
+                            Some(existing)
+                                if existing.retry_state
+                                    == ExhaustionRetryState::BudgetRetryPending =>
+                            {
+                                let mut entry = existing.clone();
+                                entry.invalidation_conditions = invalidation_conditions;
+                                entry.baseline = baseline;
+                                entry.record_budget_exhaustion(tick, budget);
+                                entry
+                            }
+                            _ => ExhaustionEntry::budget_retry_pending(
+                                invalidation_conditions,
+                                baseline,
+                                tick,
+                                budget,
+                            ),
                         }
-                        _ => ExhaustionEntry::budget_retry_pending(
-                            invalidation_conditions,
-                            baseline,
-                            tick,
-                            budget,
-                        ),
-                    },
+                    }
                     crate::PlanSearchResult::FrontierExhausted { .. } => {
                         ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
                     }
@@ -941,9 +939,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_prototype_world, ActionDefId, ActionDomain, CauseRef, CommodityKind,
-        CommodityPurpose, ControlSource, EventLog, HomeostaticNeeds, MerchandiseProfile,
-        Permille, Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        CommodityPurpose, ControlSource, EventLog, HomeostaticNeeds, MerchandiseProfile, Permille,
+        Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+        World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
@@ -1500,9 +1498,7 @@ mod tests {
                 goal,
                 vec![PlannedStep {
                     def_id: ActionDefId(9),
-                    targets: vec![crate::PlanningEntityRef::Authoritative(
-                        remote_destination,
-                    )],
+                    targets: vec![crate::PlanningEntityRef::Authoritative(remote_destination)],
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
@@ -1822,8 +1818,13 @@ mod tests {
         let cooling_down = entity(103);
         let retry_ready = entity(104);
         let fresh = origin;
-        let mut world =
-            World::new(four_place_topology(origin, frontier, cooling_down, retry_ready)).unwrap();
+        let mut world = World::new(four_place_topology(
+            origin,
+            frontier,
+            cooling_down,
+            retry_ready,
+        ))
+        .unwrap();
         let agent = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
@@ -1941,7 +1942,10 @@ mod tests {
         );
 
         assert_eq!(
-            plans.iter().map(|plan| plan.opportunity).collect::<Vec<_>>(),
+            plans
+                .iter()
+                .map(|plan| plan.opportunity)
+                .collect::<Vec<_>>(),
             vec![
                 OpportunityKey {
                     goal_key: ranked_candidates[2].grounded.key,
@@ -2007,7 +2011,9 @@ mod tests {
         assert_eq!(entry.consecutive_failures, 1);
         assert_eq!(
             entry.next_retry_tick,
-            Some(Tick(9 + u64::from(PlanningBudget::default().initial_cooldown_ticks)))
+            Some(Tick(
+                9 + u64::from(PlanningBudget::default().initial_cooldown_ticks)
+            ))
         );
         assert_eq!(
             entry.invalidation_conditions,

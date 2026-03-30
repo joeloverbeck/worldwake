@@ -19,13 +19,15 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 5. Patrol is a multi-tick action (dwell phase) so `agent_active_action_name()` should work for observing active patrol.
 6. The feedback loop test requires both guards and a "thief" agent whose behavior is affected by guard presence. This depends on the thief's belief system from E17 — thieves avoid guarded places via their own beliefs.
 7. The spec's Canonical Regression Scenario F (Office Vacancy → Succession Delay → Patrol Gap → Route Predation) describes the target golden scenario class.
-8. No adjacent contradictions found.
+8. The implemented core patrol route shape is still only `assigned_places` plus `current_index`. Golden tests should assert on that public authoritative contract and observable behavior, not invent stronger expectations about route-entry metadata that the engine does not yet model.
+9. No adjacent contradictions found.
 
 ## Architecture Check
 
 1. Golden tests as integration tests in `crates/worldwake-ai/tests/` follow the established pattern. These tests exercise the full pipeline: candidate generation → plan search → action execution → world state mutation.
 2. Testing the feedback loop requires enough simulation ticks for convergence. The test should assert directional change (patrol motive increases after crime, decreases after period of no crime) rather than exact numeric values.
-3. No backwards-compatibility shims.
+3. Route assertions should stay at the current authoritative surface: waypoint order membership and `current_index`. If a future patrol ticket upgrades the route model, the golden tests can move with that new contract then.
+4. No backwards-compatibility shims.
 
 ## Verification Layers
 
@@ -83,6 +85,7 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 - Captain-mediated route changes (future epic)
 - Performance benchmarks
 - Save/load replay tests for patrol (could be a follow-up)
+- Asserting on any richer patrol route-entry metadata than the current `assigned_places` + `current_index` model
 
 ## Acceptance Criteria
 
@@ -104,6 +107,7 @@ The patrol system needs end-to-end golden tests verifying: (a) a guard completes
 3. Tests are deterministic (seeded RNG, BTreeMap, no floats, no wall-clock time)
 4. Tests assert on belief state and authoritative world state, not on internal planning details
 5. Feedback loop test asserts directional convergence, not exact values
+6. Route assertions stay on the current minimal authoritative contract until a later ticket explicitly upgrades it
 
 ## Test Plan
 

@@ -422,12 +422,10 @@ mod tests {
             GoalDispatchKey::EngageHostile => GoalKind::EngageHostile { target },
             GoalDispatchKey::RaidTarget => GoalKind::RaidTarget { target },
             GoalDispatchKey::ReduceDanger => GoalKind::ReduceDanger,
-            GoalDispatchKey::RegroupWithFaction => GoalKind::RegroupWithFaction {
-                faction: office,
-            },
-            GoalDispatchKey::EstablishBanditCamp => GoalKind::EstablishBanditCamp {
-                faction: office,
-            },
+            GoalDispatchKey::RegroupWithFaction => GoalKind::RegroupWithFaction { faction: office },
+            GoalDispatchKey::EstablishBanditCamp => {
+                GoalKind::EstablishBanditCamp { faction: office }
+            }
             GoalDispatchKey::TreatWounds => GoalKind::TreatWounds { patient: target },
             GoalDispatchKey::ProduceCommodity => GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(11),
@@ -707,7 +705,9 @@ mod tests {
         );
         assert_eq!(
             GoalDispatchKey::Accuse.declaration().feasibility_strategy,
-            GoalDispatchKey::PunishFine.declaration().feasibility_strategy
+            GoalDispatchKey::PunishFine
+                .declaration()
+                .feasibility_strategy
         );
         assert_eq!(
             GoalDispatchKey::PunishFine

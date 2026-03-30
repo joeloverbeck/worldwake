@@ -14,8 +14,8 @@ use std::cmp::Ordering;
 use worldwake_core::{
     belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
     DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    Quantity,
+    OpportunityKey, PerceptionSource, Permille, Quantity, TellTopic, ThresholdBand, Tick,
+    UtilityProfile,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -518,12 +518,8 @@ fn motive_score(
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
         GoalKind::RaidTarget { .. } => raid_target_motive(candidate, context),
-        GoalKind::ClaimOffice { .. } => {
-            u32::from(context.utility.enterprise_weight.value())
-        }
-        GoalKind::RegroupWithFaction { .. } => {
-            u32::from(context.utility.social_weight.value())
-        }
+        GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
+        GoalKind::RegroupWithFaction { .. } => u32::from(context.utility.social_weight.value()),
         GoalKind::EstablishBanditCamp { .. } => {
             score_product(context.utility.social_weight, Permille::new_unchecked(1000))
         }
@@ -847,10 +843,8 @@ fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) ->
         .copied()
         .filter_map(|commodity| {
             let quantity = context.view.commodity_quantity(target, commodity);
-            (quantity > Quantity(0)).then(|| {
-                commodity_goal_motive_score(commodity, context)
-                    .saturating_mul(quantity.0)
-            })
+            (quantity > Quantity(0))
+                .then(|| commodity_goal_motive_score(commodity, context).saturating_mul(quantity.0))
         })
         .sum()
 }
@@ -1138,9 +1132,8 @@ mod tests {
         apply_competition_discount, build_decision_context, rank_candidates, RankingContext,
     };
     use crate::{
-        decision_trace::CompetitionDiscount, GoalKey, GoalKind,
-        GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
-        RankedPriorityAdjustment,
+        decision_trace::CompetitionDiscount, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
+        RankedDriveKind, RankedGoalProvenance, RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3358,7 +3351,8 @@ mod tests {
             .entry(view.effective_places[&agent])
             .or_default()
             .push(target);
-        view.effective_places.insert(target, view.effective_places[&agent]);
+        view.effective_places
+            .insert(target, view.effective_places[&agent]);
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -3402,7 +3396,8 @@ mod tests {
             .entry(view.effective_places[&agent])
             .or_default()
             .push(target);
-        view.effective_places.insert(target, view.effective_places[&agent]);
+        view.effective_places
+            .insert(target, view.effective_places[&agent]);
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -3432,7 +3427,8 @@ mod tests {
             .entry(view.effective_places[&agent])
             .or_default()
             .push(target);
-        view.effective_places.insert(target, view.effective_places[&agent]);
+        view.effective_places
+            .insert(target, view.effective_places[&agent]);
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -3492,7 +3488,10 @@ mod tests {
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[0].motive_score, u32::from(utility.social_weight.value()));
+        assert_eq!(
+            ranked[0].motive_score,
+            u32::from(utility.social_weight.value())
+        );
         assert!(ranked[0].provenance.is_none());
     }
 
@@ -3542,7 +3541,10 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].grounded.key.kind, GoalKind::EstablishBanditCamp { faction });
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::EstablishBanditCamp { faction }
+        );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 420 * 1000);
     }

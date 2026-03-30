@@ -1877,21 +1877,21 @@ mod tests {
         AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
         DemandMemory, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, MerchandiseProfile, OfficeData,
-        OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource, RecordData,
-        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TradeDispositionProfile, UtilityProfile,
+        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
+        PerceptionSource, RecordData, RecordEntryId, RecordKind, SubstitutePreferences,
+        SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
+    };
+    use crate::{
+        BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
+        DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation, Name,
+        Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord, ResourceSource,
+        Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
         EventLog, EventTag, EventView, EvidenceRef, InTransitOnEdge, KnownRecipes, MismatchKind,
         QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
         TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
-    };
-    use crate::{
-        BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
-        DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation,
-        Name, Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord,
-        ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1995,6 +1995,22 @@ mod tests {
             challenged_since: Some(Tick(8)),
             contested_since: Some(Tick(9)),
             last_uncontested_tick: Some(Tick(11)),
+        }
+    }
+
+    fn sample_patrol_route() -> PatrolRoute {
+        PatrolRoute {
+            assigned_places: vec![entity(2), entity(5), entity(12)],
+            current_index: 2,
+        }
+    }
+
+    fn sample_patrol_profile() -> PatrolProfile {
+        PatrolProfile {
+            base_patrol_interval: 7,
+            vigilance: Permille::new(680).unwrap(),
+            route_adaptation_sensitivity: Permille::new(360).unwrap(),
+            patrol_motive_weight: Permille::new(590).unwrap(),
         }
     }
 
@@ -3832,7 +3848,9 @@ mod tests {
             supplies: entity(63),
             empty_since_tick: None,
         };
-        world.insert_component_bandit_camp(place, before.clone()).unwrap();
+        world
+            .insert_component_bandit_camp(place, before.clone())
+            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.set_component_bandit_camp(place, after.clone()).unwrap();
@@ -3890,7 +3908,10 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(world.get_component_bandit_faction_policy(faction), Some(&after));
+        assert_eq!(
+            world.get_component_bandit_faction_policy(faction),
+            Some(&after)
+        );
     }
 
     #[test]
@@ -4106,6 +4127,82 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_utility_profile(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_patrol_route_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = PatrolRoute {
+            assigned_places: vec![entity(2), entity(5)],
+            current_index: 0,
+        };
+        let after = sample_patrol_route();
+        world
+            .insert_component_patrol_route(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_patrol_route(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::PatrolRoute,
+                before: Some(ComponentValue::PatrolRoute(before)),
+                after: ComponentValue::PatrolRoute(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_patrol_route(agent), Some(&after));
+    }
+
+    #[test]
+    fn set_component_patrol_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = PatrolProfile {
+            base_patrol_interval: 10,
+            vigilance: Permille::new(500).unwrap(),
+            route_adaptation_sensitivity: Permille::new(250).unwrap(),
+            patrol_motive_weight: Permille::new(450).unwrap(),
+        };
+        let after = sample_patrol_profile();
+        world
+            .insert_component_patrol_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_patrol_profile(agent, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::PatrolProfile,
+                before: Some(ComponentValue::PatrolProfile(before)),
+                after: ComponentValue::PatrolProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_patrol_profile(agent), Some(&after));
     }
 
     #[test]
@@ -4696,6 +4793,68 @@ mod tests {
     }
 
     #[test]
+    fn clear_component_patrol_route_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_patrol_route();
+        world
+            .insert_component_patrol_route(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_patrol_route(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::PatrolRoute,
+                before: ComponentValue::PatrolRoute(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_patrol_route(agent), None);
+    }
+
+    #[test]
+    fn clear_component_patrol_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = sample_patrol_profile();
+        world
+            .insert_component_patrol_profile(agent, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_patrol_profile(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::PatrolProfile,
+                before: ComponentValue::PatrolProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_patrol_profile(agent), None);
+    }
+
+    #[test]
     fn clear_component_office_data_records_removed_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let office = world.create_office("Ledger Hall", Tick(1)).unwrap();
@@ -4813,7 +4972,9 @@ mod tests {
         let mut world = World::new(test_topology()).unwrap();
         let place = entity(2);
         let before = sample_bandit_camp();
-        world.insert_component_bandit_camp(place, before.clone()).unwrap();
+        world
+            .insert_component_bandit_camp(place, before.clone())
+            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.clear_component_bandit_camp(place).unwrap();

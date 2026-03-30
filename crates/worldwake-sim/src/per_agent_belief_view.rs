@@ -310,7 +310,11 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
         self.factions_of(entity)
             .into_iter()
-            .filter(|faction| self.world.get_component_bandit_faction_policy(*faction).is_some())
+            .filter(|faction| {
+                self.world
+                    .get_component_bandit_faction_policy(*faction)
+                    .is_some()
+            })
             .collect()
     }
 
@@ -464,10 +468,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .map(|policy| policy.flee_wound_threshold)
     }
 
-    fn bandit_camp_establishment_ticks(
-        &self,
-        faction: EntityId,
-    ) -> Option<std::num::NonZeroU32> {
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
         self.world
             .get_component_bandit_faction_policy(faction)
             .map(|policy| policy.establishment_duration_ticks)

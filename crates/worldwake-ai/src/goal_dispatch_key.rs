@@ -228,9 +228,7 @@ mod tests {
             GoalKind::EngageHostile { target },
             GoalKind::RaidTarget { target },
             GoalKind::ReduceDanger,
-            GoalKind::RegroupWithFaction {
-                faction: office,
-            },
+            GoalKind::RegroupWithFaction { faction: office },
             GoalKind::TreatWounds { patient: target },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(7),

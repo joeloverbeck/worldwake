@@ -19,6 +19,7 @@ use crate::{
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
+    patrol::{PatrolProfile, PatrolRoute},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
@@ -143,9 +144,10 @@ mod tests {
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
-        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem,
-        UniqueItemKind, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -261,6 +263,22 @@ mod tests {
             challenged_since: Some(Tick(12)),
             contested_since: Some(Tick(13)),
             last_uncontested_tick: Some(Tick(17)),
+        }
+    }
+
+    fn sample_patrol_route() -> PatrolRoute {
+        PatrolRoute {
+            assigned_places: vec![entity(42), entity(43), entity(44)],
+            current_index: 2,
+        }
+    }
+
+    fn sample_patrol_profile() -> PatrolProfile {
+        PatrolProfile {
+            base_patrol_interval: 9,
+            vigilance: Permille::new(625).unwrap(),
+            route_adaptation_sensitivity: Permille::new(400).unwrap(),
+            patrol_motive_weight: Permille::new(575).unwrap(),
         }
     }
 
@@ -712,7 +730,10 @@ mod tests {
             rally_place: Some(entity(38)),
         };
 
-        assert_eq!(tables.insert_bandit_faction_policy(id, profile.clone()), None);
+        assert_eq!(
+            tables.insert_bandit_faction_policy(id, profile.clone()),
+            None
+        );
         assert_eq!(tables.get_bandit_faction_policy(id), Some(&profile));
         assert!(tables.has_bandit_faction_policy(id));
         assert_eq!(tables.remove_bandit_faction_policy(id), Some(profile));
@@ -950,6 +971,32 @@ mod tests {
         assert!(tables.has_in_transit_on_edge(id));
         assert_eq!(tables.remove_in_transit_on_edge(id), Some(transit));
         assert_eq!(tables.get_in_transit_on_edge(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_patrol_route() {
+        let mut tables = ComponentTables::default();
+        let id = entity(45);
+        let route = sample_patrol_route();
+
+        assert_eq!(tables.insert_patrol_route(id, route.clone()), None);
+        assert_eq!(tables.get_patrol_route(id), Some(&route));
+        assert!(tables.has_patrol_route(id));
+        assert_eq!(tables.remove_patrol_route(id), Some(route));
+        assert_eq!(tables.get_patrol_route(id), None);
+    }
+
+    #[test]
+    fn insert_and_get_patrol_profile() {
+        let mut tables = ComponentTables::default();
+        let id = entity(46);
+        let profile = sample_patrol_profile();
+
+        assert_eq!(tables.insert_patrol_profile(id, profile.clone()), None);
+        assert_eq!(tables.get_patrol_profile(id), Some(&profile));
+        assert!(tables.has_patrol_profile(id));
+        assert_eq!(tables.remove_patrol_profile(id), Some(profile));
+        assert_eq!(tables.get_patrol_profile(id), None);
     }
 
     #[test]

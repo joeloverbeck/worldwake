@@ -305,9 +305,9 @@ mod tests {
         AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload,
         CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
         DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
-        InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-        QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, YieldForceClaimActionPayload,
+        InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
+        PunishActionPayload, QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{

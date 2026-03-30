@@ -441,10 +441,7 @@ impl PlanningSnapshot {
     }
 
     #[must_use]
-    pub(crate) fn bandit_camp_establishment_ticks(
-        &self,
-        faction: EntityId,
-    ) -> Option<NonZeroU32> {
+    pub(crate) fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
         self.actor_bandit_establishment_ticks.get(&faction).copied()
     }
 
@@ -514,11 +511,7 @@ impl PlanningSnapshot {
     }
 
     #[must_use]
-    pub(crate) fn direct_perceived_travel_cost(
-        &self,
-        from: EntityId,
-        to: EntityId,
-    ) -> Option<u32> {
+    pub(crate) fn direct_perceived_travel_cost(&self, from: EntityId, to: EntityId) -> Option<u32> {
         self.direct_perceived_travel_breakdown(from, to)
             .map(|breakdown| breakdown.perceived_cost)
     }

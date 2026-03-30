@@ -95,14 +95,19 @@ fn goal_specific_feasibility(
         .feasibility_strategy;
 
     match (strategy, &goal.grounded.key.kind) {
-        (FeasibilityStrategy::OwnedCommodityCheck, GoalKind::ConsumeOwnedCommodity { commodity }) => {
+        (
+            FeasibilityStrategy::OwnedCommodityCheck,
+            GoalKind::ConsumeOwnedCommodity { commodity },
+        ) => {
             if view.commodity_quantity(agent, *commodity) > Quantity(0) {
                 Some(FeasibilityHint::Likely)
             } else {
                 None // Uncertain — might acquire
             }
         }
-        (FeasibilityStrategy::EvidencePlaceLocal, _) => check_evidence_places_local(view, agent, goal),
+        (FeasibilityStrategy::EvidencePlaceLocal, _) => {
+            check_evidence_places_local(view, agent, goal)
+        }
         (FeasibilityStrategy::AlwaysLikely, GoalKind::Sleep | GoalKind::Relieve) => {
             Some(FeasibilityHint::Likely)
         }
@@ -117,14 +122,12 @@ fn goal_specific_feasibility(
             FeasibilityStrategy::ColocationOrDead,
             GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target },
         ) => check_colocated_or_dead(view, agent, *target),
-        (
-            FeasibilityStrategy::ColocationOrDead,
-            GoalKind::TreatWounds { patient },
-        ) => check_colocated_or_dead(view, agent, *patient),
-        (
-            FeasibilityStrategy::ColocationOrDead,
-            GoalKind::ShareBelief { listener, .. },
-        ) => check_colocated_or_dead(view, agent, *listener),
+        (FeasibilityStrategy::ColocationOrDead, GoalKind::TreatWounds { patient }) => {
+            check_colocated_or_dead(view, agent, *patient)
+        }
+        (FeasibilityStrategy::ColocationOrDead, GoalKind::ShareBelief { listener, .. }) => {
+            check_colocated_or_dead(view, agent, *listener)
+        }
         (
             FeasibilityStrategy::ColocationOrDead,
             GoalKind::SupportCandidateForOffice { candidate, .. },
@@ -139,9 +142,7 @@ fn goal_specific_feasibility(
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::StealItem { .. },
-        ) => {
-            None
-        }
+        ) => None,
         (FeasibilityStrategy::SellCheck, GoalKind::SellCommodity { commodity }) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
             if !has_commodity {
@@ -149,10 +150,7 @@ fn goal_specific_feasibility(
             }
             check_evidence_places_local(view, agent, goal)
         }
-        (
-            FeasibilityStrategy::CargoDestinationCheck,
-            GoalKind::MoveCargo { commodity, .. },
-        ) => {
+        (FeasibilityStrategy::CargoDestinationCheck, GoalKind::MoveCargo { commodity, .. }) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
             if has_commodity {
                 if let Some(agent_place) = view.effective_place(agent) {
@@ -195,9 +193,7 @@ fn goal_specific_feasibility(
             }
         }
         (strategy, goal_kind) => {
-            unreachable!(
-                "feasibility strategy {strategy:?} does not match goal kind {goal_kind:?}"
-            )
+            unreachable!("feasibility strategy {strategy:?} does not match goal kind {goal_kind:?}")
         }
     }
 }

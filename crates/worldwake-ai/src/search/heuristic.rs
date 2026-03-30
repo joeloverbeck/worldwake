@@ -135,13 +135,15 @@ pub(super) fn prune_travel_away_from_goal(
             .unwrap_or(u32::MAX);
         let direct_cost = snapshot
             .direct_perceived_travel_breakdown(current_place, destination)
-            .unwrap_or(crate::planning_snapshot::DirectPerceivedTravelCostBreakdown {
-                base_ticks: 0,
-                threat: worldwake_core::Permille::new(0)
-                    .expect("zero permille should remain valid"),
-                penalty_ticks: 0,
-                perceived_cost: 0,
-            });
+            .unwrap_or(
+                crate::planning_snapshot::DirectPerceivedTravelCostBreakdown {
+                    base_ticks: 0,
+                    threat: worldwake_core::Permille::new(0)
+                        .expect("zero permille should remain valid"),
+                    penalty_ticks: 0,
+                    perceived_cost: 0,
+                },
+            );
         let successor = crate::decision_trace::TravelSuccessorTrace {
             destination,
             base_ticks: direct_cost.base_ticks,

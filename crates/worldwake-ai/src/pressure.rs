@@ -73,9 +73,8 @@ pub fn bandit_raid_wound_threshold(view: &dyn GoalBeliefView, agent: EntityId) -
         .into_iter()
         .filter_map(|faction| view.bandit_flee_wound_threshold(faction))
         .map(|threshold| {
-            let scaled = u32::from(threshold.value())
-                .saturating_mul(1000u32.saturating_sub(courage))
-                / 1000;
+            let scaled =
+                u32::from(threshold.value()).saturating_mul(1000u32.saturating_sub(courage)) / 1000;
             Permille::new(u16::try_from(scaled).unwrap()).unwrap()
         })
         .min_by_key(|threshold| threshold.value())

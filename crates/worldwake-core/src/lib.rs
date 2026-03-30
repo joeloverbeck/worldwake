@@ -59,6 +59,7 @@ pub mod load;
 pub mod needs;
 pub mod numerics;
 pub mod offices;
+pub mod patrol;
 pub mod production;
 pub mod relations;
 pub mod test_utils;
@@ -156,6 +157,7 @@ pub use numerics::{LoadUnits, Permille, Quantity};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
+pub use patrol::{PatrolProfile, PatrolRoute};
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,

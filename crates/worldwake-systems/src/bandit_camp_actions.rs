@@ -91,9 +91,7 @@ fn faction_policy(world: &World, faction: EntityId) -> Result<BanditFactionPolic
         .get_component_bandit_faction_policy(faction)
         .cloned()
         .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!(
-                "faction {faction} lacks BanditFactionPolicy"
-            ))
+            ActionError::PreconditionFailed(format!("faction {faction} lacks BanditFactionPolicy"))
         })
 }
 
@@ -132,7 +130,11 @@ fn controlled_edible_lots_at_place(
     lots
 }
 
-fn living_faction_members_at_place(txn: &WorldTxn<'_>, faction: EntityId, place: EntityId) -> usize {
+fn living_faction_members_at_place(
+    txn: &WorldTxn<'_>,
+    faction: EntityId,
+    place: EntityId,
+) -> usize {
     txn.members_of(faction)
         .into_iter()
         .filter(|member| txn.is_alive(*member))
@@ -215,7 +217,9 @@ fn transferred_load(txn: &WorldTxn<'_>, lot_ids: &[EntityId]) -> Result<LoadUnit
                     .map_err(|err| ActionError::InternalError(err.to_string()))?
                     .0,
             )
-            .ok_or_else(|| ActionError::InternalError("camp transfer load overflowed".to_string()))?;
+            .ok_or_else(|| {
+                ActionError::InternalError("camp transfer load overflowed".to_string())
+            })?;
     }
     Ok(LoadUnits(total))
 }
@@ -449,15 +453,14 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         build_prototype_world, prototype_place_entity, verify_live_lot_conservation, BanditCamp,
-        BanditFactionPolicy, CauseRef, CommodityKind, Container, ControlSource, EntityId,
-        EventLog, LoadUnits, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, World,
-        WorldTxn,
+        BanditFactionPolicy, CauseRef, CommodityKind, Container, ControlSource, EntityId, EventLog,
+        LoadUnits, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, World, WorldTxn,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, DeterministicRng, EstablishCampActionPayload,
-        PerAgentBeliefView, TickOutcome,
+        abort_action, get_affordances, start_action, tick_action, ActionDefRegistry, ActionError,
+        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
+        ActionPayload, DeterministicRng, EstablishCampActionPayload, PerAgentBeliefView,
+        TickOutcome,
     };
 
     struct Harness {
@@ -492,7 +495,9 @@ mod tests {
                     txn.add_member(member, faction).unwrap();
                     txn.set_ground_location(member, rally_place).unwrap();
                 }
-                let bread = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+                let bread = txn
+                    .create_item_lot(CommodityKind::Bread, Quantity(2))
+                    .unwrap();
                 txn.set_ground_location(bread, rally_place).unwrap();
                 txn.set_owner(bread, actor).unwrap();
                 txn.set_possessor(bread, actor).unwrap();
@@ -606,17 +611,25 @@ mod tests {
         let outcome = harness.tick(action_id);
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
 
-        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        let camp = harness
+            .world
+            .get_component_bandit_camp(harness.rally_place)
+            .unwrap();
         assert_eq!(camp.faction, harness.faction);
         assert_eq!(
             harness.world.effective_place(camp.supplies),
             Some(harness.rally_place)
         );
         assert_eq!(harness.world.possessor_of(harness.bread), None);
-        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
+        assert_eq!(
+            harness.world.direct_container(harness.bread),
+            Some(camp.supplies)
+        );
         assert_eq!(harness.world.owner_of(harness.bread), Some(harness.faction));
         assert_eq!(
-            harness.world.get_component_bandit_faction_policy(harness.faction),
+            harness
+                .world
+                .get_component_bandit_faction_policy(harness.faction),
             Some(&BanditFactionPolicy {
                 min_regroup_count: 3,
                 establishment_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
@@ -641,9 +654,15 @@ mod tests {
         let outcome = harness.tick(action_id);
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
 
-        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        let camp = harness
+            .world
+            .get_component_bandit_camp(harness.rally_place)
+            .unwrap();
         assert_eq!(harness.world.possessor_of(harness.bread), None);
-        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
+        assert_eq!(
+            harness.world.direct_container(harness.bread),
+            Some(camp.supplies)
+        );
         assert_eq!(harness.world.owner_of(harness.bread), Some(harness.faction));
     }
 
@@ -661,9 +680,15 @@ mod tests {
         let outcome = harness.tick(action_id);
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
 
-        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        let camp = harness
+            .world
+            .get_component_bandit_camp(harness.rally_place)
+            .unwrap();
         assert_eq!(harness.world.possessor_of(harness.bread), None);
-        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
+        assert_eq!(
+            harness.world.direct_container(harness.bread),
+            Some(camp.supplies)
+        );
         assert_eq!(harness.world.owner_of(harness.bread), Some(harness.faction));
     }
 
@@ -680,7 +705,8 @@ mod tests {
                     allows_nested_containers: false,
                 })
                 .unwrap();
-            txn.set_ground_location(container, harness.rally_place).unwrap();
+            txn.set_ground_location(container, harness.rally_place)
+                .unwrap();
             txn.set_owner(container, harness.faction).unwrap();
             txn.set_component_bandit_camp(
                 harness.rally_place,
@@ -699,9 +725,15 @@ mod tests {
         let outcome = harness.tick(action_id);
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
 
-        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        let camp = harness
+            .world
+            .get_component_bandit_camp(harness.rally_place)
+            .unwrap();
         assert_eq!(camp.supplies, existing_container);
-        assert_eq!(harness.world.direct_container(harness.bread), Some(existing_container));
+        assert_eq!(
+            harness.world.direct_container(harness.bread),
+            Some(existing_container)
+        );
     }
 
     #[test]
@@ -717,7 +749,8 @@ mod tests {
                     allows_nested_containers: false,
                 })
                 .unwrap();
-            txn.set_ground_location(container, harness.rally_place).unwrap();
+            txn.set_ground_location(container, harness.rally_place)
+                .unwrap();
             txn.set_owner(container, harness.faction).unwrap();
             txn.set_component_bandit_camp(
                 harness.rally_place,
@@ -736,10 +769,16 @@ mod tests {
         let outcome = harness.tick(action_id);
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
 
-        let camp = harness.world.get_component_bandit_camp(harness.rally_place).unwrap();
+        let camp = harness
+            .world
+            .get_component_bandit_camp(harness.rally_place)
+            .unwrap();
         assert_ne!(camp.supplies, existing_container);
         assert!(
-            harness.world.get_component_container(existing_container).is_none(),
+            harness
+                .world
+                .get_component_container(existing_container)
+                .is_none(),
             "resized reuse should archive the undersized container"
         );
         assert_eq!(
@@ -750,7 +789,10 @@ mod tests {
                 .capacity,
             LoadUnits(2)
         );
-        assert_eq!(harness.world.direct_container(harness.bread), Some(camp.supplies));
+        assert_eq!(
+            harness.world.direct_container(harness.bread),
+            Some(camp.supplies)
+        );
     }
 
     #[test]
@@ -766,7 +808,8 @@ mod tests {
                     allows_nested_containers: false,
                 })
                 .unwrap();
-            txn.set_ground_location(container, harness.rally_place).unwrap();
+            txn.set_ground_location(container, harness.rally_place)
+                .unwrap();
             txn.set_owner(container, harness.rival_faction).unwrap();
             txn.set_component_bandit_camp(
                 harness.rally_place,
@@ -803,7 +846,8 @@ mod tests {
                     allows_nested_containers: false,
                 })
                 .unwrap();
-            txn.set_ground_location(container, harness.anchor_place).unwrap();
+            txn.set_ground_location(container, harness.anchor_place)
+                .unwrap();
             txn.set_owner(container, harness.faction).unwrap();
             txn.set_component_bandit_camp(
                 harness.anchor_place,
@@ -850,8 +894,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(harness.world.get_component_bandit_camp(harness.rally_place), None);
-        assert_eq!(harness.world.possessor_of(harness.bread), Some(harness.actor));
+        assert_eq!(
+            harness.world.get_component_bandit_camp(harness.rally_place),
+            None
+        );
+        assert_eq!(
+            harness.world.possessor_of(harness.bread),
+            Some(harness.actor)
+        );
         assert_eq!(harness.world.direct_container(harness.bread), None);
         verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 2).unwrap();
     }

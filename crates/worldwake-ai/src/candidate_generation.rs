@@ -5334,13 +5334,8 @@ mod tests {
             expires_tick: Tick(10),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &blocked,
-            &RecipeRegistry::new(),
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
 
         assert!(!contains_goal(&candidates, goal));
     }
@@ -5399,7 +5394,10 @@ mod tests {
         view.faction_rally_point_beliefs
             .insert(faction, InstitutionalBeliefRead::Certain(Some(rally_place)));
         view.institutional_claims.insert(
-            (agent, InstitutionalBeliefKey::FactionRallyPointOf { faction }),
+            (
+                agent,
+                InstitutionalBeliefKey::FactionRallyPointOf { faction },
+            ),
             vec![BelievedInstitutionalClaim {
                 claim: InstitutionalClaim::FactionRallyPoint {
                     faction,

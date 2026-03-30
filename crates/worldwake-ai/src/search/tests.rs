@@ -512,24 +512,10 @@ fn connect_bidirectional(
     ticks: u32,
 ) {
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(base_id),
-            from,
-            to,
-            ticks,
-            None,
-        )
-        .unwrap())
+        .add_edge(TravelEdge::new(TravelEdgeId(base_id), from, to, ticks, None).unwrap())
         .unwrap();
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(base_id + 1),
-            to,
-            from,
-            ticks,
-            None,
-        )
-        .unwrap())
+        .add_edge(TravelEdge::new(TravelEdgeId(base_id + 1), to, from, ticks, None).unwrap())
         .unwrap();
 }
 
@@ -2786,11 +2772,8 @@ fn build_restock_threat_fixture(with_combat_belief: bool) -> RestockThreatFixtur
             },
         )
         .unwrap();
-        txn.set_component_trade_disposition_profile(
-            actor,
-            sample_trade_disposition_profile(),
-        )
-        .unwrap();
+        txn.set_component_trade_disposition_profile(actor, sample_trade_disposition_profile())
+            .unwrap();
         txn.set_component_demand_memory(
             actor,
             DemandMemory {
@@ -2939,7 +2922,10 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([safe_route_fixture.orchard_row]),
-        evidence_places: BTreeSet::from([safe_route_fixture.market, safe_route_fixture.remote_farm]),
+        evidence_places: BTreeSet::from([
+            safe_route_fixture.market,
+            safe_route_fixture.remote_farm,
+        ]),
     };
     let safe_route_view =
         PerAgentBeliefView::from_world(safe_route_fixture.actor, &safe_route_fixture.world);
@@ -3815,8 +3801,14 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         current_tick: Tick(10),
         ..TestBeliefView::default()
     };
-    view.alive
-        .extend([actor, origin, dangerous_waypoint, safe_waypoint, market, bread]);
+    view.alive.extend([
+        actor,
+        origin,
+        dangerous_waypoint,
+        safe_waypoint,
+        market,
+        bread,
+    ]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(dangerous_waypoint, EntityKind::Place);
@@ -3967,13 +3959,8 @@ fn prune_travel_trace_records_perceived_cost_components_for_retained_rivals() {
         vec![(hostile, combat_belief_at(dangerous_waypoint, Tick(10)))],
     );
 
-    let snapshot = build_planning_snapshot(
-        &view,
-        actor,
-        &BTreeSet::new(),
-        &BTreeSet::from([market]),
-        2,
-    );
+    let snapshot =
+        build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([market]), 2);
 
     let travel_dangerous_id = ActionDefId(100);
     let travel_safe_id = ActionDefId(101);
@@ -4036,8 +4023,14 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
         current_tick: Tick(10),
         ..TestBeliefView::default()
     };
-    view.alive
-        .extend([actor, origin, dangerous_waypoint, safe_waypoint, market, bread]);
+    view.alive.extend([
+        actor,
+        origin,
+        dangerous_waypoint,
+        safe_waypoint,
+        market,
+        bread,
+    ]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(dangerous_waypoint, EntityKind::Place);

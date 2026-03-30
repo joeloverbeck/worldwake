@@ -130,9 +130,7 @@ pub(crate) fn perceived_direct_travel_cost_from_memory(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        perceived_direct_travel_cost_from_memory, route_threat_estimate_from_memory,
-    };
+    use super::{perceived_direct_travel_cost_from_memory, route_threat_estimate_from_memory};
     use std::collections::BTreeMap;
     use worldwake_core::{
         ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, BodyPart,

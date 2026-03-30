@@ -274,8 +274,8 @@ mod tests {
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        PlanningBudget,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningBudget,
+        PlanningEntityRef,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
@@ -536,7 +536,8 @@ mod tests {
             max_cooldown_ticks: 16,
             ..PlanningBudget::default()
         };
-        let mut entry = ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
+        let mut entry =
+            ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
 
         entry.record_budget_exhaustion(Tick(1), &budget);
         assert_eq!(entry.consecutive_failures, 1);
@@ -557,7 +558,8 @@ mod tests {
 
     #[test]
     fn retry_eligibility_respects_retry_tick_and_frontier_suppression() {
-        let frontier = ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
+        let frontier =
+            ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
         let retry = ExhaustionEntry {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
             invalidation_conditions: Vec::new(),

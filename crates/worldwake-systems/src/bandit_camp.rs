@@ -89,9 +89,8 @@ fn apply_update(
     update: PendingUpdate,
 ) -> Result<(), SystemError> {
     let (place, visibility) = match &update {
-        PendingUpdate::MarkEmptySince { place, .. } | PendingUpdate::ClearEmptySince { place, .. } => {
-            (*place, VisibilitySpec::Hidden)
-        }
+        PendingUpdate::MarkEmptySince { place, .. }
+        | PendingUpdate::ClearEmptySince { place, .. } => (*place, VisibilitySpec::Hidden),
         PendingUpdate::Abandon { place } => (*place, VisibilitySpec::SamePlace),
     };
 
@@ -235,7 +234,12 @@ mod tests {
             self.world.get_component_bandit_camp(self.camp_place)
         }
 
-        fn move_member(&mut self, member: worldwake_core::EntityId, place: worldwake_core::EntityId, tick: u64) {
+        fn move_member(
+            &mut self,
+            member: worldwake_core::EntityId,
+            place: worldwake_core::EntityId,
+            tick: u64,
+        ) {
             let mut txn = new_txn(&mut self.world, tick);
             txn.set_ground_location(member, place).unwrap();
             txn.clear_component_in_transit_on_edge(member).unwrap();
@@ -285,16 +289,19 @@ mod tests {
             .rev()
             .find_map(|event_id| {
                 let record = log.get(*event_id).unwrap();
-                record.state_deltas().iter().any(|delta| {
-                    matches!(
-                        delta,
-                        StateDelta::Component(ComponentDelta::Removed {
-                            component_kind: ComponentKind::BanditCamp,
-                            ..
-                        })
-                    )
-                })
-                .then_some(record)
+                record
+                    .state_deltas()
+                    .iter()
+                    .any(|delta| {
+                        matches!(
+                            delta,
+                            StateDelta::Component(ComponentDelta::Removed {
+                                component_kind: ComponentKind::BanditCamp,
+                                ..
+                            })
+                        )
+                    })
+                    .then_some(record)
             })
             .unwrap()
     }
@@ -313,10 +320,16 @@ mod tests {
         );
 
         harness.run(3);
-        assert!(harness.camp().is_some(), "camp should survive within grace period");
+        assert!(
+            harness.camp().is_some(),
+            "camp should survive within grace period"
+        );
 
         harness.run(4);
-        assert!(harness.camp().is_none(), "camp should be abandoned once grace expires");
+        assert!(
+            harness.camp().is_none(),
+            "camp should be abandoned once grace expires"
+        );
 
         let record = abandonment_record(&harness.log);
         assert!(record.tags().contains(&EventTag::System));
@@ -370,9 +383,18 @@ mod tests {
         harness.run(2);
         harness.run(3);
 
-        assert!(harness.world.get_component_bandit_camp(harness.camp_place).is_none());
-        assert_eq!(harness.world.effective_place(harness.supplies), Some(harness.camp_place));
-        assert!(harness.world.get_component_container(harness.supplies).is_some());
+        assert!(harness
+            .world
+            .get_component_bandit_camp(harness.camp_place)
+            .is_none());
+        assert_eq!(
+            harness.world.effective_place(harness.supplies),
+            Some(harness.camp_place)
+        );
+        assert!(harness
+            .world
+            .get_component_container(harness.supplies)
+            .is_some());
         assert!(harness.world.is_alive(harness.faction));
     }
 

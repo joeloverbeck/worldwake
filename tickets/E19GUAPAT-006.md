@@ -17,17 +17,19 @@ Guards must adapt their patrol routes based on their belief state: adding waypoi
 3. `ViolationMemory` (in `crates/worldwake-core/src/violation.rs`) stores `RecordedViolation` entries with place information. Method `unresolved_records()` returns currently unresolved violations.
 4. Spec says: crime report at new location adds that place to `assigned_places` if not already present, subject to `route_adaptation_sensitivity` threshold relative to report recency.
 5. Spec says: waypoints without recent crime reports may be moved to end of route or skipped. No permanent removal — only reordering.
-6. The spec places route adaptation in candidate generation or a per-tick patrol system hook. The cleaner approach is during candidate generation (when the guard's belief state is already being read) to avoid adding a new per-tick system.
-7. Route adaptation requires `WorldTxn` for mutation. If placed in candidate generation, this is a departure from the read-only candidate generation pattern. Alternative: a lightweight patrol system function run per-tick before candidate generation.
-8. `RecordedViolation` likely has a `place` or `location` field and a timestamp. Must verify exact fields during implementation.
-9. No adjacent contradictions found.
+6. The live core route shape is intentionally minimal: `assigned_places` plus `current_index`. This ticket should first prove route adaptation against that contract. Do not introduce richer per-waypoint metadata unless the adaptation invariant cannot be expressed cleanly without it.
+7. The spec places route adaptation in candidate generation or a per-tick patrol system hook. The cleaner approach remains a per-tick patrol system hook because candidate generation should stay read-only.
+8. Route adaptation requires `WorldTxn` for mutation. If placed in candidate generation, this would be a direct architectural regression against the existing read-only candidate generation pattern.
+9. `RecordedViolation` does not expose a uniform top-level `place` field across all variants; implementation must extract only lawful place-bearing patrol signals from the exact violation kinds or other explicit belief surfaces instead of assuming one shared location field.
+10. No adjacent contradictions found.
 
 ## Architecture Check
 
 1. **Option A**: Route adaptation in a per-tick `patrol_route_adaptation_system()` run before candidate generation. Cleaner separation of concerns (systems mutate state, candidates read state).
 2. **Option B**: Route adaptation in candidate generation. Violates the read-only candidate generation convention.
 3. **Recommendation**: Option A — a lightweight system function in `worldwake-systems` that runs per-tick, checks each guard's `ViolationMemory` for new crime reports at locations not on their route, and modifies `PatrolRoute.assigned_places` accordingly. This follows the pattern of other per-tick systems like `needs_system()` and `trade_system_tick()`.
-4. No backwards-compatibility shims.
+4. Route adaptation should stay on the minimal route contract unless proven otherwise. If later work truly needs temporary-versus-assigned waypoint distinction or per-waypoint policy metadata, that should be introduced as a direct route-model upgrade in its own ticket, not smuggled into this one as ad-hoc side data.
+5. No backwards-compatibility shims.
 
 ## Verification Layers
 
@@ -80,6 +82,7 @@ Define constants or derive from `PatrolProfile.route_adaptation_sensitivity`:
 - Captain-mediated route reassignment (deferred per spec to future epic)
 - Permanent waypoint removal (spec explicitly defers this)
 - Golden E2E tests (E19GUAPAT-007)
+- Richer patrol route-entry metadata unless a concrete adaptation invariant proves `Vec<EntityId>` is insufficient during implementation
 
 ## Acceptance Criteria
 
@@ -102,6 +105,7 @@ Define constants or derive from `PatrolProfile.route_adaptation_sensitivity`:
 3. `assigned_places` uses `Vec<EntityId>` — order matters for patrol sequence
 4. No `HashMap` or `f32`/`f64` introduced
 5. System runs deterministically (BTreeMap iteration, seeded RNG if any randomness)
+6. If `Vec<EntityId>` proves insufficient, the ticket must be corrected first to justify a direct route-model upgrade rather than adding sidecar route metadata
 
 ## Test Plan
 

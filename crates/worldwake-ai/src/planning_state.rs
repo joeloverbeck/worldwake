@@ -1772,10 +1772,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .flatten()
     }
 
-    fn bandit_camp_establishment_ticks(
-        &self,
-        faction: EntityId,
-    ) -> Option<std::num::NonZeroU32> {
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
         self.snapshot.bandit_camp_establishment_ticks(faction)
     }
 
@@ -1886,8 +1883,7 @@ mod tests {
         facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
         courages: BTreeMap<EntityId, Permille>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
-        faction_rally_point_beliefs:
-            BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data: BTreeMap<EntityId, OfficeData>,

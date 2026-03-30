@@ -3,18 +3,17 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt,
-    DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
-    EntityMeta, EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
-    HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
-    JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-    MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState,
-    PerceptionProfile, PlaceTag, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    Quantity, RecordData, RelationTables, ResourceSource, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
-    WoundList,
+    CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
+    DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
+    EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
+    FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
+    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
+    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
+    RelationTables, ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -594,17 +593,17 @@ mod tests {
         },
         AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
-        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
-        FactionPurpose, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
-        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-        OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource, Permille,
-        Place, PlaceTag, ProductionJob, ProvenanceEntry, Quantity, RecordData, RecordEntryId,
-        RecordKind, ReservationId, ReservationRecord, ResourceSource, SubstitutePreferences,
-        SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds,
+        EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
+        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
+        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
+        ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
+        ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
+        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
+        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -743,6 +742,22 @@ mod tests {
         JusticeDispositionProfile {
             accusation_motive_weight: Permille::new(700).unwrap(),
             fine_severity: Permille::new(450).unwrap(),
+        }
+    }
+
+    fn sample_patrol_route() -> PatrolRoute {
+        PatrolRoute {
+            assigned_places: vec![entity(5), entity(2), entity(11)],
+            current_index: 1,
+        }
+    }
+
+    fn sample_patrol_profile() -> PatrolProfile {
+        PatrolProfile {
+            base_patrol_interval: 6,
+            vigilance: Permille::new(650).unwrap(),
+            route_adaptation_sensitivity: Permille::new(425).unwrap(),
+            patrol_motive_weight: Permille::new(575).unwrap(),
         }
     }
 
@@ -4728,6 +4743,74 @@ mod tests {
     }
 
     #[test]
+    fn patrol_route_component_roundtrip_on_agent() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let route = sample_patrol_route();
+
+        world
+            .insert_component_patrol_route(agent, route.clone())
+            .unwrap();
+        assert_eq!(world.get_component_patrol_route(agent), Some(&route));
+        assert!(world.has_component_patrol_route(agent));
+        assert_eq!(
+            world.query_patrol_route().collect::<Vec<_>>(),
+            vec![(agent, &route)]
+        );
+        assert_eq!(world.count_with_patrol_route(), 1);
+
+        let removed = world.remove_component_patrol_route(agent).unwrap();
+        assert_eq!(removed, Some(route));
+        assert_eq!(world.get_component_patrol_route(agent), None);
+    }
+
+    #[test]
+    fn patrol_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_patrol_profile();
+
+        world
+            .insert_component_patrol_profile(agent, profile.clone())
+            .unwrap();
+        assert_eq!(world.get_component_patrol_profile(agent), Some(&profile));
+        assert!(world.has_component_patrol_profile(agent));
+        assert_eq!(
+            world.query_patrol_profile().collect::<Vec<_>>(),
+            vec![(agent, &profile)]
+        );
+        assert_eq!(world.count_with_patrol_profile(), 1);
+
+        let removed = world.remove_component_patrol_profile(agent).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_patrol_profile(agent), None);
+    }
+
+    #[test]
+    fn insert_patrol_route_on_non_agent_errors() {
+        let mut world = World::new(test_topology()).unwrap();
+        let office = world.create_entity(EntityKind::Office, Tick(1));
+
+        let err = world
+            .insert_component_patrol_route(office, sample_patrol_route())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn insert_patrol_profile_on_non_agent_errors() {
+        let mut world = World::new(test_topology()).unwrap();
+        let facility = world.create_entity(EntityKind::Facility, Tick(1));
+
+        let err = world
+            .insert_component_patrol_profile(facility, sample_patrol_profile())
+            .unwrap_err();
+
+        assert!(matches!(err, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
     fn blocked_intent_memory_component_roundtrip_on_agent() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
@@ -5269,7 +5352,9 @@ mod tests {
         let place = entity(2);
         let camp = sample_bandit_camp();
 
-        world.insert_component_bandit_camp(place, camp.clone()).unwrap();
+        world
+            .insert_component_bandit_camp(place, camp.clone())
+            .unwrap();
         assert_eq!(world.get_component_bandit_camp(place), Some(&camp));
         assert!(world.has_component_bandit_camp(place));
 
@@ -5287,10 +5372,15 @@ mod tests {
         world
             .insert_component_bandit_faction_policy(faction, profile.clone())
             .unwrap();
-        assert_eq!(world.get_component_bandit_faction_policy(faction), Some(&profile));
+        assert_eq!(
+            world.get_component_bandit_faction_policy(faction),
+            Some(&profile)
+        );
         assert!(world.has_component_bandit_faction_policy(faction));
 
-        let removed = world.remove_component_bandit_faction_policy(faction).unwrap();
+        let removed = world
+            .remove_component_bandit_faction_policy(faction)
+            .unwrap();
         assert_eq!(removed, Some(profile));
         assert_eq!(world.get_component_bandit_faction_policy(faction), None);
     }

@@ -2169,7 +2169,10 @@ mod tests {
         let faction = entity(88);
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::FactionRallyPointOf { faction },
-            vec![rally_point_belief(88, Some(89), 2), rally_point_belief(88, None, 5)],
+            vec![
+                rally_point_belief(88, Some(89), 2),
+                rally_point_belief(88, None, 5),
+            ],
         );
 
         assert_eq!(

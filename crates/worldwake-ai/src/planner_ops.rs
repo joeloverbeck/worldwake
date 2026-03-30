@@ -1,6 +1,6 @@
 use crate::{
-    GoalKey, GoalKind, GoalKindPlannerExt, GroundedGoal, HypotheticalEntityId,
-    PlanningEntityRef, PlanningState,
+    GoalKey, GoalKind, GoalKindPlannerExt, GroundedGoal, HypotheticalEntityId, PlanningEntityRef,
+    PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -140,9 +140,12 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Wash
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
-        | PlannerOpKind::Heal => {
-            base_semantics(op_kind, true, false, PlannerTransitionKind::GoalModelFallback)
-        }
+        | PlannerOpKind::Heal => base_semantics(
+            op_kind,
+            true,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+        ),
         PlannerOpKind::Consume => base_semantics(
             op_kind,
             true,
@@ -152,9 +155,12 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         PlannerOpKind::Trade
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
-        | PlannerOpKind::Loot => {
-            base_semantics(op_kind, true, true, PlannerTransitionKind::GoalModelFallback)
-        }
+        | PlannerOpKind::Loot => base_semantics(
+            op_kind,
+            true,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+        ),
         PlannerOpKind::MoveCargo => base_semantics(
             op_kind,
             true,
@@ -166,9 +172,12 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
                 _ => PlannerTransitionKind::GoalModelFallback,
             },
         ),
-        PlannerOpKind::Bury => {
-            base_semantics(op_kind, false, true, PlannerTransitionKind::GoalModelFallback)
-        }
+        PlannerOpKind::Bury => base_semantics(
+            op_kind,
+            false,
+            true,
+            PlannerTransitionKind::GoalModelFallback,
+        ),
         PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
@@ -206,9 +215,12 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::Investigate => {
-            base_semantics(op_kind, false, false, PlannerTransitionKind::GoalModelFallback)
-        }
+        | PlannerOpKind::Investigate => base_semantics(
+            op_kind,
+            false,
+            false,
+            PlannerTransitionKind::GoalModelFallback,
+        ),
         _ => return None,
     })
 }

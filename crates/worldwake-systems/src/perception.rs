@@ -239,8 +239,14 @@ fn observe_passive_local_entities(
             &batch,
             &profile,
         );
-        let doctrine_changed =
-            project_local_bandit_rally_doctrine(world, agent, batch.place, tick, &mut store, &profile);
+        let doctrine_changed = project_local_bandit_rally_doctrine(
+            world,
+            agent,
+            batch.place,
+            tick,
+            &mut store,
+            &profile,
+        );
         if !batch.observed_snapshots.is_empty() || doctrine_changed {
             updated_stores.insert(agent, store);
         }
@@ -909,16 +915,16 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, prototype_place_entity, ActionDefId,
-        ActionDomain, AgentBeliefStore, BanditCamp, BanditFactionPolicy,
-        BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, CauseRef, CommodityKind,
-        ComponentDelta, ComponentKind, ComponentValue, Container, ControlSource, DeadAt,
-        EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceRef,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MismatchKind, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
-        PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource,
-        Seed, SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ActionDomain, AgentBeliefStore, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
+        BelievedActivity, BelievedEntityState, CauseRef, CommodityKind, ComponentDelta,
+        ComponentKind, ComponentValue, Container, ControlSource, DeadAt, EntityKind, EventLog,
+        EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LoadUnits, MismatchKind, ObservedEntitySnapshot,
+        OfficeForceState, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, PrototypePlace, Quantity,
+        RelationDelta, RelationKind, RelationValue, ResourceSource, Seed, SocialObservationDetail,
+        SocialObservationKind, StateDelta, TheftFacts, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,

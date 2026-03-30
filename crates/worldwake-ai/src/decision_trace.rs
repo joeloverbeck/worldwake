@@ -2222,10 +2222,7 @@ mod tests {
             Some(BanditCandidateOmissionReason::MissingRallyBelief)
         );
         assert_eq!(
-            omitted_bandit_reason_for_goal(
-                &omissions,
-                &GoalKind::EstablishBanditCamp { faction }
-            ),
+            omitted_bandit_reason_for_goal(&omissions, &GoalKind::EstablishBanditCamp { faction }),
             Some(BanditCandidateOmissionReason::MissingLocalControlledEdibleSupplies)
         );
         assert_eq!(
