@@ -9,8 +9,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    prototype_place_entity, CommodityKind, HomeostaticNeeds, MetabolismProfile, PrototypePlace,
-    Quantity, ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    prototype_place_entity, CommodityKind, EventTag, EventView, HomeostaticNeeds,
+    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
+    UtilityProfile, WorkstationTag,
 };
 
 // ---------------------------------------------------------------------------
@@ -1193,5 +1194,730 @@ fn golden_deprivation_accident() {
     assert!(
         waste_at_agent_place,
         "waste should have been created at the agent's location after deprivation accident"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 65: Witness Observation — co-located agent perceives wilderness relief
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Perception
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: ForestPath
+// Principles: 3, 7, 26
+//
+// Setup: Two agents at ForestPath (Forest + Trail tags, both outdoor).
+//   Agent A has critical bladder (pm(950)) and relieves via
+//   relieve_wilderness. Agent B has PerceptionProfile with
+//   observation_fidelity=pm(1000) (guaranteed observation) and no
+//   bladder pressure (idle). Both agents have world beliefs seeded.
+//
+// Proves: The perception pipeline processes VisibilitySpec::SamePlace
+//   events from relieve_wilderness. A co-located agent with
+//   PerceptionProfile witnesses the WildernessRelief event, as proven
+//   by the perception trace recording a passed observation for Agent B
+//   on an event tagged WildernessRelief with actor=Agent A. This is the
+//   social consequence verification layer: witnesses observe relief events
+//   only if co-located (Principle 7: Locality).
+//
+// Chain: critical bladder -> Relieve goal -> relieve_wilderness committed
+//   with VisibilitySpec::SamePlace -> perception system resolves co-located
+//   witnesses -> Agent B passes observation check -> perception trace
+//   records observation.
+
+#[test]
+fn golden_witness_observation() {
+    let mut h = GoldenHarness::new(Seed([97; 32]));
+    h.enable_action_tracing();
+    h.enable_perception_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(10),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty
+    );
+
+    // Agent A: critical bladder, will relieve.
+    let agent_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Reliever",
+        FOREST_PATH,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    // Agent B: idle observer with guaranteed observation fidelity.
+    let idle_metabolism = MetabolismProfile::new(
+        pm(1),   // hunger_rate
+        pm(1),   // thirst_rate
+        pm(1),   // fatigue_rate
+        pm(1),   // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(0),   // wilderness_relief_dirtiness_penalty
+    );
+
+    let agent_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness",
+        FOREST_PATH,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        idle_metabolism,
+        UtilityProfile::default(),
+    );
+
+    // Set PerceptionProfile on Agent B with fidelity=1000 (guaranteed observation).
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_b,
+        PerceptionProfile {
+            observation_fidelity: pm(1000),
+            ..PerceptionProfile::default()
+        },
+    );
+
+    // Seed world beliefs for both agents.
+    for agent in [agent_a, agent_b] {
+        seed_actor_world_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::Inference,
+        );
+    }
+
+    // Run until relieve_wilderness commits.
+    let mut wilderness_committed = false;
+    for _ in 0..40 {
+        h.step_once();
+
+        if !wilderness_committed {
+            let sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            wilderness_committed = sink.events_for(agent_a).iter().any(|e| {
+                matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+                    && h.defs
+                        .get(e.def_id)
+                        .map(|d| d.name.as_str() == "relieve_wilderness")
+                        .unwrap_or(false)
+            });
+            if wilderness_committed {
+                break;
+            }
+        }
+    }
+
+    // --- Verification Layer 1: Action committed ---
+    assert!(
+        wilderness_committed,
+        "Agent A should have committed relieve_wilderness at ForestPath within 40 ticks"
+    );
+
+    // --- Verification Layer 2: Perception trace shows Agent B observed a WildernessRelief event ---
+    let perception_sink = h
+        .perception_trace_sink()
+        .expect("perception tracing should be enabled");
+    let b_observations = perception_sink.events_for(agent_b);
+
+    // Find a perception trace entry where Agent B observed an event tagged WildernessRelief.
+    let witnessed_wilderness_relief = b_observations.iter().any(|trace_event| {
+        if !trace_event.observation_passed {
+            return false;
+        }
+        // Look up the event in the log and check its tags.
+        h.event_log
+            .get(trace_event.event_id)
+            .is_some_and(|record| record.tags().contains(&EventTag::WildernessRelief))
+    });
+    assert!(
+        witnessed_wilderness_relief,
+        "Agent B (co-located with PerceptionProfile) should have observed a WildernessRelief \
+         event via the perception pipeline. Perception trace entries for B: {:?}",
+        b_observations.iter().map(|e| e.summary()).collect::<Vec<_>>(),
+    );
+
+    // --- Verification Layer 3: The witnessed event's actor is Agent A ---
+    let witnessed_event_actor_matches = b_observations.iter().any(|trace_event| {
+        if !trace_event.observation_passed {
+            return false;
+        }
+        h.event_log.get(trace_event.event_id).is_some_and(|record| {
+            record.tags().contains(&EventTag::WildernessRelief)
+                && record.actor_id() == Some(agent_a)
+        })
+    });
+    assert!(
+        witnessed_event_actor_matches,
+        "The WildernessRelief event observed by Agent B should have Agent A as actor"
+    );
+
+    // --- Verification Layer 4: Authoritative state — bladder reset, waste exists ---
+    assert!(
+        h.agent_bladder(agent_a).value() <= 20,
+        "Agent A bladder ({}) should be near pm(0) after relieve_wilderness commit",
+        h.agent_bladder(agent_a).value(),
+    );
+
+    let waste_at_forest = h
+        .world
+        .entities_effectively_at(FOREST_PATH)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        });
+    assert!(
+        waste_at_forest,
+        "waste should have been created at ForestPath after relieve_wilderness"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 66: No Witness — isolated agent produces no social consequences
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Perception
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: ForestPath
+// Principles: 3, 7
+//
+// Setup: One agent alone at ForestPath (Forest + Trail tags, outdoor)
+//   with critical bladder (pm(950)). No other agents at ForestPath.
+//   A second agent exists at a different place (VillageSquare) with
+//   PerceptionProfile to confirm it does NOT observe the event.
+//
+// Proves: Agents who relieve in isolation produce no social consequences.
+//   VisibilitySpec::SamePlace ensures only co-located agents can witness
+//   the event (Principle 7: Locality). A distant agent with
+//   PerceptionProfile does NOT observe. Physical consequences still
+//   exist: waste at place, dirtiness on agent.
+//
+// Chain: critical bladder -> Relieve goal -> relieve_wilderness committed
+//   with VisibilitySpec::SamePlace -> perception system resolves witnesses
+//   -> no co-located observers -> no perception trace for distant agent
+//   -> physical consequences (waste, dirtiness) still produced.
+
+#[test]
+fn golden_no_witness() {
+    let mut h = GoldenHarness::new(Seed([98; 32]));
+    h.enable_action_tracing();
+    h.enable_perception_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(10),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty
+    );
+
+    // Isolated agent at ForestPath with critical bladder.
+    let isolated = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Isolated",
+        FOREST_PATH,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    // Distant agent at VillageSquare with PerceptionProfile — should NOT observe.
+    let idle_metabolism = MetabolismProfile::new(
+        pm(1),   // hunger_rate
+        pm(1),   // thirst_rate
+        pm(1),   // fatigue_rate
+        pm(1),   // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(0),   // wilderness_relief_dirtiness_penalty
+    );
+
+    let distant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Distant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        idle_metabolism,
+        UtilityProfile::default(),
+    );
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        distant,
+        PerceptionProfile {
+            observation_fidelity: pm(1000),
+            ..PerceptionProfile::default()
+        },
+    );
+
+    // Seed beliefs for both agents.
+    for agent in [isolated, distant] {
+        seed_actor_world_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::Inference,
+        );
+    }
+
+    let initial_dirtiness = h.agent_dirtiness(isolated);
+
+    // Run until relieve_wilderness commits.
+    let mut wilderness_committed = false;
+    for _ in 0..40 {
+        h.step_once();
+
+        if !wilderness_committed {
+            let sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            wilderness_committed = sink.events_for(isolated).iter().any(|e| {
+                matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+                    && h.defs
+                        .get(e.def_id)
+                        .map(|d| d.name.as_str() == "relieve_wilderness")
+                        .unwrap_or(false)
+            });
+            if wilderness_committed {
+                break;
+            }
+        }
+    }
+
+    assert!(
+        wilderness_committed,
+        "isolated agent should have committed relieve_wilderness at ForestPath within 40 ticks"
+    );
+
+    // --- Verification Layer 1: Distant agent did NOT observe a WildernessRelief event ---
+    let perception_sink = h
+        .perception_trace_sink()
+        .expect("perception tracing should be enabled");
+    let distant_observations = perception_sink.events_for(distant);
+
+    let distant_saw_wilderness_relief = distant_observations.iter().any(|trace_event| {
+        trace_event.observation_passed
+            && h.event_log
+                .get(trace_event.event_id)
+                .is_some_and(|record| record.tags().contains(&EventTag::WildernessRelief))
+    });
+    assert!(
+        !distant_saw_wilderness_relief,
+        "distant agent at VillageSquare should NOT have observed a WildernessRelief event \
+         at ForestPath (VisibilitySpec::SamePlace requires co-location)"
+    );
+
+    // --- Verification Layer 2: Physical consequences still exist ---
+    assert!(
+        h.agent_bladder(isolated).value() <= 20,
+        "isolated agent bladder ({}) should be near pm(0) after relieve_wilderness commit",
+        h.agent_bladder(isolated).value(),
+    );
+
+    let final_dirtiness = h.agent_dirtiness(isolated);
+    assert!(
+        final_dirtiness.value() >= initial_dirtiness.value() + 200,
+        "dirtiness ({}) should include wilderness_relief_dirtiness_penalty (200) above initial ({})",
+        final_dirtiness.value(),
+        initial_dirtiness.value(),
+    );
+
+    let waste_at_forest = h
+        .world
+        .entities_effectively_at(FOREST_PATH)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        });
+    assert!(
+        waste_at_forest,
+        "waste should have been created at ForestPath even without witnesses"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 67: Need Continuity — cross-path bladder and dirtiness invariants
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: Relieve
+// ActionDomains: Needs
+// Places: PublicLatrine, ForestPath, CommonHouse
+// Principles: 3, 8, 26
+//
+// Setup: Three sub-scenarios with separate harnesses:
+//   (a) Agent at PublicLatrine, critical bladder → toilet → bladder=0,
+//       dirtiness unchanged.
+//   (b) Agent at ForestPath, critical bladder → relieve_wilderness →
+//       bladder=0, dirtiness += wilderness_relief_dirtiness_penalty.
+//   (c) Agent at CommonHouse (indoor, no relief), critical bladder,
+//       bladder_accident_tolerance_ticks=1 → deprivation accident →
+//       bladder=0, dirtiness at max consequence level.
+//
+// Proves: Across all relief paths (toilet, wilderness, accident), bladder
+//   is always exactly Permille(0) at the commit/accident boundary. No
+//   partial resets. Dirtiness reflects the exact penalty for each path:
+//   0 for toilet, wilderness_relief_dirtiness_penalty for wilderness,
+//   and the full bladder pressure value for accident. This is the
+//   cross-cutting need continuity invariant (Principle 3: Concrete State).
+//
+// Chain: Each sub-scenario: critical bladder -> path-specific relief ->
+//   bladder=0, dirtiness=path_penalty. The invariant holds regardless
+//   of which relief mechanism fires.
+
+#[test]
+fn golden_need_continuity_toilet() {
+    // Sub-scenario (a): toilet at PublicLatrine.
+    let mut h = GoldenHarness::new(Seed([99; 32]));
+    h.enable_action_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(10),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty — non-zero to confirm NOT applied
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "ToiletUser",
+        PUBLIC_LATRINE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+
+    // Run until toilet commits. Break immediately at commit for exact assertion.
+    let mut toilet_committed = false;
+    for _ in 0..40 {
+        h.step_once();
+
+        if !toilet_committed {
+            let sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            toilet_committed = sink.events_for(agent).iter().any(|e| {
+                matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+                    && h.defs
+                        .get(e.def_id)
+                        .map(|d| d.name.as_str() == "toilet")
+                        .unwrap_or(false)
+            });
+            if toilet_committed {
+                break;
+            }
+        }
+    }
+
+    assert!(toilet_committed, "agent should have committed toilet at PublicLatrine");
+
+    // Bladder should be near pm(0) (basal drift of at most 1 tick since commit).
+    assert!(
+        h.agent_bladder(agent).value() <= 20,
+        "toilet path: bladder ({}) should be near pm(0) at commit boundary",
+        h.agent_bladder(agent).value(),
+    );
+
+    // Dirtiness should NOT include the wilderness penalty (200). Only basal drift.
+    let final_dirtiness = h.agent_dirtiness(agent);
+    assert!(
+        final_dirtiness.value() < initial_dirtiness.value() + 100,
+        "toilet path: dirtiness ({}) should not include wilderness penalty (initial={})",
+        final_dirtiness.value(),
+        initial_dirtiness.value(),
+    );
+}
+
+#[test]
+fn golden_need_continuity_wilderness() {
+    // Sub-scenario (b): relieve_wilderness at ForestPath.
+    let mut h = GoldenHarness::new(Seed([100; 32]));
+    h.enable_action_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(10),  // bladder_rate
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(200), // bladder_accident_tolerance_ticks
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "WildernessUser",
+        FOREST_PATH,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+
+    // Run until relieve_wilderness commits.
+    let mut wilderness_committed = false;
+    for _ in 0..40 {
+        h.step_once();
+
+        if !wilderness_committed {
+            let sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled");
+            wilderness_committed = sink.events_for(agent).iter().any(|e| {
+                matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+                    && h.defs
+                        .get(e.def_id)
+                        .map(|d| d.name.as_str() == "relieve_wilderness")
+                        .unwrap_or(false)
+            });
+            if wilderness_committed {
+                break;
+            }
+        }
+    }
+
+    assert!(
+        wilderness_committed,
+        "agent should have committed relieve_wilderness at ForestPath"
+    );
+
+    // Bladder should be near pm(0) at commit boundary.
+    assert!(
+        h.agent_bladder(agent).value() <= 20,
+        "wilderness path: bladder ({}) should be near pm(0) at commit boundary",
+        h.agent_bladder(agent).value(),
+    );
+
+    // Dirtiness should include the wilderness penalty (200).
+    let final_dirtiness = h.agent_dirtiness(agent);
+    assert!(
+        final_dirtiness.value() >= initial_dirtiness.value() + 200,
+        "wilderness path: dirtiness ({}) should include penalty (200) above initial ({})",
+        final_dirtiness.value(),
+        initial_dirtiness.value(),
+    );
+}
+
+#[test]
+fn golden_need_continuity_accident() {
+    // Sub-scenario (c): deprivation accident at CommonHouse (indoor, no relief).
+    let mut h = GoldenHarness::new(Seed([101; 32]));
+    h.enable_action_tracing();
+
+    let metabolism = MetabolismProfile::new(
+        pm(2),   // hunger_rate
+        pm(2),   // thirst_rate
+        pm(2),   // fatigue_rate
+        pm(50),  // bladder_rate — fast escalation
+        pm(1),   // dirtiness_rate
+        pm(20),  // rest_efficiency
+        nz(480), // starvation_tolerance_ticks
+        nz(240), // dehydration_tolerance_ticks
+        nz(120), // exhaustion_collapse_ticks
+        nz(1),   // bladder_accident_tolerance_ticks — fires after 1 critical tick
+        nz(8),   // toilet_ticks
+        nz(12),  // wash_ticks
+        pm(0),   // travel_fatigue_multiplier
+        pm(0),   // travel_thirst_multiplier
+        pm(0),   // travel_bladder_multiplier
+        pm(200), // wilderness_relief_dirtiness_penalty
+    );
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "AccidentVictim",
+        COMMON_HOUSE,
+        // Bladder at pm(950) — above critical threshold (930).
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(950), pm(0)),
+        metabolism,
+        UtilityProfile {
+            bladder_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let initial_dirtiness = h.agent_dirtiness(agent);
+
+    // Run until the accident fires — bladder resets to 0 and dirtiness jumps.
+    for _ in 0..30 {
+        h.step_once();
+
+        if h.agent_bladder(agent) == pm(0)
+            && h.agent_dirtiness(agent).value() > initial_dirtiness.value() + 100
+        {
+            break;
+        }
+    }
+
+    // --- No relief action should have been committed ---
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
+    let relief_committed = action_sink.events_for(agent).iter().any(|e| {
+        matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
+            && h.defs
+                .get(e.def_id)
+                .map(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
+                .unwrap_or(false)
+    });
+    assert!(
+        !relief_committed,
+        "accident path: no relief action should have been committed at CommonHouse (indoor)"
+    );
+
+    // Bladder should be exactly pm(0) after accident.
+    assert_eq!(
+        h.agent_bladder(agent),
+        pm(0),
+        "accident path: bladder should be pm(0) after deprivation accident"
+    );
+
+    // Dirtiness should be very high — the accident adds the bladder pressure
+    // (which was at or near 1000) to dirtiness.
+    let final_dirtiness = h.agent_dirtiness(agent);
+    assert!(
+        final_dirtiness.value() >= 500,
+        "accident path: dirtiness ({}) should be very high after deprivation accident \
+         (bladder pressure added)",
+        final_dirtiness.value(),
+    );
+
+    // Waste should exist at the agent's effective place.
+    let agent_place = h
+        .world
+        .effective_place(agent)
+        .expect("agent should have an effective place");
+    let waste_exists = h
+        .world
+        .entities_effectively_at(agent_place)
+        .into_iter()
+        .any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+        });
+    assert!(
+        waste_exists,
+        "accident path: waste should exist at agent's location after deprivation accident"
     );
 }

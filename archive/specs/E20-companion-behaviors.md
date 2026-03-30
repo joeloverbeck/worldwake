@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # E20: Travel Physiology & Need Fallbacks
 
 ## Epic Summary
@@ -434,3 +436,21 @@ No new system functions. All behavior flows through existing systems:
 - Section 7.5 (physiological/social propagation)
 - Section 9.16 (need continuity)
 - FOUNDATIONS.md Principles 1, 3, 7, 8, 11, 19, 20, 22, 26, 30
+
+## Outcome
+
+**Completion date**: 2026-03-30
+
+**What was delivered** (across tickets E20COMBEH-001 through E20COMBEH-008):
+- Travel exertion multipliers on `MetabolismProfile` (`travel_fatigue_multiplier`, `travel_thirst_multiplier`, `travel_bladder_multiplier`) with backward-compatible defaults of `Permille(0)`
+- Dynamic body cost resolution in the travel action start handler
+- `relieve_wilderness` action with outdoor place constraint, dirtiness penalty, waste production, `VisibilitySpec::SamePlace`, and `EventTag::WildernessRelief`
+- `wilderness_relief_dirtiness_penalty` field on `MetabolismProfile`
+- `EventTag::WildernessRelief` and `EventTag::BladderAccident` variants
+- `OUTDOOR_RELIEF_TAGS` constant in topology for outdoor place detection
+- Expanded `goal_relevant_places` for `GoalKind::Relieve` to include outdoor places
+- Golden E2E tests: travel escalation (Scenario 58), critical bladder local relief (59), agent diversity (60), travel interrupt from bladder escalation (61), latrine preferred (62), wilderness fallback (63), deprivation accident (64), witness observation (65), no-witness isolation (66), need continuity across all relief paths (67a-c)
+- Focused unit tests for action registration, outdoor/indoor place constraints, commit effects, visibility, and event tags
+
+**Deviations from spec**:
+- Witness/no-witness golden tests (E20COMBEH-008) use perception traces rather than `SocialObservation` belief entries, because the spec explicitly chose "No new impression or reputation components." The perception pipeline processes the SamePlace event but does not form a typed social observation for WildernessRelief.

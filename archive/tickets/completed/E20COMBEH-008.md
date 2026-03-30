@@ -1,6 +1,6 @@
 # E20COMBEH-008: Golden tests — social and need continuity (witness, no-witness, continuity)
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — tests only
@@ -104,3 +104,25 @@ Wilderness relief social consequences and need continuity need golden E2E covera
 3. `cargo test -p worldwake-ai golden_need_continuity`
 4. `cargo test -p worldwake-ai`
 5. `cargo test --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-30
+
+**What actually changed**:
+- Added 5 golden tests to `crates/worldwake-ai/tests/golden_travel_physiology.rs`:
+  - `golden_witness_observation` (Scenario 65) — perception trace proves co-located observer with PerceptionProfile witnesses WildernessRelief event
+  - `golden_no_witness` (Scenario 66) — perception trace proves distant agent does NOT observe WildernessRelief (SamePlace locality enforced)
+  - `golden_need_continuity_toilet` (Scenario 67a) — bladder near 0, no dirtiness penalty
+  - `golden_need_continuity_wilderness` (Scenario 67b) — bladder near 0, dirtiness += 200 penalty
+  - `golden_need_continuity_accident` (Scenario 67c) — bladder exactly 0, dirtiness at max, waste created
+- Added imports: `EventTag`, `EventView`, `PerceptionProfile` to the test file
+
+**Deviations from original plan**:
+- T-WitnessObservation and T-NoWitness use **perception traces** as the assertion surface rather than `AgentBeliefStore.social_observations`. The perception system's `social_kind()` does not map `WildernessRelief` to any `SocialObservationKind`, so no `SocialObservation` is formed. This is a deliberate E20 spec decision ("No new impression or reputation components"). Perception traces prove the pipeline processed the SamePlace event, which is the correct semantic surface.
+- T-NeedContinuity was split into three separate test functions (`_toilet`, `_wilderness`, `_accident`) rather than one test with sub-scenarios, for clearer failure isolation.
+
+**Verification results**:
+- `cargo test -p worldwake-ai`: 888 unit + all golden tests pass
+- `cargo clippy --workspace`: clean
+- `cargo test --workspace`: all pass, 0 failures
