@@ -18,6 +18,7 @@ pub mod needs;
 pub mod needs_actions;
 pub mod office_actions;
 pub mod offices;
+pub mod patrol;
 pub mod patrol_actions;
 pub mod perception;
 pub mod production;
@@ -48,6 +49,7 @@ pub use offices::{
     count_present_hostile_faction_pairs_at, office_is_vacant, offices_with_jurisdiction,
     public_order, succession_system,
 };
+pub use patrol::patrol_route_adaptation_system;
 pub use patrol_actions::register_patrol_action;
 pub use perception::perception_system;
 pub use production::resource_regeneration_system;
@@ -70,5 +72,6 @@ pub fn dispatch_table() -> SystemDispatchTable {
         succession_system,
         perception_system,
         bandit_camp_system,
+        patrol_route_adaptation_system,
     ])
 }

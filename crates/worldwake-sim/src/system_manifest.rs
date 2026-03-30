@@ -24,6 +24,8 @@ macro_rules! define_system_ids {
             ///   are visible to co-located observers in the same tick via `force_control_claims_for_event()`.
             ///   Without this ordering, `Perception` cannot project institutional beliefs from political events
             ///   (violates Principle 7: locality of information).
+            /// - `Perception` runs before `Patrol` so same-tick witnessed or told crime reports
+            ///   can reshape authoritative patrol routes before the next AI input cycle.
             ///
             /// Do not reorder this list casually. Any change here changes the simulation's causal sequencing.
             pub const ALL: [Self; define_system_ids!(@count $($variant),+)] = [$(Self::$variant),+];
@@ -56,6 +58,7 @@ define_system_ids! {
     (Politics, "politics"),
     (Perception, "perception"),
     (BanditCamp, "bandit_camp"),
+    (Patrol, "patrol"),
 }
 
 impl fmt::Display for SystemId {
@@ -100,6 +103,7 @@ impl SystemManifest {
             SystemId::FacilityQueue,
             SystemId::Politics,
             SystemId::Perception,
+            SystemId::Patrol,
         ])
         .expect("canonical system order must not contain duplicates")
     }
@@ -157,6 +161,7 @@ mod tests {
         assert_eq!(SystemId::FacilityQueue.to_string(), "facility_queue");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::Politics.to_string(), "politics");
+        assert_eq!(SystemId::Patrol.to_string(), "patrol");
     }
 
     #[test]
@@ -172,6 +177,7 @@ mod tests {
                 SystemId::Politics,
                 SystemId::Perception,
                 SystemId::BanditCamp,
+                SystemId::Patrol,
             ]
         );
     }
@@ -236,6 +242,7 @@ mod tests {
                 SystemId::FacilityQueue,
                 SystemId::Politics,
                 SystemId::Perception,
+                SystemId::Patrol,
             ]
         );
     }
