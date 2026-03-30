@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_core::{
     CombatWeaponRef, CommodityKind, CommodityTreatmentProfile, EntityId, EntityKind, PatrolProfile,
-    Permille, PlaceTag, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
+    Permille, PlaceTag, PlaceTagSet, Quantity, RecipeId, UniqueItemKind, WorkstationTag, World,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -15,6 +15,7 @@ pub enum Constraint {
     ActorNotInTransit,
     ActorAtPlace(EntityId),
     ActorAtPlaceTag(PlaceTag),
+    ActorAtPlaceWithAnyTag(PlaceTagSet),
     ActorKnowsRecipe(RecipeId),
     ActorHasUniqueItemKind {
         kind: UniqueItemKind,

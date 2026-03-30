@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile,
-    Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn,
+    Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn, OUTDOOR_RELIEF_TAGS,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -41,6 +41,12 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         start_noop,
         tick_continue,
         commit_wash,
+        abort_noop,
+    ));
+    let relieve_wilderness_handler = handlers.register(ActionHandler::new(
+        start_noop,
+        tick_continue,
+        commit_relieve_wilderness,
         abort_noop,
     ));
 
@@ -83,6 +89,37 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
             kind: MetabolismDurationKind::Wash,
         },
     );
+
+    // relieve_wilderness: registered directly because it needs SamePlace visibility
+    // and WildernessRelief event tag, unlike the other needs actions.
+    let rw_id = ActionDefId(defs.len() as u32);
+    defs.register(ActionDef {
+        id: rw_id,
+        name: "relieve_wilderness".to_string(),
+        domain: worldwake_core::ActionDomain::Needs,
+        actor_constraints: vec![
+            Constraint::ActorAlive,
+            Constraint::ActorNotIncapacitated,
+            Constraint::ActorNotInTransit,
+            Constraint::ActorAtPlaceWithAnyTag(OUTDOOR_RELIEF_TAGS),
+        ],
+        targets: Vec::new(),
+        preconditions: vec![Precondition::ActorAlive],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::ActorMetabolism {
+            kind: MetabolismDurationKind::Toilet,
+        },
+        body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::InterruptibleWithPenalty,
+        commit_conditions: vec![Precondition::ActorAlive],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([
+            EventTag::WorldMutation,
+            EventTag::WildernessRelief,
+        ]),
+        payload: ActionPayload::None,
+        handler: relieve_wilderness_handler,
+    });
 }
 
 fn register_def(
@@ -353,6 +390,37 @@ fn commit_toilet(
     Ok(CommitOutcome::empty())
 }
 
+fn commit_relieve_wilderness(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let needs = actor_needs(txn, instance.actor)?;
+    let profile = actor_profile(txn, instance.actor)?;
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::InternalError(format!("actor {} has no place", instance.actor))
+    })?;
+    let waste = txn
+        .create_item_lot(CommodityKind::Waste, Quantity(1))
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_ground_location(waste, place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    set_actor_needs(
+        txn,
+        instance.actor,
+        HomeostaticNeeds::new(
+            needs.hunger,
+            needs.thirst,
+            needs.fatigue,
+            pm(0),
+            needs.dirtiness
+                .saturating_add(profile.wilderness_relief_dirtiness_penalty),
+        ),
+    )?;
+    Ok(CommitOutcome::empty())
+}
+
 fn commit_wash(
     _def: &ActionDef,
     instance: &ActionInstance,
@@ -391,9 +459,9 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
         AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DriveThresholds, EntityId, EventLog, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
-        Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        DriveThresholds, EntityId, EventLog, EventTag, HomeostaticNeeds, MetabolismProfile,
+        PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
@@ -564,12 +632,16 @@ mod tests {
     }
 
     #[test]
-    fn register_needs_actions_adds_all_five_defs_and_handlers() {
+    fn register_needs_actions_adds_all_six_defs_and_handlers() {
         let (defs, handlers) = setup_registries();
-        assert_eq!(defs.len(), 5);
-        assert_eq!(handlers.len(), 5);
+        assert_eq!(defs.len(), 6);
+        assert_eq!(handlers.len(), 6);
         assert_eq!(defs.get(ActionDefId(0)).unwrap().name, "eat");
         assert_eq!(defs.get(ActionDefId(4)).unwrap().name, "wash");
+        assert_eq!(
+            defs.get(ActionDefId(5)).unwrap().name,
+            "relieve_wilderness"
+        );
     }
 
     #[test]
@@ -1020,6 +1092,241 @@ mod tests {
         assert!(
             affordances.iter().any(|a| a.def_id == wash_def_id()),
             "wash should be offered for possessed water lot"
+        );
+    }
+
+    fn relieve_wilderness_def_id() -> ActionDefId {
+        ActionDefId(5)
+    }
+
+    fn setup_actor_at_place(
+        world: &mut World,
+        place: EntityId,
+    ) -> EntityId {
+        let mut txn = new_txn(world, 1);
+        let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(actor, place).unwrap();
+        txn.set_component_homeostatic_needs(
+            actor,
+            HomeostaticNeeds::new(pm(700), pm(650), pm(400), pm(800), pm(100)),
+        )
+        .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(
+            actor,
+            MetabolismProfile::new(
+                pm(1),
+                pm(1),
+                pm(1),
+                pm(1),
+                pm(1),
+                pm(40),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+                NonZeroU32::new(2).unwrap(),
+                NonZeroU32::new(3).unwrap(),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(150), // wilderness_relief_dirtiness_penalty
+            ),
+        )
+        .unwrap();
+        commit_txn(txn);
+        actor
+    }
+
+    #[test]
+    fn relieve_wilderness_accepts_outdoor_places() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (defs, handlers) = setup_registries();
+
+        // ForestPath has tags Forest + Trail — both outdoor
+        let forest_path = prototype_place_entity(PrototypePlace::ForestPath);
+        let actor = setup_actor_at_place(&mut world, forest_path);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .any(|a| a.def_id == relieve_wilderness_def_id()),
+            "relieve_wilderness should be available at ForestPath"
+        );
+
+        // EastFieldTrail has tags Trail + Field — both outdoor
+        let east_field = prototype_place_entity(PrototypePlace::EastFieldTrail);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_ground_location(actor, east_field).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .any(|a| a.def_id == relieve_wilderness_def_id()),
+            "relieve_wilderness should be available at EastFieldTrail"
+        );
+
+        // NorthCrossroads has tags Crossroads + Road — Road is outdoor
+        let crossroads = prototype_place_entity(PrototypePlace::NorthCrossroads);
+        let mut txn = new_txn(&mut world, 3);
+        txn.set_ground_location(actor, crossroads).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .any(|a| a.def_id == relieve_wilderness_def_id()),
+            "relieve_wilderness should be available at NorthCrossroads (has Road tag)"
+        );
+
+        // OrchardFarm has tags Farm + Field — both outdoor
+        let farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let mut txn = new_txn(&mut world, 4);
+        txn.set_ground_location(actor, farm).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .any(|a| a.def_id == relieve_wilderness_def_id()),
+            "relieve_wilderness should be available at OrchardFarm"
+        );
+    }
+
+    #[test]
+    fn relieve_wilderness_rejects_indoor_places() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (defs, handlers) = setup_registries();
+
+        // VillageSquare has tag Village — not outdoor
+        let (actor, _) = setup_actor(&mut world);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != relieve_wilderness_def_id()),
+            "relieve_wilderness should not be available at VillageSquare"
+        );
+
+        // PublicLatrine has tags Latrine + Village — not outdoor
+        let latrine = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_ground_location(actor, latrine).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != relieve_wilderness_def_id()),
+            "relieve_wilderness should not be available at PublicLatrine"
+        );
+
+        // CommonHouse has tags Inn + Village — not outdoor
+        let inn = prototype_place_entity(PrototypePlace::CommonHouse);
+        let mut txn = new_txn(&mut world, 3);
+        txn.set_ground_location(actor, inn).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != relieve_wilderness_def_id()),
+            "relieve_wilderness should not be available at CommonHouse"
+        );
+
+        // RulersHall has tags Hall + Village — not outdoor
+        let hall = prototype_place_entity(PrototypePlace::RulersHall);
+        let mut txn = new_txn(&mut world, 4);
+        txn.set_ground_location(actor, hall).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != relieve_wilderness_def_id()),
+            "relieve_wilderness should not be available at RulersHall"
+        );
+
+        // GuardPost has tags Barracks + Village — not outdoor
+        let barracks = prototype_place_entity(PrototypePlace::GuardPost);
+        let mut txn = new_txn(&mut world, 5);
+        txn.set_ground_location(actor, barracks).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != relieve_wilderness_def_id()),
+            "relieve_wilderness should not be available at GuardPost"
+        );
+
+        // GeneralStore has tags Store + Village — not outdoor
+        let store = prototype_place_entity(PrototypePlace::GeneralStore);
+        let mut txn = new_txn(&mut world, 6);
+        txn.set_ground_location(actor, store).unwrap();
+        commit_txn(txn);
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        assert!(
+            affordances
+                .iter()
+                .all(|a| a.def_id != relieve_wilderness_def_id()),
+            "relieve_wilderness should not be available at GeneralStore"
+        );
+    }
+
+    #[test]
+    fn relieve_wilderness_commit_effects() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let forest_path = prototype_place_entity(PrototypePlace::ForestPath);
+        let actor = setup_actor_at_place(&mut world, forest_path);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let rw_index = affordances
+            .iter()
+            .position(|a| a.def_id == relieve_wilderness_def_id())
+            .expect("relieve_wilderness affordance should exist at ForestPath");
+        run_action_to_completion(actor, rw_index, &mut world, &mut log, &defs, &handlers);
+
+        let needs = world.get_component_homeostatic_needs(actor).unwrap();
+        // Bladder should be 0
+        assert_eq!(needs.bladder, pm(0));
+        // Dirtiness should be original (100) + penalty (150) = 250
+        assert_eq!(needs.dirtiness, pm(250));
+
+        // Waste entity should exist at the place
+        let waste_count = world
+            .ground_entities_at(forest_path)
+            .into_iter()
+            .filter(|entity| {
+                world
+                    .get_component_item_lot(*entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+            })
+            .count();
+        assert_eq!(waste_count, 1);
+    }
+
+    #[test]
+    fn relieve_wilderness_visibility_is_same_place() {
+        let (defs, _) = setup_registries();
+        let def = defs.get(relieve_wilderness_def_id()).unwrap();
+        assert_eq!(def.visibility, VisibilitySpec::SamePlace);
+    }
+
+    #[test]
+    fn relieve_wilderness_has_wilderness_relief_event_tag() {
+        let (defs, _) = setup_registries();
+        let def = defs.get(relieve_wilderness_def_id()).unwrap();
+        assert!(
+            def.causal_event_tags
+                .contains(&EventTag::WildernessRelief),
+            "relieve_wilderness should have WildernessRelief event tag"
         );
     }
 }

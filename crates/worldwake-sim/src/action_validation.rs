@@ -20,6 +20,9 @@ pub(crate) fn evaluate_constraint_authoritatively(
         Constraint::ActorAtPlaceTag(tag) => world
             .effective_place(actor)
             .is_some_and(|place| world.place_has_tag(place, *tag)),
+        Constraint::ActorAtPlaceWithAnyTag(tag_set) => world
+            .effective_place(actor)
+            .is_some_and(|place| world.place_has_any_tag_in(place, *tag_set)),
         Constraint::ActorKnowsRecipe(recipe) => world
             .get_component_known_recipes(actor)
             .is_some_and(|known| known.recipes.contains(recipe)),

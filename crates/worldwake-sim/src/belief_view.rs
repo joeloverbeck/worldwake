@@ -9,7 +9,7 @@ use worldwake_core::{
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation,
+    PlaceTag, PlaceTagSet, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation,
     ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
     ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
@@ -424,6 +424,11 @@ pub trait RuntimeBeliefView {
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
         let _ = (place, tag);
         false
+    }
+    fn place_has_any_tag_in(&self, place: EntityId, tag_set: PlaceTagSet) -> bool {
+        PlaceTag::ALL
+            .iter()
+            .any(|tag| tag_set.contains(*tag) && self.place_has_tag(place, *tag))
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn has_production_job(&self, entity: EntityId) -> bool;

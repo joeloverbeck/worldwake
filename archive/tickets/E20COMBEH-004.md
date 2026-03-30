@@ -1,6 +1,6 @@
 # E20COMBEH-004: Wilderness relief action definition and handler
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-systems (needs_actions.rs), worldwake-core (topology.rs constant)
@@ -149,3 +149,22 @@ The action's precondition must verify the actor is at a place with at least one 
 2. `cargo test -p worldwake-core`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-30
+
+**What changed**:
+- Added `PlaceTagSet` bitmask type (`u16`) and `OUTDOOR_RELIEF_TAGS` constant in `worldwake-core/src/topology.rs`
+- Added `Constraint::ActorAtPlaceWithAnyTag(PlaceTagSet)` variant in `worldwake-sim/src/action_semantics.rs` with validation in `action_validation.rs` and `affordance_query.rs`
+- Added `World::place_has_any_tag_in()` and `RuntimeBeliefView::place_has_any_tag_in()` default method
+- Registered `relieve_wilderness` action def and `commit_relieve_wilderness` handler in `worldwake-systems/src/needs_actions.rs`
+- Mapped `"relieve_wilderness"` to `PlannerOpKind::Relieve` in `worldwake-ai/src/planner_ops.rs`
+- Added 6 focused unit tests + 1 constant validation test
+
+**Deviations from original plan**:
+- Ticket suggested a `Vec<PlaceTag>` or new `Precondition` variant for the place constraint. Instead used a `PlaceTagSet` bitmask (`u16`) because `Constraint` derives `Copy`, making `Vec` impossible. The bitmask is more efficient and `Copy`-compatible.
+- Registered the action directly instead of through the `register_def` helper, because the helper hardcodes `VisibilitySpec::ParticipantsOnly` and `EventTag::WorldMutation`, while this action needs `SamePlace` and `WildernessRelief`.
+- Also added the planner ops mapping (`relieve_wilderness` → `PlannerOpKind::Relieve`) which was listed as out-of-scope (E20COMBEH-005) but was required by the AI crate's exhaustiveness test.
+
+**Verification**: `cargo test --workspace` all pass, `cargo clippy --workspace` clean.

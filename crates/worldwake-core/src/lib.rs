@@ -164,8 +164,8 @@ pub use production::{
 };
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use topology::{
-    build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
-    Topology, TravelEdge,
+    build_prototype_world, prototype_place_entity, Place, PlaceTag, PlaceTagSet, PrototypePlace,
+    Route, Topology, TravelEdge, OUTDOOR_RELIEF_TAGS,
 };
 pub use trade::{
     DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,

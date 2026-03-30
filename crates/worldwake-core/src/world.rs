@@ -9,7 +9,7 @@ use crate::{
     FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
     RelationTables, ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
@@ -429,6 +429,14 @@ impl World {
         self.topology
             .place(place)
             .is_some_and(|place_data| place_data.tags.contains(&tag))
+    }
+
+    /// Returns `true` if the place has at least one tag present in the given `PlaceTagSet`.
+    #[must_use]
+    pub fn place_has_any_tag_in(&self, place: EntityId, tag_set: PlaceTagSet) -> bool {
+        self.topology.place(place).is_some_and(|place_data| {
+            place_data.tags.iter().any(|tag| tag_set.contains(*tag))
+        })
     }
 
     pub fn archive_dependencies(

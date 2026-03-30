@@ -183,6 +183,9 @@ pub fn evaluate_constraint(
         Constraint::ActorAtPlaceTag(tag) => view
             .effective_place(actor)
             .is_some_and(|place| view.place_has_tag(place, *tag)),
+        Constraint::ActorAtPlaceWithAnyTag(tag_set) => view
+            .effective_place(actor)
+            .is_some_and(|place| view.place_has_any_tag_in(place, *tag_set)),
         Constraint::ActorKnowsRecipe(recipe) => view.knows_recipe(actor, *recipe),
         Constraint::ActorHasUniqueItemKind { kind, min_count } => {
             view.unique_item_count(actor, *kind) >= *min_count

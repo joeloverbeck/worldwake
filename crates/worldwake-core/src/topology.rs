@@ -42,7 +42,55 @@ impl PlaceTag {
         Self::Field,
         Self::Gate,
     ];
+
+    /// Returns the bit index for this tag within a `PlaceTagSet` bitmask.
+    const fn bit_index(self) -> u32 {
+        self as u32
+    }
 }
+
+/// A compact, `Copy`-compatible set of `PlaceTag` values stored as a `u16` bitmask.
+///
+/// Since `PlaceTag` has 14 variants, all fit within a `u16`.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub struct PlaceTagSet(u16);
+
+impl PlaceTagSet {
+    /// Creates an empty set.
+    pub const fn empty() -> Self {
+        Self(0)
+    }
+
+    /// Creates a set from a slice of tags (const-compatible).
+    pub const fn from_tags(tags: &[PlaceTag]) -> Self {
+        let mut bits: u16 = 0;
+        let mut i = 0;
+        while i < tags.len() {
+            bits |= 1u16 << tags[i].bit_index();
+            i += 1;
+        }
+        Self(bits)
+    }
+
+    /// Returns `true` if this set contains the given tag.
+    pub const fn contains(self, tag: PlaceTag) -> bool {
+        self.0 & (1u16 << tag.bit_index()) != 0
+    }
+
+    /// Returns `true` if this set and `other` share at least one tag.
+    pub const fn intersects(self, other: PlaceTagSet) -> bool {
+        self.0 & other.0 != 0
+    }
+}
+
+/// Place tags representing outdoor locations where wilderness relief is available.
+pub const OUTDOOR_RELIEF_TAGS: PlaceTagSet = PlaceTagSet::from_tags(&[
+    PlaceTag::Forest,
+    PlaceTag::Trail,
+    PlaceTag::Field,
+    PlaceTag::Farm,
+    PlaceTag::Road,
+]);
 
 /// Typed identifiers for the canonical prototype-world places.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -690,7 +738,7 @@ impl Route {
 mod tests {
     use super::{
         build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
-        Topology, TravelEdge, PROTOTYPE_EDGE_SPECS, PROTOTYPE_PLACE_SPECS,
+        Topology, TravelEdge, OUTDOOR_RELIEF_TAGS, PROTOTYPE_EDGE_SPECS, PROTOTYPE_PLACE_SPECS,
     };
     use crate::{
         canonical_bytes, hash_serializable, traits::Component, EntityId, TravelEdgeId, WorldError,
@@ -1491,5 +1539,25 @@ mod tests {
                 edge.to()
             );
         }
+    }
+
+    #[test]
+    fn outdoor_relief_tags_contains_expected() {
+        assert!(OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Forest));
+        assert!(OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Trail));
+        assert!(OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Field));
+        assert!(OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Farm));
+        assert!(OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Road));
+
+        // Indoor/non-outdoor tags should not be in the set
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Village));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Inn));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Hall));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Barracks));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Store));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Latrine));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Crossroads));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Camp));
+        assert!(!OUTDOOR_RELIEF_TAGS.contains(PlaceTag::Gate));
     }
 }
