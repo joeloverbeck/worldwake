@@ -25,10 +25,10 @@ use worldwake_core::{
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
     ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
     InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    PerceptionSource, Permille, Place, PrototypePlace, Quantity, RecipeId, ResourceSource,
-    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-    World, WorldTxn, Wound, WoundCause, WoundId,
+    PerceptionSource, Permille, Place, PlaceTag, PrototypePlace, Quantity, RecipeId,
+    ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
+    TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
 };
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
@@ -494,6 +494,43 @@ fn harvest_apple_recipe_variant(name: &str, output_quantity: u32) -> RecipeDefin
         required_tool_kinds: vec![],
         body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
     }
+}
+
+fn named_place(name: &str, tags: &[PlaceTag]) -> Place {
+    Place {
+        name: name.to_string(),
+        capacity: None,
+        tags: tags.iter().copied().collect(),
+    }
+}
+
+fn connect_bidirectional(
+    topology: &mut Topology,
+    base_id: u32,
+    from: EntityId,
+    to: EntityId,
+    ticks: u32,
+) {
+    topology
+        .add_edge(TravelEdge::new(
+            TravelEdgeId(base_id),
+            from,
+            to,
+            ticks,
+            None,
+        )
+        .unwrap())
+        .unwrap();
+    topology
+        .add_edge(TravelEdge::new(
+            TravelEdgeId(base_id + 1),
+            to,
+            from,
+            ticks,
+            None,
+        )
+        .unwrap())
+        .unwrap();
 }
 
 fn insert_hungry_actor(view: &mut TestBeliefView, actor: EntityId) {
@@ -2656,6 +2693,283 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
     assert_eq!(
         plan.steps.last().map(|step| step.op_kind),
         Some(PlannerOpKind::Harvest)
+    );
+}
+
+struct RestockThreatFixture {
+    world: World,
+    actor: EntityId,
+    orchard_row: EntityId,
+    market: EntityId,
+    dangerous_road: EntityId,
+    safe_route: EntityId,
+    remote_farm: EntityId,
+}
+
+fn build_restock_threat_fixture(with_combat_belief: bool) -> RestockThreatFixture {
+    let market = entity(600);
+    let dangerous_road = entity(601);
+    let bandit_camp = entity(602);
+    let safe_route = entity(603);
+    let remote_farm = entity(604);
+    let mut topology = Topology::new();
+    topology
+        .add_place(
+            market,
+            named_place("Market", &[PlaceTag::Village, PlaceTag::Store]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            dangerous_road,
+            named_place("Dangerous Road", &[PlaceTag::Road, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            bandit_camp,
+            named_place("Bandit Camp", &[PlaceTag::Camp, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            safe_route,
+            named_place("Safe Route", &[PlaceTag::Road, PlaceTag::Field]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            remote_farm,
+            named_place("Remote Farm", &[PlaceTag::Farm, PlaceTag::Field]),
+        )
+        .unwrap();
+    connect_bidirectional(&mut topology, 700, market, dangerous_road, 2);
+    connect_bidirectional(&mut topology, 710, dangerous_road, bandit_camp, 1);
+    connect_bidirectional(&mut topology, 720, dangerous_road, remote_farm, 1);
+    connect_bidirectional(&mut topology, 730, market, safe_route, 2);
+    connect_bidirectional(&mut topology, 740, safe_route, remote_farm, 2);
+
+    let mut world = World::new(topology).unwrap();
+    let (actor, bandit, orchard_row) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+        let bandit = txn.create_agent("Bandit", ControlSource::Ai).unwrap();
+        let orchard_row = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(actor, market).unwrap();
+        txn.set_ground_location(bandit, dangerous_road).unwrap();
+        txn.set_ground_location(orchard_row, remote_farm).unwrap();
+        txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+            .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+                home_market: Some(market),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(
+            actor,
+            sample_trade_disposition_profile(),
+        )
+        .unwrap();
+        txn.set_component_demand_memory(
+            actor,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(2),
+                    place: market,
+                    tick: Tick(1),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        txn.set_component_workstation_marker(
+            orchard_row,
+            WorkstationMarker(WorkstationTag::OrchardRow),
+        )
+        .unwrap();
+        txn.set_component_resource_source(
+            orchard_row,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, bandit, orchard_row)
+    };
+
+    sync_all_beliefs(&mut world, actor, Tick(1));
+    if with_combat_belief {
+        let mut store = world
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .expect("restock threat fixture actor should have a belief store");
+        let mut bandit_belief = build_believed_entity_state(
+            &world,
+            bandit,
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        )
+        .expect("bandit belief should build");
+        bandit_belief.believed_activity = Some(worldwake_core::BelievedActivity {
+            action_domain: worldwake_core::ActionDomain::Combat,
+            target: None,
+            observed_tick: Tick(1),
+        });
+        store.update_entity(bandit, bandit_belief);
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_agent_belief_store(actor, store).unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+    }
+
+    RestockThreatFixture {
+        world,
+        actor,
+        orchard_row,
+        market,
+        dangerous_road,
+        safe_route,
+        remote_farm,
+    }
+}
+
+fn first_travel_destination(plan: &crate::PlannedPlan) -> Option<EntityId> {
+    plan.steps.iter().find_map(|step| {
+        (step.op_kind == PlannerOpKind::Travel)
+            .then(|| step.targets.first().copied())
+            .flatten()
+            .and_then(|target| match target {
+                PlanningEntityRef::Authoritative(entity) => Some(entity),
+                _ => None,
+            })
+    })
+}
+
+#[test]
+fn search_restock_route_preference_follows_believed_combat_threat() {
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(harvest_apple_recipe());
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics = build_semantics_table(&registry);
+
+    let short_route_fixture = build_restock_threat_fixture(false);
+    let short_route_goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(short_route_fixture.remote_farm),
+        key: GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        }),
+        evidence_entities: BTreeSet::from([short_route_fixture.orchard_row]),
+        evidence_places: BTreeSet::from([
+            short_route_fixture.market,
+            short_route_fixture.remote_farm,
+        ]),
+    };
+    let short_route_view =
+        PerAgentBeliefView::from_world(short_route_fixture.actor, &short_route_fixture.world);
+    let short_route_snapshot = build_planning_snapshot(
+        &short_route_view,
+        short_route_fixture.actor,
+        &short_route_goal.evidence_entities,
+        &short_route_goal.evidence_places,
+        PlanningBudget::default().snapshot_travel_horizon,
+    );
+    let short_route_plan = search_plan(
+        &short_route_snapshot,
+        &short_route_goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("restock search should find a short dangerous route without a combat belief");
+
+    assert_eq!(
+        first_travel_destination(&short_route_plan),
+        Some(short_route_fixture.dangerous_road),
+        "without a combat belief, the merchant should prefer the shorter dangerous road"
+    );
+
+    let safe_route_fixture = build_restock_threat_fixture(true);
+    let safe_route_goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(safe_route_fixture.remote_farm),
+        key: GoalKey::from(GoalKind::RestockCommodity {
+            commodity: CommodityKind::Apple,
+        }),
+        evidence_entities: BTreeSet::from([safe_route_fixture.orchard_row]),
+        evidence_places: BTreeSet::from([safe_route_fixture.market, safe_route_fixture.remote_farm]),
+    };
+    let safe_route_view =
+        PerAgentBeliefView::from_world(safe_route_fixture.actor, &safe_route_fixture.world);
+    let safe_route_snapshot = build_planning_snapshot(
+        &safe_route_view,
+        safe_route_fixture.actor,
+        &safe_route_goal.evidence_entities,
+        &safe_route_goal.evidence_places,
+        PlanningBudget::default().snapshot_travel_horizon,
+    );
+    let safe_route_plan = search_plan(
+        &safe_route_snapshot,
+        &safe_route_goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("restock search should still find a route after acquiring a combat belief");
+
+    assert_eq!(
+        first_travel_destination(&safe_route_plan),
+        Some(safe_route_fixture.safe_route),
+        "with a combat belief on the dangerous road, the merchant should prefer the safe route"
     );
 }
 

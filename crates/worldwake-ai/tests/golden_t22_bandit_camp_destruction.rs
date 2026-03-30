@@ -3,6 +3,7 @@
 mod golden_harness;
 
 use golden_harness::*;
+use std::collections::BTreeSet;
 use worldwake_ai::{
     BanditCandidateOmissionReason, CommodityPurpose, DecisionOutcome, GoalTraceStatus,
     PlannerOpKind, SelectedPlanSource,
@@ -11,9 +12,10 @@ use worldwake_core::{
     build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
     ActionDomain, AgentData, BeliefConfidencePolicy, BelievedActivity, BanditCamp,
     BanditFactionPolicy, CombatProfile, CommodityKind, Container, ControlSource, EntityId,
-    EventLog, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead,
-    InstitutionalKnowledgeSource, KnownRecipes, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, Place, PlaceTag, Quantity, ResourceSource, Seed, Tick, Topology,
+    DemandMemory, DemandObservation, DemandObservationReason, EventLog, GoalKey, GoalKind,
+    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalKnowledgeSource, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag,
+    Quantity, ResourceSource, Seed, TellProfile, Tick, Topology, TradeDispositionProfile,
     TravelEdge, TravelEdgeId, UtilityProfile, World, WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
@@ -29,6 +31,11 @@ const RALLY_GLEN: EntityId = entity(104);
 const S47_BANDIT_CAMP: EntityId = entity(120);
 const S47_ROAD_JUNCTION: EntityId = entity(121);
 const S47_SAFE_VILLAGE: EntityId = entity(122);
+const S48_MARKET: EntityId = entity(130);
+const S48_DANGEROUS_ROAD: EntityId = entity(131);
+const S48_BANDIT_CAMP: EntityId = entity(132);
+const S48_SAFE_ROUTE: EntityId = entity(133);
+const S48_REMOTE_FARM: EntityId = entity(134);
 
 const fn entity(slot: u32) -> EntityId {
     EntityId {
@@ -159,6 +166,34 @@ fn s47_bandit_utility_profile() -> UtilityProfile {
     }
 }
 
+fn merchant_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(0),
+        danger_weight: pm(900),
+        courage: pm(400),
+        enterprise_weight: pm(900),
+        ..UtilityProfile::default()
+    }
+}
+
+fn accepting_tell_profile() -> TellProfile {
+    TellProfile {
+        max_tell_candidates: 3,
+        max_relay_chain_len: 3,
+        acceptance_fidelity: pm(1000),
+        ..TellProfile::default()
+    }
+}
+
+fn enterprise_trade_disposition_profile() -> TradeDispositionProfile {
+    TradeDispositionProfile {
+        negotiation_round_ticks: nz(4),
+        initial_offer_bias: pm(500),
+        concession_rate: pm(100),
+        demand_memory_retention_ticks: 240,
+    }
+}
+
 fn set_control_source(
     h: &mut GoldenHarness,
     agent: EntityId,
@@ -199,6 +234,13 @@ struct S47Ids {
     traveler: EntityId,
 }
 
+struct S48Ids {
+    bandits: Vec<EntityId>,
+    witness: EntityId,
+    merchant: EntityId,
+    orchard_workstation: EntityId,
+}
+
 fn build_s47_topology() -> Topology {
     let mut topology = Topology::new();
     topology
@@ -222,6 +264,47 @@ fn build_s47_topology() -> Topology {
 
     connect(&mut topology, 320, S47_BANDIT_CAMP, S47_ROAD_JUNCTION, 1);
     connect(&mut topology, 330, S47_ROAD_JUNCTION, S47_SAFE_VILLAGE, 2);
+    topology
+}
+
+fn build_s48_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(
+            S48_MARKET,
+            place("S48 Market", &[PlaceTag::Village, PlaceTag::Store]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S48_DANGEROUS_ROAD,
+            place("S48 Dangerous Road", &[PlaceTag::Road, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S48_BANDIT_CAMP,
+            place("S48 Bandit Camp", &[PlaceTag::Camp, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S48_SAFE_ROUTE,
+            place("S48 Safe Route", &[PlaceTag::Road, PlaceTag::Field]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S48_REMOTE_FARM,
+            place("S48 Remote Farm", &[PlaceTag::Farm, PlaceTag::Field]),
+        )
+        .unwrap();
+
+    connect(&mut topology, 340, S48_MARKET, S48_DANGEROUS_ROAD, 2);
+    connect(&mut topology, 350, S48_DANGEROUS_ROAD, S48_BANDIT_CAMP, 1);
+    connect(&mut topology, 360, S48_DANGEROUS_ROAD, S48_REMOTE_FARM, 1);
+    connect(&mut topology, 370, S48_MARKET, S48_SAFE_ROUTE, 2);
+    connect(&mut topology, 380, S48_SAFE_ROUTE, S48_REMOTE_FARM, 2);
     topology
 }
 
@@ -565,7 +648,206 @@ fn seed_s47_scenario(h: &mut GoldenHarness) -> S47Ids {
     S47Ids { bandits, traveler }
 }
 
-fn request_travel_to_camp(h: &mut GoldenHarness, traveler: EntityId) {
+fn seed_s48_scenario(h: &mut GoldenHarness) -> S48Ids {
+    let orchard_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        S48_REMOTE_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    let mut bandits = Vec::new();
+    for name in ["S48 Rook", "S48 Mora"] {
+        let bandit = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            name,
+            S48_DANGEROUS_ROAD,
+            HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile {
+                hunger_rate: pm(20),
+                thirst_rate: pm(0),
+                fatigue_rate: pm(0),
+                bladder_rate: pm(0),
+                dirtiness_rate: pm(0),
+                ..MetabolismProfile::default()
+            },
+            bandit_utility_profile(),
+        );
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            bandit,
+            default_perception_profile(),
+        );
+        bandits.push(bandit);
+    }
+
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S48 Witness",
+        S48_DANGEROUS_ROAD,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+    set_control_source(h, witness, ControlSource::Human, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        default_perception_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        accepting_tell_profile(),
+    );
+
+    let traveler = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S48 Traveler",
+        S48_DANGEROUS_ROAD,
+        HomeostaticNeeds::new(pm(200), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(h, traveler, ControlSource::Human, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        default_perception_profile(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        S48_DANGEROUS_ROAD,
+        CommodityKind::Apple,
+        Quantity(4),
+    );
+
+    let merchant = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "S48 Merchant",
+        S48_MARKET,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        merchant_utility_profile(),
+        KnownRecipes::with([worldwake_core::RecipeId(0)]),
+    );
+    set_control_source(h, merchant, ControlSource::None, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        default_perception_profile(),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        accepting_tell_profile(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let faction = txn.create_faction("S48 Forest Bandits").unwrap();
+    for bandit in &bandits {
+        txn.add_member(*bandit, faction).unwrap();
+        txn.set_component_combat_profile(*bandit, bandit_profile()).unwrap();
+    }
+    txn.set_component_combat_profile(traveler, traveler_profile())
+        .unwrap();
+    txn.set_component_bandit_faction_policy(
+        faction,
+        BanditFactionPolicy {
+            min_regroup_count: 2,
+            establishment_duration_ticks: nz(2),
+            abandonment_grace_ticks: nz(2),
+            flee_wound_threshold: pm(300),
+            rally_place: None,
+        },
+    )
+    .unwrap();
+    let camp_supplies = txn
+        .create_container(Container {
+            capacity: worldwake_core::LoadUnits(20),
+            allowed_commodities: None,
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })
+        .unwrap();
+    txn.set_ground_location(camp_supplies, S48_BANDIT_CAMP).unwrap();
+    txn.set_owner(camp_supplies, faction).unwrap();
+    txn.set_component_bandit_camp(
+        S48_BANDIT_CAMP,
+        BanditCamp {
+            faction,
+            supplies: camp_supplies,
+            empty_since_tick: None,
+        },
+    )
+    .unwrap();
+    txn.set_component_merchandise_profile(
+        merchant,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+            home_market: Some(S48_MARKET),
+        },
+    )
+    .unwrap();
+    txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition_profile())
+        .unwrap();
+    txn.set_component_demand_memory(
+        merchant,
+        DemandMemory {
+            observations: vec![DemandObservation {
+                commodity: CommodityKind::Apple,
+                quantity: Quantity(2),
+                place: S48_MARKET,
+                tick: Tick(0),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        },
+    )
+    .unwrap();
+    txn.commit(&mut h.event_log);
+
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        &[orchard_workstation],
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+
+    S48Ids {
+        bandits,
+        witness,
+        merchant,
+        orchard_workstation,
+    }
+}
+
+fn request_travel_to_place(h: &mut GoldenHarness, traveler: EntityId, destination: EntityId) {
     let travel_def_id = h
         .defs
         .iter()
@@ -578,12 +860,16 @@ fn request_travel_to_camp(h: &mut GoldenHarness, traveler: EntityId) {
         worldwake_sim::InputKind::RequestAction {
             actor: traveler,
             def_id: travel_def_id,
-            targets: vec![S47_BANDIT_CAMP],
+            targets: vec![destination],
             payload_override: None,
             mode: ActionRequestMode::BestEffort,
             provenance: RequestProvenance::External,
         },
     );
+}
+
+fn request_travel_to_camp(h: &mut GoldenHarness, traveler: EntityId) {
+    request_travel_to_place(h, traveler, S47_BANDIT_CAMP);
 }
 
 fn activate_attack(h: &mut GoldenHarness, ids: &ScenarioIds, tick: u64) {
@@ -646,6 +932,55 @@ fn latest_traveler_selected_travel_destination(h: &GoldenHarness, agent: EntityI
             .find(|step| step.op_kind == PlannerOpKind::Travel)
             .and_then(|step| step.targets.first().copied())
     })
+}
+
+fn latest_restock_selected_travel_destination(
+    h: &GoldenHarness,
+    agent: EntityId,
+    commodity: CommodityKind,
+) -> Option<EntityId> {
+    h.driver.trace_sink()?.traces_for(agent).into_iter().rev().find_map(|trace| {
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            return None;
+        };
+        if planning.selection.selected_plan_source != Some(SelectedPlanSource::SearchSelection) {
+            return None;
+        }
+        if !planning
+            .selection
+            .selected_goal_is(GoalKey::from(GoalKind::RestockCommodity { commodity }))
+        {
+            return None;
+        }
+        planning
+            .selection
+            .selected_plan
+            .as_ref()?
+            .steps
+            .iter()
+            .find(|step| step.op_kind == PlannerOpKind::Travel)
+            .and_then(|step| step.targets.first().copied())
+    })
+}
+
+fn agent_knows_witnessed_conflict_at_place(
+    h: &GoldenHarness,
+    agent: EntityId,
+    place: EntityId,
+    subjects: &[EntityId],
+) -> bool {
+    h.world
+        .get_component_agent_belief_store(agent)
+        .is_some_and(|store| {
+            store.social_observations.iter().any(|observation| {
+                observation.place == place
+                    && matches!(
+                        observation.detail,
+                        worldwake_core::SocialObservationDetail::WitnessedConflict { actor, .. }
+                            if subjects.contains(&actor)
+                    )
+            })
+        })
 }
 
 fn run_t22_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
@@ -887,6 +1222,173 @@ fn run_t22_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
     )
 }
 
+fn run_s48_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = build_harness_with_topology(seed, build_s48_topology());
+    let ids = seed_s48_scenario(&mut h);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let mut saw_raid_commit = false;
+    let mut witness_gained_conflict_observation = false;
+    for _ in 0..80 {
+        h.step_once();
+        saw_raid_commit |= ids.bandits.iter().any(|bandit| {
+            h.action_trace_sink()
+                .expect("action tracing should stay enabled")
+                .events_for(*bandit)
+                .iter()
+                .any(|event| {
+                    event.action_name == "attack"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                })
+        });
+        witness_gained_conflict_observation |= agent_knows_witnessed_conflict_at_place(
+            &h,
+            ids.witness,
+            S48_DANGEROUS_ROAD,
+            &ids.bandits,
+        );
+        if saw_raid_commit && witness_gained_conflict_observation {
+            break;
+        }
+    }
+
+    assert!(
+        saw_raid_commit,
+        "Scenario 48 should begin with a lawful bandit raid at the dangerous road"
+    );
+    assert!(
+        witness_gained_conflict_observation,
+        "the witness should acquire a witnessed-conflict observation at the dangerous road through perception"
+    );
+    assert!(
+        !agent_knows_witnessed_conflict_at_place(&h, ids.merchant, S48_DANGEROUS_ROAD, &ids.bandits),
+        "the merchant must remain ignorant of the dangerous road before the witness arrives"
+    );
+
+    request_travel_to_place(&mut h, ids.witness, S48_MARKET);
+    let mut witness_traveled_to_market = false;
+    for _ in 0..8 {
+        h.step_once();
+        witness_traveled_to_market |= h.world.effective_place(ids.witness) == Some(S48_MARKET);
+        if witness_traveled_to_market {
+            break;
+        }
+    }
+    assert!(
+        witness_traveled_to_market,
+        "the witness should reach the market through the ordinary travel action"
+    );
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(ids.witness)
+            .iter()
+            .any(|event| {
+                event.action_name == "travel"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "witness travel should commit through the normal travel lifecycle"
+    );
+
+    let co_locate_tick = h.scheduler.current_tick();
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        ids.witness,
+        co_locate_tick,
+        PerceptionSource::DirectObservation,
+    );
+    set_control_source(&mut h, ids.witness, ControlSource::Ai, co_locate_tick.0);
+
+    let mut merchant_learned_conflict_observation = false;
+    let mut saw_tell_commit = false;
+    for _ in 0..40 {
+        h.step_once();
+        merchant_learned_conflict_observation |= agent_knows_witnessed_conflict_at_place(
+            &h,
+            ids.merchant,
+            S48_DANGEROUS_ROAD,
+            &ids.bandits,
+        );
+        saw_tell_commit |= h
+            .action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(ids.witness)
+            .iter()
+            .any(|event| {
+                event.action_name == "tell"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && matches!(
+                        event.detail,
+                        Some(worldwake_sim::ActionTraceDetail::Tell { listener, .. })
+                            if listener == ids.merchant
+                    )
+            });
+        if merchant_learned_conflict_observation && saw_tell_commit {
+            break;
+        }
+    }
+
+    assert!(
+        saw_tell_commit,
+        "the witness should relay the danger belief to the merchant through the tell action"
+    );
+    assert!(
+        merchant_learned_conflict_observation,
+        "the merchant should learn the dangerous-road conflict observation from the witness"
+    );
+
+    let merchant_activation_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, ids.merchant, ControlSource::Ai, merchant_activation_tick.0);
+
+    let mut selected_destination = None;
+    let mut trace_summaries = Vec::new();
+    for _ in 0..20 {
+        h.step_once();
+        selected_destination =
+            latest_restock_selected_travel_destination(&h, ids.merchant, CommodityKind::Apple);
+        if selected_destination.is_some() {
+            break;
+        }
+    }
+    if selected_destination.is_none() {
+        trace_summaries = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should stay enabled")
+            .traces_for(ids.merchant)
+            .into_iter()
+            .map(|trace| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
+            .collect::<Vec<_>>();
+    }
+
+    assert_eq!(
+        selected_destination,
+        Some(S48_SAFE_ROUTE),
+        "after learning the danger belief, the merchant should select the safe route for restock; traces={trace_summaries:?}"
+    );
+    assert!(
+        h.world
+            .get_component_agent_belief_store(ids.merchant)
+            .is_some_and(|store| store.known_entities.contains_key(&ids.orchard_workstation)),
+        "the merchant should retain explicit remote orchard knowledge so the route flip tests the danger belief rather than missing source evidence"
+    );
+    assert!(
+        !h.agent_is_dead(ids.merchant),
+        "the merchant must remain alive through the economic cascade scenario"
+    );
+    assert!(
+        !h.agent_is_dead(ids.witness),
+        "the witness must survive long enough to transport the danger belief"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 fn run_s47_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = build_harness_with_topology(seed, build_s47_topology());
     let ids = seed_s47_scenario(&mut h);
@@ -1115,5 +1617,44 @@ fn golden_pressure_driven_raid_emergence_replays_deterministically() {
     assert_eq!(
         first, second,
         "Scenario 47 pressure-driven raid emergence should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 48: Raid-Belief Economic Cascade
+// ---------------------------------------------------------------------------
+//
+// Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI
+// GoalKinds: RaidTarget, ShareBelief, RestockCommodity
+// ActionDomains: Combat, Social, Travel, Production
+// Places: S48Market, S48DangerousRoad, S48BanditCamp, S48SafeRoute, S48RemoteFarm
+// Principles: 3, 7, 12, 14
+//
+// Setup: Bandits raid a traveler at a dangerous road while a witness observes.
+// The witness then reaches the market through ordinary travel and relays the
+// danger belief to an otherwise idle merchant who already knows a lawful remote
+// apple source. After the tell commits, the merchant's next restock plan should
+// prefer the longer safe route instead of the shorter dangerous road.
+//
+// Proves:
+// 1. Witnessed raid danger can propagate through the generic `tell` path.
+// 2. Merchant route adaptation happens only after lawful information transfer.
+// 3. The route flip is planner-local perceived travel cost, not authoritative edge state.
+//
+// Chain: raid -> witness combat belief -> witness travel to market -> tell ->
+// merchant danger belief -> safe-route restock selection.
+
+#[test]
+fn golden_raid_belief_economic_cascade() {
+    let _ = run_s48_scenario(Seed([48; 32]));
+}
+
+#[test]
+fn golden_raid_belief_economic_cascade_replays_deterministically() {
+    let first = run_s48_scenario(Seed([48; 32]));
+    let second = run_s48_scenario(Seed([48; 32]));
+    assert_eq!(
+        first, second,
+        "Scenario 48 raid-belief economic cascade should replay deterministically"
     );
 }
