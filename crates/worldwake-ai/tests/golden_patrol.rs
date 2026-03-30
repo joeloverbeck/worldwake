@@ -781,14 +781,15 @@ fn golden_patrol_locality_requires_guard_local_report() {
 //   investigation records `WitnessedAbsence` without upgrading the incident to
 //   `SuspectedTheft` for a non-owner investigator.
 
-#[test]
 #[allow(clippy::too_many_lines)]
-fn golden_patrol_driven_crime_discovery() {
+fn run_patrol_driven_crime_discovery(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
     let common_house = prototype_place_entity(PrototypePlace::CommonHouse);
 
-    let mut h = GoldenHarness::new(Seed([0x56; 32]));
+    let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
 
@@ -1030,5 +1031,25 @@ fn golden_patrol_driven_crime_discovery() {
             )
         }),
         "non-owner patrol investigation must not infer suspected theft directly"
+    );
+
+    (
+        worldwake_core::hash_world(&h.world).unwrap(),
+        worldwake_core::hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_patrol_driven_crime_discovery() {
+    let _ = run_patrol_driven_crime_discovery(Seed([0x56; 32]));
+}
+
+#[test]
+fn golden_patrol_driven_crime_discovery_replays_deterministically() {
+    let first = run_patrol_driven_crime_discovery(Seed([0x56; 32]));
+    let second = run_patrol_driven_crime_discovery(Seed([0x56; 32]));
+    assert_eq!(
+        first, second,
+        "patrol-driven crime discovery scenario should replay deterministically"
     );
 }
