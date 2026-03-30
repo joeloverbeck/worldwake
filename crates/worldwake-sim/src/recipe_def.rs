@@ -37,7 +37,7 @@ mod tests {
             work_ticks: NonZeroU32::new(4).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: vec![UniqueItemKind::SimpleTool],
-            body_cost_per_tick: BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(0), pm(1)),
         }
     }
 

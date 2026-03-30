@@ -148,6 +148,7 @@ mod tests {
             worldwake_core::Permille::new(1).unwrap(),
             worldwake_core::Permille::new(4).unwrap(),
             worldwake_core::Permille::new(7).unwrap(),
+            worldwake_core::Permille::new(0).unwrap(),
             worldwake_core::Permille::new(2).unwrap(),
         );
         let id = registry.register(def.clone());

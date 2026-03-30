@@ -3163,7 +3163,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: None,
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let ranked = rank(
@@ -3196,7 +3196,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let ranked = rank(

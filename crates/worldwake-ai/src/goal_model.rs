@@ -2108,6 +2108,7 @@ mod tests {
                 Permille::new(1).unwrap(),
                 Permille::new(1).unwrap(),
                 Permille::new(1).unwrap(),
+                Permille::new(0).unwrap(),
                 Permille::new(1).unwrap(),
             ),
         });
@@ -4775,7 +4776,7 @@ mod tests {
             work_ticks: NonZeroU32::new(5).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Forge),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -4795,7 +4796,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: None,
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -4947,7 +4948,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);
@@ -4972,7 +4973,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);
@@ -5018,7 +5019,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);
@@ -5068,7 +5069,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);
@@ -5111,7 +5112,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);
@@ -5156,7 +5157,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);
@@ -5182,7 +5183,7 @@ mod tests {
             work_ticks: NonZeroU32::new(3).unwrap(),
             required_workstation_tag: Some(WorkstationTag::Mill),
             required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
         });
 
         let snapshot = snapshot_and_state(&view, actor);

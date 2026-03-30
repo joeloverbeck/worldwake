@@ -364,6 +364,10 @@ fn deprivation_worsening_metabolism() -> MetabolismProfile {
         nz(1000),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     )
 }
 

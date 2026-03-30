@@ -3865,6 +3865,10 @@ mod tests {
                 NonZeroU32::new(20).unwrap(),
                 NonZeroU32::new(8).unwrap(),
                 NonZeroU32::new(9).unwrap(),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
             ),
         );
         view.trade_profiles.insert(

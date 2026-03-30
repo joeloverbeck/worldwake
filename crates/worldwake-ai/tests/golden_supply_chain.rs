@@ -70,7 +70,7 @@ fn build_craft_restock_recipe_registry() -> RecipeRegistry {
         work_ticks: nz(3),
         required_workstation_tag: Some(WorkstationTag::ChoppingBlock),
         required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     });
     recipes.register(build_bake_bread_recipe());
     recipes

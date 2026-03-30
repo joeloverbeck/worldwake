@@ -580,6 +580,10 @@ fn golden_priority_based_interrupt() {
         nz(40),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let utility = UtilityProfile {
@@ -780,6 +784,10 @@ fn golden_deprivation_cascade() {
         nz(40),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let agent = seed_agent(
@@ -853,6 +861,10 @@ fn golden_thirst_driven_acquisition() {
         nz(40),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let agent = seed_agent(
@@ -1182,6 +1194,10 @@ fn golden_bladder_relief_with_travel() {
         nz(200),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let agent = seed_agent(
@@ -1308,6 +1324,10 @@ fn golden_goal_switching_during_multi_leg_travel() {
         nz(40),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let agent = seed_agent(

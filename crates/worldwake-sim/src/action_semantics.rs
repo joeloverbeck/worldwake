@@ -652,6 +652,10 @@ mod tests {
                     NonZeroU32::new(5).unwrap(),
                     NonZeroU32::new(7).unwrap(),
                     NonZeroU32::new(9).unwrap(),
+                    pm(0),
+                    pm(0),
+                    pm(0),
+                    pm(0),
                 ),
             )
             .unwrap();

@@ -48,7 +48,7 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         ],
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
-        body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1), pm(1)),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::TargetExists(0),
@@ -402,7 +402,7 @@ mod tests {
         assert!(def.causal_event_tags.contains(&EventTag::WorldMutation));
         assert_eq!(
             def.body_cost_per_tick,
-            BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1))
+            BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1), pm(1))
         );
         assert_eq!(def.payload, ActionPayload::None);
     }

@@ -82,6 +82,10 @@ pub struct MetabolismProfile {
     pub bladder_accident_tolerance_ticks: NonZeroU32,
     pub toilet_ticks: NonZeroU32,
     pub wash_ticks: NonZeroU32,
+    pub travel_fatigue_multiplier: Permille,
+    pub travel_thirst_multiplier: Permille,
+    pub travel_bladder_multiplier: Permille,
+    pub wilderness_relief_dirtiness_penalty: Permille,
 }
 
 impl MetabolismProfile {
@@ -100,6 +104,10 @@ impl MetabolismProfile {
         bladder_accident_tolerance_ticks: NonZeroU32,
         toilet_ticks: NonZeroU32,
         wash_ticks: NonZeroU32,
+        travel_fatigue_multiplier: Permille,
+        travel_thirst_multiplier: Permille,
+        travel_bladder_multiplier: Permille,
+        wilderness_relief_dirtiness_penalty: Permille,
     ) -> Self {
         Self {
             hunger_rate,
@@ -114,6 +122,10 @@ impl MetabolismProfile {
             bladder_accident_tolerance_ticks,
             toilet_ticks,
             wash_ticks,
+            travel_fatigue_multiplier,
+            travel_thirst_multiplier,
+            travel_bladder_multiplier,
+            wilderness_relief_dirtiness_penalty,
         }
     }
 }
@@ -135,6 +147,10 @@ impl Default for MetabolismProfile {
             nz(40),
             nz(8),
             nz(12),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
         )
     }
 }
@@ -145,6 +161,7 @@ pub struct BodyCostPerTick {
     pub hunger_delta: Permille,
     pub thirst_delta: Permille,
     pub fatigue_delta: Permille,
+    pub bladder_delta: Permille,
     pub dirtiness_delta: Permille,
 }
 
@@ -154,19 +171,21 @@ impl BodyCostPerTick {
         hunger_delta: Permille,
         thirst_delta: Permille,
         fatigue_delta: Permille,
+        bladder_delta: Permille,
         dirtiness_delta: Permille,
     ) -> Self {
         Self {
             hunger_delta,
             thirst_delta,
             fatigue_delta,
+            bladder_delta,
             dirtiness_delta,
         }
     }
 
     #[must_use]
     pub const fn zero() -> Self {
-        Self::new(pm(0), pm(0), pm(0), pm(0))
+        Self::new(pm(0), pm(0), pm(0), pm(0), pm(0))
     }
 }
 
@@ -241,6 +260,10 @@ mod tests {
             nz(130),
             nz(14),
             nz(16),
+            pm(200),
+            pm(300),
+            pm(400),
+            pm(100),
         );
 
         assert_eq!(profile.hunger_rate, pm(5));
@@ -255,6 +278,20 @@ mod tests {
         assert_eq!(profile.bladder_accident_tolerance_ticks, nz(130));
         assert_eq!(profile.toilet_ticks, nz(14));
         assert_eq!(profile.wash_ticks, nz(16));
+        assert_eq!(profile.travel_fatigue_multiplier, pm(200));
+        assert_eq!(profile.travel_thirst_multiplier, pm(300));
+        assert_eq!(profile.travel_bladder_multiplier, pm(400));
+        assert_eq!(profile.wilderness_relief_dirtiness_penalty, pm(100));
+    }
+
+    #[test]
+    fn metabolism_profile_default_travel_multipliers_zero() {
+        let profile = MetabolismProfile::default();
+
+        assert_eq!(profile.travel_fatigue_multiplier, pm(0));
+        assert_eq!(profile.travel_thirst_multiplier, pm(0));
+        assert_eq!(profile.travel_bladder_multiplier, pm(0));
+        assert_eq!(profile.wilderness_relief_dirtiness_penalty, pm(0));
     }
 
     #[test]
@@ -292,17 +329,19 @@ mod tests {
         assert_eq!(cost.hunger_delta, Permille::new(0).unwrap());
         assert_eq!(cost.thirst_delta, Permille::new(0).unwrap());
         assert_eq!(cost.fatigue_delta, Permille::new(0).unwrap());
+        assert_eq!(cost.bladder_delta, Permille::new(0).unwrap());
         assert_eq!(cost.dirtiness_delta, Permille::new(0).unwrap());
         assert_eq!(cost, BodyCostPerTick::default());
     }
 
     #[test]
     fn body_cost_per_tick_new_stores_every_field() {
-        let cost = BodyCostPerTick::new(pm(3), pm(5), pm(8), pm(2));
+        let cost = BodyCostPerTick::new(pm(3), pm(5), pm(8), pm(7), pm(2));
 
         assert_eq!(cost.hunger_delta, pm(3));
         assert_eq!(cost.thirst_delta, pm(5));
         assert_eq!(cost.fatigue_delta, pm(8));
+        assert_eq!(cost.bladder_delta, pm(7));
         assert_eq!(cost.dirtiness_delta, pm(2));
     }
 
@@ -316,7 +355,7 @@ mod tests {
             bladder_critical_ticks: 4,
         };
         let profile = MetabolismProfile::default();
-        let cost = BodyCostPerTick::new(pm(4), pm(6), pm(9), pm(3));
+        let cost = BodyCostPerTick::new(pm(4), pm(6), pm(9), pm(7), pm(3));
 
         let needs_bytes = bincode::serialize(&needs).unwrap();
         let exposure_bytes = bincode::serialize(&exposure).unwrap();

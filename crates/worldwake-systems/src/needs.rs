@@ -152,6 +152,7 @@ fn combine_body_costs(lhs: BodyCostPerTick, rhs: BodyCostPerTick) -> BodyCostPer
         lhs.hunger_delta.saturating_add(rhs.hunger_delta),
         lhs.thirst_delta.saturating_add(rhs.thirst_delta),
         lhs.fatigue_delta.saturating_add(rhs.fatigue_delta),
+        lhs.bladder_delta.saturating_add(rhs.bladder_delta),
         lhs.dirtiness_delta.saturating_add(rhs.dirtiness_delta),
     )
 }
@@ -411,6 +412,10 @@ mod tests {
             nz(100),
             nz(5),
             nz(5),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
         )
     }
 
@@ -555,7 +560,7 @@ mod tests {
         let mut action_defs = ActionDefRegistry::new();
         register_action(
             &mut action_defs,
-            BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(4)),
+            BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(0), pm(4)),
         );
         let active_actions = BTreeMap::from([(
             ActionInstanceId(0),

@@ -44,6 +44,10 @@ fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> worldwake_core::Ent
             nz(40),
             nz(8),
             nz(12),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
         ),
         UtilityProfile::default(),
     );
@@ -456,6 +460,10 @@ fn run_recovery_aware_boost_eats_before_wash_scenario(seed: Seed) -> (StateHash,
         nz(40),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let agent = seed_agent(
@@ -819,6 +827,10 @@ fn build_death_while_traveling_scenario(
             nz(40),
             nz(8),
             nz(12),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
         ),
         UtilityProfile::default(),
     );
@@ -1161,6 +1173,10 @@ fn build_defend_changed_conditions_scenario(
             nz(40),
             nz(8),
             nz(12),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
         ),
     )
     .unwrap();

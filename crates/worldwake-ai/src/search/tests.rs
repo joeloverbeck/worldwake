@@ -480,7 +480,7 @@ fn harvest_apple_recipe() -> RecipeDefinition {
         work_ticks: NonZeroU32::new(3).unwrap(),
         required_workstation_tag: Some(WorkstationTag::OrchardRow),
         required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     }
 }
 
@@ -492,7 +492,7 @@ fn harvest_apple_recipe_variant(name: &str, output_quantity: u32) -> RecipeDefin
         work_ticks: NonZeroU32::new(3).unwrap(),
         required_workstation_tag: Some(WorkstationTag::OrchardRow),
         required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     }
 }
 

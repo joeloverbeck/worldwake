@@ -455,6 +455,10 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
                 NonZeroU32::new(2).unwrap(),
                 NonZeroU32::new(3).unwrap(),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
             ),
         )
         .unwrap();
@@ -759,6 +763,10 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
                 NonZeroU32::new(2).unwrap(),
                 NonZeroU32::new(3).unwrap(),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
             ),
         )
         .unwrap();

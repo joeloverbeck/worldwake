@@ -1,6 +1,6 @@
 # E20COMBEH-001: Core data model additions for travel physiology
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — worldwake-core (MetabolismProfile, BodyCostPerTick, EventTag)
@@ -108,3 +108,10 @@ Every call to `MetabolismProfile::new()` and `BodyCostPerTick::new()` gains addi
 1. `cargo test -p worldwake-core`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**: Added 4 `Permille` fields to `MetabolismProfile` (travel_fatigue_multiplier, travel_thirst_multiplier, travel_bladder_multiplier, wilderness_relief_dirtiness_penalty), added `bladder_delta: Permille` to `BodyCostPerTick`, added `WildernessRelief` and `BladderAccident` variants to `EventTag`. Updated ~48 call sites across all 5 crates. Added `metabolism_profile_default_travel_multipliers_zero` test.
+- **Deviations**: None. Implementation matched the ticket exactly.
+- **Verification**: `cargo test --workspace` (all pass, 0 failures), `cargo clippy --workspace` (clean).

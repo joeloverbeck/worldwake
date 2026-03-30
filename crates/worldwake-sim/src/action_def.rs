@@ -74,6 +74,7 @@ mod tests {
                 Permille::new(2).unwrap(),
                 Permille::new(3).unwrap(),
                 Permille::new(5).unwrap(),
+                Permille::new(0).unwrap(),
                 Permille::new(1).unwrap(),
             ),
             interruptibility: Interruptibility::InterruptibleWithPenalty,

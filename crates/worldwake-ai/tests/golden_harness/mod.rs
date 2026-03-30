@@ -457,7 +457,7 @@ pub fn build_harvest_apple_recipe() -> RecipeDefinition {
         work_ticks: nz(3),
         required_workstation_tag: Some(WorkstationTag::OrchardRow),
         required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     }
 }
 
@@ -469,7 +469,7 @@ pub fn build_harvest_grain_recipe() -> RecipeDefinition {
         work_ticks: nz(3),
         required_workstation_tag: Some(WorkstationTag::FieldPlot),
         required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     }
 }
 
@@ -481,7 +481,7 @@ pub fn build_bake_bread_recipe() -> RecipeDefinition {
         work_ticks: nz(3),
         required_workstation_tag: Some(WorkstationTag::Mill),
         required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(1)),
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     }
 }
 

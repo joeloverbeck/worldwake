@@ -1821,6 +1821,10 @@ fn seed_fragile_queued_waiter(h: &mut GoldenHarness) -> EntityId {
             nz(40),
             nz(8),
             nz(12),
+            pm(0),
+            pm(0),
+            pm(0),
+            pm(0),
         ),
         UtilityProfile::default(),
     );
@@ -2340,6 +2344,10 @@ fn run_grant_expiry_before_intended_action_scenario(
         nz(40),
         nz(8),
         nz(12),
+        pm(0),
+        pm(0),
+        pm(0),
+        pm(0),
     );
 
     let agent = seed_agent(

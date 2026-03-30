@@ -791,6 +791,10 @@ mod tests {
                 nz(10),
                 nz(2),
                 nz(3),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
             ),
         )
         .unwrap();
@@ -1626,7 +1630,7 @@ mod tests {
 
     #[test]
     fn harvest_body_cost_flows_through_needs_system() {
-        let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
+        let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(0), pm(7));
         let (recipes, recipe_id) = harvest_recipe_registry(body_cost);
         let (defs, handlers, ids) = setup_registries(&recipes);
         let (mut world, actor, workstation, _) = setup_world(false, WorkstationTag::OrchardRow, 5);
@@ -2138,7 +2142,7 @@ mod tests {
 
     #[test]
     fn craft_body_cost_flows_through_needs_system() {
-        let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(7));
+        let body_cost = BodyCostPerTick::new(pm(2), pm(3), pm(5), pm(0), pm(7));
         let (recipes, recipe_id) = craft_recipe_registry(body_cost, Vec::new());
         let (defs, handlers, ids) = setup_craft_registries(&recipes);
         let (mut world, actor, workstation, place) = craft_fixture(false);
@@ -2499,6 +2503,10 @@ mod tests {
                     nz(10),
                     nz(2),
                     nz(3),
+                    pm(0),
+                    pm(0),
+                    pm(0),
+                    pm(0),
                 ),
             )
             .unwrap();
