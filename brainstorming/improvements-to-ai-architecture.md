@@ -1,182 +1,686 @@
-# Improvements to AI Architecture
+# Worldwake AI Architecture Review Against FOUNDATIONS
 
-I suspected that, as our AI architecture had grown somewhat organically to align with docs/FOUNDATIONS.md , it could be substandard. I generated the report at reports/ai-architecture-analysis.md and fed it to ChatGPT Pro so that it could find issues, possible improvements to make, or even features to add.
+**Status:** Document-level architecture review  
+**Scope:** Review of the architecture as described in `ai-architecture-deep-analysis.md`, judged against `FOUNDATIONS.md`  
+**Bottom line:** Strong substrate, incomplete architecture
 
-## ChatGPT's response
+## Executive Assessment
 
-There are real issues. But the architecture is not substandard overall.
+Direct answers:
 
-The core bet is right: belief-only planning, deterministic/event-sourced causality, no central “story brain,” explicit actions with duration and interruption, and one unified pipeline for physiological, economic, social, and political behavior. That is unusually well aligned with your stated goal of explainable emergence. I would not replace this with behavior trees, a pure utility system, or anything more “clever” on paper. Your main problems are not the paradigm. They are hidden state, duplicated semantics, and a few places where runtime convenience is starting to outrun the causal model.
+1. **Does the AI architecture have issues to fix?**  
+   **Yes.** Not cosmetic issues. Structural ones.
 
-The pressure system and utility weights are also fine. They are derived decision heuristics over concrete local state, and your foundations explicitly allow derived views and concrete per-agent parameters as long as they never become world truth. So I would keep the pressure/ranking layer.
+2. **Are there improvements that would better align it with FOUNDATIONS?**  
+   **Yes.** The biggest gains are in epistemics, contention, artifacts/records, and boundaries.
 
-Here’s where I think the architecture is genuinely weak.
+3. **Are there beneficial features to add that align with FOUNDATIONS?**  
+   **Yes.** Several of them are important enough that I would treat them as architectural work, not optional content.
 
-### 1. Too much causally relevant state lives outside authoritative world state
+My blunt read: **the architecture is already unusually strong at deterministic local-causal simulation**, but it is **not yet fully aligned with FOUNDATIONS**. The substrate is ahead of the deliberation layer. Right now the system is much stronger at bodily needs, combat, travel, and small-scale politics than it is at contradiction, institutions, evidence, property, and extra-local causality.
 
-AgentDecisionRuntime is explicitly persistent across ticks and explicitly outside the authoritative simulation, yet it holds current goal/plan, journey commitment, blocker-like state, and queued facility intents. In your foundations, memories, commitments, queues, evidence, and similar state are supposed to be real causal state, and save/load or offscreen compression is not allowed to change world meaning. If this runtime can affect later choices, then it is already authoritative in practice, whether you call it that or not.
+The problem is **not** that you chose GOAP.  
+The problem is that the planner is still reasoning over a world model that is missing some of the most important carriers of consequence demanded by FOUNDATIONS.
 
-This is the biggest structural issue.
+## What Is Already Solid
 
-What I’d do:
-Promote state into three buckets.
+These are real strengths and should be preserved:
 
-1. Authoritative private mind-state: beliefs, blocked assumptions, active commitments, resumable intentions.
-2. Authoritative public claim-state: queue positions, reservations, grants, notices, contracts, tickets.
-3. Ephemeral caches: last observation signatures, dirty flags, search scratch, rederivable bindings.
+- **Deterministic simulation substrate.** Seeded RNG, integer math, deterministic containers, replay, and save/load integrity are all exactly the kind of discipline FOUNDATIONS wants.
+- **Explicit action model.** Preconditions, duration, body cost, interruptibility, and action lifecycle are a major alignment win.
+- **Belief/world separation.** The AI is not reading raw world truth directly. That is one of the most important architectural choices in the whole stack.
+- **Traceability/debuggability.** Event logs, decision traces, action traces, and replay support are a serious advantage.
+- **State-mediated system interaction.** The crate structure and action/state/event approach are much closer to FOUNDATIONS than the usual “manager code tells subsystems what to do” mess.
+- **Intentions as revisable commitments.** The frame system is directionally correct, even if parts of it need generalization.
 
-Right now those buckets are blurred. They should not be.
+In short: **do not tear down the substrate**. It is the right kind of foundation.
 
-### 2. The planner runs on a hand-maintained shadow semantics layer
+## Alignment Snapshot
 
-This is the most dangerous engineering liability in the whole design.
+### Strong alignment
+- Local causality
+- Determinism and replayability
+- Explicit action duration/cost
+- Belief vs. ground-truth separation
+- Interruptible/revisable planning
+- Debuggability
+- System interaction through state
 
-You have real action semantics in handlers (start/tick/commit/abort) and separate planning semantics in PlannerOpSemantics, classify_action_def(), hypothetical transitions, materialization barriers, and state shadowing. The architecture report even calls out the six-point integration burden for every new action. That means every new affordance is a drift risk: the planner can “understand” an action differently from the world that actually executes it.
+### Partial alignment
+- Ignorance, uncertainty, contradiction
+- Contention and simultaneity
+- Institutions and office behavior
+- Ownership/custody/access/obligation/jurisdiction
+- Derived summaries staying “just summaries”
+- Agent diversity in reasoning style
+- Validation against all canonical scenario classes
 
-That is the closest thing in your current design to a fake second authority path.
+### Weak or missing
+- Boundary/off-map processes
+- Unified social-artifact substrate
+- Several mandatory canonical regression chains
 
-What I’d do:
-Create a single action-semantics contract that both planning and execution consume. At minimum, each action should declare in one place:
+## Issues To Fix
 
-- preconditions
-- occupied capacities / reservations
-- symbolic effects for planning
-- materialization schema
-- interruption policy
-- failure taxonomy
+## 1. Decision-time epistemics are too flattened
 
-If a full unification is too big right now, do the next best thing immediately: add conformance tests that compare the planner’s hypothetical transition against the authoritative handler outcome on the same setup. That’s a pure win.
+The belief store appears richer than the decision interface.
 
-### 3. You still have a hidden contention/order-bias problem
+The architecture report describes belief provenance, confidence, acquisition paths, stale belief correction, and contradiction tolerance. But the AI-facing belief surfaces are still dominated by crisp returns like `bool`, `Option<T>`, single quantities, and single effective locations. That is enough for stale beliefs. It is **not** enough for the full FOUNDATIONS target of:
 
-Deterministic order is good. Hidden order as the mechanism of reality is bad.
+- unknown vs false,
+- multiple competing reports,
+- “I suspect,”
+- “I heard two different things,”
+- source-weighted contradiction,
+- freshness-sensitive reasoning.
 
-Agents are processed sequentially in deterministic BTreeMap order, and the scheduler consumes deterministic input ordering. That is great for replay. But if two agents lawfully compete for the same scarce affordance and the actual winner is “whoever got processed first this tick,” then you have exactly the kind of invisible authority your foundations reject. Your canonical contention scenario explicitly says queues, races, grants, expiry, and blockers must be inspectable world state, not hidden planner magic or arbitrary tick order. The presence of queued_facility_intents in runtime makes me especially suspicious here.
+### Why this matters
+This is a direct pressure point against FOUNDATIONS III.14–18. The foundations do not just want stale knowledge. They want **uncertainty and contradiction as first-class reasoning material**.
 
-What I’d do:
-For every scarce or exclusive affordance that matters, introduce explicit world artifacts such as QueueEntry, ReservationGrant, ClaimTicket, or Contest. Then resolve access against those artifacts, not against entity-ID order. Tie-breaks should come from observable local rules: arrival, priority, office, force, queue rules, jurisdiction, or agreed policy.
+### The practical failure mode
+You will get agents that can be wrong, but not wrong in a rich enough way. They may correct stale beliefs, but they will struggle to reason about contested testimony, conflicting witness chains, or alternative hypotheses.
 
-Where no explicit race/queue/grant exists, sequential tick order should never silently become the law of the world.
+### Fix
+Introduce a claim-centric epistemic layer:
 
-### 4. The belief model is not rich enough for your own knowledge game
+- `Claim`: proposition, subject, claimed event time, acquisition time, source chain, confidence, freshness, carrier
+- `EndorsedBelief`: the agent’s current working view
+- `AlternativeClaims`: competing unresolved claims still present in memory
 
-You do separate belief from truth correctly. That part is good. But the belief model still looks too thin for what FOUNDATIONS.md actually demands.
+The planner should be able to ask for:
+- endorsed view,
+- uncertainty level,
+- alternative claims,
+- provenance,
+- freshness,
+- and whether a proposition is unknown, contested, or merely low-confidence.
 
-Your foundations want provenance, acquisition time, confidence, freshness, contradiction, and explicit knowledge travel when those matter. The architecture proves stale-belief scenarios and some social transmission, but the described belief structures still read mostly like clean “believed facts” with last-known place/alive state rather than competing claims with source quality and age. That is enough for basic partial observability. It is not enough for rumor, deception, conflicting testimony, institutional reporting, investigative chains, or political maneuvering with evidentiary weight.
+That is a foundational upgrade, not a polish pass.
 
-This is where I think your future emergence will plateau unless you deepen the model.
+## 2. Testimony and alarms are too narrow as motivators
 
-What I’d do:
-Represent beliefs as records, not just facts. A useful belief atom should carry:
+The architecture explicitly says **direct observation triggers care**, while indirect reports do not. It also says generic belief-sharing is suppressed under survival stress.
 
-- proposition
-- source or carrier
-- acquisition tick
-- modality: seen / heard / inferred / read
-- confidence
-- freshness
-- maybe chain length or provenance path
+That is too restrictive.
 
-Then let contradictory belief records coexist. Planning can still query a compressed view, but the compressed view should be derived from first-class belief records, not replace them.
+### Why this matters
+FOUNDATIONS III.15 and III.18 are explicit: testimony, documents, records, and traces are not flavor. They are causal carriers.
 
-One conditional warning here: treating topology, facilities, and resource source locations as universal “public structure” is only correct if you truly want universal common knowledge of those things. If you ever want exploration, hidden resources, asymmetric local knowledge, or institutions knowing things peasants do not, that assumption will become a straightjacket.
+A healer who is told “someone is badly wounded at the mill” should be able to act on that report if the source is credible enough. A fleeing witness should still be able to warn others even while personally stressed. Stress should suppress gossip, not necessarily alarms.
 
-### 5. Journey commitment is the right instinct, but too narrow
+### Practical failure mode
+You end up with a locality-respecting system that is paradoxically too deaf to lawful second-hand knowledge.
 
-Journey commitment is smart. It solves a real problem: travel thrash. But it is a special-case solution to a more general need.
+### Fix
+Split communication into distinct classes:
 
-Your foundations want revisable commitments, not rails. Right now goal switching works at the whole-goal level, and journey commitment only partly protects one class of multi-step effort. That still leaves the system weak at “pause this, do emergency thing, then resume if assumptions still hold” for non-travel chains like care, pickup, bargaining, escort, or political errands.
+- **Alarm**
+- **Report/Testimony**
+- **Gossip**
+- **Record consultation**
+- **Formal accusation**
 
-What I’d do:
-Generalize journey commitment into an intention frame model:
+Each should have its own:
+- trust model,
+- urgency model,
+- suppression rule,
+- memory path,
+- and planning consequences.
 
-- current continuation cursor
-- assumptions relied on
-- suspension reason
-- resume policy
-- expiry conditions
+Do not leave “share belief” as a single generic bucket.
 
-That would handle your dragon-interrupts-market-trip class of scenario much more naturally than whole-plan abandonment plus later full replanning.
+## 3. Contention is explicit in some places, but not yet a general world mechanic
 
-### 6. BlockedIntentMemory is too blunt
+Facility queues are good. They are exactly the kind of explicit scarcity-resolution FOUNDATIONS wants.
 
-The current blocker model is useful, but it’s too coarse. It suppresses whole goals with TTLs based on a blocking fact. That works as a safety valve. It does not preserve enough causally meaningful detail. “Seller unavailable here,” “route unsafe because of report X,” “prerequisite missing at workstation Y,” and “this exact target is gone” are not the same kind of failure, and they should not all collapse into “don’t pursue this goal for a while.” The Unknown blocker especially is a bad smell, because it turns diagnostic ignorance into long-lived behavior suppression.
+But the architecture document does **not** show a generic contention substrate for all scarce affordances:
+- item pickup,
+- corpse access,
+- patient attention,
+- witness time,
+- record access,
+- bounty claim competition,
+- workstation usage outside facility queues,
+- simultaneous arrival cases.
 
-What I’d do:
-Store failed assumptions, not just failed goals.
+### Why this matters
+FOUNDATIONS II.8, II.9, and Canonical Scenario E are clear: plans do **not** reserve outcomes, and contested affordances must resolve through inspectable world processes.
 
-Key them more narrowly:
+### Practical failure mode
+Where there is no explicit arbitration artifact, meaning risks falling back to engine order, input order, or subsystem phase order. Deterministic is not enough. It must be deterministic **for an in-world reason**.
 
-- goal
-- method/op kind
-- target or place
-- blocker type
-- source tick / evidence
-- confidence / expiry
+### Fix
+Create a reusable contention/arbitration substrate with explicit world objects or records for:
+- queue position,
+- pending claim,
+- grant,
+- reservation,
+- race window,
+- expiry,
+- invalidation.
 
-Then clear them on relevant state changes, not mostly on TTL expiry. And make Unknown short-lived plus loudly traceable.
+Then make all exclusive affordances use it.
 
-### 7. Your invalidation model is brittle
+## 4. The goal surface is still too hand-authored
 
-A single dirty flag and hand-maintained snapshot signatures is a maintainability trap. The architecture report already admits the problem: add a new causally relevant dimension and forget to thread it into the snapshot comparison, and the AI can quietly stop replanning when it should. That is not a simulation design problem; it is a structural architecture problem.
+This is one of the biggest long-term architectural risks.
 
-What I’d do:
-Move to dependency-based invalidation.
+The current architecture has:
+- a fixed `GoalKind` enum,
+- hand-authored candidate generation buckets,
+- per-family suppression policies,
+- custom interrupt rules,
+- custom planner support,
+- and a narrow frame-assumption vocabulary.
 
-When a plan is built, record the facts/beliefs/signatures it depended on. When the world or belief store changes, invalidate plans whose dependencies changed. If full dependency tracking is too much right now, at least replace dirty: bool with typed invalidation reasons or version stamps by domain: needs, wounds, inventory, facilities, social facts, political facts, route safety, and so on.
+That is manageable at current scale. It will get uglier fast.
 
-That is nearly pure upside.
+### Why this matters
+FOUNDATIONS wants designers authoring **nouns, laws, institutions, and initial conditions**, not constantly stitching new behavioral categories into multiple AI layers whenever a new system appears.
 
-### 8. The agenda is too feasibility-blind
+### Practical failure mode
+As you add more world carriers—bounties, contracts, patrol duties, warrants, delegated authority, messenger work, debt collection—you risk rebuilding a disguised quest pipeline inside the AI architecture.
 
-Generate candidates, rank them, then search top four is a sensible first architecture. It is not the best mature one.
+### Fix
+Move toward declarative goal and affordance schemas:
 
-The report already points out the failure mode: a high-priority but infeasible goal can consume one of the only planning slots while a lower-priority obvious action goes unplanned. That produces avoidable stupidity for reasons that have nothing to do with believable character limitations.
+- goals defined more as desired world conditions,
+- actions define effect semantics and consumed capacities,
+- candidate generation derived from motives + visible affordances + believed claims,
+- plan assumptions derived from step dependencies rather than mostly hand-authored enums.
 
-What I’d do:
-Keep motive ranking, but insert a cheap feasibility sketch before full search. Not a full plan—just enough to answer “does this look locally actionable from the agent’s current beliefs?” Examples:
+I would keep GOAP for now, but I would make the *world it reasons over* more generic and compositional.
 
-- direct affordance exists
-- route exists
-- required target is known
-- blocker memory says no
-- one-step prerequisite reachable
+## 5. Planner/runtime semantic drift is a real risk
 
-Then allocate full GOAP budget using motive plus feasibility hint. That preserves your “goal is desired world condition, not privileged solution” principle while wasting much less search effort.
+The architecture already admits this risk.
 
-### What I would add
+You have:
+- hypothetical planning state,
+- simplified planner transitions,
+- goal-model fallbacks,
+- materialization barriers,
+- and conformance tests that check **direction agreement**, not exact semantic agreement.
 
-Your current candidate generation is mostly need/signal driven. I would add a whole family of expectation-violation goals. That is exactly where your foundations are strongest and your current architecture looks underpowered. Your own canonical scenarios want “I expected X, found not-X, now react.” Right now you handle some of this through stale-belief correction and failure recovery, but it should be a first-class goal source.
+That is useful, but it is not yet tight enough.
 
-Examples:
+### Why this matters
+FOUNDATIONS V.26, V.27, V.29, and V.31 demand that the architecture stay explainable and falsifiable. If the planner reasons with one semantics and the runtime executes another, the system will look irrational or mysteriously brittle.
 
-- expected stock missing -> investigate / report / replace supply
-- expected person absent -> wait / search / suspect / reroute
-- expected payment overdue -> remind / accuse / escalate
-- expected route safe -> observe danger -> retreat / warn / choose alternate route
-- expected stash full -> empty -> search / report robbery / hide loss / retaliate
+### Practical failure mode
+Plans pass search but fail or degrade oddly in execution because the planner’s hypothetical model is only directionally right.
 
-That would buy you a lot of emergence without any quest logic.
+### Fix
+Tighten the relationship between planning and execution:
 
-I would also add knowledge-path traces. Your diagnostics are already a strength, but your foundations want both the causal path and the knowledge path. For every chosen goal and every adopted plan, I want to see the exact beliefs, records, witnesses, notices, or observations that justified it. “Why did this agent do that?” should be answerable as a proof tree, not just a score dump.
+- derive planner effects from the same authoritative action/effect declarations where possible,
+- strengthen conformance testing beyond direction-of-change,
+- at minimum validate threshold-band agreement, artifact creation/destruction agreement, and critical precondition/effect agreement.
+
+Do not let the planner slowly become a second, approximate simulation.
+
+## 6. Institutions and social artifacts are still thinner than FOUNDATIONS requires
+
+You already have meaningful pieces:
+- offices,
+- support declarations,
+- force claims,
+- crime registers,
+- accusation/punishment flows,
+- institutional beliefs.
 
-### Purely beneficial cleanups
+That is a strong start.
 
-Even if you leave the larger design alone, these are almost all upside:
+But FOUNDATIONS IV.23–25 demands a broader and denser social artifact layer:
+- bounties,
+- notices,
+- contracts,
+- warrants,
+- debts,
+- obligations,
+- proof rules,
+- payout sources,
+- public posting places,
+- expiration,
+- contestability,
+- forgery/destruction/copying paths.
 
-Split process_agent() into explicit deterministic stages with typed input/output structs. Right now too much integration logic lives in one 950-line function.
-Split search_plan() into frontier policy, heuristic policy, transition model, and plan assembly. Same reason.
-Add planner-vs-executor conformance tests for every action family.
-Replace boolean dirtiness with typed invalidation or dependency stamps.
-Make all unknown blocker cases diagnostic hot spots, not long silent suppressions.
-Move queue/reservation state into inspectable world state wherever it affects contention.
+### Why this matters
+Without a unified artifact/record substrate, the architecture will keep solving social processes one bespoke type at a time.
 
-### What I would prioritize
-1. Promote real mental/public claim state out of runtime limbo.
-2. Unify planner semantics with executable action semantics, or at least enforce conformance.
-3. Make contention explicit and inspectable instead of letting order bias decide reality.
-4. Deepen belief records with provenance/freshness/confidence/contradiction.
-5. Generalize journey commitment into resumable intention frames.
-6. Replace dirty-flag invalidation and coarse blocker memory with dependency/assumption-based versions.
+### Practical failure mode
+You will get islands of social simulation instead of a general social world.
+
+### Fix
+Introduce a unified artifact/record model with first-class identity and transfer:
 
-My blunt take: the architecture is already good enough to produce strong emergence, and its foundations are much better than most simulation AI work. But if you want it to stay faithful to FOUNDATIONS.md as the world gets denser, the next big step is not “smarter planning.” It is making the AI’s own causal state more honest, more explicit, and less duplicated. That is where the current design is soft.
+- issuer,
+- current custodian,
+- location,
+- authenticity state,
+- proof requirements,
+- jurisdiction,
+- expiration,
+- linked claims,
+- allowed mutations (copy, destroy, forge, amend, archive).
+
+That one substrate would unlock a huge amount of FOUNDATIONS alignment.
+
+## 7. The rights model is only partially there
+
+The architecture distinguishes placement, ownership, reservation, and social relations. Good.
+
+But FOUNDATIONS IV.24 is stricter:
+- ownership,
+- custody,
+- access,
+- obligation,
+- and jurisdiction
+must be separable.
+
+### Why this matters
+Without that separation, theft, confiscation, delegated access, guild property, office property, inheritance, seizure, and legal dispute resolution will stay shallow or collapse into awkward special cases.
+
+### Fix
+Add explicit first-class modeling for:
+- custody,
+- access grants,
+- keys/seals/lock state,
+- obligations/debts,
+- jurisdiction scope,
+- and legal basis for access or seizure.
+
+This is one of those additions that looks “administrative” until you realize it massively increases downstream consequence density.
+
+## 8. Boundary processes are a hard missing piece
+
+This is not subtle. The architecture report itself effectively says so.
+
+FOUNDATIONS II.13 and Canonical Scenario H make boundary processes non-optional:
+- imported goods,
+- remote shortages,
+- upstream failures,
+- scheduled arrivals,
+- migration pressure,
+- delayed information,
+- cross-boundary institutions.
+
+### Why this matters
+Without boundary processes, your world is too sealed. Shortage, substitution, rationing, and delayed shock propagation remain underdeveloped.
+
+### Fix
+Build explicit boundary interfaces with:
+- source region,
+- stock or flow model,
+- route/channel,
+- delay,
+- capacity,
+- observables,
+- failure modes,
+- and evidence of arrival or non-arrival.
+
+Off-map cannot mean “spawn when convenient.”
+
+## 9. Scheduling is explicit, but not fully world-modeled yet
+
+The explicit system order is better than accidental execution order. That is good.
+
+But FOUNDATIONS II.9 asks for more than an engine schedule. It asks for a world model of simultaneity and tie-breaking.
+
+### Why this matters
+A global order like `Needs -> Production -> Trade -> Combat -> ...` is fine as engine machinery. It is not enough by itself for every world-meaningful contest.
+
+### Practical failure mode
+Two agents reaching the same affordance in the same tick, or two actions becoming mutually incompatible in the same phase, may still be resolved by engine structure rather than explicit world arbitration.
+
+### Fix
+Where order changes meaning, define in-world resolution:
+- simultaneous windows,
+- race tokens,
+- arbitration records,
+- declared precedence,
+- or explicit “who acquired what first” artifacts.
+
+## 10. Agent diversity is stronger in motives than in reasoning style
+
+You already have diversity in:
+- drive thresholds,
+- utility weights,
+- courage,
+- perception fidelity,
+- memory capacity/retention,
+- contradiction tolerance.
+
+That is good.
+
+But deliberation style still looks too uniform:
+- shared planning budget,
+- shared retry TTLs,
+- shared cooldown curves,
+- shared switch margins.
+
+### Why this matters
+FOUNDATIONS IV.22 is not just about what agents care about. It is also about how differently they behave under uncertainty and pressure.
+
+### Fix
+Introduce per-agent reasoning style:
+- search depth,
+- search patience,
+- switch reluctance,
+- retry timing model,
+- trust weighting,
+- consultation habits,
+- alarm responsiveness,
+- contradiction handling style.
+
+That will create more differentiated emergence without cheating.
+
+## 11. Some useful heuristics are drifting too close to abstract control levers
+
+This is not the worst issue, but it is worth correcting early.
+
+Danger class, competition discount, and enterprise signal are legal as planner-side heuristics. FOUNDATIONS allows that. But they need to stay visibly derived from concrete observable state.
+
+### Why this matters
+If these summaries become the real driver of behavior instead of an agent-local compression of evidence, they start violating the spirit of FOUNDATIONS I.2, I.3, and V.27.
+
+### Fix
+Push them closer to concrete observed facts:
+- visible arms/armor/allies,
+- route incidents,
+- queue lengths,
+- failed purchases,
+- stockout observations,
+- posted prices,
+- seller reliability,
+- actual waiting lines,
+- and observed competitor claims.
+
+## 12. Validation is good, but not yet aligned with your own acceptance standard
+
+The existing test suite is already stronger than most simulation projects ever get.
+
+But FOUNDATIONS VI does not treat canonical regression chains as optional examples. They are acceptance criteria.
+
+### Current read
+- **Strongest support:** C and D
+- **Partial support:** B, E, F
+- **Missing or unproven as full generic chains:** A, G, H
+
+That matters.
+
+### Fix
+Promote missing scenario classes to hard architecture gates:
+- A. Beast Starvation → Caravan Attack → Report → Bounty → Hunt → Reward
+- F. Office Vacancy → Succession Delay → Patrol Gap → Route Predation
+- G. False Rumor → Wrongful Accusation → Contested Evidence → Correction or Miscarriage
+- H. Remote Shock → Delayed Arrival Failure → Local Shortage → Substitution or Exit
+
+Also add falsification suites for:
+- contradictory testimony,
+- memory overflow/eviction,
+- 5+ claimant contention,
+- materialization-binding races,
+- long-horizon plan disruption,
+- off-map shock propagation.
+
+## Improvements That Would Most Improve Alignment
+
+## A. Build a claim-centric epistemic substrate
+This is the highest-value architecture improvement.
+
+Make beliefs and reports into structured claims with:
+- subject,
+- proposition,
+- claimed event time,
+- acquisition time,
+- source chain,
+- confidence,
+- freshness,
+- carrier.
+
+Let agents maintain:
+- endorsed working beliefs,
+- unresolved alternatives,
+- confidence gradients,
+- and provenance-aware corrections.
+
+## B. Build a unified artifact / record / evidence substrate
+Do not implement bounties, debts, warrants, notices, accusations, and contracts as disconnected custom cases.
+
+Give them a shared substrate with:
+- stable identity,
+- custody,
+- location,
+- authenticity,
+- edit/copy/forge/destroy paths,
+- and inspectable linkage to claims and institutions.
+
+## C. Generalize contention into a reusable world mechanic
+Every scarce or exclusive affordance should resolve through:
+- queue,
+- grant,
+- reservation,
+- race,
+- or explicit contest.
+
+No silent entitlement through planning.
+
+## D. Make plan assumptions first-class and derived
+Right now the frame system is conceptually correct, but its assumption vocabulary is still narrow.
+
+Let plans automatically track the specific claims, affordances, promises, reservations, and access conditions they depend on. Then invalidate them generically when those supports break.
+
+## E. Unify planner semantics and runtime semantics
+Do not let planning become a separate approximate universe.
+
+Either:
+- derive planner effects from authoritative action effect declarations,
+- or keep a shared semantics source with stricter conformance guarantees.
+
+## F. Separate communication types
+At minimum:
+- alarm,
+- testimony,
+- gossip,
+- record consultation,
+- and formal accusation
+should not all share the same treatment.
+
+## G. Make more of “surprise” explicit
+FOUNDATIONS wants surprise to arise from violated expectation.
+
+So model expectations explicitly:
+- expected stash contents,
+- promised deliveries,
+- patrol schedules,
+- reservations,
+- assignments,
+- owed payments.
+
+That will make discovery, blame, and investigation more general and more legible.
+
+## H. Put agent diversity into reasoning style, not just motive weights
+This is one of the cheapest ways to buy more emergence.
+
+## Features Worth Adding
+
+These are the highest-value additions I would prioritize because they close real FOUNDATIONS gaps.
+
+## 1. Bounty / notice / contract / warrant pipeline
+Needed for FOUNDATIONS IV.25 and Scenario A.
+
+Must include:
+- issuer,
+- jurisdiction,
+- reward source,
+- proof requirements,
+- posting place,
+- expiration,
+- claimant competition,
+- and payout from a real treasury or obligated sponsor.
+
+## 2. Office duty, delegation, and vacancy degradation
+Needed for Scenario F.
+
+Add:
+- patrol duty,
+- escort duty,
+- treasury release duty,
+- record maintenance duty,
+- delegation,
+- succession delay,
+- recognizable service gaps,
+- and recovery paths.
+
+## 3. Beast ecology and nonhuman actor chains
+Needed for Scenario A.
+
+Add:
+- territory,
+- food pressure,
+- prey depletion,
+- range expansion,
+- attack choice,
+- aftermath evidence,
+- and reportable institutional consequences.
+
+## 4. Boundary trade and remote shock model
+Needed for Scenario H.
+
+Add:
+- off-map stocks,
+- scheduled arrivals,
+- convoy failure,
+- rerouting,
+- import dependence,
+- shortage propagation,
+- substitution,
+- rationing,
+- and departure pressure.
+
+## 5. Alarm and messenger carriers
+High value even before full institutions.
+
+Add:
+- shouts,
+- runners,
+- letters,
+- posted notices,
+- town criers,
+- and messenger jobs.
+
+That will massively improve information locality without cheating.
+
+## 6. Persistent physical evidence
+Needed for FOUNDATIONS III.18 and Scenario G.
+
+Add:
+- tracks,
+- blood trails,
+- broken locks,
+- damaged doors,
+- tampered seals,
+- scorch marks,
+- missing-inventory records,
+- burial markers.
+
+Evidence should:
+- persist,
+- decay,
+- be misread,
+- be contestable,
+- and be destroyable.
+
+## 7. Full property-rights and access-control model
+Needed for FOUNDATIONS IV.24.
+
+Add:
+- custody,
+- delegated access,
+- keys,
+- locks,
+- seals,
+- obligations,
+- debt/lien,
+- seizure,
+- confiscation,
+- jurisdictional legality.
+
+## 8. Contradictory testimony and adjudication
+Needed for Scenario G.
+
+Add:
+- witness conflict,
+- alibis,
+- forged records,
+- source reputation,
+- institutional bias,
+- burdens of proof,
+- correction,
+- and non-correction.
+
+## 9. Generic claim/race/queue tokens across domains
+Do this once, then reuse it for:
+- workstations,
+- corpses,
+- patients,
+- witness time,
+- bounty claims,
+- storage access,
+- investigation priority,
+- output pickup.
+
+## What I Would Not Do
+
+- **I would not replace GOAP right now.**  
+  That is not the bottleneck.
+
+- **I would not patch missing scenario chains with bespoke helper pipelines.**  
+  That would directly betray FOUNDATIONS.
+
+- **I would not keep widening the goal catalog before fixing carriers.**  
+  More goals on top of weak epistemics/artifacts/contention will just create more cross-cutting special cases.
+
+## Recommended Order Of Operations
+
+1. **Keep the substrate.** Do not rewrite the deterministic ECS/action/event architecture.
+2. **Fix epistemics first.** Richer uncertainty and contradiction will improve many domains at once.
+3. **Add generic contention/arbitration.** That closes a major FOUNDATIONS gap and prevents hidden entitlement.
+4. **Add the unified artifact/record/evidence substrate.** This unlocks institutions, justice, bounties, and better knowledge flow.
+5. **Expand the rights model.** Ownership alone is not enough.
+6. **Add boundary processes.** Otherwise the world stays too sealed.
+7. **Promote the missing canonical scenario classes to hard gates.**
+8. **Only then widen the behavior surface.**
+
+## Final Verdict
+
+Yes: the current AI architecture has real issues to fix.
+
+But the important distinction is this:
+
+- It is **not** a bad architecture.
+- It **is** an incomplete one relative to FOUNDATIONS.
+
+You already have the bones of the right system:
+- deterministic causality,
+- explicit actions,
+- belief separation,
+- replay,
+- tracing,
+- and state-mediated interaction.
+
+What you do **not** yet have is the full carrier ecology that FOUNDATIONS demands:
+- rich contradictory claims,
+- generalized contention,
+- dense social artifacts,
+- full property/jurisdiction distinctions,
+- and explicit boundary processes.
+
+That is the gap.
+
+If you fix those before continuing to expand behavior, the architecture can grow into the FOUNDATIONS vision cleanly.
+
+If you do not, the likely failure mode is not immediate collapse.  
+It is slower and worse: the system will keep growing in ways that look impressive locally while silently accumulating the exact special-case pressure the foundations were written to forbid.

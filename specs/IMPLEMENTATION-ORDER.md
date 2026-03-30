@@ -178,6 +178,11 @@ S34 ✅, S35 ✅ (independent, can parallel with S33)
 E18 ✅, E19, E20 ──→ E22 (integration tests need everything)
 S40 ──→ E22 (integration should cover lawful remote combat pursuit if adopted)
 
+S42 (no deps — per-agent reasoning style)
+S43 (no deps — communication type differentiation)
+S42, S43 ──→ S44 (generalized contention substrate)
+S44 ──→ S45 (unified social artifact model benefits from contention for claim competition)
+
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
 S26 ✅ (planner conformance tests completed — 32 tests across all action families)
 S20 ✅ ──→ S21 ✅ (promote causal runtime state — completed)
@@ -417,6 +422,54 @@ S36 ✅ ──→ S40
 
 ---
 
+### Phase 5: Architectural Substrates
+
+Derived from the external ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs address confirmed architectural gaps in agent reasoning diversity (FND IV.22), communication type differentiation (FND III.15/18), generalized contention (FND II.8/9), and social artifact modeling (FND IV.25).
+
+**Step 17** (parallel, no deps):
+- **S42**: Per-Agent Reasoning Style
+  - Replace shared `PlanningBudget` with per-agent `ReasoningProfile` component
+  - Search depth, beam width, switch reluctance, retry timing become per-agent
+  - FND IV.22 alignment: reasoning style diversity, not just motive diversity
+- **S43**: Communication Type Differentiation
+  - Split Tell into urgency-classified types: Alarm, Testimony, Gossip
+  - Per-class trust model, suppression rule, and acceptance fidelity
+  - Alarms survive stress suppression; gossip does not
+  - FND III.15/18 alignment: distinct communication carriers
+
+**Step 18** (after S42, S43):
+- **S44**: Generalized Contention Substrate
+  - Extend facility queue grant/wait/expiry pattern to all exclusive affordances
+  - Reusable `ContentionQueue` component for corpse loot, item pickup, patient treatment
+  - Queue state is inspectable world state, not hidden engine order
+  - FND II.8/9 alignment: contested affordances resolve through world processes
+
+**Step 19** (after S44):
+- **S45**: Unified Social Artifact Model
+  - First-class `SocialArtifact` entities: bounties, notices (warrants, contracts, debts in future)
+  - Shared `ArtifactHeader` (issuer, authority, jurisdiction, expiration, state) + typed content
+  - Physical presence at posting places; locality-respecting perception
+  - Initial types: Bounty (with terms, proof, reward source, claim competition) and Notice
+  - FND IV.25 alignment: social artifacts are world entities, not quest pipelines
+
+Dependency graph:
+```
+S42 (no deps, parallel)
+S43 (no deps, parallel)
+S42, S43 ──→ S44
+S44 ──→ S45
+```
+
+#### Phase 5 Gate
+- [ ] Two agents with different `ReasoningProfile` produce observably different behavior (S42)
+- [ ] Alarm-class communication survives stress suppression while gossip is suppressed (S43)
+- [ ] Multi-agent corpse loot contention resolves through inspectable queue state (S44)
+- [ ] End-to-end bounty lifecycle: post → perceive → pursue → claim → reward (S45)
+- [ ] All Phase 4 and 4+ gate criteria still hold
+- [ ] `cargo test --workspace` passes
+
+---
+
 ## Active Spec Inventory
 
 All specs in `specs/` must appear exactly once in this order. Completed/archived specs live in `archive/specs/`.
@@ -449,6 +502,10 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S36-declarative-goal-registration.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | `S38-learned-route-source-preferences.md` | 4+ | 16 | S35, S33 |
 | `S39-limited-side-benefit-plan-scoring.md` | 4+ | 16 | S33 |
+| `S42-per-agent-reasoning-style.md` | 5 | 17 | none |
+| `S43-communication-type-differentiation.md` | 5 | 17 | none |
+| `S44-generalized-contention-substrate.md` | 5 | 18 | S42, S43 |
+| `S45-unified-social-artifact-model.md` | 5 | 19 | S44 |
 
 ## Crate Dependency Graph
 
@@ -473,3 +530,4 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | IN PROGRESS (E18 complete; E19, E20, S40, and E22 pending) |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |
+| 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | PENDING |
