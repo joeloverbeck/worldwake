@@ -10,12 +10,12 @@ use crate::{
     RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
     RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeSet};
 use worldwake_core::{
     belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
-    DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, Quantity, TellTopic, ThresholdBand, Tick,
-    UtilityProfile,
+    DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationKind,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -564,7 +564,8 @@ fn motive_score(
             context.utility.social_weight,
             social_pressure_for_topic(context, topic),
         ),
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } | GoalKind::Patrol { .. } => 1,
+        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::Patrol { .. } => patrol_motive(context),
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
@@ -710,6 +711,77 @@ fn investigation_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) 
         0
     };
     base.saturating_add(ownership_bonus)
+}
+
+fn patrol_motive(context: &RankingContext<'_>) -> u32 {
+    let (Some(profile), Some(route)) = (
+        context.view.patrol_profile(context.agent),
+        context.view.patrol_route(context.agent),
+    ) else {
+        return 0;
+    };
+    if route.assigned_places.get(route.current_index).is_none() {
+        return 0;
+    }
+
+    let base = u32::from(profile.patrol_motive_weight.value());
+    let unresolved_thefts = patrol_unresolved_theft_count(context.view, context.agent);
+    let relevant_offices = patrol_relevant_offices(context.view, context.agent, &route);
+    let believed_vacancies = relevant_offices
+        .iter()
+        .filter(|office| {
+            matches!(
+                context.view.believed_office_holder(**office),
+                worldwake_core::InstitutionalBeliefRead::Certain(None)
+            )
+        })
+        .count() as u32;
+    let believed_contests = relevant_offices
+        .iter()
+        .filter(|office| {
+            matches!(
+                context.view.believed_force_controller(**office),
+                worldwake_core::InstitutionalBeliefRead::Certain((_, true))
+            )
+        })
+        .count() as u32;
+
+    base.saturating_mul(
+        1u32
+            .saturating_add(unresolved_thefts)
+            .saturating_add(believed_vacancies)
+            .saturating_add(believed_contests),
+    )
+}
+
+fn patrol_unresolved_theft_count(view: &dyn GoalBeliefView, agent: EntityId) -> u32 {
+    view.active_violation_records(agent)
+        .into_iter()
+        .filter(|record| matches!(record.kind, ViolationKind::SuspectedTheft { .. }))
+        .count() as u32
+}
+
+fn patrol_relevant_offices(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    route: &worldwake_core::PatrolRoute,
+) -> BTreeSet<EntityId> {
+    let route_places = route.assigned_places.iter().copied().collect::<BTreeSet<_>>();
+    view.known_institutional_beliefs(agent)
+        .into_iter()
+        .filter_map(|belief| match belief.claim {
+            InstitutionalClaim::OfficeHolder { office, .. }
+            | InstitutionalClaim::ForceControl { office, .. } => {
+                Some((office, view.office_data(office)?))
+            }
+            _ => None,
+        })
+        .filter_map(|(office, office_data)| {
+            route_places
+                .contains(&office_data.jurisdiction)
+                .then_some(office)
+        })
+        .collect()
 }
 
 fn drive_score(
@@ -1141,21 +1213,23 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         belief_confidence, ActionDomain, BeliefConfidencePolicy, BelievedActivity,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, DemandObservation, DemandObservationReason,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-        HomeostaticNeeds, InTransitOnEdge, JusticeDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OpportunityAnchor, PerceptionSource, Permille,
-        PunishmentKind, Quantity, RecipeId, ResourceSource, TellTopic, TheftDispositionProfile,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
-        WorkstationTag, Wound, WoundCause, WoundId,
+        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DemandObservationReason, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, OpportunityAnchor, PatrolProfile,
+        PatrolRoute, PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId,
+        RecordedViolation, ResourceSource, TellTopic, TheftDispositionProfile, TheftFacts, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
+        ViolationKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
         RuntimeBeliefView,
     };
 
-    #[derive(Default)]
+    #[derive(Clone, Default)]
     struct TestBeliefView {
         alive: BTreeSet<EntityId>,
         entity_kinds: BTreeMap<EntityId, EntityKind>,
@@ -1174,11 +1248,19 @@ mod tests {
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        institutional_claims: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        office_data: BTreeMap<EntityId, OfficeData>,
+        office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+        force_controller_beliefs:
+            BTreeMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
         loyalties: BTreeMap<(EntityId, EntityId), Permille>,
         factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
+        patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
+        patrol_routes: BTreeMap<EntityId, PatrolRoute>,
+        active_violation_records: BTreeMap<EntityId, Vec<RecordedViolation>>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -1201,6 +1283,12 @@ mod tests {
         }
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_claims
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
         fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
             self.beliefs.values().find_map(|beliefs| {
@@ -1348,6 +1436,12 @@ mod tests {
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
+        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+            self.patrol_profiles.get(&agent).cloned()
+        }
+        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+            self.patrol_routes.get(&agent).cloned()
+        }
         fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
             self.theft_profiles.get(&agent).cloned()
         }
@@ -1413,6 +1507,27 @@ mod tests {
         fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
             self.demand_memory.get(&agent).cloned().unwrap_or_default()
         }
+        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+            self.office_data.get(&office).cloned()
+        }
+        fn believed_office_holder(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<Option<EntityId>> {
+            self.office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
+        fn believed_force_controller(
+            &self,
+            office: EntityId,
+        ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+            self.force_controller_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+        }
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
         }
@@ -1440,6 +1555,12 @@ mod tests {
         ) -> Option<ActionDuration> {
             None
         }
+        fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
+            self.active_violation_records
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
     }
 
     fn entity(slot: u32) -> EntityId {
@@ -1451,6 +1572,41 @@ mod tests {
 
     fn pm(value: u16) -> Permille {
         Permille::new(value).unwrap()
+    }
+
+    fn patrol_profile(weight: u16) -> PatrolProfile {
+        PatrolProfile {
+            base_dwell_ticks: 5,
+            dwell_vigilance_scale_ticks: 5,
+            vigilance: pm(500),
+            route_adaptation_sensitivity: pm(400),
+            patrol_motive_weight: pm(weight),
+        }
+    }
+
+    fn patrol_route(place: EntityId) -> PatrolRoute {
+        PatrolRoute {
+            assigned_places: vec![place],
+            current_index: 0,
+        }
+    }
+
+    fn suspected_theft_record(id: u64, place: EntityId) -> RecordedViolation {
+        RecordedViolation {
+            id: ViolationId(id),
+            kind: ViolationKind::SuspectedTheft {
+                theft: TheftFacts {
+                    missing_entity: entity(800 + id as u32),
+                    expected_place: place,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                },
+                suspect: None,
+            },
+            observed_tick: Tick(1),
+            resolved_tick: None,
+            expires_tick: Tick(50),
+        }
     }
 
     fn demand(place: EntityId, commodity: CommodityKind, quantity: u32) -> DemandObservation {
@@ -1717,6 +1873,180 @@ mod tests {
                 target_item: entity(2),
             })]
         );
+    }
+
+    #[test]
+    fn patrol_goal_uses_patrol_profile_weight_as_base_motive() {
+        let agent = entity(1);
+        let place = entity(99);
+        let mut view = base_view(agent);
+        view.patrol_profiles.insert(agent, patrol_profile(550));
+        view.patrol_routes.insert(agent, patrol_route(place));
+
+        let ranked = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[0].motive_score, 550);
+    }
+
+    #[test]
+    fn patrol_goal_scales_with_unresolved_theft_records() {
+        let agent = entity(1);
+        let place = entity(99);
+        let mut view = base_view(agent);
+        view.patrol_profiles.insert(agent, patrol_profile(200));
+        view.patrol_routes.insert(agent, patrol_route(place));
+
+        let baseline = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        view.active_violation_records.insert(
+            agent,
+            vec![
+                suspected_theft_record(1, place),
+                suspected_theft_record(2, place),
+                suspected_theft_record(3, place),
+            ],
+        );
+        let escalated = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(baseline[0].motive_score, 200);
+        assert_eq!(escalated[0].motive_score, 800);
+    }
+
+    #[test]
+    fn patrol_goal_scales_with_vacancy_and_contested_beliefs_on_route() {
+        let agent = entity(1);
+        let place = entity(99);
+        let office = entity(77);
+        let mut view = base_view(agent);
+        view.patrol_profiles.insert(agent, patrol_profile(150));
+        view.patrol_routes.insert(agent, patrol_route(place));
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.office_data.insert(
+            office,
+            OfficeData {
+                title: "Captain".to_string(),
+                jurisdiction: place,
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+        view.institutional_claims.insert(
+            agent,
+            vec![
+                BelievedInstitutionalClaim {
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: None,
+                        effective_tick: Tick(2),
+                    },
+                    source: InstitutionalKnowledgeSource::WitnessedEvent,
+                    learned_tick: Tick(2),
+                    learned_at: Some(place),
+                },
+                BelievedInstitutionalClaim {
+                    claim: InstitutionalClaim::ForceControl {
+                        office,
+                        controller: Some(entity(30)),
+                        contested: true,
+                        effective_tick: Tick(2),
+                    },
+                    source: InstitutionalKnowledgeSource::WitnessedEvent,
+                    learned_tick: Tick(2),
+                    learned_at: Some(place),
+                },
+            ],
+        );
+
+        let baseline_view = view.clone();
+        let baseline = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &baseline_view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(None));
+        view.force_controller_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain((Some(entity(30)), true)));
+
+        let escalated = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(baseline[0].motive_score, 150);
+        assert_eq!(escalated[0].motive_score, 450);
+    }
+
+    #[test]
+    fn patrol_goal_does_not_escalate_without_local_patrol_beliefs() {
+        let agent = entity(1);
+        let place = entity(99);
+        let office = entity(77);
+        let mut view = base_view(agent);
+        view.patrol_profiles.insert(agent, patrol_profile(175));
+        view.patrol_routes.insert(agent, patrol_route(place));
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.office_data.insert(
+            office,
+            OfficeData {
+                title: "Captain".to_string(),
+                jurisdiction: place,
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: Some(Tick(2)),
+            },
+        );
+
+        let ranked = rank(
+            &[goal_at_place(GoalKind::Patrol { place }, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 175);
     }
 
     /// Test helper: builds `DecisionContext` from the view and delegates to `rank_candidates`.

@@ -718,6 +718,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn patrol_route(&self, agent: EntityId) -> Option<worldwake_core::PatrolRoute> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_patrol_route(agent).cloned())
+            .flatten()
+    }
+
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,

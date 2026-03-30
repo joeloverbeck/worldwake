@@ -238,6 +238,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_patrol_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
     let pending_violations =
@@ -391,6 +392,31 @@ fn emit_crime_candidates(
 ) {
     emit_theft_candidates(candidates, diagnostics, ctx);
     emit_justice_candidates(candidates, diagnostics, ctx);
+}
+
+fn emit_patrol_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let (Some(route), Some(_profile)) = (
+        ctx.view.patrol_route(ctx.agent),
+        ctx.view.patrol_profile(ctx.agent),
+    ) else {
+        return;
+    };
+    let Some(&place) = route.assigned_places.get(route.current_index) else {
+        return;
+    };
+
+    emit_candidate_with_trace(
+        candidates,
+        diagnostics,
+        GoalKind::Patrol { place },
+        OpportunityAnchor::Place(place),
+        Evidence::with_place(place),
+        EvidenceTrace::default(),
+    );
 }
 
 fn emit_justice_candidates(
@@ -3250,12 +3276,12 @@ mod tests {
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        PerceptionSource, Permille, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
-        ResourceSource, SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey,
-        TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        PatrolProfile, PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace,
+        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, SharedTellState, SocialObservation,
+        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationKind,
+        ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId, OpportunityAnchor,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -3326,6 +3352,8 @@ mod tests {
             BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
         theft_disposition_profiles: BTreeMap<EntityId, worldwake_core::TheftDispositionProfile>,
         justice_disposition_profiles: BTreeMap<EntityId, worldwake_core::JusticeDispositionProfile>,
+        patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
+        patrol_routes: BTreeMap<EntityId, PatrolRoute>,
         reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
         in_transit: BTreeSet<EntityId>,
         believed_owners: BTreeMap<EntityId, EntityId>,
@@ -3392,6 +3420,8 @@ mod tests {
                 violation_disposition_profiles: BTreeMap::new(),
                 theft_disposition_profiles: BTreeMap::new(),
                 justice_disposition_profiles: BTreeMap::new(),
+                patrol_profiles: BTreeMap::new(),
+                patrol_routes: BTreeMap::new(),
                 reservation_ranges: BTreeMap::new(),
                 in_transit: BTreeSet::new(),
                 believed_owners: BTreeMap::new(),
@@ -3647,6 +3677,14 @@ mod tests {
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
+        }
+
+        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+            self.patrol_profiles.get(&agent).cloned()
+        }
+
+        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+            self.patrol_routes.get(&agent).cloned()
         }
 
         fn epistemic_disposition_profile(
@@ -3953,6 +3991,16 @@ mod tests {
         Permille::new(value).unwrap()
     }
 
+    fn patrol_profile(base: u16) -> PatrolProfile {
+        PatrolProfile {
+            base_dwell_ticks: 5,
+            dwell_vigilance_scale_ticks: 5,
+            vigilance: pm(500),
+            route_adaptation_sensitivity: pm(400),
+            patrol_motive_weight: pm(base),
+        }
+    }
+
     fn hunger(value: u16) -> HomeostaticNeeds {
         HomeostaticNeeds::new(pm(value), pm(0), pm(0), pm(0), pm(0))
     }
@@ -4011,6 +4059,105 @@ mod tests {
         candidates
             .iter()
             .any(|candidate| candidate.key.kind == goal)
+    }
+
+    #[test]
+    fn patrol_candidates_emit_next_waypoint_when_route_and_profile_exist() {
+        let agent = entity(1);
+        let square = entity(10);
+        let gate = entity(11);
+        let hall = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, square);
+        view.entities_at.insert(square, vec![agent]);
+        view.patrol_profiles.insert(agent, patrol_profile(550));
+        view.patrol_routes.insert(
+            agent,
+            PatrolRoute {
+                assigned_places: vec![square, gate, hall],
+                current_index: 1,
+            },
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(result.candidates.iter().any(|candidate| {
+            candidate.key.kind == GoalKind::Patrol { place: gate }
+                && candidate.anchor == OpportunityAnchor::Place(gate)
+                && candidate.evidence_places == BTreeSet::from([gate])
+        }));
+    }
+
+    #[test]
+    fn patrol_candidates_require_complete_patrol_state_and_valid_index() {
+        let agent = entity(1);
+        let square = entity(10);
+        let gate = entity(11);
+        let mut missing_profile = TestBeliefView::default();
+        missing_profile.alive.insert(agent);
+        missing_profile.entity_kinds.insert(agent, EntityKind::Agent);
+        missing_profile.effective_places.insert(agent, square);
+        missing_profile.entities_at.insert(square, vec![agent]);
+        missing_profile.patrol_routes.insert(
+            agent,
+            PatrolRoute {
+                assigned_places: vec![square, gate],
+                current_index: 0,
+            },
+        );
+
+        let missing_profile_result = generate_candidates_with_travel_horizon(
+            &missing_profile,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+        assert!(!contains_goal(
+            &missing_profile_result.candidates,
+            GoalKind::Patrol { place: square }
+        ));
+
+        let mut invalid_route = missing_profile;
+        invalid_route.patrol_profiles.insert(agent, patrol_profile(550));
+        invalid_route.patrol_routes.insert(
+            agent,
+            PatrolRoute {
+                assigned_places: vec![square],
+                current_index: 3,
+            },
+        );
+
+        let invalid_route_result = generate_candidates_with_travel_horizon(
+            &invalid_route,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+        assert!(
+            !invalid_route_result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. }))
+        );
     }
 
     fn goals_for<'a>(

@@ -8,9 +8,10 @@ use worldwake_core::{
     CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
+    PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation,
+    ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
@@ -141,6 +142,14 @@ pub trait GoalBeliefView {
         let _ = agent;
         Permille::new_unchecked(1000)
     }
+    fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+        let _ = agent;
+        None
+    }
+    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+        let _ = agent;
+        None
+    }
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
@@ -203,6 +212,10 @@ pub trait GoalBeliefView {
     ) -> Option<ViolationDispositionProfile> {
         let _ = agent;
         None
+    }
+    fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
+        let _ = agent;
+        Vec::new()
     }
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
@@ -435,6 +448,10 @@ pub trait RuntimeBeliefView {
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
+        let _ = agent;
+        None
+    }
+    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
         let _ = agent;
         None
     }
@@ -932,6 +949,20 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::observation_fidelity(self, agent)
             }
 
+            fn patrol_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::PatrolProfile> {
+                $crate::RuntimeBeliefView::patrol_profile(self, agent)
+            }
+
+            fn patrol_route(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::PatrolRoute> {
+                $crate::RuntimeBeliefView::patrol_route(self, agent)
+            }
+
             fn epistemic_disposition_profile(
                 &self,
                 agent: worldwake_core::EntityId,
@@ -1010,6 +1041,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::ViolationDispositionProfile> {
                 $crate::RuntimeBeliefView::violation_disposition_profile(self, agent)
+            }
+
+            fn active_violation_records(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::RecordedViolation> {
+                $crate::RuntimeBeliefView::active_violation_records(self, agent)
             }
 
             fn merchandise_profile(
