@@ -151,7 +151,7 @@ E16c ✅ ──→ E17 ✅ (justice records and institutional knowledge now reus
 E16 ──→ E16b ✅ (explicit force legitimacy needs offices, factions, and succession substrate)
 E15 ✅, S03 ✅ ──→ E17 ✅ (crime closeout shipped on top of discovery, ownership claims, and planner binding)
 E16 ──→ E18 ✅ (bandits need faction system)
-E16 ──→ E19 (guards need public order)
+E16 ──→ E19 (guards need offices/factions substrate and derived public-order support)
 E16b ✅ ──→ E19 (guards need contested-office control state)
 E16c ──→ E19 (guards need institutional belief/record pathways)
 S01 ✅, S03 ✅, E16c ✅ ──→ E17 ✅ (crime closeout shipped with ownership claims, planner binding, and record architecture)

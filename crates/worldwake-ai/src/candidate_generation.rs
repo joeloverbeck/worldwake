@@ -7009,6 +7009,91 @@ mod tests {
     }
 
     #[test]
+    fn patrolling_guard_only_deterrs_theft_when_locally_observed() {
+        let agent = entity(1);
+        let owner = entity(2);
+        let local_guard = entity(3);
+        let remote_guard = entity(4);
+        let place = entity(10);
+        let remote_place = entity(11);
+        let item = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, owner, local_guard, remote_guard]);
+        for actor in [agent, owner, local_guard, remote_guard] {
+            view.entity_kinds.insert(actor, EntityKind::Agent);
+        }
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(item, place);
+        view.effective_places.insert(owner, remote_place);
+        view.effective_places.insert(remote_guard, remote_place);
+        view.entities_at.insert(place, vec![agent, item]);
+        view.entities_at.insert(remote_place, vec![owner, remote_guard]);
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.entity_loads.insert(item, LoadUnits(2));
+        view.carry_capacities.insert(agent, LoadUnits(5));
+        view.theft_disposition_profiles.insert(
+            agent,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(300),
+                witness_risk_penalty: pm(300),
+            },
+        );
+        view.believed_owners.insert(item, owner);
+        view.patrol_profiles.insert(local_guard, patrol_profile(400));
+        view.patrol_routes.insert(
+            local_guard,
+            PatrolRoute {
+                assigned_places: vec![place],
+                current_index: 0,
+            },
+        );
+        view.patrol_profiles.insert(remote_guard, patrol_profile(400));
+        view.patrol_routes.insert(
+            remote_guard,
+            PatrolRoute {
+                assigned_places: vec![remote_place],
+                current_index: 0,
+            },
+        );
+
+        let remote_guard_only = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(
+            contains_goal(
+                &remote_guard_only,
+                GoalKind::StealItem { target_item: item }
+            ),
+            "remote patrolling guards must not suppress theft without local observation"
+        );
+
+        view.effective_places.insert(local_guard, place);
+        view.entities_at.insert(place, vec![agent, item, local_guard]);
+
+        let local_guard_present = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(
+            !contains_goal(
+                &local_guard_present,
+                GoalKind::StealItem { target_item: item }
+            ),
+            "a patrolling guard should deter theft only through same-place witness presence"
+        );
+    }
+
+    #[test]
     fn theft_candidate_knowledge_path_records_direct_local_observation() {
         let agent = entity(1);
         let owner = entity(2);

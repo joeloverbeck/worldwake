@@ -3,7 +3,7 @@
 **Status**: ✅ COMPLETED
 
 ## Epic Summary
-Implement guard patrol routes, belief-driven intensity scaling, threat-based route adaptation, and the public order feedback loop. Guard crime response (investigation, accusation, punishment) is already delivered by E17 and the standard AI pipeline — this epic adds only the patrol layer.
+Implement guard patrol routes, belief-driven intensity scaling, threat-based route adaptation, and a derived public-order guard-presence view. Guard crime response (investigation, accusation, punishment) is already delivered by E17 and the standard AI pipeline; this epic adds the patrol layer, not a shared thief-deterrence substrate.
 
 ## Phase
 Phase 4: Group Adaptation, CLI & Verification
@@ -178,25 +178,19 @@ Guards modify their patrol routes based on belief state, not world state:
   - If the office is contested (E16b), guards with `PatrolProfile` escalate patrol frequency around the jurisdiction.
 - **Captain orders are deferred to a future epic.** E19 guards operate autonomously based on their beliefs and profiles. A future system may add an `AssignPatrolRoute` action where a captain can modify subordinate routes.
 
-### 8. Public Order Feedback Loop
+### 8. Derived Public-Order Surface
 
-The feedback loop operates through real agent decisions, not scripted responses:
+E19 delivered only the guard-side half of the originally proposed loop:
 
 ```
-Crime occurs at place
-  → Witnesses Tell guards (E17 pipeline)
-    → Guard's ViolationMemory grows
-      → Guard's patrol motive increases (Section 5)
-        → Guard patrols more frequently
-          → Guard presence at place increases
-            → public_order(place) rises (Section 5 guard_presence_factor)
-              → Fewer crimes occur (thieves avoid guarded places via their own beliefs)
-                → Guard receives fewer reports
-                  → Patrol motive decreases
-                    → Guard patrols less frequently
+Crime reports / institutional instability
+  → guard belief state changes
+    → patrol motive changes
+      → guard presence at place changes
+        → derived public_order(place) changes
 ```
 
-**This is a stabilizing negative feedback loop.** It self-corrects: crime causes patrols, patrols suppress crime.
+The reverse leg, where thieves lawfully consume a shared settlement-security substrate and therefore complete a proven patrol/crime feedback loop, did not land. Live thieves still use direct same-place witness deterrence rather than `public_order()` or another shared settlement-level carrier.
 
 ---
 
@@ -216,19 +210,18 @@ No guard acquires information without a traceable carrier path.
 
 ### H.2 Positive-Feedback Analysis (Principle 11)
 
-**Loop 1: Crime-Patrol Escalation (NEGATIVE — self-correcting)**
-Crime ↑ → Reports ↑ → Patrol motive ↑ → Guard presence ↑ → Crime ↓ → Reports ↓ → Patrol motive ↓
-
-This is a negative feedback loop, not positive. No dampener needed for the loop itself.
+The originally proposed crime/patrol/public-order/thief loop is not a delivered live loop and therefore is not claimed here as active architecture.
 
 ## Outcome
 
+- Outcome amended: 2026-03-30
 - Completion date: 2026-03-30
 - What actually changed:
   - `PatrolRoute`/`PatrolProfile`, patrol action execution, patrol candidate generation/ranking, patrol route adaptation, and `public_order()` guard-presence contribution all landed in the live codebase.
   - End-to-end patrol verification now lives in [`crates/worldwake-ai/tests/golden_patrol.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_patrol.rs), with replay, interruption, urgency-scaling, adaptation, and locality coverage.
   - AI runtime/planning now snapshots patrol-route state explicitly, and patrol snapshot continuation is opportunity-scoped.
   - Patrol affordance generation now matches authoritative legality by only surfacing patrol when the actor is at the current waypoint.
+  - The archived spec body now explicitly retires the previously overstated shared patrol/public-order/theft feedback-loop claim so the archived design document matches the shipped architecture.
 - Deviations from original plan:
   - The spec's full "public order feedback loop" was not completed as written. The live thief architecture still uses local witness deterrence rather than a canonical `public_order()` consumer, so the archived completion scope stops at guard-side patrol architecture plus the derived `public_order()` bonus.
   - The route-adaptation proof surface settled on decision traces, action traces, and authoritative `PatrolRoute` state rather than a larger settlement-wide convergence scenario.
@@ -274,7 +267,7 @@ More crime reports → More waypoints added to route → Longer route completion
 10. **Agent error**: Guard may patrol stale route (crime moved elsewhere). Guard may miss crimes during travel between waypoints. Guard with low `vigilance` may not witness co-located crimes during dwell. Guard beliefs about vacancy/contestation may be outdated.
 11. **Temporal resolution**: Patrol dwell is tick-based duration. Route adaptation happens at candidate generation (per-tick when guard needs new goal). Patrol index advances on action commit.
 12. **Boundary conditions**: Guards with no `PatrolRoute` never generate patrol candidates. Guards at off-map boundary places patrol normally (boundary places are real topology nodes).
-13. **Validation patterns**: Golden tests verify patrol cycle completion, route adaptation on crime reports, belief-driven urgency changes, public order feedback loop convergence.
+13. **Validation patterns**: Golden tests verify patrol cycle completion, route adaptation on crime reports, belief-driven urgency changes, and locality boundaries around patrol evidence.
 14. **Save/load/replay**: `PatrolRoute` and `PatrolProfile` are serde-serializable components. `current_index` persists through save/load. Deterministic replay preserved (no HashMap, no floats, no wall-clock time).
 
 ---
@@ -302,7 +295,6 @@ More crime reports → More waypoints added to route → Longer route completion
 
 ### Public Order Feedback Loop
 - [ ] Guard presence at a place increases derived public_order() value
-- [ ] More patrols → higher order → (via thief belief system) fewer thefts → fewer reports → lower patrol urgency: feedback loop converges
 - [ ] Removal of guards from a place causes public_order() to drop
 
 ### Office Integration
@@ -314,7 +306,7 @@ More crime reports → More waypoints added to route → Longer route completion
 - Guards patrol real routes through the world graph with persistent progress
 - Patrol behavior adapts to threats via belief state, never world state
 - Per-agent PatrolProfile enables diverse guard behavior (Principle 22)
-- Public order feedback loop creates emergent stability/instability through real agent decisions
+- Guard presence contributes to derived `public_order()` without becoming an omniscient AI input
 - No scripted patrol changes, no omniscient intensity queries
 - All dampeners are physical (travel time, needs, finite guards), not numeric caps
 - Guard crime response remains delivered by E17 — no duplicate crime-response code in E19
