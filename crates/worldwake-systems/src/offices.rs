@@ -15,6 +15,8 @@ use worldwake_sim::{
 const PUBLIC_ORDER_BASELINE: Permille = Permille::new_unchecked(750);
 const VACANT_OFFICE_PENALTY: Permille = Permille::new_unchecked(200);
 const HOSTILE_FACTION_PAIR_PENALTY: Permille = Permille::new_unchecked(100);
+const GUARD_PRESENCE_BONUS: Permille = Permille::new_unchecked(50);
+const MAX_GUARD_ORDER_BONUS: Permille = Permille::new_unchecked(200);
 
 pub fn succession_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
     let SystemExecutionContext {
@@ -140,7 +142,22 @@ pub fn public_order(place: EntityId, world: &World) -> Permille {
         order = order.saturating_sub(HOSTILE_FACTION_PAIR_PENALTY);
     }
 
+    order = order.saturating_add(guard_presence_factor(place, world));
+
     order
+}
+
+fn guard_presence_factor(place: EntityId, world: &World) -> Permille {
+    let patrolling_guards = world
+        .entities_effectively_at(place)
+        .into_iter()
+        .filter(|entity| world.entity_kind(*entity) == Some(EntityKind::Agent))
+        .filter(|entity| world.get_component_patrol_route(*entity).is_some())
+        .count() as u32;
+    let bonus = patrolling_guards.saturating_mul(u32::from(GUARD_PRESENCE_BONUS.value()));
+    let capped_bonus = bonus.min(u32::from(MAX_GUARD_ORDER_BONUS.value()));
+
+    Permille::new(capped_bonus as u16).expect("guard presence bonus stays within Permille bounds")
 }
 
 pub fn count_present_hostile_faction_pairs_at(place: EntityId, world: &World) -> usize {
@@ -1042,8 +1059,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
-        OfficeData, OfficeForceProfile, OfficeForceState, Permille, RecordData, RecordKind, Seed,
-        Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute, Permille, RecordData,
+        RecordKind, Seed, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDefRegistry, DeterministicRng, ForceCandidateTrace, OfficeAvailabilityPhase,
@@ -1285,6 +1302,25 @@ mod tests {
                 .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
+        }
+
+        fn add_patrolling_guard(&mut self, tick: u64) -> EntityId {
+            let mut txn = new_txn(&mut self.world, tick);
+            let guard = txn.create_agent("Guard", ControlSource::Ai).unwrap();
+            txn.set_ground_location(guard, self.place).unwrap();
+            txn.set_component_patrol_route(
+                guard,
+                PatrolRoute {
+                    assigned_places: vec![self.place],
+                    current_index: 0,
+                },
+            )
+            .unwrap();
+            txn.set_component_utility_profile(guard, UtilityProfile::default())
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            guard
         }
     }
 
@@ -2153,6 +2189,49 @@ mod tests {
     }
 
     #[test]
+    fn public_order_adds_guard_presence_bonus_for_patrolling_guard() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        let _guard = fx.add_patrolling_guard(2);
+
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(800)
+        );
+    }
+
+    #[test]
+    fn public_order_ignores_non_guard_agents_for_guard_bonus() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let bystander = txn.create_agent("Bystander", ControlSource::Ai).unwrap();
+            txn.set_ground_location(bystander, fx.place).unwrap();
+            txn.set_component_utility_profile(bystander, UtilityProfile::default())
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(750)
+        );
+    }
+
+    #[test]
+    fn public_order_caps_guard_presence_bonus() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        for tick in 2..=6 {
+            let _guard = fx.add_patrolling_guard(tick);
+        }
+
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(950)
+        );
+    }
+
+    #[test]
     fn hostile_faction_pairs_count_one_way_hostility_once() {
         let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
         let faction_b = {
@@ -2282,6 +2361,32 @@ mod tests {
         assert_eq!(
             public_order(fx.place, &fx.world),
             Permille::new_unchecked(0)
+        );
+    }
+
+    #[test]
+    fn public_order_guard_bonus_composes_with_existing_penalties() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        let _guard = fx.add_patrolling_guard(2);
+        fx.kill_holder(2);
+        let mut event_log = EventLog::new();
+        run_succession(&mut fx.world, &mut event_log, 3);
+        {
+            let mut txn = new_txn(&mut fx.world, 3);
+            let faction_b = txn.create_faction("Rivals").unwrap();
+            let rival = txn.create_agent("Rival", ControlSource::Ai).unwrap();
+            txn.set_ground_location(rival, fx.place).unwrap();
+            txn.add_member(rival, faction_b).unwrap();
+            txn.add_hostility(fx.faction, faction_b).unwrap();
+            txn.set_component_utility_profile(rival, UtilityProfile::default())
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        assert_eq!(
+            public_order(fx.place, &fx.world),
+            Permille::new_unchecked(500)
         );
     }
 
