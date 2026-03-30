@@ -1,6 +1,6 @@
 # E20COMBEH-006: Golden tests — travel physiology (escalation, interrupt, diversity)
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — tests only
@@ -54,7 +54,7 @@ The travel physiology feature (per-agent body cost multipliers on travel) needs 
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/golden_tests/` (new test file or addition to existing golden test module)
+- `crates/worldwake-ai/tests/golden_travel_physiology.rs` (new golden test file, following existing `golden_*.rs` convention)
 
 ## Out of Scope
 
@@ -82,12 +82,23 @@ The travel physiology feature (per-agent body cost multipliers on travel) needs 
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/golden_tests/` — `golden_travel_escalation` — verifies escalation arithmetic
-2. `crates/worldwake-ai/src/golden_tests/` — `golden_travel_interrupt` — verifies interrupt pipeline
-3. `crates/worldwake-ai/src/golden_tests/` — `golden_agent_diversity` — verifies per-agent variation
+1. `crates/worldwake-ai/tests/golden_travel_physiology.rs` — `golden_travel_escalation` — verifies escalation arithmetic
+2. `crates/worldwake-ai/tests/golden_travel_physiology.rs` — `golden_travel_interrupt` — verifies interrupt pipeline
+3. `crates/worldwake-ai/tests/golden_travel_physiology.rs` — `golden_agent_diversity` — verifies per-agent variation
 
 ### Commands
 
 1. `cargo test -p worldwake-ai golden_travel`
 2. `cargo test -p worldwake-ai`
 3. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**: Created `crates/worldwake-ai/tests/golden_travel_physiology.rs` with three golden tests: `golden_travel_escalation` (hunger-driven travel to OrchardFarm, asserts bladder increase exceeds basal-only rate), `golden_travel_interrupt` (critical bladder at outdoor place, asserts Relieve goal appears and agent relieves), `golden_agent_diversity` (two agents with different `travel_bladder_multiplier` values, asserts higher multiplier produces higher bladder after travel).
+- **Deviations from original plan**:
+  1. Escalation and diversity tests use hunger-driven travel to OrchardFarm (indoor starting place, food at distant outdoor place) instead of bladder-driven travel to PublicLatrine. Reason: outdoor places offer `relieve_wilderness` locally, short-circuiting travel. Indoor VillageSquare forces actual multi-hop travel.
+  2. Interrupt test proves "AI acts on Relieve when bladder is critical at outdoor place" via local `relieve_wilderness`, NOT "travel is interrupted by critical bladder escalation mid-journey." The agent never travels because local relief is available. Follow-up ticket `E20COMBEH-006A` created for the actual travel-interrupt scenario.
+  3. Escalation test tracks travel across multiple legs (tolerating inter-leg replanning gaps) rather than a single continuous travel stretch.
+- **Verification results**: `cargo test -p worldwake-ai` all pass, `cargo clippy --workspace` clean, `cargo test --workspace` all pass.
+- **Follow-up tickets created**: `E20COMBEH-006A` (real travel-interrupt test), `E20COMBEH-006B` (golden testing guide docs), `S50AFFTRACE-001` (affordance trace).
