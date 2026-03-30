@@ -1,6 +1,6 @@
 # S46: Patrol-Driven Crime Discovery — Golden E2E Coverage
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 ## Summary
 
@@ -152,3 +152,10 @@ All completed:
 - `python3 scripts/golden_inventory.py --write --check-docs` — no duplicate IDs, no missing annotations
 - Conservation invariant holds (theft is a lawful transfer, not creation/destruction)
 - Replay companion confirms determinism
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**: All three tickets (S46GOLGAP-001, S46GOLGAP-002, S46GOLGAP-003) implemented. Scenario 57 (patrol-driven crime discovery) added to `golden_patrol.rs` with primary test + replay companion + coverage docs regenerated.
+- **Deviations**: None. Implementation matched spec precisely.
+- **Verification**: All 23 patrol golden tests pass. Coverage docs regenerated cleanly (72 scenario blocks across 12 files).

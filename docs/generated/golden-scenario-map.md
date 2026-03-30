@@ -10,7 +10,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 - Scenario blocks with explicit metadata: 72
 - Files contributing scenario metadata: 12
-- `golden_*` tests associated with scenario blocks: 190
+- `golden_*` tests associated with scenario blocks: 191
 
 ## Scenario Inventory
 
@@ -73,7 +73,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:471` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
 | `55` | Patrol Route Adaptation Retargets After Local Report | `golden_patrol.rs:588` | `golden_patrol_route_adaptation_retargets_after_local_report` | — |
 | `56` | Patrol Locality Requires Guard-Local Report | `golden_patrol.rs:676` | `golden_patrol_locality_requires_guard_local_report` | — |
-| `57` | Patrol-Driven Crime Discovery Chain | `golden_patrol.rs:765` | `golden_patrol_driven_crime_discovery` | — |
+| `57` | Patrol-Driven Crime Discovery Chain | `golden_patrol.rs:765` | `golden_patrol_driven_crime_discovery` | `golden_patrol_driven_crime_discovery_replays_deterministically` |
 | `3` | Resource Contention with Conservation | `golden_production.rs:2506` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback` | — |
 | `3b` | Observed Harvest Competition Redirects To Remote Sibling | `golden_production.rs:2661` | `golden_observed_harvest_competition_redirects_to_remote_sibling`<br>`golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_grant_expiry_before_intended_action`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`<br>`golden_facility_queue_patience_timeout_replays_deterministically` |
 | `4` | Materialization Barrier Chain | `golden_production.rs:2899` | `golden_materialization_barrier_chain` | — |
@@ -1030,8 +1030,8 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Places: VillageSquare, GeneralStore
 - Principles: 1, 7, 14, 17
 - Primary tests: `golden_patrol_driven_crime_discovery`
-- Replay tests: None
-- All tests: `golden_patrol_driven_crime_discovery`
+- Replay tests: `golden_patrol_driven_crime_discovery_replays_deterministically`
+- All tests: `golden_patrol_driven_crime_discovery`, `golden_patrol_driven_crime_discovery_replays_deterministically`
 
 **Setup**: One guard patrols between VillageSquare and GeneralStore. The guard begins with a stale direct belief that a bread lot is at GeneralStore. Before the guard arrives there, the lot is lawfully relocated to a different non-local place the guard cannot currently observe.
 

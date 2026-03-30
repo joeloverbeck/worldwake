@@ -1,6 +1,6 @@
 # S46GOLGAP-003: Regenerate golden coverage documentation for Scenario 57
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — documentation-only ticket
@@ -89,3 +89,10 @@ After running the script, verify that:
 
 1. `python3 scripts/golden_inventory.py --write --check-docs`
 2. `cargo test -p worldwake-ai --test golden_patrol`
+
+## Outcome
+
+- **Completion date**: 2026-03-30
+- **What changed**: Regenerated `docs/generated/golden-e2e-inventory.md` and `docs/generated/golden-scenario-map.md` via `python3 scripts/golden_inventory.py --write --check-docs`. Coverage matrix was already current.
+- **Deviations**: None. Script ran cleanly, Scenario 57 appears in all three generated files.
+- **Verification**: Script exited with no errors (12 files, 72 scenario blocks). All 23 patrol golden tests pass.

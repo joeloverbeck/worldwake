@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 12
 - Files contributing `golden_*` tests: 12
-- Total `golden_*` tests: 201
+- Total `golden_*` tests: 202
 
 ## Per-File Inventory
 
@@ -19,7 +19,7 @@ Do not hand-edit it.
 | `golden_determinism.rs` | 9 |
 | `golden_emergent.rs` | 47 |
 | `golden_offices.rs` | 21 |
-| `golden_patrol.rs` | 7 |
+| `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 6 |
@@ -189,6 +189,7 @@ Do not hand-edit it.
 - `golden_patrol_route_adaptation_retargets_after_local_report`
 - `golden_patrol_locality_requires_guard_local_report`
 - `golden_patrol_driven_crime_discovery`
+- `golden_patrol_driven_crime_discovery_replays_deterministically`
 
 ### `golden_production.rs`
 
