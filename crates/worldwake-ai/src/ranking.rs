@@ -14,6 +14,7 @@ use worldwake_core::{
     belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
     DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, OpportunityAnchor,
     OpportunityKey, PerceptionSource, Permille, TellTopic, ThresholdBand, Tick, UtilityProfile,
+    Quantity,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -515,7 +516,8 @@ fn motive_score(
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
-        GoalKind::RaidTarget { .. } | GoalKind::ClaimOffice { .. } => {
+        GoalKind::RaidTarget { .. } => raid_target_motive(candidate, context),
+        GoalKind::ClaimOffice { .. } => {
             u32::from(context.utility.enterprise_weight.value())
         }
         GoalKind::RegroupWithFaction { .. } => {
@@ -830,6 +832,24 @@ fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContex
     enterprise_score(commodity, context)
 }
 
+fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
+    let GoalKind::RaidTarget { target } = candidate.key.kind else {
+        unreachable!("raid_target_motive requires RaidTarget");
+    };
+
+    CommodityKind::ALL
+        .iter()
+        .copied()
+        .filter_map(|commodity| {
+            let quantity = context.view.commodity_quantity(target, commodity);
+            (quantity > Quantity(0)).then(|| {
+                commodity_goal_motive_score(commodity, context)
+                    .saturating_mul(quantity.0)
+            })
+        })
+        .sum()
+}
+
 fn relevant_self_consume_factors(
     commodity: CommodityKind,
     context: &RankingContext<'_>,
@@ -1113,7 +1133,7 @@ mod tests {
         apply_competition_discount, build_decision_context, rank_candidates, RankingContext,
     };
     use crate::{
-        decision_trace::CompetitionDiscount, derive_danger_pressure, GoalKey, GoalKind,
+        decision_trace::CompetitionDiscount, GoalKey, GoalKind,
         GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
         RankedPriorityAdjustment,
     };
@@ -3308,7 +3328,7 @@ mod tests {
     }
 
     #[test]
-    fn raid_target_uses_danger_provenance_instead_of_enterprise_weight() {
+    fn raid_target_scores_from_known_loot_opportunity() {
         let agent = entity(1);
         let target = entity(7);
         let mut view = base_view(agent);
@@ -3319,15 +3339,18 @@ mod tests {
             .or_default()
             .push(target);
         view.effective_places.insert(target, view.effective_places[&agent]);
-        view.hostiles.insert(agent, vec![target]);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.commodity_quantities
+            .insert((target, CommodityKind::Apple), Quantity(4));
 
         let utility = UtilityProfile {
-            danger_weight: pm(450),
-            enterprise_weight: pm(999),
+            danger_weight: pm(999),
+            enterprise_weight: pm(0),
             ..utility()
         };
-        let danger_pressure = derive_danger_pressure(&view, agent);
-        let decision_context = build_decision_context(&view, agent);
 
         let ranked = rank(
             &[goal(GoalKind::RaidTarget { target })],
@@ -3340,15 +3363,41 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].priority_class, decision_context.danger_class);
         assert_eq!(
             ranked[0].motive_score,
-            u32::from(utility.danger_weight.value()) * u32::from(danger_pressure.value())
+            4 * u32::from(utility.hunger_weight.value()) * 700
         );
-        assert!(matches!(
-            ranked[0].provenance,
-            Some(RankedGoalProvenance::Danger(_))
-        ));
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(ranked[0].provenance, None);
+    }
+
+    #[test]
+    fn raid_target_is_zero_motive_without_known_loot() {
+        let agent = entity(1);
+        let target = entity(7);
+        let mut view = base_view(agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.alive.insert(target);
+        view.place_entities
+            .entry(view.effective_places[&agent])
+            .or_default()
+            .push(target);
+        view.effective_places.insert(target, view.effective_places[&agent]);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::RaidTarget { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &RecipeRegistry::new(),
+        );
+
+        assert!(ranked.into_ranked().is_empty());
     }
 
     #[test]

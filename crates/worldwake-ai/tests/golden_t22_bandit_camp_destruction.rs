@@ -8,10 +8,11 @@ use worldwake_ai::{
     PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    build_believed_entity_state, hash_event_log, hash_world, ActionDomain, AgentData,
-    BeliefConfidencePolicy, BelievedActivity, BanditCamp, BanditFactionPolicy, CombatProfile,
-    CommodityKind, Container, ControlSource, EntityId, EventLog, GoalKey, GoalKind,
-    HomeostaticNeeds, InstitutionalBeliefRead, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
+    ActionDomain, AgentData, BeliefConfidencePolicy, BelievedActivity, BanditCamp,
+    BanditFactionPolicy, CombatProfile, CommodityKind, Container, ControlSource, EntityId,
+    EventLog, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead,
+    InstitutionalKnowledgeSource, KnownRecipes, MetabolismProfile, PerceptionProfile,
     PerceptionSource, Place, PlaceTag, Quantity, ResourceSource, Seed, Tick, Topology,
     TravelEdge, TravelEdgeId, UtilityProfile, World, WorkstationTag,
 };
@@ -25,6 +26,9 @@ const BANDIT_ROAD: EntityId = entity(101);
 const CAMP_PLACE: EntityId = entity(102);
 const SAFE_FARM: EntityId = entity(103);
 const RALLY_GLEN: EntityId = entity(104);
+const S47_BANDIT_CAMP: EntityId = entity(120);
+const S47_ROAD_JUNCTION: EntityId = entity(121);
+const S47_SAFE_VILLAGE: EntityId = entity(122);
 
 const fn entity(slot: u32) -> EntityId {
     EntityId {
@@ -119,9 +123,35 @@ fn guard_profile() -> CombatProfile {
     )
 }
 
+fn traveler_profile() -> CombatProfile {
+    CombatProfile::new(
+        pm(350),
+        pm(250),
+        pm(200),
+        pm(180),
+        pm(40),
+        pm(12),
+        pm(0),
+        pm(90),
+        pm(25),
+        nz(2),
+        nz(3),
+    )
+}
+
 fn bandit_utility_profile() -> UtilityProfile {
     UtilityProfile {
         social_weight: pm(650),
+        danger_weight: pm(900),
+        courage: pm(150),
+        enterprise_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+fn s47_bandit_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(0),
         danger_weight: pm(900),
         courage: pm(150),
         enterprise_weight: pm(0),
@@ -141,13 +171,17 @@ fn set_control_source(
     commit_txn(txn, &mut h.event_log);
 }
 
-fn build_custom_harness(seed: Seed) -> GoldenHarness {
+fn build_harness_with_topology(seed: Seed, topology: Topology) -> GoldenHarness {
     let mut h = GoldenHarness::new(seed);
-    h.world = World::new(build_t22_topology()).unwrap();
+    h.world = World::new(topology).unwrap();
     h.event_log = EventLog::new();
     h.scheduler = Scheduler::new(SystemManifest::canonical());
     h.controller = ControllerState::new();
     h
+}
+
+fn build_custom_harness(seed: Seed) -> GoldenHarness {
+    build_harness_with_topology(seed, build_t22_topology())
 }
 
 struct ScenarioIds {
@@ -158,6 +192,37 @@ struct ScenarioIds {
     guards: Vec<EntityId>,
     traveler_fresh: EntityId,
     traveler_late: EntityId,
+}
+
+struct S47Ids {
+    bandits: Vec<EntityId>,
+    traveler: EntityId,
+}
+
+fn build_s47_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(
+            S47_BANDIT_CAMP,
+            place("S47 Bandit Camp", &[PlaceTag::Camp, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S47_ROAD_JUNCTION,
+            place("S47 Road Junction", &[PlaceTag::Road, PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            S47_SAFE_VILLAGE,
+            place("S47 Safe Village", &[PlaceTag::Village, PlaceTag::Store]),
+        )
+        .unwrap();
+
+    connect(&mut topology, 320, S47_BANDIT_CAMP, S47_ROAD_JUNCTION, 1);
+    connect(&mut topology, 330, S47_ROAD_JUNCTION, S47_SAFE_VILLAGE, 2);
+    topology
 }
 
 fn seed_danger_belief(h: &mut GoldenHarness, traveler: EntityId, subject: EntityId, place: EntityId) {
@@ -376,6 +441,149 @@ fn seed_scenario(h: &mut GoldenHarness) -> ScenarioIds {
         traveler_fresh,
         traveler_late,
     }
+}
+
+fn seed_s47_scenario(h: &mut GoldenHarness) -> S47Ids {
+    let mut bandits = Vec::new();
+    for name in ["S47 Rook", "S47 Mora", "S47 Tarn"] {
+        let bandit = seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            name,
+            S47_BANDIT_CAMP,
+            HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0)),
+            MetabolismProfile {
+                hunger_rate: pm(20),
+                thirst_rate: pm(0),
+                fatigue_rate: pm(0),
+                bladder_rate: pm(0),
+                dirtiness_rate: pm(0),
+                ..MetabolismProfile::default()
+            },
+            s47_bandit_utility_profile(),
+        );
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            bandit,
+            default_perception_profile(),
+        );
+        bandits.push(bandit);
+    }
+
+    let traveler = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S47 Traveler",
+        S47_ROAD_JUNCTION,
+        HomeostaticNeeds::new(pm(200), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(h, traveler, ControlSource::Human, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        default_perception_profile(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        S47_ROAD_JUNCTION,
+        CommodityKind::Apple,
+        Quantity(4),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let faction = txn.create_faction("S47 Forest Bandits").unwrap();
+    for bandit in &bandits {
+        txn.add_member(*bandit, faction).unwrap();
+        txn.set_component_combat_profile(*bandit, bandit_profile()).unwrap();
+    }
+    txn.set_component_combat_profile(traveler, traveler_profile())
+        .unwrap();
+    txn.set_component_bandit_faction_policy(
+        faction,
+        BanditFactionPolicy {
+            min_regroup_count: 2,
+            establishment_duration_ticks: nz(2),
+            abandonment_grace_ticks: nz(2),
+            flee_wound_threshold: pm(300),
+            rally_place: None,
+        },
+    )
+    .unwrap();
+    let camp_supplies = txn
+        .create_container(Container {
+            capacity: worldwake_core::LoadUnits(20),
+            allowed_commodities: None,
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })
+        .unwrap();
+    txn.set_ground_location(camp_supplies, S47_BANDIT_CAMP).unwrap();
+    txn.set_owner(camp_supplies, faction).unwrap();
+    txn.set_component_bandit_camp(
+        S47_BANDIT_CAMP,
+        BanditCamp {
+            faction,
+            supplies: camp_supplies,
+            empty_since_tick: None,
+        },
+    )
+    .unwrap();
+    txn.commit(&mut h.event_log);
+
+    for bandit in &bandits {
+        for other_bandit in &bandits {
+            if bandit == other_bandit {
+                continue;
+            }
+            seed_faction_membership_belief(
+                &mut h.world,
+                &mut h.event_log,
+                *bandit,
+                faction,
+                *other_bandit,
+                true,
+                Tick(0),
+                InstitutionalKnowledgeSource::WitnessedEvent,
+                Some(S47_BANDIT_CAMP),
+            );
+        }
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            *bandit,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
+
+    S47Ids { bandits, traveler }
+}
+
+fn request_travel_to_camp(h: &mut GoldenHarness, traveler: EntityId) {
+    let travel_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("full registries should include travel");
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        worldwake_sim::InputKind::RequestAction {
+            actor: traveler,
+            def_id: travel_def_id,
+            targets: vec![S47_BANDIT_CAMP],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
 }
 
 fn activate_attack(h: &mut GoldenHarness, ids: &ScenarioIds, tick: u64) {
@@ -679,6 +887,154 @@ fn run_t22_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
     )
 }
 
+fn run_s47_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = build_harness_with_topology(seed, build_s47_topology());
+    let ids = seed_s47_scenario(&mut h);
+    let initial_authoritative_apples = 4;
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let raid_goal = |target| GoalKey::from(GoalKind::RaidTarget { target });
+
+    for _ in 0..1 {
+        h.step_once();
+        for bandit in &ids.bandits {
+            let trace = h
+                .driver
+                .trace_sink()
+                .expect("decision tracing should stay enabled")
+                .traces_for(*bandit)
+                .into_iter()
+                .last()
+                .expect("bandit should emit a planning trace each tick");
+            if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                assert!(
+                    !planning.selection.selected_goal_is(raid_goal(ids.traveler)),
+                    "bandits should not select RaidTarget before the traveler is co-located"
+                );
+            }
+        }
+    }
+
+    request_travel_to_camp(&mut h, ids.traveler);
+    for _ in 0..4 {
+        h.step_once();
+        if h.world.effective_place(ids.traveler) == Some(S47_BANDIT_CAMP) {
+            break;
+        }
+    }
+    assert_eq!(
+        h.world.effective_place(ids.traveler),
+        Some(S47_BANDIT_CAMP),
+        "traveler should reach the camp through the ordinary travel action"
+    );
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should stay enabled")
+            .events_for(ids.traveler)
+            .iter()
+            .any(|event| {
+                event.action_name == "travel"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "traveler arrival should commit through the normal travel lifecycle"
+    );
+
+    let mut saw_raid_candidate = false;
+    let mut saw_raid_selection = false;
+    let mut saw_attack_commit = false;
+    let mut saw_loot_commit = false;
+    let mut traveler_died = false;
+    let mut corpse_emptied = false;
+
+    for _ in 0..60 {
+        h.step_once();
+        traveler_died |= h.world.get_component_dead_at(ids.traveler).is_some();
+        corpse_emptied |= traveler_died
+            && h.agent_commodity_qty(ids.traveler, CommodityKind::Apple) == Quantity(0);
+
+        for bandit in &ids.bandits {
+            let traces = h
+                .driver
+                .trace_sink()
+                .expect("decision tracing should stay enabled")
+                .traces_for(*bandit);
+            let trace = traces
+                .into_iter()
+                .last()
+                .expect("bandit should continue producing planning traces");
+            if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                saw_raid_candidate |= planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.goal_key == raid_goal(ids.traveler));
+                saw_raid_selection |= planning.selection.selected_goal_is(raid_goal(ids.traveler));
+            }
+        }
+
+        saw_attack_commit |= ids.bandits.iter().any(|bandit| {
+            h.action_trace_sink()
+                .expect("action tracing should stay enabled")
+                .events_for(*bandit)
+                .iter()
+                .any(|event| {
+                    event.action_name == "attack"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                })
+        });
+        saw_loot_commit |= ids.bandits.iter().any(|bandit| {
+            h.action_trace_sink()
+                .expect("action tracing should stay enabled")
+                .events_for(*bandit)
+                .iter()
+                .any(|event| {
+                    event.action_name == "loot"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                })
+        });
+
+        if saw_raid_candidate
+            && saw_raid_selection
+            && saw_attack_commit
+            && saw_loot_commit
+            && traveler_died
+            && corpse_emptied
+        {
+            break;
+        }
+    }
+
+    assert!(
+        saw_raid_candidate,
+        "co-located prey carrying visible food should generate RaidTarget"
+    );
+    assert!(
+        saw_raid_selection,
+        "at least one bandit should select RaidTarget after the traveler arrives"
+    );
+    assert!(
+        saw_attack_commit,
+        "the raid should resolve through the ordinary attack action"
+    );
+    assert!(traveler_died, "the traveler should die during the raid chain");
+    assert!(
+        saw_loot_commit,
+        "the raid aftermath should resolve through the ordinary loot action"
+    );
+    assert!(
+        corpse_emptied,
+        "the traveler's apple inventory should be emptied by the raid aftermath"
+    );
+    verify_authoritative_conservation(&h.world, CommodityKind::Apple, initial_authoritative_apples)
+        .unwrap();
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 22: Bandit Camp Destruction Chain
 // ---------------------------------------------------------------------------
@@ -720,5 +1076,44 @@ fn golden_t22_bandit_camp_destruction_replays_deterministically() {
     assert_eq!(
         first, second,
         "T22 bandit camp destruction scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 47: Pressure-Driven Raid Emergence
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Combat, Loot, Conservation
+// GoalKinds: RaidTarget, LootCorpse, AcquireCommodity(SelfConsume)
+// ActionDomains: Combat, Corpse, Production, Travel
+// Places: S47BanditCamp, S47RoadJunction, S47SafeVillage
+// Principles: 1, 4, 7, 17, 24
+//
+// Setup: Hungry bandits occupy a camp with a nearly empty bread supply and a
+// local orchard row as the lawful non-raid alternative. A traveler carrying
+// apples reaches the camp through an ordinary travel request. The raid should
+// emerge only after co-location and local loot visibility make `RaidTarget`
+// more valuable than the background harvest path.
+//
+// Proves:
+// 1. `RaidTarget` is a proactive offensive path for co-located non-faction prey.
+// 2. The raid resolves through ordinary `attack` and `loot` actions.
+// 3. Local harvest remains lawful before prey arrives, so the raid is emergent rather than scripted.
+//
+// Chain: scarce camp supplies -> non-raid self-supply behavior -> traveler arrives
+// with visible food -> RaidTarget generated/selected -> attack commit -> corpse loot.
+
+#[test]
+fn golden_pressure_driven_raid_emergence() {
+    let _ = run_s47_scenario(Seed([47; 32]));
+}
+
+#[test]
+fn golden_pressure_driven_raid_emergence_replays_deterministically() {
+    let first = run_s47_scenario(Seed([47; 32]));
+    let second = run_s47_scenario(Seed([47; 32]));
+    assert_eq!(
+        first, second,
+        "Scenario 47 pressure-driven raid emergence should replay deterministically"
     );
 }

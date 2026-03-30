@@ -905,8 +905,11 @@ impl GoalKindPlannerExt for GoalKind {
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
                 .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
-            GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target } => {
+            GoalKind::EngageHostile { target } => {
                 state.is_dead(*target) || !state.visible_hostiles_for(actor).contains(target)
+            }
+            GoalKind::RaidTarget { target } => {
+                state.is_dead(*target) || state.effective_place(actor) != state.effective_place(*target)
             }
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
@@ -6591,7 +6594,6 @@ mod tests {
         view.effective_places.insert(actor, town);
         view.effective_places.insert(target, town);
         view.entities_at.insert(town, vec![actor, target]);
-        view.hostiles.insert(actor, vec![target]);
 
         let goal = GroundedGoal {
             anchor: worldwake_core::OpportunityAnchor::Entity(target),
@@ -6629,6 +6631,36 @@ mod tests {
         assert_eq!(
             plan.steps[0].targets,
             vec![crate::PlanningEntityRef::Authoritative(target)]
+        );
+    }
+
+    #[test]
+    fn raid_goal_is_not_already_satisfied_for_colocated_non_hostile_prey() {
+        let actor = entity(1);
+        let target = entity(2);
+        let town = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.effective_places.insert(target, town);
+        view.entities_at.insert(town, vec![actor, target]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([target]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(
+            !GoalKind::RaidTarget { target }.is_satisfied(&state),
+            "co-located live prey should remain a live raid opportunity even without a hostility relation"
         );
     }
 

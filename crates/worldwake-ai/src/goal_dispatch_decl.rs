@@ -182,7 +182,7 @@ static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
 };
 static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "RaidTarget",
-    provenance_family: Some(RankedGoalProvenanceFamily::Danger),
+    provenance_family: None,
     relevant_ops: RAID_TARGET_OPS,
     invalidation_strategy: InvalidationStrategy::CombatTarget,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
