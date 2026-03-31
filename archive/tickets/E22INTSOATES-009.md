@@ -1,6 +1,6 @@
 # E22INTSOATES-009: T30 — Seven-Day Autoplay Soak Test
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
@@ -35,7 +35,7 @@ No existing test exercises the full simulation stack under extended autonomous p
 
 ## Verification Layers
 
-1. Conservation per-tick → `verify_authoritative_conservation` for Apple, Grain, Bread, Gold at every tick
+1. Conservation per-tick → `verify_authoritative_conservation` for Apple, Grain, Bread, Coin at every tick
 2. Needs bounds per-tick → authoritative component read (no `HomeostaticNeeds` field exceeds `Permille(1000)`)
 3. Dead agent inactivity → action trace or scheduler check (no action started/completed after `DeadAt` tick)
 4. Unique placement → relation query (every agent in exactly one existing place)
@@ -87,7 +87,7 @@ Small struct to collect per-run results (final hash, emergence flags, invariant 
 ### Tests That Must Pass
 
 1. `t30_seven_day_soak` (run via `cargo test -p worldwake-ai --test golden_integration -- --ignored t30`) — 20 seeds complete with zero per-tick invariant violations
-2. Per-tick: conservation holds for Apple, Grain, Bread, Gold
+2. Per-tick: conservation holds for Apple, Grain, Bread, Coin
 3. Per-tick: no `HomeostaticNeeds` field exceeds `Permille(1000)`
 4. Per-tick: no dead agent has action started/completed after death tick
 5. Per-tick: every agent in exactly one existing place
@@ -116,3 +116,10 @@ Small struct to collect per-run results (final hash, emergence flags, invariant 
 
 1. `cargo test -p worldwake-ai --test golden_integration -- --ignored t30`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `t30_seven_day_soak` test to `crates/worldwake-ai/tests/golden_integration.rs` — 20-seed, 10080-tick soak test with per-tick invariant checks (conservation, needs bounds, dead agent inactivity, unique placement, tick monotonicity, causal link integrity), per-run emergence checks, and cross-run diversity assertions. Marked `#[ignore]` for CI.
+- **Deviations from original plan**: None.
+- **Verification**: `cargo test --workspace` passes; soak test runnable via `cargo test -p worldwake-ai --test golden_integration -- --ignored t30`.

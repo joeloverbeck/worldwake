@@ -31,7 +31,7 @@ The argument is the ticket identifier that was just implemented. The skill resol
 Read ALL of the following files completely:
 
 1. **Implemented ticket**: Find `tickets/*{arg}*` or `archive/tickets/*{arg}*`. If multiple matches, list them and ask the user to disambiguate.
-2. **Foundations**: `docs/FOUNDATIONS.md` — the alignment reference for all proposed changes.
+2. **Foundations**: `docs/FOUNDATIONS.md` — the alignment reference for all proposed changes. Skip only if explicitly read earlier in this session (not from memory or training knowledge).
 3. **Ticket authoring contract**: `tickets/README.md` — conventions that proposed tickets must follow.
 4. **Ticket template**: `tickets/_TEMPLATE.md` — format for any tickets created.
 5. **Existing tickets**: List all files in `tickets/` to check for duplicates in Phase 2.
@@ -118,7 +118,9 @@ Conclude Phase 2 with a summary table for readability:
 | 1. ... | DO NOTHING / DOC NOTE / TICKET WARRANTED | — / target file / change type |
 ```
 
-If all lessons route to DO NOTHING, **report that explicitly and stop**. This is a valid outcome — it means the implementation was clean and the infrastructure is solid. Do not manufacture tickets.
+If all lessons route to DO NOTHING and Phase 1b found no drift, **report that explicitly and stop**. This is a valid outcome — it means the implementation was clean and the infrastructure is solid. Do not manufacture tickets.
+
+If all lessons route to DO NOTHING but Phase 1b found drift corrections, present the drift corrections for approval (using the Phase 3 drift format), apply after approval, and stop. Do not proceed to Phase 3 or Phase 4 for ticket creation.
 
 If the only non-DO-NOTHING lessons are DOC NOTEs (no tickets warranted), proceed to Phase 2b. Otherwise, proceed to Phase 3 (which handles both tickets and any accompanying doc notes).
 
