@@ -804,6 +804,7 @@ fn process_agent(
                 frame_transition: build_frame_transition_trace(&mut frame_transitions),
                 patrol_route,
                 selected_patrol_anchor,
+                pursuit_invalidation: read_result.pursuit_invalidation,
             }))
         })
     };

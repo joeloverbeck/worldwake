@@ -1,6 +1,8 @@
 use crate::{
-    authoritative_target, resolve_planning_targets_with, MaterializationBindings, PlannedPlan,
-    PlannedStep, PlannerOpKind,
+    authoritative_target,
+    decision_trace::PursuitInvalidationReason,
+    resolve_planning_targets_with, MaterializationBindings, PlannedPlan, PlannedStep,
+    PlannerOpKind,
 };
 use std::collections::BTreeSet;
 use worldwake_core::{belief_confidence, EntityId, GoalKind, Tick};
@@ -123,52 +125,49 @@ fn planned_pursuit_destination(plan: &PlannedPlan) -> Option<EntityId> {
 ///
 /// This is called during the dirty-flag phase each tick for agents with
 /// active pursuit plans. Confidence is re-derived each tick, never cached.
+///
+/// Returns `None` when the plan is still valid, or `Some(reason)` when invalid.
 #[must_use]
-pub fn is_pursuit_plan_valid(
+pub fn is_pursuit_plan_invalid(
     view: &dyn RuntimeBeliefView,
     actor: EntityId,
     plan: &PlannedPlan,
     current_tick: Tick,
-) -> bool {
+) -> Option<PursuitInvalidationReason> {
     if !is_pursuit_plan(plan) {
-        return true;
+        return None;
     }
-    let Some(target) = pursuit_target(plan) else {
-        return true;
-    };
+    let target = pursuit_target(plan)?;
 
     let Some(profile) = view.pursuit_profile(actor) else {
-        // No pursuit profile → cannot validate pursuit constraints; invalidate.
-        return false;
+        return Some(PursuitInvalidationReason::NoProfile);
     };
 
     // Extract the target's believed state from the actor's beliefs.
     let beliefs = view.known_entity_beliefs(actor);
     let target_state = beliefs.iter().find(|(id, _)| *id == target).map(|(_, s)| s);
     let Some(state) = target_state else {
-        // No belief about target → pursuit invalid.
-        return false;
+        return Some(PursuitInvalidationReason::NoBelief);
     };
 
     if !state.alive {
-        return false;
+        return Some(PursuitInvalidationReason::TargetDead);
     }
 
     let Some(believed_place) = state.last_known_place else {
-        // Place unknown → pursuit invalid.
-        return false;
+        return Some(PursuitInvalidationReason::PlaceUnknown);
     };
 
     // Co-located → local combat, not remote pursuit.
     let actor_place = view.effective_place(actor);
     if actor_place == Some(believed_place) {
-        return false;
+        return Some(PursuitInvalidationReason::CoLocated);
     }
 
     // Check if believed place still matches the plan's destination.
     if let Some(planned_dest) = planned_pursuit_destination(plan) {
         if believed_place != planned_dest {
-            return false;
+            return Some(PursuitInvalidationReason::PlaceChanged);
         }
     }
 
@@ -177,15 +176,16 @@ pub fn is_pursuit_plan_valid(
     let policy = view.belief_confidence_policy(actor);
     let confidence = belief_confidence(&state.source, staleness, &policy);
     if confidence < profile.min_location_confidence {
-        return false;
+        return Some(PursuitInvalidationReason::ConfidenceDecayed);
     }
 
-    true
+    None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_pursuit_plan_valid, revalidate_next_step};
+    use super::{is_pursuit_plan_invalid, revalidate_next_step};
+    use crate::decision_trace::PursuitInvalidationReason;
     use crate::{
         ExpectedMaterialization, HypotheticalEntityId, MaterializationBindings, PlanTerminalKind,
         PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
@@ -1078,7 +1078,7 @@ mod tests {
         );
 
         let plan = pursuit_plan(target, dest);
-        assert!(is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+        assert!(is_pursuit_plan_invalid(&view, actor, &plan, Tick(2)).is_none());
     }
 
     #[test]
@@ -1100,7 +1100,10 @@ mod tests {
         );
 
         let plan = pursuit_plan(target, original_dest);
-        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+        assert_eq!(
+            is_pursuit_plan_invalid(&view, actor, &plan, Tick(2)),
+            Some(PursuitInvalidationReason::PlaceChanged),
+        );
     }
 
     #[test]
@@ -1124,7 +1127,10 @@ mod tests {
 
         // At tick 1000, staleness is 1000 ticks → confidence should be very low.
         let plan = pursuit_plan(target, dest);
-        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(1000)));
+        assert_eq!(
+            is_pursuit_plan_invalid(&view, actor, &plan, Tick(1000)),
+            Some(PursuitInvalidationReason::ConfidenceDecayed),
+        );
     }
 
     #[test]
@@ -1144,7 +1150,10 @@ mod tests {
         );
 
         let plan = pursuit_plan(target, dest);
-        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+        assert_eq!(
+            is_pursuit_plan_invalid(&view, actor, &plan, Tick(2)),
+            Some(PursuitInvalidationReason::TargetDead),
+        );
     }
 
     #[test]
@@ -1165,7 +1174,10 @@ mod tests {
         );
 
         let plan = pursuit_plan(target, dest);
-        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+        assert_eq!(
+            is_pursuit_plan_invalid(&view, actor, &plan, Tick(2)),
+            Some(PursuitInvalidationReason::PlaceUnknown),
+        );
     }
 
     #[test]
@@ -1185,7 +1197,10 @@ mod tests {
         );
 
         let plan = pursuit_plan(target, same_place);
-        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+        assert_eq!(
+            is_pursuit_plan_invalid(&view, actor, &plan, Tick(2)),
+            Some(PursuitInvalidationReason::CoLocated),
+        );
     }
 
     #[test]
@@ -1210,6 +1225,6 @@ mod tests {
             }],
             PlanTerminalKind::GoalSatisfied,
         );
-        assert!(is_pursuit_plan_valid(&view, actor, &plan, Tick(0)));
+        assert!(is_pursuit_plan_invalid(&view, actor, &plan, Tick(0)).is_none());
     }
 }

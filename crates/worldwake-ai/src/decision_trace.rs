@@ -244,6 +244,9 @@ pub struct PlanningPipelineTrace {
     pub patrol_route: PatrolRouteSnapshotTrace,
     /// Selected patrol anchor when the chosen goal is a patrol branch.
     pub selected_patrol_anchor: Option<OpportunityAnchor>,
+    /// When a pursuit plan was invalidated during the observation phase,
+    /// records why. None when no pursuit invalidation occurred.
+    pub pursuit_invalidation: Option<PursuitInvalidationReason>,
 }
 
 /// Debugger-facing snapshot of the actor's patrol-route state.
@@ -502,12 +505,75 @@ pub struct CandidateEvidenceTrace {
     /// Bounded legality provenance for goal families that need more than generic
     /// evidence / knowledge-path tracing.
     pub legality: Option<CandidateLegalityTrace>,
+    /// Remote pursuit diagnostic: belief, confidence, route cost, and omission
+    /// reason for pursuit candidates. Populated only when tracing is enabled.
+    pub pursuit: Option<PursuitDiagnostic>,
 }
 
 /// Goal-family-specific legality provenance for one generated candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CandidateLegalityTrace {
     PunishmentFineSelection(PunishmentFineSelectionTrace),
+}
+
+/// Diagnostic provenance for a remote pursuit candidate (emitted or omitted).
+///
+/// Records the belief, confidence derivation, and route cost that drove or
+/// prevented emission. Populated only when tracing is enabled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PursuitDiagnostic {
+    /// The target entity being pursued.
+    pub target: EntityId,
+    /// The place the agent believes the target occupies (None for `UnknownPlace` omission).
+    pub believed_place: Option<EntityId>,
+    /// How the agent learned the target's location (None for `UnknownPlace` omission).
+    pub source: Option<PerceptionSource>,
+    /// Tick when the target was observed at that place (None for `UnknownPlace` omission).
+    pub observed_tick: Option<Tick>,
+    /// Derived confidence value from `belief_confidence()` (None for `UnknownPlace` omission).
+    pub derived_confidence: Option<Permille>,
+    /// Profile threshold that confidence was compared against.
+    pub min_confidence_threshold: Permille,
+    /// Travel cost in ticks to the believed place (None if unreachable or not yet checked).
+    pub route_cost: Option<u32>,
+    /// Profile maximum pursuit travel ticks.
+    pub max_travel_ticks: u32,
+    /// If the candidate was omitted, the specific check that failed.
+    pub omission: Option<PursuitOmissionReason>,
+}
+
+/// Why a remote pursuit candidate was omitted during candidate generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PursuitOmissionReason {
+    /// `pursuit_target_belief()` returned None (unknown place, dead, or co-located).
+    UnknownPlace,
+    /// Derived confidence below `min_location_confidence`.
+    LowConfidence,
+    /// Route to believed place exceeds `max_pursuit_travel_ticks`.
+    OverRange,
+    /// No route exists to the believed place.
+    Unreachable,
+    /// Blocked by `BlockedIntentMemory` for this target/place combination.
+    Blocked,
+}
+
+/// Why an active remote pursuit plan was invalidated during the observation phase.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PursuitInvalidationReason {
+    /// Agent no longer has a pursuit profile.
+    NoProfile,
+    /// No belief about the target entity.
+    NoBelief,
+    /// Target is believed dead.
+    TargetDead,
+    /// Target's believed place is unknown.
+    PlaceUnknown,
+    /// Target is now co-located (local combat, not remote pursuit).
+    CoLocated,
+    /// Believed place changed since the plan was formed.
+    PlaceChanged,
+    /// Derived confidence decayed below `min_location_confidence`.
+    ConfidenceDecayed,
 }
 
 // ── Stage 2: Plan Search ────────────────────────────────────────
@@ -1055,9 +1121,46 @@ impl DecisionTraceSink {
                     for line in format_knowledge_path(&ev.knowledge_path) {
                         eprintln!("{line}");
                     }
+                    if let Some(ref pd) = ev.pursuit {
+                        format_pursuit_diagnostic(pd);
+                    }
+                }
+                if let Some(reason) = planning.pursuit_invalidation {
+                    eprintln!("  Pursuit invalidated: {reason:?}");
                 }
             }
         }
+    }
+}
+
+fn format_pursuit_diagnostic(pd: &PursuitDiagnostic) {
+    if let Some(omission) = pd.omission {
+        eprintln!(
+            "    Pursuit OMITTED: target={:?} reason={:?}",
+            pd.target, omission
+        );
+    } else {
+        eprintln!("    Pursuit EMITTED: target={:?}", pd.target);
+    }
+    if let Some(place) = pd.believed_place {
+        eprintln!("      believed_place={place:?}");
+    }
+    if let (Some(source), Some(tick)) = (pd.source, pd.observed_tick) {
+        eprintln!("      source={source:?} observed_tick={}", tick.0);
+    }
+    if let Some(conf) = pd.derived_confidence {
+        eprintln!(
+            "      confidence={}/{} (min={})",
+            conf.value(),
+            1000,
+            pd.min_confidence_threshold.value()
+        );
+    }
+    if let Some(cost) = pd.route_cost {
+        eprintln!(
+            "      route_cost={}/{} (max={})",
+            cost, pd.max_travel_ticks, pd.max_travel_ticks
+        );
     }
 }
 
@@ -1906,6 +2009,7 @@ mod tests {
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),
                 selected_patrol_anchor: None,
+            pursuit_invalidation: None,
             })),
         }
     }
@@ -2453,6 +2557,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         };
 
         assert!(planning.candidates.generated_contains_goal(goal));
@@ -2521,6 +2626,7 @@ mod tests {
             exclusions: vec![],
             knowledge_path: KnowledgePath::default(),
             legality: None,
+            pursuit: None,
         };
         let candidates = CandidateTrace {
             generated: vec![opportunity],
@@ -2660,6 +2766,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));
@@ -2736,6 +2843,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -2806,6 +2914,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -2866,6 +2975,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -2926,6 +3036,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -2982,6 +3093,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = format_outcome(&outcome, &ActionDefRegistry::new());
@@ -3047,6 +3159,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = format_outcome(&outcome, &ActionDefRegistry::new());
@@ -3123,6 +3236,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -3192,6 +3306,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -3278,6 +3393,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let summary = outcome.summary();
@@ -3380,6 +3496,7 @@ mod tests {
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
 
         let mut action_defs = ActionDefRegistry::new();
@@ -3685,6 +3802,7 @@ mod tests {
             }),
             patrol_route: PatrolRouteSnapshotTrace::default(),
             selected_patrol_anchor: None,
+            pursuit_invalidation: None,
         }));
         let summary = outcome.summary();
         assert!(summary.contains("PLAN"));
@@ -3809,6 +3927,7 @@ mod tests {
                 institutional_beliefs: vec![],
             },
             legality: None,
+            pursuit: None,
         };
 
         let trace = AgentDecisionTrace {
@@ -3860,6 +3979,7 @@ mod tests {
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),
                 selected_patrol_anchor: None,
+            pursuit_invalidation: None,
             })),
         };
         sink.record(trace);
@@ -3889,5 +4009,179 @@ mod tests {
             lines.is_empty(),
             "empty knowledge path should produce no output"
         );
+    }
+
+    // ── Pursuit trace tests ───────────────────────────────────────
+
+    #[test]
+    fn test_pursuit_trace_emitted_candidate() {
+        let target = entity(10);
+        let place = entity(20);
+        let pd = PursuitDiagnostic {
+            target,
+            believed_place: Some(place),
+            source: Some(PerceptionSource::DirectObservation),
+            observed_tick: Some(Tick(5)),
+            derived_confidence: Some(Permille::new(800).unwrap()),
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: Some(3),
+            max_travel_ticks: 10,
+            omission: None,
+        };
+
+        // Emitted candidate: omission is None
+        assert!(pd.omission.is_none());
+        assert_eq!(pd.target, target);
+        assert_eq!(pd.believed_place, Some(place));
+        assert_eq!(pd.source, Some(PerceptionSource::DirectObservation));
+        assert_eq!(pd.observed_tick, Some(Tick(5)));
+        assert_eq!(pd.derived_confidence.unwrap().value(), 800);
+        assert_eq!(pd.route_cost, Some(3));
+        assert_eq!(pd.max_travel_ticks, 10);
+
+        // Verify it can be stored on CandidateEvidenceTrace
+        let evidence = CandidateEvidenceTrace {
+            opportunity: OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::EngageHostile { target }),
+                anchor: OpportunityAnchor::Entity(target),
+            },
+            contributors: Vec::new(),
+            exclusions: Vec::new(),
+            knowledge_path: crate::knowledge_path::KnowledgePath::default(),
+            legality: None,
+            pursuit: Some(pd),
+        };
+        assert!(evidence.pursuit.is_some());
+        assert!(evidence.pursuit.as_ref().unwrap().omission.is_none());
+    }
+
+    #[test]
+    fn test_pursuit_trace_omitted_candidate() {
+        let target = entity(10);
+        let place = entity(20);
+
+        // Low confidence omission
+        let pd_low = PursuitDiagnostic {
+            target,
+            believed_place: Some(place),
+            source: Some(PerceptionSource::DirectObservation),
+            observed_tick: Some(Tick(5)),
+            derived_confidence: Some(Permille::new(200).unwrap()),
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: None,
+            max_travel_ticks: 10,
+            omission: Some(PursuitOmissionReason::LowConfidence),
+        };
+        assert_eq!(pd_low.omission, Some(PursuitOmissionReason::LowConfidence));
+
+        // Unknown place omission (no belief data)
+        let pd_unknown = PursuitDiagnostic {
+            target,
+            believed_place: None,
+            source: None,
+            observed_tick: None,
+            derived_confidence: None,
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: None,
+            max_travel_ticks: 10,
+            omission: Some(PursuitOmissionReason::UnknownPlace),
+        };
+        assert_eq!(
+            pd_unknown.omission,
+            Some(PursuitOmissionReason::UnknownPlace)
+        );
+        assert!(pd_unknown.believed_place.is_none());
+
+        // Over-range omission
+        let pd_over = PursuitDiagnostic {
+            target,
+            believed_place: Some(place),
+            source: Some(PerceptionSource::DirectObservation),
+            observed_tick: Some(Tick(5)),
+            derived_confidence: Some(Permille::new(800).unwrap()),
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: Some(15),
+            max_travel_ticks: 10,
+            omission: Some(PursuitOmissionReason::OverRange),
+        };
+        assert_eq!(pd_over.omission, Some(PursuitOmissionReason::OverRange));
+        assert_eq!(pd_over.route_cost, Some(15));
+
+        // Blocked omission
+        let pd_blocked = PursuitDiagnostic {
+            target,
+            believed_place: Some(place),
+            source: Some(PerceptionSource::DirectObservation),
+            observed_tick: Some(Tick(5)),
+            derived_confidence: Some(Permille::new(800).unwrap()),
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: Some(3),
+            max_travel_ticks: 10,
+            omission: Some(PursuitOmissionReason::Blocked),
+        };
+        assert_eq!(pd_blocked.omission, Some(PursuitOmissionReason::Blocked));
+
+        // Unreachable omission
+        let pd_unreachable = PursuitDiagnostic {
+            target,
+            believed_place: Some(place),
+            source: Some(PerceptionSource::DirectObservation),
+            observed_tick: Some(Tick(5)),
+            derived_confidence: Some(Permille::new(800).unwrap()),
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: None,
+            max_travel_ticks: 10,
+            omission: Some(PursuitOmissionReason::Unreachable),
+        };
+        assert_eq!(
+            pd_unreachable.omission,
+            Some(PursuitOmissionReason::Unreachable)
+        );
+    }
+
+    #[test]
+    fn test_pursuit_invalidation_trace() {
+        // Verify all invalidation reasons can be stored and compared
+        let reasons = [
+            PursuitInvalidationReason::NoProfile,
+            PursuitInvalidationReason::NoBelief,
+            PursuitInvalidationReason::TargetDead,
+            PursuitInvalidationReason::PlaceUnknown,
+            PursuitInvalidationReason::CoLocated,
+            PursuitInvalidationReason::PlaceChanged,
+            PursuitInvalidationReason::ConfidenceDecayed,
+        ];
+        for reason in reasons {
+            let opt: Option<PursuitInvalidationReason> = Some(reason);
+            assert_eq!(opt.unwrap(), reason);
+        }
+
+        // Verify format_pursuit_diagnostic does not panic on emitted trace
+        let pd_emitted = PursuitDiagnostic {
+            target: entity(10),
+            believed_place: Some(entity(20)),
+            source: Some(PerceptionSource::DirectObservation),
+            observed_tick: Some(Tick(5)),
+            derived_confidence: Some(Permille::new(800).unwrap()),
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: Some(3),
+            max_travel_ticks: 10,
+            omission: None,
+        };
+        format_pursuit_diagnostic(&pd_emitted);
+
+        // Verify format_pursuit_diagnostic does not panic on omitted trace
+        let pd_omitted = PursuitDiagnostic {
+            target: entity(10),
+            believed_place: None,
+            source: None,
+            observed_tick: None,
+            derived_confidence: None,
+            min_confidence_threshold: Permille::new(500).unwrap(),
+            route_cost: None,
+            max_travel_ticks: 10,
+            omission: Some(PursuitOmissionReason::UnknownPlace),
+        };
+        format_pursuit_diagnostic(&pd_omitted);
     }
 }

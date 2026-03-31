@@ -3,6 +3,7 @@ use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
         CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
+        PursuitDiagnostic, PursuitOmissionReason,
         PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
         SocialCandidateOmission,
     },
@@ -71,6 +72,7 @@ struct EvidenceTrace {
     exclusions: BTreeSet<CandidateEvidenceExclusion>,
     knowledge_path: KnowledgePath,
     legality: Option<CandidateLegalityTrace>,
+    pursuit: Option<PursuitDiagnostic>,
 }
 
 impl EvidenceTrace {
@@ -122,6 +124,7 @@ impl EvidenceTrace {
             exclusions: self.exclusions.into_iter().collect(),
             knowledge_path: self.knowledge_path,
             legality: self.legality,
+            pursuit: self.pursuit,
         }
     }
 }
@@ -1489,6 +1492,9 @@ fn emit_remote_engage_hostile_targets(
 
     let policy = ctx.view.belief_confidence_policy(ctx.agent);
 
+    let tracing = ctx.tracing_enabled;
+    let max_travel = pursuit_profile.max_pursuit_travel_ticks.get();
+
     for target in ctx.view.hostile_targets_of(ctx.agent) {
         // Skip targets already handled locally or as raid targets.
         if local_hostiles.contains(&target) || raid_targets.contains(&target) {
@@ -1499,6 +1505,16 @@ fn emit_remote_engage_hostile_targets(
         }
 
         let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) else {
+            // No belief — emit omission trace if tracing is on.
+            if tracing {
+                emit_pursuit_omission_trace(
+                    diagnostics,
+                    GoalKind::EngageHostile { target },
+                    target,
+                    PursuitOmissionReason::UnknownPlace,
+                    &pursuit_profile,
+                );
+            }
             continue;
         };
 
@@ -1508,16 +1524,54 @@ fn emit_remote_engage_hostile_targets(
             .saturating_sub(belief.observed_tick.0);
         let confidence =
             worldwake_core::belief_confidence(&belief.source, staleness, &policy);
+
         if confidence < pursuit_profile.min_location_confidence {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::EngageHostile { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    None,
+                    PursuitOmissionReason::LowConfidence,
+                );
+            }
             continue;
         }
 
-        let Some(route_cost) =
-            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place)
-        else {
+        let route_cost =
+            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place);
+        if route_cost.is_none() {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::EngageHostile { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    None,
+                    PursuitOmissionReason::Unreachable,
+                );
+            }
             continue;
-        };
-        if route_cost > pursuit_profile.max_pursuit_travel_ticks.get() {
+        }
+        let route_cost = route_cost.unwrap();
+        if route_cost > max_travel {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::EngageHostile { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    Some(route_cost),
+                    PursuitOmissionReason::OverRange,
+                );
+            }
             continue;
         }
 
@@ -1529,18 +1583,48 @@ fn emit_remote_engage_hostile_targets(
             None,
             ctx.current_tick,
         ) {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::EngageHostile { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    Some(route_cost),
+                    PursuitOmissionReason::Blocked,
+                );
+            }
             continue;
         }
 
         let mut evidence = Evidence::with_entity(target);
         evidence.places.insert(belief.believed_place);
+        let trace = EvidenceTrace {
+            pursuit: if tracing {
+                Some(PursuitDiagnostic {
+                    target,
+                    believed_place: Some(belief.believed_place),
+                    source: Some(belief.source),
+                    observed_tick: Some(belief.observed_tick),
+                    derived_confidence: Some(confidence),
+                    min_confidence_threshold: pursuit_profile.min_location_confidence,
+                    route_cost: Some(route_cost),
+                    max_travel_ticks: max_travel,
+                    omission: None,
+                })
+            } else {
+                None
+            },
+            ..EvidenceTrace::default()
+        };
         emit_candidate_with_trace(
             candidates,
             diagnostics,
             GoalKind::EngageHostile { target },
             OpportunityAnchor::Entity(target),
             evidence,
-            EvidenceTrace::default(),
+            trace,
         );
     }
 }
@@ -1623,6 +1707,8 @@ fn emit_remote_raid_targets(
     };
 
     let policy = ctx.view.belief_confidence_policy(ctx.agent);
+    let tracing = ctx.tracing_enabled;
+    let max_travel = pursuit_profile.max_pursuit_travel_ticks.get();
 
     for (target, _state) in ctx.view.known_entity_beliefs(ctx.agent) {
         // Skip entities already handled as local raid targets.
@@ -1647,6 +1733,15 @@ fn emit_remote_raid_targets(
         }
 
         let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) else {
+            if tracing {
+                emit_pursuit_omission_trace(
+                    diagnostics,
+                    GoalKind::RaidTarget { target },
+                    target,
+                    PursuitOmissionReason::UnknownPlace,
+                    &pursuit_profile,
+                );
+            }
             continue;
         };
 
@@ -1657,15 +1752,52 @@ fn emit_remote_raid_targets(
         let confidence =
             worldwake_core::belief_confidence(&belief.source, staleness, &policy);
         if confidence < pursuit_profile.min_location_confidence {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::RaidTarget { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    None,
+                    PursuitOmissionReason::LowConfidence,
+                );
+            }
             continue;
         }
 
-        let Some(route_cost) =
-            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place)
-        else {
+        let route_cost =
+            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place);
+        if route_cost.is_none() {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::RaidTarget { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    None,
+                    PursuitOmissionReason::Unreachable,
+                );
+            }
             continue;
-        };
-        if route_cost > pursuit_profile.max_pursuit_travel_ticks.get() {
+        }
+        let route_cost = route_cost.unwrap();
+        if route_cost > max_travel {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::RaidTarget { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    Some(route_cost),
+                    PursuitOmissionReason::OverRange,
+                );
+            }
             continue;
         }
 
@@ -1678,18 +1810,48 @@ fn emit_remote_raid_targets(
             None,
             ctx.current_tick,
         ) {
+            if tracing {
+                emit_pursuit_omission_trace_with_belief(
+                    diagnostics,
+                    GoalKind::RaidTarget { target },
+                    target,
+                    &belief,
+                    confidence,
+                    &pursuit_profile,
+                    Some(route_cost),
+                    PursuitOmissionReason::Blocked,
+                );
+            }
             continue;
         }
 
         let mut evidence = Evidence::with_entity(target);
         evidence.places.insert(belief.believed_place);
+        let trace = EvidenceTrace {
+            pursuit: if tracing {
+                Some(PursuitDiagnostic {
+                    target,
+                    believed_place: Some(belief.believed_place),
+                    source: Some(belief.source),
+                    observed_tick: Some(belief.observed_tick),
+                    derived_confidence: Some(confidence),
+                    min_confidence_threshold: pursuit_profile.min_location_confidence,
+                    route_cost: Some(route_cost),
+                    max_travel_ticks: max_travel,
+                    omission: None,
+                })
+            } else {
+                None
+            },
+            ..EvidenceTrace::default()
+        };
         emit_candidate_with_trace(
             candidates,
             diagnostics,
             GoalKind::RaidTarget { target },
             OpportunityAnchor::Entity(target),
             evidence,
-            EvidenceTrace::default(),
+            trace,
         );
     }
 }
@@ -2728,6 +2890,7 @@ fn emit_violation_goal(
             institutional_beliefs: Vec::new(),
         },
         legality: None,
+        pursuit: None,
     };
 
     let evidence = Evidence {
@@ -2819,6 +2982,88 @@ fn merge_candidate_evidence_trace(
             "candidate legality provenance diverged for one grounded goal"
         );
     }
+}
+
+/// Record an omission trace for a pursuit candidate where `pursuit_target_belief`
+/// returned `None` (unknown place, dead, co-located).
+fn emit_pursuit_omission_trace(
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    kind: GoalKind,
+    target: EntityId,
+    omission: PursuitOmissionReason,
+    profile: &worldwake_core::PursuitProfile,
+) {
+    let key = GoalKey::from(kind);
+    let opportunity = OpportunityKey {
+        goal_key: key,
+        anchor: OpportunityAnchor::Entity(target),
+    };
+    let trace = CandidateEvidenceTrace {
+        opportunity,
+        contributors: Vec::new(),
+        exclusions: Vec::new(),
+        knowledge_path: KnowledgePath::default(),
+        legality: None,
+        pursuit: Some(PursuitDiagnostic {
+            target,
+            believed_place: None,
+            source: None,
+            observed_tick: None,
+            derived_confidence: None,
+            min_confidence_threshold: profile.min_location_confidence,
+            route_cost: None,
+            max_travel_ticks: profile.max_pursuit_travel_ticks.get(),
+            omission: Some(omission),
+        }),
+    };
+    diagnostics
+        .evidence
+        .entry(opportunity)
+        .and_modify(|existing| merge_candidate_evidence_trace(existing, &trace))
+        .or_insert(trace);
+}
+
+/// Record an omission trace for a pursuit candidate where the belief was resolved
+/// but a subsequent check (confidence, route, blocked) failed.
+#[allow(clippy::too_many_arguments)]
+fn emit_pursuit_omission_trace_with_belief(
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    kind: GoalKind,
+    target: EntityId,
+    belief: &crate::PursuitTargetBelief,
+    confidence: worldwake_core::Permille,
+    profile: &worldwake_core::PursuitProfile,
+    route_cost: Option<u32>,
+    omission: PursuitOmissionReason,
+) {
+    let key = GoalKey::from(kind);
+    let opportunity = OpportunityKey {
+        goal_key: key,
+        anchor: OpportunityAnchor::Entity(target),
+    };
+    let trace = CandidateEvidenceTrace {
+        opportunity,
+        contributors: Vec::new(),
+        exclusions: Vec::new(),
+        knowledge_path: KnowledgePath::default(),
+        legality: None,
+        pursuit: Some(PursuitDiagnostic {
+            target,
+            believed_place: Some(belief.believed_place),
+            source: Some(belief.source),
+            observed_tick: Some(belief.observed_tick),
+            derived_confidence: Some(confidence),
+            min_confidence_threshold: profile.min_location_confidence,
+            route_cost,
+            max_travel_ticks: profile.max_pursuit_travel_ticks.get(),
+            omission: Some(omission),
+        }),
+    };
+    diagnostics
+        .evidence
+        .entry(opportunity)
+        .and_modify(|existing| merge_candidate_evidence_trace(existing, &trace))
+        .or_insert(trace);
 }
 
 fn acquisition_path_opportunities(

@@ -1,6 +1,6 @@
 # S40REMPUR-006: Decision-trace extensions for remote pursuit
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Deps**: S40REMPUR-004 (remote candidates exist), S40REMPUR-005 (invalidation exists)
@@ -100,3 +100,18 @@ Verify that `DecisionTraceSink::dump_agent()` renders the new pursuit fields in 
 1. `cargo test -p worldwake-ai decision_trace`
 2. `cargo test -p worldwake-ai pursuit`
 3. `cargo clippy -p worldwake-ai && cargo test -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**:
+  - Added `PursuitDiagnostic` struct and `PursuitOmissionReason` enum to `decision_trace.rs`
+  - Added `PursuitInvalidationReason` enum to `decision_trace.rs`
+  - Extended `CandidateEvidenceTrace` with optional `pursuit` field
+  - Extended `PlanningPipelineTrace` with optional `pursuit_invalidation` field
+  - Refactored `is_pursuit_plan_valid() -> bool` to `is_pursuit_plan_invalid() -> Option<PursuitInvalidationReason>` in `plan_revalidation.rs`
+  - Both `emit_remote_engage_hostile_targets` and `emit_remote_raid_targets` now emit pursuit diagnostics for emitted and omitted candidates
+  - `dump_agent()` renders pursuit diagnostics and invalidation reasons
+  - 3 new focused tests in `decision_trace.rs`
+- **Deviations**: `PursuitDiagnostic` belief-dependent fields (`believed_place`, `source`, `observed_tick`, `derived_confidence`) are `Option` rather than bare types, to cleanly handle the `UnknownPlace` omission case where no belief data exists. The ticket suggested extending `CandidateEvidenceTrace` with an optional `PursuitDiagnostic` field rather than adding a variant to `CandidateLegalityTrace`, which was the cleaner fit.
+- **Verification**: `cargo clippy --workspace` clean; `cargo test -p worldwake-ai` — 1,194 tests pass (0 failures)
