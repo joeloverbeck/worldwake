@@ -7026,8 +7026,10 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
     let actor_place = entity(10);
     let remote_place = entity(11);
 
-    let mut view = TestBeliefView::default();
-    view.current_tick = Tick(10);
+    let mut view = TestBeliefView {
+        current_tick: Tick(10),
+        ..TestBeliefView::default()
+    };
     view.alive.extend([actor, target, actor_place, remote_place]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(target, EntityKind::Agent);
@@ -7121,8 +7123,10 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
     let actor_place = entity(10);
     let remote_place = entity(11);
 
-    let mut view = TestBeliefView::default();
-    view.current_tick = Tick(10);
+    let mut view = TestBeliefView {
+        current_tick: Tick(10),
+        ..TestBeliefView::default()
+    };
     view.alive.extend([actor, target, actor_place, remote_place]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(target, EntityKind::Agent);

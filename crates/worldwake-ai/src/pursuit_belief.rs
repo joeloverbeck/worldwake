@@ -112,7 +112,7 @@ mod tests {
         s
     }
 
-    /// Minimal GoalBeliefView stub for pursuit_target_belief tests.
+    /// Minimal `GoalBeliefView` stub for `pursuit_target_belief` tests.
     struct StubView {
         actor_place: Option<EntityId>,
         beliefs: Vec<(EntityId, BelievedEntityState)>,
