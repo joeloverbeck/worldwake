@@ -98,6 +98,8 @@ When a scenario involves stale or retained requests, state explicitly whether th
 - proving same-tick cross-agent causal order without overfitting to tick numbers
 - proving a committed `tell` targeted a specific `listener`/`subject` pair via `ActionTraceDetail::Tell`
 
+`ActionTraceEvent` does not record the place where the action occurred. To check an action's location, query `h.world.effective_place(event.actor)` at the relevant tick. This works for durable assertions but note that the actor may have moved between the action tick and the query tick if travel completed in between. For same-tick assertions, effective_place at the action tick is reliable.
+
 ### Use decision traces when:
 
 - debugging why a goal did or did not appear
@@ -214,6 +216,24 @@ To force travel for relief:
 This generalizes: any scenario that relies on travel must ensure no local affordance satisfies the motivating goal at the starting place.
 
 The canonical source is `OUTDOOR_RELIEF_TAGS` in `crates/worldwake-core/src/topology.rs`.
+
+## Topology Routing Bypass Trap
+
+When a golden scenario requires an agent to pass through a specific waypoint (e.g., a dangerous road with bandits), ensure no shorter direct route bypasses that waypoint. The planner always picks the shortest path via Dijkstra.
+
+For example, if Market↔Farm is 4 ticks direct but Market→GateRoad→Farm is 6 ticks, the agent will never visit GateRoad. Remove the direct edge or make it longer than the waypoint route to force the intended routing.
+
+This generalizes the outdoor-relief trap: any scenario that relies on a specific travel path must ensure no local shortcut satisfies the motivating goal.
+
+## Cross-Domain Coverage Calibration
+
+Golden tests requiring ≥ N `ActionDomain` values must ensure agents have active affordances in each required domain. Common traps:
+
+- **Needs domain**: Sated agents with zero metabolism rates (pm(0)) will never generate eat/drink/sleep actions. Set `hunger_rate` to at least pm(3) and starting hunger to pm(500)+ for at least one agent, and provide consumables.
+- **Combat domain**: Bandits or hostiles must be co-located with targets. Bandits at a remote camp 3+ ticks away may never encounter merchants unless pursuit/raid mechanics are specifically exercised.
+- **Production domain**: Requires workstations with resource sources and agents with known recipes.
+
+Verify domain coverage in the action trace (`domains_seen`) early during test development to catch calibration issues before full tick-budget runs.
 
 ## Deprivation Ordering Trap
 

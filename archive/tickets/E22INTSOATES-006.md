@@ -1,6 +1,6 @@
 # E22INTSOATES-006: T21 — Ruler Death → Office Vacancy → Patrol Gap → Route Predation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
@@ -51,13 +51,13 @@ Political goldens test succession mechanics in isolation. T21 chains vacancy thr
 ### 1. Add T21 scenario to `crates/worldwake-ai/tests/golden_integration.rs`
 
 - Build 6-place topology: RulersHall, Market, GateRoad, BanditForest, GuardPost, Farm
+  - **Implementation note**: No direct Market↔Farm edge; merchant routes through GateRoad→Farm to ensure encounter with bandits (see `docs/golden-e2e-testing.md` "Topology Routing Bypass Trap")
 - Ruler office entity with `OfficeData { succession_law: Force, vacancy_since: None }`, `OfficeForceProfile`
-- Ruler agent with fragile `CombatProfile` (low wound capacity)
+- Ruler agent killed via direct `DeadAt(Tick(0))` injection (not combat event — effect is identical: politics system detects dead holder and sets vacancy)
 - 2 claimant agents with faction membership and `UtilityProfile` with non-zero `enterprise_weight`
-- 3 guard agents with `PatrolRoute { assigned_places: [GateRoad, Market, GuardPost] }`, `PatrolProfile`
-- 2 bandits at BanditForest with `BanditCamp`, `PursuitProfile`, `CombatProfile`
-- Merchant at Market with `MerchandiseProfile` and goods
-- Inject lethal combat event killing ruler at tick 0
+- 3 guard agents with `PatrolRoute { assigned_places: [GateRoad, Market, GuardPost] }`, `PatrolProfile`, hunger=pm(500) and hunger_rate=pm(3) to exercise Needs domain
+- 2 bandits at GateRoad (not BanditForest) with `BanditCamp` on GateRoad for co-location combat
+- Merchant at Market with `MerchandiseProfile`, stockout (0 sale apples), `DemandMemory` priming `RestockCommodity`, Farm workstation with `ResourceSource(Apple)` as restock destination, 3 apples for eating (Needs domain)
 - Run up to 7200 ticks
 - Enable decision tracing on driver
 - Verify full causal chain per spec
@@ -106,3 +106,16 @@ Political goldens test succession mechanics in isolation. T21 chains vacancy thr
 
 1. `cargo test -p worldwake-ai --test golden_integration -- t21`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added T21 scenario (Ruler Death → Office Vacancy → Patrol Gap → Route Predation) to `crates/worldwake-ai/tests/golden_integration.rs` with 2 test functions (`t21_ruler_death_patrol_gap_seed_1`, `t21_ruler_death_patrol_gap_seed_2`). Added 3 doc notes to `docs/golden-e2e-testing.md` (Cross-Domain Coverage Calibration, Topology Routing Bypass Trap, ActionTraceEvent place query pattern).
+- **Deviations from original plan**:
+  - Bandits placed at GateRoad (not BanditForest) for co-location combat requirement.
+  - `BanditCamp` component on GateRoad instead of BanditForest.
+  - Topology routes merchant through GateRoad→Farm (no direct Market→Farm edge) to force waypoint encounter.
+  - Merchant setup includes stockout (0 sale apples), `DemandMemory`, and Farm workstation with `ResourceSource(Apple)` for restock motivation.
+  - Ruler killed via direct `DeadAt(Tick(0))` injection rather than combat event.
+  - Guards given hunger=pm(500) and hunger_rate=pm(3) with apples to exercise Needs domain.
+- **Verification results**: `cargo test --workspace` — all green (0 failures). `cargo clippy -p worldwake-ai --test golden_integration` — no new warnings from T21 code. Both T21 seeds pass: full causal chain verified, ≥4 ActionDomains, deterministic replay confirmed.

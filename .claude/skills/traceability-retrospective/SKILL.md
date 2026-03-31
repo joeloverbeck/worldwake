@@ -46,11 +46,14 @@ Perform structured self-examination of the current conversation through these le
 4. **Traceability gaps**: Where did you expect trace or debug data (decision trace, action trace, event log, belief state, perception pipeline, conservation checks) but it was unavailable, insufficient, or misleading?
 5. **Edge cases**: What surprising behaviors from prior specs or systems surfaced? What interactions between systems were unexpected?
 6. **Documentation gaps**: Where was documentation missing, misleading, or out of date?
+7. **Setup calibration** (golden-test tickets): Where did scenario parameters (metabolism rates, topology edges, agent placement, tick budgets) not produce the intended emergent behavior? What required tuning?
 
 **Output**: A numbered list of distinct lessons. One lesson per item — no grab bags. Each lesson gets:
 - **What happened**: Factual description of the issue
 - **Why it was non-obvious**: What made it hard to anticipate
 - **Impact**: How it affected implementation (time lost, incorrect code written, test failures)
+
+If no lessons surface, report: "Phase 1: No implementation difficulties identified — the ticket assumptions matched the codebase and all verifications passed on first attempt." Then skip to Phase 1b (drift check). If Phase 1b also finds no drift, report that the implementation was clean and stop.
 
 ## Phase 1b — Ticket Drift Check (optional)
 
@@ -76,7 +79,7 @@ Distinguish between fixing the immediate task (test setup, configuration, wrong 
 
 ### Step 3: Duplicate Check
 
-Is there already an existing ticket in `tickets/` that covers this issue? Grep ticket titles and problem descriptions. **Route to DO NOTHING** if covered.
+Is there already an existing ticket in `tickets/` that covers this issue? Scan the ticket filenames from Phase 0 and, if any title seems related, read its Problem section to confirm or rule out duplication. **Route to DO NOTHING** if covered.
 
 ### Step 4: FOUNDATIONS Alignment
 
@@ -103,6 +106,14 @@ For each lesson, state:
 
 **DOC NOTE** is for lessons that don't warrant a ticket but would benefit from a brief addition (1-3 lines) to an existing guide — typically `docs/golden-e2e-testing.md`, `CLAUDE.md`, or a spec. If no tickets are warranted, doc notes are presented in Phase 2b. If tickets are also warranted, present doc notes alongside ticket proposals in Phase 3.
 
+Conclude Phase 2 with a summary table for readability:
+
+```
+| Lesson | Bucket | Target |
+|--------|--------|--------|
+| 1. ... | DO NOTHING / DOC NOTE / TICKET WARRANTED | — / target file / change type |
+```
+
 If all lessons route to DO NOTHING, **report that explicitly and stop**. This is a valid outcome — it means the implementation was clean and the infrastructure is solid. Do not manufacture tickets.
 
 If the only non-DO-NOTHING lessons are DOC NOTEs (no tickets warranted), proceed to Phase 2b. Otherwise, proceed to Phase 3 (which handles both tickets and any accompanying doc notes).
@@ -111,9 +122,9 @@ If the only non-DO-NOTHING lessons are DOC NOTEs (no tickets warranted), proceed
 
 When all surviving lessons are DOC NOTEs with no TICKET WARRANTED items:
 
-1. Present each doc note with its target file and proposed text.
+1. Present each doc note with its target file and proposed text. If Phase 1b found ticket drift, include the proposed ticket updates in the same presentation.
 2. **Wait for explicit approval** before applying any changes.
-3. Apply approved notes directly to the target files. No ticket file creation needed.
+3. Apply approved doc notes and any Phase 1b ticket drift corrections directly to the target files. No ticket file creation needed.
 4. **Stop** — do not proceed to Phase 3 or Phase 4.
 
 ## Phase 3 — Ticket Proposal
