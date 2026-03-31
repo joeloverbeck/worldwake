@@ -9,6 +9,8 @@ Reflects on the current session's implementation difficulties to identify tracea
 
 **Core principle:** DO NOTHING is the default. Not every implementation difficulty warrants a ticket. The burden of proof is on ticket creation.
 
+**Project scope:** This skill is tuned for the Worldwake project's debugging surfaces (decision traces, action traces, event log, belief state, perception pipeline, conservation checks). Adapt the reflection lenses for other projects.
+
 ## Invocation
 
 ```
@@ -62,6 +64,8 @@ Will this issue come up again in future tickets? If this was a one-off mistake (
 
 Was this issue already fixed during the implementation itself? If the conversation shows the problem was identified and resolved in-session, no ticket is needed unless the fix was incomplete or a band-aid. **Route to DO NOTHING.**
 
+Distinguish between fixing the immediate task (test setup, configuration, wrong argument) and fixing the underlying infrastructure gap. If the issue was only resolved for *this* session's task but the same silent failure mode remains for future tasks, the lesson survives this step.
+
 ### Step 3: Duplicate Check
 
 Is there already an existing ticket in `tickets/` that covers this issue? Grep ticket titles and problem descriptions. **Route to DO NOTHING** if covered.
@@ -86,10 +90,14 @@ For lessons that survive Steps 1-4, classify the warranted change:
 ### Output
 
 For each lesson, state:
-- **Bucket**: DO NOTHING (with reason) | TICKET WARRANTED (with change type)
+- **Bucket**: DO NOTHING (with reason) | DOC NOTE (with target file and proposed text) | TICKET WARRANTED (with change type)
 - **FOUNDATIONS reference**: Principle number(s) if applicable
 
+**DOC NOTE** is for lessons that don't warrant a ticket but would benefit from a brief addition (1-3 lines) to an existing guide — typically `docs/golden-e2e-testing.md`, `CLAUDE.md`, or a spec. Present the target file and proposed text alongside ticket proposals in Phase 3 for user approval.
+
 If all lessons route to DO NOTHING, **report that explicitly and stop**. This is a valid outcome — it means the implementation was clean and the infrastructure is solid. Do not manufacture tickets.
+
+If the only non-DO-NOTHING lessons are DOC NOTEs (no tickets warranted), skip Phase 3's ticket proposal format and present only the doc notes for approval. Apply approved notes directly — no ticket file creation needed.
 
 ## Phase 3 — Ticket Proposal
 
