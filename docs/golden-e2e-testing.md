@@ -176,6 +176,21 @@ For social goldens, also document subject choice explicitly. Agent subjects can 
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 When a focused planning test is specifically about a planner failure boundary, assert the exact failure mode your scenario is meant to prove instead of only asserting "no plan". Use `BudgetExhausted`, `FrontierExhausted`, or another concrete planner-owned boundary as appropriate. Generic non-success is too weak because it also matches unrelated earlier contract breaks.
 
+## Trade Cycle Throughput
+
+Each consumer-to-merchant trade involves a full AI decision cycle (candidate
+generation → plan search → action start → multi-tick negotiation rounds →
+completion). In practice, a single trade takes 20-50 ticks depending on agent
+count and planning budget. Golden tests that require a merchant's stock to
+deplete through consumer purchases should either:
+
+- Start the merchant with ≤ 3 items (proven in `golden_supply_chain.rs`), or
+- Start the merchant at 0 stock (stockout as initial condition) and give the
+  consumer items directly, if the test goal is to verify restock/replan chains
+  rather than the trade cycle itself.
+
+Do not assume a consumer can purchase 10+ items within a reasonable tick budget.
+
 ## Outdoor Place Affordance Trap
 
 When designing golden scenarios that require an agent to travel for relief (bladder, dirtiness), be aware that `relieve_wilderness` is available at any place with an `OUTDOOR_RELIEF_TAGS` tag (Forest, Trail, Field, Farm, Road). The planner will prefer it over traveling to a distant latrine because it has zero travel cost.
