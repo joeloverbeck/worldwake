@@ -109,6 +109,7 @@ When a scenario involves stale or retained requests, state explicitly whether th
 - inspecting the final selected path via `planning.selection.selected_plan` and `planning.selection.selected_plan_source` when you need the chosen plan shape, terminal semantics, or whether the trace reflects a fresh search result, retained current plan, or snapshot-only continuation
 - proving travel-led route selection when the contract is about the initial planned path rather than only eventual arrival
 - proving social omission reasons such as `SpeakerHasAlreadyToldCurrentBelief` before any `tell` commit exists
+- proving that a political or other high-priority goal appeared as an interrupt challenger during an active action. When an agent has an active action (e.g., patrol), competing goals like `ClaimOffice` appear only in `DecisionOutcome::ActiveAction { interrupt: InterruptTrace { top_challenger, .. } }`, not in `DecisionOutcome::Planning`. If the agent never re-enters the planning pipeline (e.g., because succession completes before the action finishes), a Planning-only check will miss the goal entirely.
 
 When the contract is about candidate generation, ranking, suppression, or plan selection, do not infer the result indirectly from missing event-log entries or missing committed actions if a decision trace can prove it directly.
 `archive/tickets/completed/S16S09GOLVAL-002.md` is the concrete example of this narrowing: the durable downstream outcome mattered less than the earlier changed-conditions selection boundary, so the golden was corrected to prove "first post-resolution selected goal is non-combat" instead of broad eat/heal follow-through.
@@ -185,6 +186,25 @@ When a golden test requires a `StealItem` goal to be generated, validate the det
 - `effective_motive = theft_motive_weight - (witness_risk_penalty × co-located_agent_count)`
 - If `effective_motive ≤ 0`, the thief is fully deterred and will never generate `StealItem`. Zero candidates are completely silent — no trace or diagnostic indicates deterrence suppression.
 - Count ALL non-thief agents at the theft location, including human-controlled agents, as the deterrence formula in `assess_theft_deterrence()` (`worldwake-ai/src/theft.rs`) counts every alive agent of kind `Agent`.
+- Human-controlled agents (`ControlSource::Human`) at the theft location count as witnesses. If a scenario places a human-controlled merchant at the same location as the thief, the merchant counts toward `co-located_agent_count` even though the merchant never acts. To create a clean deterrence toggle based on guard presence alone, place stealable goods at a location where only the guard and thief are co-located.
+
+## Force Succession Calibration
+
+Golden tests requiring `SuccessionLaw::Force` succession to complete must ensure the
+intended claimant can establish and hold control without interruption from other
+eligible faction members. Common traps:
+
+- **Guards as faction members create contested state**: If guards share faction membership
+  with the claimant AND the office's `EligibilityRule::FactionMember` allows them, guards
+  will press force claims at the jurisdiction, creating a contested state that blocks
+  installation. Either remove guards from the eligible faction, or make the jurisdiction
+  remote enough that guards cannot arrive before `uncontested_hold_ticks` elapses.
+- **Topology race**: `uncontested_hold_ticks` must be shorter than the fastest guard's
+  travel time to the jurisdiction. If `uncontested_hold_ticks=5` and Market→RulersHall
+  is 8 ticks, the claimant installs before guards arrive.
+- **Vacancy belief seeding**: Remote guards cannot perceive vacancy through co-location
+  perception (Principle 7). If guards must generate political goals despite being far
+  from the jurisdiction, seed vacancy beliefs explicitly.
 
 ## Trade Cycle Throughput
 

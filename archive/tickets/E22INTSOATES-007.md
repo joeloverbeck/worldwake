@@ -1,6 +1,6 @@
 # E22INTSOATES-007: T33 — Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
@@ -51,17 +51,20 @@ No existing golden chains vacancy through patrol degradation into crime opportun
 ### 1. Add T33 scenario to `crates/worldwake-ai/tests/golden_integration.rs`
 
 - Build 5-place topology: RulersHall, Market, Road, Farm, GuardPost
-- Ruler office entity with `OfficeData { succession_law: Force }`, `OfficeForceProfile { uncontested_hold_ticks: NonZeroU32(20) }`, `OfficeForceState { control_since: Some(Tick(0)) }`
-- Ruler agent
-- 2 guard agents with `PatrolRoute { assigned_places: [Market, Road] }`, `PatrolProfile { patrol_motive_weight: Permille(700) }`
-- 1 thief at Road with `TheftDispositionProfile { witness_risk_penalty: Permille(900) }` (highly deterred)
-- Merchant at Market with goods
-- Kill ruler to trigger vacancy
-- Enable decision tracing
-- Verify: no theft before ruler death (guards deter)
-- Verify: theft occurs during vacancy (guards distracted)
-- Verify: thief decision trace shows `witness_risk_penalty` evaluation changing based on guard presence/absence
-- Verify: after succession + guard return, theft suppressed
+  - RulersHall ↔ Market: 8 ticks (remote — ensures claimant installs before guards contest)
+  - Market ↔ Road: 2 ticks; Road ↔ Farm: 3 ticks; RulersHall ↔ GuardPost: 8 ticks; GuardPost ↔ Market: 2 ticks
+- Ruler office entity with `OfficeData { succession_law: Force, succession_period_ticks: 5 }`, `OfficeForceProfile { uncontested_hold_ticks: NonZeroU32(5) }`
+- Ruler agent at RulersHall (killed at tick 0)
+- 1 claimant agent at RulersHall — faction member with `enterprise_weight: pm(900)`, drives succession
+- 2 guard agents with `PatrolRoute { assigned_places: [Market, Road] }`, `PatrolProfile { patrol_motive_weight: pm(550) }`, zero metabolism (guards must survive full tick budget), faction members with explicit vacancy belief seeding
+- 1 thief at Road with `TheftDispositionProfile { theft_motive_weight: pm(800), witness_risk_penalty: Permille(900) }` (fully deterred by 1+ agents, steals when alone)
+- Merchant at Market (human-controlled), stealable goods on ground at Road (separate from merchant to avoid bystander deterrence)
+- Kill ruler to trigger vacancy; seed guards with vacancy beliefs (remote guards can't perceive vacancy via co-location)
+- Enable decision + action tracing
+- Verify: no theft before ruler death (guard at Road deters)
+- Verify: theft occurs during vacancy (guard leaves Road for political goals)
+- Verify: guard decision trace shows ClaimOffice as interrupt challenger outranking Patrol (via `ActiveAction::interrupt.top_challenger`, not only `Planning` outcomes)
+- Verify: after succession + guard return to patrol point, theft suppressed (thief decision trace shows no StealItem candidates)
 - `fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash)`
 - Two `#[test]` functions
 
@@ -105,3 +108,26 @@ No existing golden chains vacancy through patrol degradation into crime opportun
 
 1. `cargo test -p worldwake-ai --test golden_integration -- t33`
 2. `cargo test --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-31
+
+**What changed**:
+- Added T33 scenario to `crates/worldwake-ai/tests/golden_integration.rs` (~400 lines): `run_t33_vacancy_crime_recovery()`, `t33_vacancy_crime_recovery_seed_1`, `t33_vacancy_crime_recovery_seed_2`
+- Added 3 doc notes to `docs/golden-e2e-testing.md`: human-bystander theft deterrence, Force Succession Calibration section, ActiveAction interrupt trace guidance
+
+**Deviations from original plan**:
+- `uncontested_hold_ticks: 5` (ticket said 20) — required to ensure claimant installs before guards contest
+- Added dedicated claimant agent at RulersHall (not in original ticket) — guards alone couldn't drive succession reliably
+- Guard metabolism zeroed; Needs domain coverage moved to claimant agent — guards died from deprivation over long tick budgets
+- Stealable goods placed at Road instead of Market — merchant at Market counted as witness, permanently deterring thief
+- RulersHall↔Market travel time 8 ticks (not ~2) — topology separation ensures claimant installs before guards arrive
+- Guard vacancy beliefs seeded explicitly — remote guards can't perceive vacancy via co-location perception (Principle 7)
+- Political distraction verified via `ActiveAction::interrupt.top_challenger` — guards never re-entered planning pipeline during fast succession
+
+**Verification results**:
+- `cargo test -p worldwake-ai --test golden_integration -- t33`: 2 passed
+- `cargo test -p worldwake-ai --test golden_integration`: 29 passed, 0 failed
+- `cargo test -p worldwake-ai`: all passed
+- `cargo build --workspace`: clean

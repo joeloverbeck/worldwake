@@ -47,6 +47,7 @@ Perform structured self-examination of the current conversation through these le
 5. **Edge cases**: What surprising behaviors from prior specs or systems surfaced? What interactions between systems were unexpected?
 6. **Documentation gaps**: Where was documentation missing, misleading, or out of date?
 7. **Setup calibration** (golden-test tickets): Where did scenario parameters (metabolism rates, topology edges, agent placement, tick budgets) not produce the intended emergent behavior? What required tuning?
+8. **What worked** (optional): Which ticket assumptions or design choices proved correct on first attempt? (Brief — 1-2 sentences. This is context for the difficulty list, not a separate deliverable.)
 
 **Output**: A numbered list of distinct lessons. One lesson per item — no grab bags. Each lesson gets:
 - **What happened**: Factual description of the issue
@@ -57,7 +58,7 @@ If no lessons surface, report: "Phase 1: No implementation difficulties identifi
 
 ## Phase 1b — Ticket Drift Check (optional)
 
-Compare the ticket's stated setup (from "What to Change" and "Assumption Reassessment") against what was actually implemented. If significant drift exists — different initial values, restructured scenario, omitted or added agents, changed tick budgets — note each divergence briefly.
+Compare the ticket's stated setup (from "What to Change" and "Assumption Reassessment") against what was actually implemented. If significant drift exists — different initial values, restructured scenario, omitted or added agents, changed tick budgets — present drift as a two-column comparison (ticket says / implementation does) for each divergent parameter, followed by a brief statement of which ticket section needs updating.
 
 If drift is found, propose updating the ticket's relevant sections so the ticket remains an accurate record of what was delivered. Present proposed updates alongside Phase 2b doc notes or Phase 3 ticket proposals for user approval.
 
@@ -75,7 +76,7 @@ Will this issue come up again in future tickets? If this was a one-off mistake (
 
 Was this issue already fixed during the implementation itself? If the conversation shows the problem was identified and resolved in-session, no ticket is needed unless the fix was incomplete or a band-aid. **Route to DO NOTHING.**
 
-Distinguish between fixing the immediate task (test setup, configuration, wrong argument) and fixing the underlying infrastructure gap. If the issue was only resolved for *this* session's task but the same silent failure mode remains for future tasks, the lesson survives this step.
+Distinguish between fixing the immediate task (test setup, configuration, wrong argument) and fixing the underlying infrastructure gap. Ask: "Was the fix local to this task, or does the same silent failure mode remain for future tasks?" If the latter, the lesson survives this step even though the immediate problem was resolved.
 
 ### Step 3: Duplicate Check
 
@@ -125,7 +126,9 @@ When all surviving lessons are DOC NOTEs with no TICKET WARRANTED items:
 1. Present each doc note with its target file and proposed text. If Phase 1b found ticket drift, include the proposed ticket updates in the same presentation.
 2. **Wait for explicit approval** before applying any changes.
 3. Apply approved doc notes and any Phase 1b ticket drift corrections directly to the target files. No ticket file creation needed.
-4. **Stop** — do not proceed to Phase 3 or Phase 4.
+4. If doc notes modify files checked by automated validation (e.g., `docs/golden-e2e-testing.md` is checked by `scripts/golden_inventory.py --check-docs`), run the relevant validation command after applying changes.
+5. Output a brief closing summary: number of doc notes applied, number of ticket sections corrected, and target files modified.
+6. **Stop** — do not proceed to Phase 3 or Phase 4.
 
 ## Phase 3 — Ticket Proposal
 
