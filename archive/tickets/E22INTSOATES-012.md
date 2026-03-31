@@ -1,6 +1,6 @@
 # E22INTSOATES-012: Emit diagnostic trace when violation detection skips due to missing ViolationDispositionProfile
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: Yes — candidate_generation.rs diagnostic emission, decision_trace.rs new omission variant
@@ -83,3 +83,10 @@ Discovered during E22INTSOATES-003 implementation: the bandit arrived at Crossro
 1. `cargo test -p worldwake-ai -- violation_detection_omission` (targeted new tests)
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `ViolationDetectionOmission` struct and `ViolationDetectionOmissionReason` enum (`MissingViolationDispositionProfile`, `AgentInTransit`) in `decision_trace.rs`. Added `omitted_violation_detection` field to `CandidateGenerationDiagnostics`, `ReadPhaseResult`, and `CandidateTrace`. Emitted diagnostics at both early-return paths in `emit_expectation_violation_candidates`. Added `dump_agent` formatting. Exported new types from `lib.rs`. Three focused unit tests added.
+- **Deviations**: None. Implemented exactly as specified.
+- **Verification**: `cargo test -p worldwake-ai` (954 tests pass), `cargo clippy --workspace` clean.

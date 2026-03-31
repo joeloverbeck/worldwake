@@ -58,6 +58,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) omitted_bandit: Vec<crate::BanditCandidateOmission>,
     /// Social goals omitted before emission due to resend suppression.
     pub(super) omitted_social: Vec<crate::SocialCandidateOmission>,
+    /// Violation detection pass skipped due to missing prerequisites.
+    pub(super) omitted_violation_detection: Vec<crate::ViolationDetectionOmission>,
     /// Shared decision context built once from beliefs for ranking + interrupts.
     pub(super) decision_context: DecisionContext,
     /// When a pursuit plan was invalidated, records the reason.
@@ -181,6 +183,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_bandit: candidates.diagnostics.omitted_bandit,
         omitted_social: candidates.diagnostics.omitted_social,
+        omitted_violation_detection: candidates.diagnostics.omitted_violation_detection,
         decision_context: dc,
         pursuit_invalidation,
     }

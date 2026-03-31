@@ -65,7 +65,7 @@ pub use decision_trace::{
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
-    TravelSuccessorTrace,
+    TravelSuccessorTrace, ViolationDetectionOmission, ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};

@@ -740,6 +740,7 @@ fn process_agent(
                 omitted_political: read_result.omitted_political,
                 omitted_bandit: read_result.omitted_bandit,
                 omitted_social: read_result.omitted_social,
+                omitted_violation_detection: read_result.omitted_violation_detection,
             };
 
             let selection = selection_trace.unwrap_or(SelectionTrace {

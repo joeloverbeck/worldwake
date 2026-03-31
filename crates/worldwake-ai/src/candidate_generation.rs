@@ -5,7 +5,7 @@ use crate::{
         CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
         PursuitDiagnostic, PursuitOmissionReason,
         PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-        SocialCandidateOmission,
+        SocialCandidateOmission, ViolationDetectionOmission, ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
     enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
@@ -153,6 +153,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     pub omitted_bandit: Vec<BanditCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
+    pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
 }
@@ -2734,11 +2735,21 @@ fn emit_expectation_violation_candidates(
 
     // Early return: agent must have a current place (not in transit).
     let Some(current_place) = ctx.place else {
+        diagnostics
+            .omitted_violation_detection
+            .push(ViolationDetectionOmission {
+                reason: ViolationDetectionOmissionReason::AgentInTransit,
+            });
         return pending;
     };
 
     // Early return: agent must have a ViolationDispositionProfile.
     let Some(profile) = ctx.view.violation_disposition_profile(ctx.agent) else {
+        diagnostics
+            .omitted_violation_detection
+            .push(ViolationDetectionOmission {
+                reason: ViolationDetectionOmissionReason::MissingViolationDispositionProfile,
+            });
         return pending;
     };
 
@@ -3734,7 +3745,7 @@ mod tests {
         },
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceTrace, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-        SocialCandidateOmission,
+        SocialCandidateOmission, ViolationDetectionOmissionReason,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -12035,6 +12046,84 @@ mod tests {
         assert!(
             result.pending_violations.is_empty(),
             "In-transit entity (no effective place) should not trigger EntityMissing"
+        );
+    }
+
+    // ── Violation detection omission diagnostics ──────────────────────
+
+    #[test]
+    fn violation_detection_omission_missing_profile() {
+        let agent = entity(1);
+        let place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        // No ViolationDispositionProfile set.
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view, agent, &blocked, &vm, &RecipeRegistry::new(), Tick(5), 6, false,
+        );
+
+        assert!(
+            result
+                .diagnostics
+                .omitted_violation_detection
+                .iter()
+                .any(|o| o.reason
+                    == ViolationDetectionOmissionReason::MissingViolationDispositionProfile),
+            "Should emit MissingViolationDispositionProfile when profile is absent"
+        );
+    }
+
+    #[test]
+    fn violation_detection_omission_agent_in_transit() {
+        let agent = entity(1);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        // No effective place (agent in transit).
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view, agent, &blocked, &vm, &RecipeRegistry::new(), Tick(5), 6, false,
+        );
+
+        assert!(
+            result
+                .diagnostics
+                .omitted_violation_detection
+                .iter()
+                .any(|o| o.reason == ViolationDetectionOmissionReason::AgentInTransit),
+            "Should emit AgentInTransit when agent has no effective place"
+        );
+    }
+
+    #[test]
+    fn violation_detection_no_omission_when_prerequisites_met() {
+        let agent = entity(1);
+        let place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+
+        let blocked = BlockedIntentMemory::default();
+        let vm = ViolationMemory::default();
+        let result = generate_candidates_with_travel_horizon(
+            &view, agent, &blocked, &vm, &RecipeRegistry::new(), Tick(5), 6, false,
+        );
+
+        assert!(
+            result.diagnostics.omitted_violation_detection.is_empty(),
+            "Should NOT emit violation-detection omission when profile and place are present"
         );
     }
 }

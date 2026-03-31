@@ -313,6 +313,8 @@ pub struct CandidateTrace {
     pub omitted_bandit: Vec<BanditCandidateOmission>,
     /// Social goals omitted before generation due to resend suppression.
     pub omitted_social: Vec<SocialCandidateOmission>,
+    /// Violation detection pass skipped due to missing prerequisites.
+    pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
 }
 
 impl CandidateTrace {
@@ -431,6 +433,19 @@ pub struct SocialCandidateOmission {
     pub listener: EntityId,
     pub topic: TellTopic,
     pub reason: TellTopicOmissionReason,
+}
+
+/// Hard pre-emission reason for the entire violation-detection pass being skipped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViolationDetectionOmissionReason {
+    MissingViolationDispositionProfile,
+    AgentInTransit,
+}
+
+/// Diagnostic record for violation detection skipped before candidate emission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViolationDetectionOmission {
+    pub reason: ViolationDetectionOmissionReason,
 }
 
 /// Summary of a ranked goal for trace output.
@@ -1124,6 +1139,12 @@ impl DecisionTraceSink {
                     if let Some(ref pd) = ev.pursuit {
                         format_pursuit_diagnostic(pd);
                     }
+                }
+                for omission in &planning.candidates.omitted_violation_detection {
+                    eprintln!(
+                        "  Violation detection skipped: {:?}",
+                        omission.reason
+                    );
                 }
                 if let Some(reason) = planning.pursuit_invalidation {
                     eprintln!("  Pursuit invalidated: {reason:?}");
@@ -1985,6 +2006,7 @@ mod tests {
                     omitted_political,
                     omitted_bandit,
                     omitted_social,
+                    omitted_violation_detection: vec![],
                 },
                 planning: PlanSearchTrace {
                     attempts: Vec::new(),
@@ -2533,6 +2555,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -2639,6 +2662,7 @@ mod tests {
             omitted_political: vec![],
             omitted_bandit: vec![],
             omitted_social: vec![],
+            omitted_violation_detection: vec![],
         };
 
         assert_eq!(
@@ -2698,6 +2722,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -2802,6 +2827,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -2887,6 +2913,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -2951,6 +2978,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3012,6 +3040,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3063,6 +3092,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![PlanAttemptTrace {
@@ -3135,6 +3165,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3212,6 +3243,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3280,6 +3312,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3365,6 +3398,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3433,6 +3467,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![PlanAttemptTrace {
@@ -3771,6 +3806,7 @@ mod tests {
                 omitted_political: vec![],
                 omitted_bandit: vec![],
                 omitted_social: vec![],
+                omitted_violation_detection: vec![],
             },
             planning: PlanSearchTrace {
                 attempts: vec![],
@@ -3955,6 +3991,7 @@ mod tests {
                     omitted_political: vec![],
                     omitted_bandit: vec![],
                     omitted_social: vec![],
+                    omitted_violation_detection: vec![],
                 },
                 planning: PlanSearchTrace {
                     attempts: vec![],
