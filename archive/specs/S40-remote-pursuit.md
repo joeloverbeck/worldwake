@@ -1,5 +1,7 @@
 # S40: Belief-Backed Remote Pursuit
 
+**Status**: ✅ COMPLETED
+
 ## Summary
 
 Enable agents to pursue concrete targets across the place graph without breaking the existing local-combat contract. Today `EngageHostile` and `RaidTarget` are exact local combat goals: they can only commit through a lawful same-place `Attack` affordance. This spec keeps that boundary intact while allowing the planner to produce `Travel + Attack` plans when the agent holds a lawful belief about the target's current place. Pursuit is belief-backed, interruptible, and fallible: the agent may arrive and find the target gone, may abandon the chase when confidence decays, and may replan away under new danger or self-care pressure.
@@ -306,3 +308,22 @@ Pursuit toward map-edge places or dead-end topology is bounded by `max_pursuit_t
 7. All existing AI and golden suites continue to pass.
 8. Guard/justice pursuit reuses `PursuitProfile` and `pursuit_target_belief()` without building parallel infrastructure. Goal-kind distinction comes from candidate generation only.
 9. Target-location confidence is always derived via `belief_confidence()`, never stored in `PursuitTargetBelief` or elsewhere.
+
+## Outcome
+
+**Completion date**: 2026-03-31
+
+**What changed** (by ticket):
+- **S40REMPUR-001**: `PursuitProfile` component in `worldwake-core` with `min_location_confidence` and `max_pursuit_travel_ticks`.
+- **S40REMPUR-002**: `pursuit_target_belief()` helper in `worldwake-ai` extracting remote target location from agent beliefs with provenance fields.
+- **S40REMPUR-003**: Remote `RaidTarget` candidate emission in `candidate_generation.rs` with pursuit-profile constraint checks (confidence, route cost, blocked memory).
+- **S40REMPUR-004**: Goal-model and search integration — `goal_relevant_places()` already reads from belief state; no changes needed to search or op-kind surfaces.
+- **S40REMPUR-005**: Plan invalidation on belief-place change and confidence decay in `plan_revalidation.rs`. Decision-trace extension with pursuit diagnostic fields.
+- **S40REMPUR-006**: Focused unit tests for all pursuit infrastructure.
+- **S40REMPUR-007**: Golden E2E tests (3 scenarios + 3 replay companions) in `golden_pursuit.rs`. Prerequisite fix: departure-direction projection in `perception.rs` — co-located observers now learn the travel destination of departing entities (Principles 7, 15).
+
+**Deviations from spec**:
+- Departure-direction projection in perception was not anticipated by the spec but was required for the lawful information path from perception → belief → pursuit candidate. This is a domain-neutral perception capability, not pursuit-specific.
+- Ranking and interrupt policy (Deliverable 6) required no changes as predicted — pursuit reuses existing goal-family ownership.
+
+**Verification**: All focused tests, golden tests, and full workspace suite pass. Clippy clean.

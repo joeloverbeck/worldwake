@@ -348,6 +348,28 @@ fn observe_active_actions(
                 if belief.believed_activity.take().is_some() {
                     changed = true;
                 }
+
+                // Departure-direction projection: when a known entity
+                // departs and has an active travel action, project the
+                // travel destination as their believed place.  This is
+                // lawful co-location observation (Principles 7, 15) —
+                // the observer was at the same place when the departure
+                // happened and can see which direction the subject went.
+                if let Some(instance) = active_by_actor.get(subject) {
+                    let is_travel = action_defs
+                        .get(instance.def_id)
+                        .is_some_and(|def| {
+                            def.domain == worldwake_core::ActionDomain::Travel
+                        });
+                    if is_travel {
+                        if let Some(destination) = instance.targets.first().copied() {
+                            belief.last_known_place = Some(destination);
+                            belief.observed_tick = tick;
+                            belief.source = PerceptionSource::DirectObservation;
+                            changed = true;
+                        }
+                    }
+                }
             }
         }
 
@@ -1362,6 +1384,79 @@ mod tests {
                 kind: MismatchKind::EntityMissing,
             }]
         );
+    }
+
+    #[test]
+    fn departed_subject_with_active_travel_projects_destination_as_believed_place() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let origin = places[0];
+        let destination = *places.get(1).unwrap_or(&origin);
+        assert_ne!(
+            origin, destination,
+            "prototype world needs at least two places for departure coverage"
+        );
+        let (observer, traveler) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let traveler = txn.create_agent("Traveler", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, origin).unwrap();
+            // Place traveler at origin first, then put in transit.
+            txn.set_ground_location(traveler, origin).unwrap();
+            txn.set_in_transit(traveler).unwrap();
+            // Observer believed the traveler was at origin.
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                traveler,
+                stale_activity_belief(origin, ActionDomain::Travel, Some(destination)),
+            );
+            txn.set_component_agent_belief_store(observer, beliefs)
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, traveler)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x40; 32]));
+        let mut action_defs = ActionDefRegistry::new();
+        let travel_def = register_test_action(&mut action_defs, ActionDomain::Travel, "travel");
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(0),
+            active_instance(travel_def, traveler, vec![destination]),
+        )]);
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let believed = beliefs
+            .get_entity(&traveler)
+            .expect("departed subject should remain known");
+        // Departure-direction projection: the observer should now
+        // believe the traveler is at the travel destination, not the
+        // old origin — co-located agents observe which direction an
+        // entity departs (Principles 7, 15).
+        assert_eq!(
+            believed.last_known_place,
+            Some(destination),
+            "departure-direction projection should update last_known_place to travel destination"
+        );
+        assert_eq!(believed.observed_tick, Tick(3));
+        assert_eq!(believed.source, PerceptionSource::DirectObservation);
     }
 
     #[test]
