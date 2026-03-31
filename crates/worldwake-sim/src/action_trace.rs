@@ -373,7 +373,8 @@ impl ActionTraceDetail {
             | ActionPayload::Trade(_)
             | ActionPayload::Combat(_)
             | ActionPayload::Loot(_)
-            | ActionPayload::QueueForFacilityUse(_) => None,
+            | ActionPayload::QueueForFacilityUse(_)
+            | ActionPayload::StaffMarket(_) => None,
         }
     }
 

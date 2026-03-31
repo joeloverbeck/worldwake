@@ -27,6 +27,7 @@ pub enum ActionPayload {
     Investigate(InvestigateActionPayload),
     AskWitness(AskWitnessPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
+    StaffMarket(StaffMarketPayload),
 }
 
 impl ActionPayload {
@@ -181,6 +182,14 @@ impl ActionPayload {
             _ => None,
         }
     }
+
+    #[must_use]
+    pub const fn as_staff_market(&self) -> Option<&StaffMarketPayload> {
+        match self {
+            Self::StaffMarket(payload) => Some(payload),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -299,6 +308,11 @@ pub struct QueueForFacilityUsePayload {
     pub intended_action: ActionDefId,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct StaffMarketPayload {
+    pub commodity: CommodityKind,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -306,8 +320,9 @@ mod tests {
         CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
         DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
         InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
-        PunishActionPayload, QueueForFacilityUsePayload, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
+        PunishActionPayload, QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
@@ -501,6 +516,12 @@ mod tests {
         }
     }
 
+    fn sample_staff_market_payload() -> StaffMarketPayload {
+        StaffMarketPayload {
+            commodity: CommodityKind::Bread,
+        }
+    }
+
     fn sample_ask_witness_entity_only_payload() -> AskWitnessPayload {
         AskWitnessPayload {
             target: EntityId {
@@ -537,6 +558,7 @@ mod tests {
         assert_traits::<InvestigateActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
+        assert_traits::<StaffMarketPayload>();
     }
 
     #[test]
@@ -1048,5 +1070,25 @@ mod tests {
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn staff_market_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::StaffMarket(sample_staff_market_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn staff_market_accessor_returns_inner() {
+        let payload = ActionPayload::StaffMarket(sample_staff_market_payload());
+        assert_eq!(payload.as_staff_market(), Some(&sample_staff_market_payload()));
+        assert_eq!(payload.as_trade(), None);
+        assert_eq!(payload.as_harvest(), None);
+
+        assert_eq!(ActionPayload::None.as_staff_market(), None);
     }
 }

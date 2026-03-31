@@ -1,6 +1,6 @@
 # S04MERSELMAR-002: Add `StaffMarketPayload` and `ActionPayload::StaffMarket` variant
 
-**Status**: PENDING
+**Status**: DONE
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new action payload variant
