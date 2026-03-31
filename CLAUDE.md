@@ -270,6 +270,8 @@ sink.dump_agent(agent, &h.defs);
 eprintln!("{}", trace.outcome.summary());
 ```
 
+**Tick alignment**: `step_once()` processes tick N (the value of `scheduler.current_tick()` before stepping) and increments to N+1. Decision traces are keyed to tick N. To query the trace for a just-processed tick, capture `let processed_tick = h.scheduler.current_tick()` *before* calling `h.step_once()`, then use `sink.trace_at(agent, processed_tick)`. Using `scheduler.current_tick()` *after* `step_once()` queries tick N+1, which has no trace yet.
+
 ### When to use traces
 
 - **Test failure diagnosis**: Before adding `eprintln` to pipeline code, enable tracing and query the sink.
@@ -315,6 +317,8 @@ for event in sink.events() {
     eprintln!("{}", event.summary());
 }
 ```
+
+**Tick alignment**: The same rule applies as for decision traces — action trace events are keyed to the tick being processed (N), not the post-step tick (N+1). See the decision trace tick alignment note above.
 
 ### When to use action traces vs decision traces
 

@@ -1,6 +1,6 @@
 # E22INTSOATES-001: Integration test file scaffold + T24 (Player Agent Replacement)
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -106,3 +106,10 @@ Any topology builders or helper functions needed by multiple E22 scenarios shoul
 
 1. `cargo test -p worldwake-ai --test golden_integration -- t24`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Created `crates/worldwake-ai/tests/golden_integration.rs` with T24 scenario (2 tests). Custom 2-place topology (Alpha ↔ Beta, 3-tick travel). Agent A starts Human with Apple and submitted travel action, Agent B starts Ai with hunger. Swap via `WorldTxn` + `ControllerState` at mid-travel tick. Verifies: state preservation (inventory, wounds, needs, placement), AI activation (decision trace non-empty candidates), affordance legality for swapped Human agent, monotonic tick advancement, determinism via hash comparison. Also added tick-alignment documentation to CLAUDE.md for both decision and action trace sections.
+- **Deviations**: None. All ticket deliverables implemented as specified.
+- **Verification**: `cargo test -p worldwake-ai --test golden_integration -- t24` (2/2 pass), `cargo test -p worldwake-ai` (all pass, 0 failures), `cargo clippy --test golden_integration -p worldwake-ai` (clean).
