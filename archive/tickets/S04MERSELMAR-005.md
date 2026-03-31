@@ -1,6 +1,6 @@
 # S04MERSELMAR-005: Listing cleanup in trade system tick
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — extend trade system tick with listing pruning
@@ -89,3 +89,10 @@ Add the call after demand memory aging but before the function returns.
 
 1. `cargo test -p worldwake-systems -- trade`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**: Added `is_listing_valid()` and `prune_invalid_listings()` in `crates/worldwake-systems/src/trade.rs`. Called from `trade_system_tick()` before demand memory aging. Added 5 focused tests covering dead seller, departed seller, unpossessed lot, removed sale_kinds, and valid listing preservation.
+- **Deviations**: `prune_invalid_listings()` returns `()` instead of `Result<(), SystemError>` since it cannot fail (clippy pedantic). No other deviations.
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean. `cargo test --workspace` all pass (0 failures).
