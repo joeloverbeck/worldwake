@@ -29,10 +29,12 @@ Worldwake is a causality-first emergent micro-world simulation in Rust. CLI/text
 ```bash
 cargo build --workspace
 cargo test --workspace
-cargo clippy --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p worldwake-core           # single crate
 cargo test -p worldwake-core test_name # single test
 ```
+
+The clippy command must match CI exactly: `--all-targets` includes test/bench/example targets, and `-D warnings` promotes all warnings to errors. Running `cargo clippy --workspace` alone will miss test-target lints that CI enforces.
 
 Run the narrowest command that verifies your change first, then expand to broader workspace checks when warranted.
 
