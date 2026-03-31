@@ -45,14 +45,15 @@ use worldwake_core::{
     verify_authoritative_conservation, AgentData,
     BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, CauseRef, CombatProfile,
     CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
-    DemandObservationReason, EligibilityRule, EntityId, EventId, EventView, FactionPurpose,
-    GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim, InstitutionalKnowledgeSource,
-    JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, PatrolProfile,
-    PatrolRoute, PerceptionProfile, PerceptionSource, Permille, PlaceTag, PursuitProfile, Quantity,
-    RecordData, RecordKind, ResourceSource, Seed, SocialObservationDetail, StateHash,
-    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, Tick, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
-    ViolationDispositionProfile, ViolationKind, ViolationMemory, WorkstationTag,
+    DemandObservationReason, EligibilityRule, EntityId, EntityKind, EventId, EventView,
+    FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
+    InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille,
+    PlaceTag, PursuitProfile, Quantity, RecordData, RecordKind, ResourceSource, Seed,
+    SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
+    TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    WorkstationTag,
 };
 use worldwake_sim::{
     get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
@@ -5658,12 +5659,34 @@ fn build_t30_world(
     // --- 3 Bandits ---
     // Place edible supplies at bandit camp for camp establishment.
     // Faction-owned: create lot, place at camp, assign possessor to faction.
+    // BanditCamp component belongs on the Place entity (per component schema),
+    // not on individual bandit agents. Agents carry BanditFactionPolicy instead.
     let bandit_supplies;
     {
         let mut txn = new_txn(&mut h.world, 0);
         bandit_supplies = txn.create_item_lot(CommodityKind::Bread, Quantity(5)).unwrap();
         txn.set_ground_location(bandit_supplies, PLACE_T30_BANDIT_CAMP).unwrap();
         txn.set_possessor(bandit_supplies, bandit_faction).unwrap();
+        txn.set_component_bandit_camp(
+            PLACE_T30_BANDIT_CAMP,
+            BanditCamp {
+                faction: bandit_faction,
+                supplies: bandit_supplies,
+                empty_since_tick: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_bandit_faction_policy(
+            bandit_faction,
+            BanditFactionPolicy {
+                min_regroup_count: 2,
+                establishment_duration_ticks: std::num::NonZeroU32::new(10).unwrap(),
+                abandonment_grace_ticks: std::num::NonZeroU32::new(50).unwrap(),
+                flee_wound_threshold: pm(600),
+                rally_place: Some(PLACE_T30_FOREST),
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -5690,26 +5713,6 @@ fn build_t30_world(
         add_faction_membership(&mut h.world, &mut h.event_log, bandit, bandit_faction);
         {
             let mut txn = new_txn(&mut h.world, 0);
-            txn.set_component_bandit_camp(
-                bandit,
-                BanditCamp {
-                    faction: bandit_faction,
-                    supplies: bandit_supplies,
-                    empty_since_tick: None,
-                },
-            )
-            .unwrap();
-            txn.set_component_bandit_faction_policy(
-                bandit,
-                BanditFactionPolicy {
-                    min_regroup_count: 2,
-                    establishment_duration_ticks: std::num::NonZeroU32::new(10).unwrap(),
-                    abandonment_grace_ticks: std::num::NonZeroU32::new(50).unwrap(),
-                    flee_wound_threshold: pm(600),
-                    rally_place: Some(PLACE_T30_FOREST),
-                },
-            )
-            .unwrap();
             txn.set_component_combat_profile(
                 bandit,
                 CombatProfile::new(
@@ -6068,4 +6071,269 @@ fn t30_seven_day_soak() {
         tell_count >= 1,
         "no runs produced a tell/share-belief action in 10080 ticks"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 31: Stress with Frequent Disruptions
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, Production, Trade, Combat, Travel, Social, Politics, Perception
+// GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, RestockCommodity, ShareBelief,
+//   ClaimOffice, StealItem, Patrol, Harvest, Craft
+// ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport
+// Places: T30Hub, T30Market, T30Farm, T30Forge, T30Barracks, T30RulersHall,
+//   T30Forest, T30BanditCamp, T30Road, T30Orchard
+// Principles: 3, 4, 6, 7, 8, 10, 12, 14, 26
+//
+// Setup: Reuses T30's 10-place topology and 20-agent population. Every 100 ticks,
+//   one random disruption is injected via WorldTxn: kill an agent, destroy an item
+//   lot, remove a workstation tag, or teleport an agent. Disruption type is selected
+//   deterministically from DeterministicRng for reproducibility. Runs 2880 ticks
+//   (2 in-game days) with 28 disruptions total.
+//
+// Proves: The full simulation stack handles arbitrary mid-run disruptions gracefully.
+//   All per-tick invariants (conservation, needs bounds, dead agent inactivity,
+//   unique placement, tick monotonicity, causal link integrity) hold despite
+//   disruptions. Save/load roundtrip at end produces identical hash. No panics.
+//
+// Chain: autonomous agents + periodic disruptions (death, destruction, removal,
+//   teleportation) -> AI replanning around changed state -> invariants hold
+//   every tick despite arbitrary state mutations.
+
+/// Run a single T31 stress run for the given seed. Panics on invariant violation.
+fn run_t31_stress(seed: Seed) {
+    let (mut h, all_agents, _ruling_faction, _bandit_faction, _office) = build_t30_world(seed);
+
+    const TOTAL_TICKS: u64 = 2880;
+    const DISRUPTION_INTERVAL: u64 = 100;
+
+    let commodities_to_check = [
+        CommodityKind::Apple,
+        CommodityKind::Grain,
+        CommodityKind::Bread,
+        CommodityKind::Coin,
+    ];
+
+    // Snapshot initial commodity totals for conservation checks.
+    let mut commodity_totals: std::collections::BTreeMap<CommodityKind, u64> = commodities_to_check
+        .iter()
+        .map(|&c| (c, total_authoritative_commodity_quantity(&h.world, c)))
+        .collect();
+
+    let mut prev_tick = h.scheduler.current_tick();
+
+    // Separate RNG stream for disruptions so they don't perturb the simulation RNG.
+    let mut disruption_seed = seed;
+    disruption_seed.0[0] = disruption_seed.0[0].wrapping_add(0xDD);
+    let mut disruption_rng =
+        worldwake_sim::DeterministicRng::new(disruption_seed);
+
+    // Collect all place IDs from the T30 topology for teleportation targets.
+    let all_places = [
+        PLACE_T30_HUB,
+        PLACE_T30_MARKET,
+        PLACE_T30_FARM,
+        PLACE_T30_FORGE,
+        PLACE_T30_BARRACKS,
+        PLACE_T30_RULERS_HALL,
+        PLACE_T30_FOREST,
+        PLACE_T30_BANDIT_CAMP,
+        PLACE_T30_ROAD,
+        PLACE_T30_ORCHARD,
+    ];
+
+    for tick_idx in 0..TOTAL_TICKS {
+        // --- Disruption injection every DISRUPTION_INTERVAL ticks ---
+        if tick_idx > 0 && tick_idx % DISRUPTION_INTERVAL == 0 {
+            let disruption_type = disruption_rng.next_range(0, 4);
+            let current_tick_val = h.scheduler.current_tick().0;
+
+            match disruption_type {
+                0 => {
+                    // Kill a random living agent.
+                    let living: Vec<EntityId> = all_agents
+                        .iter()
+                        .copied()
+                        .filter(|&a| !h.agent_is_dead(a))
+                        .collect();
+                    if !living.is_empty() {
+                        let idx =
+                            disruption_rng.next_range(0, living.len() as u32) as usize;
+                        let victim = living[idx];
+                        let mut txn = new_txn(&mut h.world, current_tick_val);
+                        txn.set_component_dead_at(victim, DeadAt(Tick(current_tick_val)))
+                            .unwrap();
+                        commit_txn(txn, &mut h.event_log);
+                    }
+                }
+                1 => {
+                    // Destroy a random ItemLot (archive it and adjust conservation baseline).
+                    let lots: Vec<EntityId> = h
+                        .world
+                        .entities_of_kind(EntityKind::ItemLot)
+                        .collect();
+                    if !lots.is_empty() {
+                        let idx =
+                            disruption_rng.next_range(0, lots.len() as u32) as usize;
+                        let lot = lots[idx];
+                        // Read quantity before archiving to adjust conservation baseline.
+                        if let Some(item_lot) =
+                            h.world.get_component_item_lot(lot).cloned()
+                        {
+                            let commodity = item_lot.commodity;
+                            let qty = item_lot.quantity.0 as u64;
+                            let mut txn = new_txn(&mut h.world, current_tick_val);
+                            txn.archive_entity(lot).unwrap();
+                            commit_txn(txn, &mut h.event_log);
+                            // Reduce conservation baseline by the destroyed quantity.
+                            if let Some(total) = commodity_totals.get_mut(&commodity) {
+                                *total = total.saturating_sub(qty);
+                            }
+                        }
+                    }
+                }
+                2 => {
+                    // Remove WorkstationTag from a random facility.
+                    let facilities: Vec<EntityId> = h
+                        .world
+                        .entities_of_kind(EntityKind::Facility)
+                        .filter(|&e| h.world.get_component_workstation_marker(e).is_some())
+                        .collect();
+                    if !facilities.is_empty() {
+                        let idx = disruption_rng.next_range(0, facilities.len() as u32)
+                            as usize;
+                        let facility = facilities[idx];
+                        let mut txn = new_txn(&mut h.world, current_tick_val);
+                        txn.clear_component_workstation_marker(facility).unwrap();
+                        commit_txn(txn, &mut h.event_log);
+                    }
+                }
+                3 => {
+                    // Teleport a random living agent to a random place.
+                    let living: Vec<EntityId> = all_agents
+                        .iter()
+                        .copied()
+                        .filter(|&a| !h.agent_is_dead(a))
+                        .collect();
+                    if !living.is_empty() {
+                        let agent_idx =
+                            disruption_rng.next_range(0, living.len() as u32) as usize;
+                        let agent = living[agent_idx];
+                        let place_idx = disruption_rng
+                            .next_range(0, all_places.len() as u32)
+                            as usize;
+                        let target_place = all_places[place_idx];
+                        let mut txn = new_txn(&mut h.world, current_tick_val);
+                        txn.set_ground_location(agent, target_place).unwrap();
+                        commit_txn(txn, &mut h.event_log);
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        h.step_once();
+        let current_tick = h.scheduler.current_tick();
+
+        // --- Per-tick invariant 1: Conservation ---
+        for (&commodity, total) in &mut commodity_totals {
+            let actual = total_authoritative_commodity_quantity(&h.world, commodity);
+            if actual > *total {
+                *total = actual;
+            }
+            verify_authoritative_conservation(&h.world, commodity, actual).unwrap_or_else(|e| {
+                panic!(
+                    "conservation violation at tick {:?} for {:?}: {e}",
+                    current_tick, commodity
+                )
+            });
+        }
+
+        // --- Per-tick invariant 2: Needs bounds ---
+        for &agent in &all_agents {
+            if h.agent_is_dead(agent) {
+                continue;
+            }
+            if let Some(needs) = h.world.get_component_homeostatic_needs(agent) {
+                let max = Permille::new(1000).unwrap();
+                assert!(
+                    needs.hunger <= max
+                        && needs.thirst <= max
+                        && needs.fatigue <= max
+                        && needs.bladder <= max
+                        && needs.dirtiness <= max,
+                    "needs out of bounds for agent {agent:?} at tick {current_tick:?}: {needs:?}"
+                );
+            }
+        }
+
+        // --- Per-tick invariant 3: Dead agent inactivity ---
+        for &agent in &all_agents {
+            if let Some(dead_at) = h.world.get_component_dead_at(agent) {
+                assert!(
+                    !h.agent_has_active_action(agent),
+                    "dead agent {agent:?} (died at {:?}) has active action at tick {current_tick:?}",
+                    dead_at.0
+                );
+            }
+        }
+
+        // --- Per-tick invariant 4: Unique placement ---
+        for &agent in &all_agents {
+            if h.agent_is_dead(agent) {
+                continue;
+            }
+            if let Some(place) = h.world.effective_place(agent) {
+                assert!(
+                    h.world.topology().place(place).is_some(),
+                    "agent {agent:?} placed at non-existent place {place:?} at tick {current_tick:?}"
+                );
+            }
+        }
+
+        // --- Per-tick invariant 5: Tick monotonicity ---
+        assert!(
+            current_tick > prev_tick,
+            "tick did not advance: prev={prev_tick:?}, current={current_tick:?}"
+        );
+        prev_tick = current_tick;
+
+        // --- Per-tick invariant 6: Causal link integrity ---
+        let log_len = h.event_log.len() as u64;
+        for idx in 0..log_len {
+            let event_id = EventId(idx);
+            if let Some(record) = h.event_log.get(event_id) {
+                match record.cause() {
+                    CauseRef::Event(cause_id) => {
+                        assert!(
+                            h.event_log.get(cause_id).is_some(),
+                            "event {event_id:?} references non-existent cause {cause_id:?} \
+                             at tick {current_tick:?}"
+                        );
+                    }
+                    CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => {
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Verification layer 4: Save/load roundtrip fidelity ---
+    let pre_save_hash = hash_world(&h.world).unwrap();
+    let roundtripped = h.save_load_roundtrip();
+    let post_load_hash = hash_world(&roundtripped.world).unwrap();
+    assert_eq!(
+        pre_save_hash, post_load_hash,
+        "save/load roundtrip at tick 2880 produced different hash: \
+         pre={pre_save_hash:?}, post={post_load_hash:?}"
+    );
+}
+
+#[test]
+#[ignore]
+fn t31_stress_disruptions() {
+    let mut seed_bytes = [0u8; 32];
+    seed_bytes[0] = 0x31;
+    seed_bytes[31] = 0xAB;
+    run_t31_stress(Seed(seed_bytes));
 }

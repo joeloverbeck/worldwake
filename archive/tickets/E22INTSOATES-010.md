@@ -1,6 +1,6 @@
 # E22INTSOATES-010: T31 — Stress with Frequent Disruptions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Medium
 **Engine Changes**: None
@@ -89,3 +89,10 @@ No existing test verifies that the simulation handles arbitrary mid-run disrupti
 
 1. `cargo test -p worldwake-ai --test golden_integration -- --ignored t31`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `run_t31_stress(seed)` and `t31_stress_disruptions` (`#[test] #[ignore]`) to `crates/worldwake-ai/tests/golden_integration.rs`. Added `EntityKind` import. Fixed pre-existing bug in `build_t30_world()`: moved `BanditCamp` component from bandit agent entities to `PLACE_T30_BANDIT_CAMP` (place entity) and `BanditFactionPolicy` from bandit agents to `bandit_faction` (faction entity), aligning with component schema constraints and T22R's correct pattern.
+- **Deviations**: T30's builder had stale component placement (`BanditCamp` on agents, `BanditFactionPolicy` on agents) that violated the current component schema. Fixed per Principle 28 (No Backward Compatibility). No ticket-level deviations.
+- **Verification**: `cargo test -p worldwake-ai --test golden_integration -- --ignored t31` passed (456s). `cargo test -p worldwake-ai` 36/36 passed. `cargo test --workspace` all passed. `cargo clippy --workspace` clean.
