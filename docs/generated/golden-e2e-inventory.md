@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 13
-- Files contributing `golden_*` tests: 13
-- Total `golden_*` tests: 209
+- Golden test files: 14
+- Files contributing `golden_*` tests: 14
+- Total `golden_*` tests: 220
 
 ## Per-File Inventory
 
@@ -21,11 +21,12 @@ Do not hand-edit it.
 | `golden_offices.rs` | 21 |
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
+| `golden_pursuit.rs` | 6 |
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 6 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 6 |
-| `golden_travel_physiology.rs` | 7 |
+| `golden_travel_physiology.rs` | 12 |
 
 ### `golden_ai_decisions.rs`
 
@@ -219,6 +220,15 @@ Do not hand-edit it.
 - `golden_faction_ownership_producer_owner_delegation`
 - `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
 
+### `golden_pursuit.rs`
+
+- `golden_bandit_witnesses_and_pursues`
+- `golden_bandit_witnesses_and_pursues_replays_deterministically`
+- `golden_stale_pursuit_arrival_failure`
+- `golden_stale_pursuit_arrival_failure_replays_deterministically`
+- `golden_combat_flee_re_pursue`
+- `golden_combat_flee_re_pursue_replays_deterministically`
+
 ### `golden_social.rs`
 
 - `golden_agent_autonomously_tells_colocated_peer`
@@ -274,3 +284,8 @@ Do not hand-edit it.
 - `golden_latrine_preferred`
 - `golden_wilderness_fallback`
 - `golden_deprivation_accident`
+- `golden_witness_observation`
+- `golden_no_witness`
+- `golden_need_continuity_toilet`
+- `golden_need_continuity_wilderness`
+- `golden_need_continuity_accident`

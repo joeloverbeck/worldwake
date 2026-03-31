@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 79
-- Files contributing scenario metadata: 13
-- `golden_*` tests associated with scenario blocks: 198
+- Scenario blocks with explicit metadata: 85
+- Files contributing scenario metadata: 14
+- `golden_*` tests associated with scenario blocks: 209
 
 ## Scenario Inventory
 
@@ -79,6 +79,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `4` | Materialization Barrier Chain | `golden_production.rs:2907` | `golden_materialization_barrier_chain` | — |
 | `6b` | Multi-Recipe Craft Path | `golden_production.rs:3007` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically` |
 | `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:3164` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
+| `68` | Bandit witnesses traveler leave, pursues, attacks | `golden_pursuit.rs:339` | `golden_bandit_witnesses_and_pursues` | `golden_bandit_witnesses_and_pursues_replays_deterministically` |
+| `69` | Bandit pursues stale target, arrival failure | `golden_pursuit.rs:480` | `golden_stale_pursuit_arrival_failure` | `golden_stale_pursuit_arrival_failure_replays_deterministically` |
+| `70` | Combat → flee → re-pursue | `golden_pursuit.rs:625` | `golden_combat_flee_re_pursue` | `golden_combat_flee_re_pursue_replays_deterministically` |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
 | `2d-craft` | Merchant Restock via Prerequisite-Aware Craft | `golden_supply_chain.rs:1932` | `golden_merchant_restocks_via_prerequisite_aware_craft`<br>`golden_stale_prerequisite_belief_discovery_replan`<br>`golden_stale_prerequisite_ask_witness_chain` | `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`<br>`golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`<br>`golden_stale_prerequisite_ask_witness_chain_replays_deterministically` |
 | `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:1979` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
@@ -88,13 +91,16 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:881` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
 | `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:916` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
 | `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:951` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
-| `58` | Travel Need Escalation | `golden_travel_physiology.rs:52` | `golden_travel_escalation` | — |
-| `59` | Critical Bladder Local Relief | `golden_travel_physiology.rs:198` | `golden_critical_bladder_local_relief` | — |
-| `60` | Agent Diversity in Travel Escalation | `golden_travel_physiology.rs:336` | `golden_agent_diversity` | — |
-| `61` | Travel Interrupt from Bladder Escalation | `golden_travel_physiology.rs:513` | `golden_travel_interrupt_from_bladder_escalation` | — |
-| `62` | Latrine Preferred — toilet at Latrine place | `golden_travel_physiology.rs:687` | `golden_latrine_preferred` | — |
-| `63` | Wilderness Fallback — relieve_wilderness at outdoor place | `golden_travel_physiology.rs:864` | `golden_wilderness_fallback` | — |
-| `64` | Deprivation Accident — no relief option available | `golden_travel_physiology.rs:1040` | `golden_deprivation_accident` | — |
+| `58` | Travel Need Escalation | `golden_travel_physiology.rs:53` | `golden_travel_escalation` | — |
+| `59` | Critical Bladder Local Relief | `golden_travel_physiology.rs:199` | `golden_critical_bladder_local_relief` | — |
+| `60` | Agent Diversity in Travel Escalation | `golden_travel_physiology.rs:337` | `golden_agent_diversity` | — |
+| `61` | Travel Interrupt from Bladder Escalation | `golden_travel_physiology.rs:514` | `golden_travel_interrupt_from_bladder_escalation` | — |
+| `62` | Latrine Preferred — toilet at Latrine place | `golden_travel_physiology.rs:688` | `golden_latrine_preferred` | — |
+| `63` | Wilderness Fallback — relieve_wilderness at outdoor place | `golden_travel_physiology.rs:865` | `golden_wilderness_fallback` | — |
+| `64` | Deprivation Accident — no relief option available | `golden_travel_physiology.rs:1041` | `golden_deprivation_accident` | — |
+| `65` | Witness Observation — co-located agent perceives wilderness relief | `golden_travel_physiology.rs:1201` | `golden_witness_observation` | — |
+| `66` | No Witness — isolated agent produces no social consequences | `golden_travel_physiology.rs:1409` | `golden_no_witness` | — |
+| `67` | Need Continuity — cross-path bladder and dirtiness invariants | `golden_travel_physiology.rs:1602` | `golden_need_continuity_toilet`<br>`golden_need_continuity_wilderness`<br>`golden_need_continuity_accident` | — |
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -1131,6 +1137,60 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: ProducerOwner policy -> faction-owned output -> member pickup / outsider blocked -> outsider travel + fallback -> hunger relief for both.
 
+### Scenario 68: Bandit witnesses traveler leave, pursues, attacks
+
+- Source: `golden_pursuit.rs:339`
+- Systems: Perception, AI, Travel, Combat
+- GoalKinds: RaidTarget
+- ActionDomains: Travel, Combat
+- Places: PLACE_A (Hideout), PLACE_B (Crossroads)
+- Principles: 1, 3, 7, 14, 20, 21
+- Primary tests: `golden_bandit_witnesses_and_pursues`
+- Replay tests: `golden_bandit_witnesses_and_pursues_replays_deterministically`
+- All tests: `golden_bandit_witnesses_and_pursues`, `golden_bandit_witnesses_and_pursues_replays_deterministically`
+
+**Setup**: Bandit and traveler start co-located at Hideout (PLACE_A). Traveler carries 5 coins (raid motive). Bandit has PursuitProfile with min_location_confidence=500, max_pursuit_travel_ticks=10. Travel from A→B takes 2 ticks. Needs are sated; no competing goals.
+
+**Proves**: 1. Remote pursuit emerges from perception → belief → candidate → plan search → travel → attack without any chase script. 2. Attack occurs only at real co-location — no synthesized combat. 3. Pursuit is belief-backed: bandit uses observed departure direction, not omniscient target position.
+
+**Cross-system chain**: co-location observation -> traveler departs -> perception updates belief -> RaidTarget candidate emitted -> Travel+Attack plan -> travel to B -> attack at B -> traveler wounded.
+
+### Scenario 69: Bandit pursues stale target, arrival failure
+
+- Source: `golden_pursuit.rs:480`
+- Systems: Perception, AI, Travel
+- GoalKinds: RaidTarget
+- ActionDomains: Travel
+- Places: PLACE_A (Hideout), PLACE_B (Crossroads), PLACE_C (Haven)
+- Principles: 1, 3, 7, 14, 21
+- Primary tests: `golden_stale_pursuit_arrival_failure`
+- Replay tests: `golden_stale_pursuit_arrival_failure_replays_deterministically`
+- All tests: `golden_stale_pursuit_arrival_failure`, `golden_stale_pursuit_arrival_failure_replays_deterministically`
+
+**Setup**: Three places (A↔B↔C). Bandit and traveler co-located at A. Traveler departs to B, bandit observes. Traveler continues to C before bandit arrives at B. Bandit arrives at B — target absent.
+
+**Proves**: 1. Arrival at stale location produces honest failure, not omniscient continuation to C. 2. BlockingFact::TargetGone is recorded, feeding BlockedIntentMemory. 3. Bandit replans normally after the failed pursuit.
+
+**Cross-system chain**: co-location observation -> traveler departs to B -> perception belief -> pursuit plan Travel(A→B)+Attack -> traveler moves on to C -> bandit arrives at B -> target absent -> TargetGone blocker -> honest replan.
+
+### Scenario 70: Combat → flee → re-pursue
+
+- Source: `golden_pursuit.rs:625`
+- Systems: Perception, AI, Travel, Combat
+- GoalKinds: RaidTarget, EngageHostile
+- ActionDomains: Travel, Combat
+- Places: PLACE_A (Hideout), PLACE_B (Crossroads)
+- Principles: 1, 3, 7, 14, 20, 21
+- Primary tests: `golden_combat_flee_re_pursue`
+- Replay tests: `golden_combat_flee_re_pursue_replays_deterministically`
+- All tests: `golden_combat_flee_re_pursue`, `golden_combat_flee_re_pursue_replays_deterministically`
+
+**Setup**: Two places (A↔B, 2-tick travel). Bandit and traveler start co-located at A. Initial combat begins — bandit attacks. Traveler (human-controlled) flees to B after taking a wound. Bandit observes departure direction and initiates fresh pursuit to B, bounded by travel budget and confidence.
+
+**Proves**: 1. After combat, fresh departure observation can trigger a new pursuit cycle (combat → flee → observe → pursue). 2. Re-pursuit is bounded by PursuitProfile parameters. 3. If traveler is at B on arrival, a second engagement occurs.
+
+**Cross-system chain**: co-location -> combat -> traveler flees to B -> perception observes departure -> fresh belief about B -> new RaidTarget candidate -> Travel(A→B)+Attack plan -> second engagement at B.
+
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 
 - Source: `golden_social.rs:347`
@@ -1291,7 +1351,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 58: Travel Need Escalation
 
-- Source: `golden_travel_physiology.rs:52`
+- Source: `golden_travel_physiology.rs:53`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -1309,7 +1369,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 59: Critical Bladder Local Relief
 
-- Source: `golden_travel_physiology.rs:198`
+- Source: `golden_travel_physiology.rs:199`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -1327,7 +1387,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 60: Agent Diversity in Travel Escalation
 
-- Source: `golden_travel_physiology.rs:336`
+- Source: `golden_travel_physiology.rs:337`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -1345,7 +1405,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 61: Travel Interrupt from Bladder Escalation
 
-- Source: `golden_travel_physiology.rs:513`
+- Source: `golden_travel_physiology.rs:514`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Relieve, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs, Production
@@ -1363,7 +1423,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 62: Latrine Preferred — toilet at Latrine place
 
-- Source: `golden_travel_physiology.rs:687`
+- Source: `golden_travel_physiology.rs:688`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -1381,7 +1441,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 63: Wilderness Fallback — relieve_wilderness at outdoor place
 
-- Source: `golden_travel_physiology.rs:864`
+- Source: `golden_travel_physiology.rs:865`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -1399,7 +1459,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 64: Deprivation Accident — no relief option available
 
-- Source: `golden_travel_physiology.rs:1040`
+- Source: `golden_travel_physiology.rs:1041`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -1414,3 +1474,57 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: When no relief action is available and the agent cannot reach one, the needs system's deprivation accident fires after bladder_accident_tolerance_ticks of critical bladder exposure. Waste is created, bladder resets to pm(0), dirtiness increases by the bladder pressure at accident time. No relief action is committed.
 
 **Cross-system chain**: critical bladder pressure -> Relieve goal ranked -> planner finds no relief affordance -> no action started -> needs system tracks critical exposure ticks -> tolerance exceeded -> deprivation accident fires -> waste created, bladder=0, dirtiness+=bladder.
+
+### Scenario 65: Witness Observation — co-located agent perceives wilderness relief
+
+- Source: `golden_travel_physiology.rs:1201`
+- Systems: Needs, AI, Perception
+- GoalKinds: Relieve
+- ActionDomains: Needs
+- Places: ForestPath
+- Principles: 3, 7, 26
+- Primary tests: `golden_witness_observation`
+- Replay tests: None
+- All tests: `golden_witness_observation`
+
+**Setup**: Two agents at ForestPath (Forest + Trail tags, both outdoor). Agent A has critical bladder (pm(950)) and relieves via relieve_wilderness. Agent B has PerceptionProfile with observation_fidelity=pm(1000) (guaranteed observation) and no bladder pressure (idle). Both agents have world beliefs seeded.
+
+**Proves**: The perception pipeline processes VisibilitySpec::SamePlace events from relieve_wilderness. A co-located agent with PerceptionProfile witnesses the WildernessRelief event, as proven by the perception trace recording a passed observation for Agent B on an event tagged WildernessRelief with actor=Agent A. This is the social consequence verification layer: witnesses observe relief events only if co-located (Principle 7: Locality).
+
+**Cross-system chain**: critical bladder -> Relieve goal -> relieve_wilderness committed with VisibilitySpec::SamePlace -> perception system resolves co-located witnesses -> Agent B passes observation check -> perception trace records observation.
+
+### Scenario 66: No Witness — isolated agent produces no social consequences
+
+- Source: `golden_travel_physiology.rs:1409`
+- Systems: Needs, AI, Perception
+- GoalKinds: Relieve
+- ActionDomains: Needs
+- Places: ForestPath
+- Principles: 3, 7
+- Primary tests: `golden_no_witness`
+- Replay tests: None
+- All tests: `golden_no_witness`
+
+**Setup**: One agent alone at ForestPath (Forest + Trail tags, outdoor) with critical bladder (pm(950)). No other agents at ForestPath. A second agent exists at a different place (VillageSquare) with PerceptionProfile to confirm it does NOT observe the event.
+
+**Proves**: Agents who relieve in isolation produce no social consequences. VisibilitySpec::SamePlace ensures only co-located agents can witness the event (Principle 7: Locality). A distant agent with PerceptionProfile does NOT observe. Physical consequences still exist: waste at place, dirtiness on agent.
+
+**Cross-system chain**: critical bladder -> Relieve goal -> relieve_wilderness committed with VisibilitySpec::SamePlace -> perception system resolves witnesses -> no co-located observers -> no perception trace for distant agent -> physical consequences (waste, dirtiness) still produced.
+
+### Scenario 67: Need Continuity — cross-path bladder and dirtiness invariants
+
+- Source: `golden_travel_physiology.rs:1602`
+- Systems: Needs, AI
+- GoalKinds: Relieve
+- ActionDomains: Needs
+- Places: PublicLatrine, ForestPath, CommonHouse
+- Principles: 3, 8, 26
+- Primary tests: `golden_need_continuity_toilet`, `golden_need_continuity_wilderness`, `golden_need_continuity_accident`
+- Replay tests: None
+- All tests: `golden_need_continuity_toilet`, `golden_need_continuity_wilderness`, `golden_need_continuity_accident`
+
+**Setup**: Three sub-scenarios with separate harnesses: (a) Agent at PublicLatrine, critical bladder → toilet → bladder=0, dirtiness unchanged. (b) Agent at ForestPath, critical bladder → relieve_wilderness → bladder=0, dirtiness += wilderness_relief_dirtiness_penalty. (c) Agent at CommonHouse (indoor, no relief), critical bladder, bladder_accident_tolerance_ticks=1 → deprivation accident → bladder=0, dirtiness at max consequence level.
+
+**Proves**: Across all relief paths (toilet, wilderness, accident), bladder is always exactly Permille(0) at the commit/accident boundary. No partial resets. Dirtiness reflects the exact penalty for each path: 0 for toilet, wilderness_relief_dirtiness_penalty for wilderness, and the full bladder pressure value for accident. This is the cross-cutting need continuity invariant (Principle 3: Concrete State).
+
+**Cross-system chain**: Each sub-scenario: critical bladder -> path-specific relief -> bladder=0, dirtiness=path_penalty. The invariant holds regardless of which relief mechanism fires.

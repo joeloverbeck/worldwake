@@ -336,7 +336,7 @@ fn request_travel(h: &mut GoldenHarness, traveler: EntityId, destination: Entity
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: Bandit witnesses traveler leave, pursues, attacks
+// Scenario 68: Bandit witnesses traveler leave, pursues, attacks
 // ---------------------------------------------------------------------------
 //
 // Systems: Perception, AI, Travel, Combat
@@ -477,7 +477,7 @@ fn golden_bandit_witnesses_and_pursues_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 2: Bandit pursues stale target, arrival failure
+// Scenario 69: Bandit pursues stale target, arrival failure
 // ---------------------------------------------------------------------------
 //
 // Systems: Perception, AI, Travel
@@ -622,7 +622,7 @@ fn golden_stale_pursuit_arrival_failure_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 3: Combat → flee → re-pursue
+// Scenario 70: Combat → flee → re-pursue
 // ---------------------------------------------------------------------------
 //
 // Systems: Perception, AI, Travel, Combat
