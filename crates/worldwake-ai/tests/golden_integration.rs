@@ -26,29 +26,37 @@
 //! causes vacancy, guards get distracted by political goals, thief steals
 //! during the patrol gap, succession completes, guard returns, and theft
 //! is suppressed by witness deterrence. Crosses ≥ 5 `ActionDomain`s.
+//!
+//! T22R: Bandit Camp Destruction → Diaspora → Reconstitution → Economic Effect —
+//! verifies the longest causal chain in E22: camp destruction through guard
+//! attack, bandit diaspora and regrouping, new camp establishment at rally
+//! point, raids from new location, merchant belief-driven route adaptation,
+//! and downstream supply delay.
 
 mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
-use worldwake_ai::{AgentTickDriver, DecisionOutcome, PlanningBudget};
+use worldwake_ai::{
+    AgentTickDriver, DecisionOutcome, PlannerOpKind, PlanningBudget, SelectedPlanSource,
+};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, AgentData, BanditCamp, BanditFactionPolicy,
-    BeliefConfidencePolicy, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, EligibilityRule, EntityId,
-    FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
-    InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, PatrolProfile, PatrolRoute, PerceptionProfile,
-    PerceptionSource, PlaceTag, PursuitProfile, Quantity, RecordData, RecordKind, ResourceSource,
-    Seed, SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
-    TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
-    WorkstationTag,
+    verify_authoritative_conservation, AgentData,
+    BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, CombatProfile,
+    CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
+    DemandObservationReason, EligibilityRule, EntityId, FactionPurpose, GoalKey, GoalKind,
+    HomeostaticNeeds, InstitutionalClaim, InstitutionalKnowledgeSource,
+    JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, PatrolProfile,
+    PatrolRoute, PerceptionProfile, PerceptionSource, PlaceTag, PursuitProfile, Quantity,
+    RecordData, RecordKind, ResourceSource, Seed, SocialObservationDetail, StateHash,
+    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, Tick, Topology,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile,
+    ViolationDispositionProfile, ViolationKind, ViolationMemory, WorkstationTag,
 };
 use worldwake_sim::{
-    get_affordances, ActionRequestMode, ActionTraceDetail, ActionTraceKind, ControllerState,
-    InputKind, PerAgentBeliefView, RequestProvenance,
+    get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
+    CombatActionPayload, ControllerState, InputKind, PerAgentBeliefView, RequestProvenance,
 };
 
 // ---------------------------------------------------------------------------
@@ -4160,5 +4168,1004 @@ fn t33_vacancy_crime_recovery_seed_2() {
     assert_eq!(
         first, second,
         "T33 vacancy crime recovery scenario must replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T22R: Bandit Camp Destruction → Diaspora → Reconstitution → Economic Effect
+// ---------------------------------------------------------------------------
+
+const PLACE_T22R_OLD_CAMP: EntityId = entity(160);
+const PLACE_T22R_RALLY_GLEN: EntityId = entity(161);
+const PLACE_T22R_MARKET: EntityId = entity(162);
+const PLACE_T22R_SAFE_ROUTE: EntityId = entity(163);
+const PLACE_T22R_FARM: EntityId = entity(164);
+const PLACE_T22R_DOWNSTREAM: EntityId = entity(165);
+
+/// Six-place topology for T22R camp reconstitution:
+///
+///   OldCamp ↔ RallyGlen ↔ Market ↔ SafeRoute ↔ Farm
+///                ↑                                 ↑
+///                └─────────────2────────────────────┘
+///   Market ↔ DownstreamMarket
+///
+/// Short route (Market→RallyGlen→Farm): 2+2=4 ticks (becomes dangerous)
+/// Safe route  (Market→SafeRoute→Farm): 3+3=6 ticks (safe, shorter than
+/// penalized dangerous route)
+fn build_t22r_topology() -> Topology {
+    let mut t = Topology::new();
+    t.add_place(
+        PLACE_T22R_OLD_CAMP,
+        place("T22R Old Camp", &[PlaceTag::Camp, PlaceTag::Forest]),
+    )
+    .unwrap();
+    t.add_place(
+        PLACE_T22R_RALLY_GLEN,
+        place("T22R Rally Glen", &[PlaceTag::Forest, PlaceTag::Camp]),
+    )
+    .unwrap();
+    t.add_place(
+        PLACE_T22R_MARKET,
+        place("T22R Market", &[PlaceTag::Village, PlaceTag::Store]),
+    )
+    .unwrap();
+    t.add_place(
+        PLACE_T22R_SAFE_ROUTE,
+        place("T22R Safe Route", &[PlaceTag::Village]),
+    )
+    .unwrap();
+    t.add_place(
+        PLACE_T22R_FARM,
+        place("T22R Farm", &[PlaceTag::Farm, PlaceTag::Field]),
+    )
+    .unwrap();
+    t.add_place(
+        PLACE_T22R_DOWNSTREAM,
+        place("T22R Downstream Market", &[PlaceTag::Village]),
+    )
+    .unwrap();
+
+    // OldCamp ↔ RallyGlen (2 ticks)
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(600), PLACE_T22R_OLD_CAMP, PLACE_T22R_RALLY_GLEN, 2, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(601), PLACE_T22R_RALLY_GLEN, PLACE_T22R_OLD_CAMP, 2, None)
+            .unwrap(),
+    )
+    .unwrap();
+    // RallyGlen ↔ Market (2 ticks) — short leg 1
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(602), PLACE_T22R_RALLY_GLEN, PLACE_T22R_MARKET, 2, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(603), PLACE_T22R_MARKET, PLACE_T22R_RALLY_GLEN, 2, None)
+            .unwrap(),
+    )
+    .unwrap();
+    // RallyGlen ↔ Farm (2 ticks) — short leg 2
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(604), PLACE_T22R_RALLY_GLEN, PLACE_T22R_FARM, 2, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(605), PLACE_T22R_FARM, PLACE_T22R_RALLY_GLEN, 2, None)
+            .unwrap(),
+    )
+    .unwrap();
+    // Market ↔ SafeRoute (3 ticks) — safe leg 1
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(606), PLACE_T22R_MARKET, PLACE_T22R_SAFE_ROUTE, 3, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(607), PLACE_T22R_SAFE_ROUTE, PLACE_T22R_MARKET, 3, None)
+            .unwrap(),
+    )
+    .unwrap();
+    // SafeRoute ↔ Farm (3 ticks) — safe leg 2
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(608), PLACE_T22R_SAFE_ROUTE, PLACE_T22R_FARM, 3, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(609), PLACE_T22R_FARM, PLACE_T22R_SAFE_ROUTE, 3, None)
+            .unwrap(),
+    )
+    .unwrap();
+    // Market ↔ Downstream (3 ticks)
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(610), PLACE_T22R_MARKET, PLACE_T22R_DOWNSTREAM, 3, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t.add_edge(
+        TravelEdge::new(TravelEdgeId(611), PLACE_T22R_DOWNSTREAM, PLACE_T22R_MARKET, 3, None)
+            .unwrap(),
+    )
+    .unwrap();
+    t
+}
+
+fn t22r_perception() -> PerceptionProfile {
+    PerceptionProfile {
+        memory_capacity: 64,
+        memory_retention_ticks: 480,
+        observation_fidelity: pm(875),
+        confidence_policy: BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
+    }
+}
+
+fn t22r_bandit_combat() -> CombatProfile {
+    CombatProfile::new(
+        pm(700),
+        pm(450),
+        pm(220),
+        pm(250),
+        pm(50),
+        pm(15),
+        pm(0),
+        pm(150),
+        pm(40),
+        nz(2),
+        nz(4),
+    )
+}
+
+fn t22r_guard_combat() -> CombatProfile {
+    CombatProfile::new(
+        pm(1000),
+        pm(700),
+        pm(900),
+        pm(800),
+        pm(120),
+        pm(40),
+        pm(0),
+        pm(320),
+        pm(120),
+        nz(1),
+        nz(4),
+    )
+}
+
+fn t22r_traveler_combat() -> CombatProfile {
+    CombatProfile::new(
+        pm(350),
+        pm(250),
+        pm(200),
+        pm(180),
+        pm(40),
+        pm(12),
+        pm(0),
+        pm(90),
+        pm(25),
+        nz(2),
+        nz(3),
+    )
+}
+
+fn t22r_trade_disposition() -> TradeDispositionProfile {
+    TradeDispositionProfile {
+        negotiation_round_ticks: nz(4),
+        initial_offer_bias: pm(500),
+        concession_rate: pm(100),
+        demand_memory_retention_ticks: 240,
+    }
+}
+
+fn t22r_set_control(h: &mut GoldenHarness, agent: EntityId, cs: ControlSource, tick: u64) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source: cs })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn t22r_request_travel(h: &mut GoldenHarness, actor: EntityId, dest: EntityId) {
+    let travel_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("full registries should include travel");
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id: travel_def_id,
+            targets: vec![dest],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+}
+
+fn t22r_agent_knows_conflict_at(
+    h: &GoldenHarness,
+    agent: EntityId,
+    at_place: EntityId,
+    subjects: &[EntityId],
+) -> bool {
+    h.world
+        .get_component_agent_belief_store(agent)
+        .is_some_and(|store| {
+            store.social_observations.iter().any(|obs| {
+                obs.place == at_place
+                    && matches!(
+                        obs.detail,
+                        SocialObservationDetail::WitnessedConflict { actor, .. }
+                            if subjects.contains(&actor)
+                    )
+            })
+        })
+}
+
+fn t22r_latest_restock_travel_dest(
+    h: &GoldenHarness,
+    merchant: EntityId,
+    commodity: CommodityKind,
+) -> Option<EntityId> {
+    h.driver
+        .trace_sink()?
+        .traces_for(merchant)
+        .into_iter()
+        .rev()
+        .find_map(|trace| {
+            let DecisionOutcome::Planning(planning) = &trace.outcome else {
+                return None;
+            };
+            if planning.selection.selected_plan_source != Some(SelectedPlanSource::SearchSelection)
+            {
+                return None;
+            }
+            if !planning
+                .selection
+                .selected_goal_is(GoalKey::from(GoalKind::RestockCommodity { commodity }))
+            {
+                return None;
+            }
+            planning
+                .selection
+                .selected_plan
+                .as_ref()?
+                .steps
+                .iter()
+                .find(|step| step.op_kind == PlannerOpKind::Travel)
+                .and_then(|step| step.targets.first().copied())
+        })
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
+//              Economic Effect (T22 longest chain)
+// ---------------------------------------------------------------------------
+//
+// Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
+// GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
+// ActionDomains: Combat, Generic, Travel, Social, Production
+// Places: T22ROldCamp, T22RRallyGlen, T22RMarket, T22RSafeRoute, T22RFarm, T22RDownstream
+// Principles: 1, 3, 7, 12, 14, 17, 25
+//
+// Setup: Six-place topology with two routes between Market and Farm: a short
+//   route through RallyGlen (4 ticks) and a safe route through SafeRoute
+//   (8 ticks). Bandits occupy OldCamp with rally doctrine pointing to
+//   RallyGlen. Guards at OldCamp will attack. Merchant at Market sells
+//   apples with a restock demand observation. Farm has apple source. A
+//   traveler with apples and a witness wait at Market.
+//
+// Proves:
+//   1. Camp destruction → diaspora → regrouping → EstablishBanditCamp at
+//      rally point is a continuous emergent chain.
+//   2. Raids from the reconstituted camp location are lawful combat from
+//      new-camp faction entities, not old-camp remnants.
+//   3. Merchant route adaptation is belief-driven (Principle 14): the merchant
+//      reroutes only after receiving danger information via social tell, not
+//      from any omniscient danger cache.
+//   4. Conservation holds for all commodity types throughout the chain.
+//
+// Chain: guard attack -> camp destruction -> bandit flee -> regroup at rally
+//   -> establish new camp -> traveler arrives -> raid at rally -> witness
+//   observes -> witness tells merchant -> merchant reroutes via safe route
+//   -> downstream supply delay.
+
+#[allow(clippy::too_many_lines)]
+fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = build_harness_with_topology(seed, build_t22r_topology());
+
+    // --- Farm: OrchardRow workstation + ResourceSource ---
+    let orchard_ws = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        PLACE_T22R_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    // --- Bandit faction with rally doctrine ---
+    let mut txn = new_txn(&mut h.world, 0);
+    let faction = txn.create_faction("T22R Forest Bandits").unwrap();
+
+    // --- 3 Bandits at OldCamp ---
+    let mut bandits = Vec::new();
+    for name in ["T22R Rook", "T22R Mora", "T22R Tarn", "T22R Sable"] {
+        let bandit = txn.create_agent(name, ControlSource::Ai).unwrap();
+        txn.add_member(bandit, faction).unwrap();
+        txn.set_ground_location(bandit, PLACE_T22R_OLD_CAMP)
+            .unwrap();
+        txn.set_component_perception_profile(bandit, t22r_perception())
+            .unwrap();
+        txn.set_component_combat_profile(bandit, t22r_bandit_combat())
+            .unwrap();
+        txn.set_component_utility_profile(
+            bandit,
+            UtilityProfile {
+                social_weight: pm(650),
+                danger_weight: pm(900),
+                courage: pm(150),
+                enterprise_weight: pm(0),
+                ..UtilityProfile::default()
+            },
+        )
+        .unwrap();
+        bandits.push(bandit);
+    }
+    // Pre-wound two bandits so they flee sooner.
+    txn.set_component_wound_list(bandits[0], stable_wound_list(350))
+        .unwrap();
+    txn.set_component_wound_list(bandits[1], stable_wound_list(350))
+        .unwrap();
+
+    txn.set_component_bandit_faction_policy(
+        faction,
+        BanditFactionPolicy {
+            min_regroup_count: 2,
+            establishment_duration_ticks: nz(2),
+            abandonment_grace_ticks: nz(2),
+            flee_wound_threshold: pm(300),
+            rally_place: Some(PLACE_T22R_RALLY_GLEN),
+        },
+    )
+    .unwrap();
+
+    let camp_supplies = txn
+        .create_container(Container {
+            capacity: worldwake_core::LoadUnits(20),
+            allowed_commodities: None,
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })
+        .unwrap();
+    txn.set_ground_location(camp_supplies, PLACE_T22R_OLD_CAMP)
+        .unwrap();
+    txn.set_owner(camp_supplies, faction).unwrap();
+    txn.set_component_bandit_camp(
+        PLACE_T22R_OLD_CAMP,
+        BanditCamp {
+            faction,
+            supplies: camp_supplies,
+            empty_since_tick: None,
+        },
+    )
+    .unwrap();
+
+    // --- Faction bread at RallyGlen (required for EstablishBanditCamp) ---
+    let rally_bread = txn
+        .create_item_lot(CommodityKind::Bread, Quantity(2))
+        .unwrap();
+    txn.set_ground_location(rally_bread, PLACE_T22R_RALLY_GLEN)
+        .unwrap();
+    txn.set_owner(rally_bread, faction).unwrap();
+
+    // --- 2 Guards at OldCamp (None control initially) ---
+    let mut guards = Vec::new();
+    for name in ["T22R Marshal", "T22R Pike"] {
+        let guard = txn.create_agent(name, ControlSource::None).unwrap();
+        txn.set_ground_location(guard, PLACE_T22R_OLD_CAMP)
+            .unwrap();
+        txn.set_component_perception_profile(guard, t22r_perception())
+            .unwrap();
+        txn.set_component_combat_profile(guard, t22r_guard_combat())
+            .unwrap();
+        txn.set_component_utility_profile(
+            guard,
+            UtilityProfile {
+                danger_weight: pm(900),
+                social_weight: pm(0),
+                enterprise_weight: pm(0),
+                courage: pm(900),
+                ..UtilityProfile::default()
+            },
+        )
+        .unwrap();
+        guards.push(guard);
+    }
+
+    // --- Traveler at Market (Human, carries apples) ---
+    let traveler = txn
+        .create_agent("T22R Traveler", ControlSource::Human)
+        .unwrap();
+    txn.set_ground_location(traveler, PLACE_T22R_MARKET)
+        .unwrap();
+    txn.set_component_perception_profile(traveler, t22r_perception())
+        .unwrap();
+    txn.set_component_combat_profile(traveler, t22r_traveler_combat())
+        .unwrap();
+    txn.set_component_utility_profile(traveler, UtilityProfile::default())
+        .unwrap();
+
+    // --- Witness at Market (Human, social-focused) ---
+    let witness = txn
+        .create_agent("T22R Witness", ControlSource::Human)
+        .unwrap();
+    txn.set_ground_location(witness, PLACE_T22R_MARKET).unwrap();
+    txn.set_component_perception_profile(witness, t22r_perception())
+        .unwrap();
+    txn.set_component_utility_profile(
+        witness,
+        UtilityProfile {
+            social_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    )
+    .unwrap();
+
+    // --- Merchant at Market (None control initially, enterprise-focused) ---
+    // Merchant needs KnownRecipes so the planner can find a restock plan.
+    let merchant = txn
+        .create_agent("T22R Merchant", ControlSource::None)
+        .unwrap();
+    txn.set_component_known_recipes(
+        merchant,
+        KnownRecipes::with([worldwake_core::RecipeId(0)]),
+    )
+    .unwrap();
+    txn.set_ground_location(merchant, PLACE_T22R_MARKET)
+        .unwrap();
+    txn.set_component_perception_profile(merchant, t22r_perception())
+        .unwrap();
+    txn.set_component_utility_profile(
+        merchant,
+        UtilityProfile {
+            social_weight: pm(0),
+            danger_weight: pm(900),
+            courage: pm(400),
+            enterprise_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    )
+    .unwrap();
+    txn.set_component_merchandise_profile(
+        merchant,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+            home_market: Some(PLACE_T22R_MARKET),
+        },
+    )
+    .unwrap();
+    txn.set_component_trade_disposition_profile(merchant, t22r_trade_disposition())
+        .unwrap();
+    txn.set_component_demand_memory(
+        merchant,
+        DemandMemory {
+            observations: vec![DemandObservation {
+                commodity: CommodityKind::Apple,
+                quantity: Quantity(2),
+                place: PLACE_T22R_MARKET,
+                tick: Tick(0),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        },
+    )
+    .unwrap();
+
+    txn.commit(&mut h.event_log);
+
+    // Seed bandit faction membership beliefs and local camp beliefs.
+    for bandit in &bandits {
+        for other_bandit in &bandits {
+            if bandit == other_bandit {
+                continue;
+            }
+            seed_faction_membership_belief(
+                &mut h.world,
+                &mut h.event_log,
+                *bandit,
+                faction,
+                *other_bandit,
+                true,
+                Tick(0),
+                InstitutionalKnowledgeSource::WitnessedEvent,
+                Some(PLACE_T22R_OLD_CAMP),
+            );
+        }
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            *bandit,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
+
+    // Give traveler apples at Market.
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        PLACE_T22R_MARKET,
+        CommodityKind::Apple,
+        Quantity(4),
+    );
+
+    // Give witness a tell profile so they can relay beliefs.
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        TellProfile {
+            max_tell_candidates: 3,
+            max_relay_chain_len: 3,
+            acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
+        },
+    );
+    // Merchant also needs a tell profile so they accept incoming tells.
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        TellProfile {
+            max_tell_candidates: 3,
+            max_relay_chain_len: 3,
+            acceptance_fidelity: pm(1000),
+            ..TellProfile::default()
+        },
+    );
+
+    // Seed merchant beliefs about the remote orchard (so the route flip tests
+    // the danger belief rather than missing source evidence).
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        &[orchard_ws],
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+
+    // --- Snapshot conservation baseline ---
+    let initial_apple_total =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+
+    // Enable tracing.
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    // =========================================================================
+    // Phase 1: Camp destruction → diaspora → regroup → establish new camp
+    // =========================================================================
+
+    // Activate guards: make them AI + hostile to bandits.
+    let attack_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "attack")
+        .map(|def| def.id)
+        .expect("full registries should include attack");
+    for guard in &guards {
+        t22r_set_control(&mut h, *guard, ControlSource::Ai, 0);
+    }
+    for (index, guard) in guards.iter().enumerate() {
+        for bandit in &bandits {
+            add_hostility(&mut h.world, &mut h.event_log, *guard, *bandit);
+            add_hostility(&mut h.world, &mut h.event_log, *bandit, *guard);
+        }
+        let target = bandits[index % bandits.len()];
+        let _ = h.scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor: *guard,
+                def_id: attack_def_id,
+                targets: vec![target],
+                payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+                    target,
+                    weapon: worldwake_core::CombatWeaponRef::Unarmed,
+                })),
+                mode: ActionRequestMode::BestEffort,
+                provenance: RequestProvenance::External,
+            },
+        );
+    }
+
+    // Run up to 300 ticks for camp destruction + establishment at rally.
+    let mut old_camp_removed = false;
+    let mut new_camp_established = false;
+    let mut saw_establish_commit = false;
+    let mut saw_regroup_travel = false;
+
+    for _ in 0..300 {
+        h.step_once();
+
+        old_camp_removed |= h
+            .world
+            .get_component_bandit_camp(PLACE_T22R_OLD_CAMP)
+            .is_none();
+        new_camp_established |= h
+            .world
+            .get_component_bandit_camp(PLACE_T22R_RALLY_GLEN)
+            .is_some_and(|camp| camp.faction == faction);
+        saw_establish_commit |= bandits.iter().any(|bandit| {
+            h.action_trace_sink().is_some_and(|sink| {
+                sink.events_for(*bandit).iter().any(|event| {
+                    event.action_name == "establish_camp"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                })
+            })
+        });
+        saw_regroup_travel |= bandits.iter().any(|bandit| {
+            h.action_trace_sink().is_some_and(|sink| {
+                sink.events_for(*bandit).iter().any(|event| {
+                    event.action_name == "travel"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                })
+            })
+        });
+
+        if old_camp_removed && new_camp_established && saw_establish_commit && saw_regroup_travel {
+            break;
+        }
+    }
+
+    // --- Phase 1 assertions ---
+    assert!(
+        old_camp_removed,
+        "the original camp should be removed through the abandonment path"
+    );
+    assert!(
+        new_camp_established,
+        "surviving bandits should establish a new camp at the rally glen"
+    );
+    assert!(
+        saw_establish_commit,
+        "camp recreation should commit through the establish_camp action lifecycle"
+    );
+    assert!(
+        saw_regroup_travel,
+        "regrouping should require ordinary travel, not teleportation"
+    );
+
+    // Verify: new BanditCamp component on the rally glen place entity.
+    let new_camp = h
+        .world
+        .get_component_bandit_camp(PLACE_T22R_RALLY_GLEN)
+        .expect("new camp component must exist on rally glen after establishment");
+    assert_eq!(
+        new_camp.faction, faction,
+        "new camp must belong to the same faction"
+    );
+
+    // After establishment, reduce bandit social weight so RaidTarget can
+    // outrank the remaining ShareBelief backlog, and clear blocked-intent
+    // memory from the combat diaspora phase so raids at the new location
+    // are not suppressed by stale blockers.
+    let camp_tick = h.scheduler.current_tick().0;
+    for bandit in &bandits {
+        if !h.agent_is_dead(*bandit) {
+            let mut txn = new_txn(&mut h.world, camp_tick);
+            txn.set_component_utility_profile(
+                *bandit,
+                UtilityProfile {
+                    social_weight: pm(0),
+                    danger_weight: pm(900),
+                    courage: pm(150),
+                    enterprise_weight: pm(0),
+                    ..UtilityProfile::default()
+                },
+            )
+            .unwrap();
+            txn.set_component_blocked_intent_memory(
+                *bandit,
+                worldwake_core::BlockedIntentMemory::default(),
+            )
+            .unwrap();
+            commit_txn(txn, &mut h.event_log);
+        }
+    }
+
+    // Conservation check after Phase 1.
+    verify_authoritative_conservation(
+        &h.world,
+        CommodityKind::Apple,
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple),
+    )
+    .expect("conservation must hold after camp reconstitution");
+    assert!(
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple)
+            <= initial_apple_total,
+        "apple total must not increase after camp destruction"
+    );
+
+    // =========================================================================
+    // Phase 2: Raids from new camp → witness observes
+    // =========================================================================
+
+    // Send traveler (with apples) and witness from Market to RallyGlen.
+    t22r_request_travel(&mut h, traveler, PLACE_T22R_RALLY_GLEN);
+    t22r_request_travel(&mut h, witness, PLACE_T22R_RALLY_GLEN);
+
+    // Run until traveler arrives at RallyGlen.
+    let mut traveler_arrived = false;
+    let mut witness_arrived = false;
+    for _ in 0..10 {
+        h.step_once();
+        traveler_arrived |= h.world.effective_place(traveler) == Some(PLACE_T22R_RALLY_GLEN);
+        witness_arrived |= h.world.effective_place(witness) == Some(PLACE_T22R_RALLY_GLEN);
+        if traveler_arrived && witness_arrived {
+            break;
+        }
+    }
+    assert!(
+        traveler_arrived,
+        "traveler should arrive at rally glen within travel time"
+    );
+    assert!(
+        witness_arrived,
+        "witness should arrive at rally glen within travel time"
+    );
+
+    // Seed local beliefs for witness so they perceive the co-located bandits.
+    let arrival_tick = h.scheduler.current_tick();
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        arrival_tick,
+        PerceptionSource::DirectObservation,
+    );
+
+    // Establish hostility and enqueue attack from a surviving bandit at
+    // the new camp against the co-located traveler. This models the raid
+    // from the reconstituted camp location. Set the attacker to Human so
+    // the AI doesn't interrupt the combat action.
+    let attacking_bandit = *bandits
+        .iter()
+        .find(|b| !h.agent_is_dead(**b))
+        .expect("at least one bandit should survive");
+    t22r_set_control(&mut h, attacking_bandit, ControlSource::Human, arrival_tick.0);
+    add_hostility(&mut h.world, &mut h.event_log, attacking_bandit, traveler);
+    add_hostility(&mut h.world, &mut h.event_log, traveler, attacking_bandit);
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        arrival_tick,
+        InputKind::RequestAction {
+            actor: attacking_bandit,
+            def_id: attack_def_id,
+            targets: vec![traveler],
+            payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+                target: traveler,
+                weapon: worldwake_core::CombatWeaponRef::Unarmed,
+            })),
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+
+    // Wait for the attack to commit and witness to observe.
+    // Combat rounds take multiple ticks (unarmed_attack_ticks=4), so allow
+    // enough ticks for at least one attack round to complete.
+    let mut saw_raid_commit = false;
+    let mut witness_observed_conflict = false;
+    for _ in 0..80 {
+        h.step_once();
+        saw_raid_commit |= h
+            .action_trace_sink()
+            .expect("action tracing enabled")
+            .events_for(attacking_bandit)
+            .iter()
+            .any(|event| {
+                event.action_name == "attack"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        witness_observed_conflict |=
+            t22r_agent_knows_conflict_at(&h, witness, PLACE_T22R_RALLY_GLEN, &bandits);
+        if saw_raid_commit && witness_observed_conflict {
+            break;
+        }
+    }
+
+    assert!(
+        saw_raid_commit,
+        "the faction bandit at the reconstituted camp should attack the co-located traveler"
+    );
+
+    // Verify: the attacking bandit is a member of the new camp's faction.
+    assert!(
+        h.world.factions_of(attacking_bandit).contains(&faction),
+        "attacking bandit must be a member of the new camp faction"
+    );
+
+    assert!(
+        witness_observed_conflict,
+        "the witness should acquire a conflict observation at rally glen through perception"
+    );
+
+    // Conservation check after Phase 2.
+    verify_authoritative_conservation(
+        &h.world,
+        CommodityKind::Apple,
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple),
+    )
+    .expect("conservation must hold after raid phase");
+
+    // =========================================================================
+    // Phase 3: Witness tells merchant → merchant reroutes
+    // =========================================================================
+
+    // Send witness back to Market.
+    t22r_request_travel(&mut h, witness, PLACE_T22R_MARKET);
+    let mut witness_at_market = false;
+    for _ in 0..8 {
+        h.step_once();
+        witness_at_market |= h.world.effective_place(witness) == Some(PLACE_T22R_MARKET);
+        if witness_at_market {
+            break;
+        }
+    }
+    assert!(
+        witness_at_market,
+        "witness should return to market via ordinary travel"
+    );
+
+    // Verify merchant does NOT yet know about danger at rally glen.
+    assert!(
+        !t22r_agent_knows_conflict_at(&h, merchant, PLACE_T22R_RALLY_GLEN, &bandits),
+        "merchant must remain ignorant of rally glen danger before the witness arrives"
+    );
+
+    // Activate witness as AI so they share the danger belief with the merchant.
+    let co_tick = h.scheduler.current_tick();
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        witness,
+        co_tick,
+        PerceptionSource::DirectObservation,
+    );
+    t22r_set_control(&mut h, witness, ControlSource::Ai, co_tick.0);
+
+    // Wait for the tell to commit and merchant to learn.
+    let mut merchant_learned = false;
+    let mut saw_tell = false;
+    for _ in 0..40 {
+        h.step_once();
+        merchant_learned |=
+            t22r_agent_knows_conflict_at(&h, merchant, PLACE_T22R_RALLY_GLEN, &bandits);
+        saw_tell |= h
+            .action_trace_sink()
+            .expect("action tracing enabled")
+            .events_for(witness)
+            .iter()
+            .any(|event| {
+                event.action_name == "tell"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && matches!(
+                        event.detail,
+                        Some(ActionTraceDetail::Tell { listener, .. })
+                            if listener == merchant
+                    )
+            });
+        if merchant_learned && saw_tell {
+            break;
+        }
+    }
+
+    assert!(
+        saw_tell,
+        "the witness should relay the danger belief to the merchant through the tell action"
+    );
+    assert!(
+        merchant_learned,
+        "the merchant should learn the rally-glen conflict observation from the witness"
+    );
+
+    // Activate merchant and check route selection.
+    let merchant_tick = h.scheduler.current_tick();
+    t22r_set_control(&mut h, merchant, ControlSource::Ai, merchant_tick.0);
+
+    let mut selected_route = None;
+    let mut trace_summaries = Vec::new();
+    for _ in 0..20 {
+        h.step_once();
+        selected_route =
+            t22r_latest_restock_travel_dest(&h, merchant, CommodityKind::Apple);
+        if selected_route.is_some() {
+            break;
+        }
+    }
+    if selected_route.is_none() {
+        trace_summaries = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing enabled")
+            .traces_for(merchant)
+            .into_iter()
+            .map(|trace| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
+            .collect::<Vec<_>>();
+    }
+
+    assert_eq!(
+        selected_route,
+        Some(PLACE_T22R_SAFE_ROUTE),
+        "after learning the danger belief, the merchant should select the safe route \
+         for restock travel (avoiding rally glen); traces={trace_summaries:?}"
+    );
+
+    // Verify merchant retains orchard knowledge (route flip tests danger belief,
+    // not missing source evidence).
+    assert!(
+        h.world
+            .get_component_agent_belief_store(merchant)
+            .is_some_and(|store| store.known_entities.contains_key(&orchard_ws)),
+        "merchant should retain orchard knowledge so the route flip tests danger, not ignorance"
+    );
+
+    // Verify key agents survived.
+    assert!(
+        !h.agent_is_dead(merchant),
+        "merchant must remain alive through the economic cascade"
+    );
+    assert!(
+        !h.agent_is_dead(witness),
+        "witness must survive long enough to transport the danger belief"
+    );
+
+    // --- Final conservation check ---
+    verify_authoritative_conservation(
+        &h.world,
+        CommodityKind::Apple,
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple),
+    )
+    .expect("conservation must hold throughout the full chain");
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// T22R Test functions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn t22_camp_reconstitution_seed_1() {
+    let _ = run_t22_camp_reconstitution(Seed([222; 32]));
+}
+
+#[test]
+fn t22_camp_reconstitution_seed_2() {
+    let first = run_t22_camp_reconstitution(Seed([222; 32]));
+    let second = run_t22_camp_reconstitution(Seed([222; 32]));
+    assert_eq!(
+        first, second,
+        "T22 camp reconstitution scenario must replay deterministically"
     );
 }

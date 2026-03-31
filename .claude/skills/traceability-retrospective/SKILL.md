@@ -35,6 +35,7 @@ Read ALL of the following files completely:
 3. **Ticket authoring contract**: `tickets/README.md` — conventions that proposed tickets must follow.
 4. **Ticket template**: `tickets/_TEMPLATE.md` — format for any tickets created.
 5. **Existing tickets**: List all files in `tickets/` to check for duplicates in Phase 2.
+6. **Golden testing guide** (golden-test tickets only): `docs/golden-e2e-testing.md` — primary target for doc notes about testing conventions.
 
 ## Phase 1 — Reflection
 
@@ -59,6 +60,8 @@ If no lessons surface, report: "Phase 1: No implementation difficulties identifi
 ## Phase 1b — Ticket Drift Check (optional)
 
 Compare the ticket's stated setup (from "What to Change" and "Assumption Reassessment") against what was actually implemented. If significant drift exists — different initial values, restructured scenario, omitted or added agents, changed tick budgets — present drift as a two-column comparison (ticket says / implementation does) for each divergent parameter, followed by a brief statement of which ticket section needs updating.
+
+Report drift that changes the architectural claims or invariants of the ticket (e.g., emergent vs manual raid, different proof surface, omitted verification). Minor calibration changes (adjusted tick counts, tuned topology weights, different seed values) that don't change what the test proves can be noted briefly without the full two-column format.
 
 If drift is found, propose updating the ticket's relevant sections so the ticket remains an accurate record of what was delivered. Present proposed updates alongside Phase 2b doc notes or Phase 3 ticket proposals for user approval.
 
@@ -126,13 +129,32 @@ When all surviving lessons are DOC NOTEs with no TICKET WARRANTED items:
 1. Present each doc note with its target file and proposed text. If Phase 1b found ticket drift, include the proposed ticket updates in the same presentation.
 2. **Wait for explicit approval** before applying any changes.
 3. Apply approved doc notes and any Phase 1b ticket drift corrections directly to the target files. No ticket file creation needed.
-4. If doc notes modify files checked by automated validation (e.g., `docs/golden-e2e-testing.md` is checked by `scripts/golden_inventory.py --check-docs`), run the relevant validation command after applying changes.
+4. If doc notes modify files checked by automated validation, run the relevant validation command after applying changes. For `docs/golden-e2e-testing.md` changes that affect scenario metadata format or inventory parsing, run `python3 scripts/golden_inventory.py --write --check-docs`.
 5. Output a brief closing summary: number of doc notes applied, number of ticket sections corrected, and target files modified.
 6. **Stop** — do not proceed to Phase 3 or Phase 4.
 
 ## Phase 3 — Ticket Proposal
 
-For each lesson routed to TICKET WARRANTED, present a summary:
+Present ALL deliverables to the user in a single message, then **wait for explicit approval**. The user may approve all, approve some, reject all, or request modifications. **Do not proceed to Phase 4 until the user responds.**
+
+If Phase 1b found ticket drift, include drift corrections first:
+
+```
+### Drift Corrections (applied after approval)
+
+- **Target**: <ticket file> — <1-line description of what changed vs what was delivered>
+```
+
+If any lessons routed to DOC NOTE, include them next:
+
+```
+### Doc Notes (applied after approval)
+
+- **Target**: <file> — <1-line description>
+  <proposed text>
+```
+
+For each lesson routed to TICKET WARRANTED, present a ticket proposal:
 
 ```
 ### Proposed Ticket N: <Title>
@@ -144,15 +166,19 @@ For each lesson routed to TICKET WARRANTED, present a summary:
 - **Estimated effort**: Small | Medium | Large
 ```
 
-Present ALL proposed tickets to the user in a single message. Then **wait for explicit approval**. The user may:
-- Approve all
-- Approve some (specify which)
-- Reject all
-- Request modifications
+## Phase 4 — Apply All Approved Deliverables
 
-**Do not proceed to Phase 4 until the user responds.**
+Apply approved drift corrections, doc notes, and tickets in a single pass.
 
-## Phase 4 — Ticket Creation
+### Drift corrections
+
+For each approved drift correction, edit the target ticket file to match what was actually delivered.
+
+### Doc notes
+
+For each approved doc note, apply it to the target file. If the changes affect files checked by automated validation (see Phase 2b step 4), run the relevant validation command after all doc notes are applied.
+
+### Ticket creation
 
 For each approved ticket:
 
@@ -169,6 +195,10 @@ For each approved ticket:
    - Acceptance Criteria: Specific tests and invariants
    - Test Plan: New/modified tests and runnable commands
 4. **Apply precision rules**: Follow `docs/precision-rules.md` for all technical claims.
+
+### Closing summary
+
+Output a brief summary: number of drift corrections applied, number of doc notes applied, number of tickets created, and target files modified.
 
 ## Important Rules
 

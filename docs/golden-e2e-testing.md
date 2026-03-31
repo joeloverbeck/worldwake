@@ -148,6 +148,16 @@ For same-tick cross-agent chains, `events_at(tick)` and `events_for_at(actor, ti
 
 Keep authoritative event-log selection explicit. Do not rely on helper heuristics to infer which authoritative records belong in the timeline.
 
+### External action requests for AI-controlled agents
+
+When enqueueing an `InputKind::RequestAction` for an AI-controlled agent (`ControlSource::Ai`), the AI's decision pipeline may interrupt the action on the very next tick if the agent has no viable goals to sustain it. The action trace will show `Started` but may lack a corresponding `Committed` or `Aborted` event, making the interruption silent.
+
+To prevent AI interruption of a test-driven action:
+- Set the agent to `ControlSource::Human` before enqueueing the request
+- Or ensure the AI has a matching goal that would sustain the action (e.g., `EngageHostile` for an attack)
+
+This applies to any golden test that manually triggers an action for an agent that is otherwise AI-controlled.
+
 ## Determinism Pattern
 
 New golden scenarios should usually add a deterministic replay companion test unless one of these is true:
@@ -205,6 +215,12 @@ eligible faction members. Common traps:
 - **Vacancy belief seeding**: Remote guards cannot perceive vacancy through co-location
   perception (Principle 7). If guards must generate political goals despite being far
   from the jurisdiction, seed vacancy beliefs explicitly.
+
+## Bandit Camp Establishment Calibration
+
+`EstablishBanditCamp` candidate generation requires `has_local_controlled_edible_supplies` at the rally place. If no faction-owned edible item lot exists at the rally glen, the candidate is omitted with `MissingLocalControlledEdibleSupplies` — silently producing 0 candidates with no action trace evidence.
+
+When designing golden scenarios that include camp reconstitution after diaspora, place at least one faction-owned edible commodity (e.g., Bread) at the rally place during initial setup.
 
 ## Trade Cycle Throughput
 
