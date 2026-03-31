@@ -1,6 +1,6 @@
 # E22INTSOATES-004: T20 — Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
@@ -101,3 +101,10 @@ Existing trade goldens cover single-system restock and start-failure recovery. T
 
 1. `cargo test -p worldwake-ai --test golden_integration -- t20`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `run_t20_apple_stockout()` + 2 test functions to `golden_integration.rs`. Added "Trade Cycle Throughput" guidance section to `docs/golden-e2e-testing.md`.
+- **Deviations from original plan**: Merchant starts at 0 stock (stockout as initial condition) instead of Quantity(10). Consumer receives 3 apples directly instead of purchasing from merchant. Trade cycle throughput is too slow for consumer to deplete 10 merchant apples within a reasonable tick budget (~20-50 ticks per trade). The causal chain (restock → travel → combat → consumer replan) is preserved. Tick budget reduced from 4320 to 500 for test speed. Consumer hunger raised to pm(900) with hunger_rate pm(3). No separate "Carrier" agent — merchant acts as its own carrier (consistent with existing supply chain tests).
+- **Verification results**: `t20_apple_stockout_seed_1` passes. `t20_apple_stockout_seed_2` determinism passes. All 23 `golden_integration` tests pass. Full `cargo test --workspace` passes with 0 failures.

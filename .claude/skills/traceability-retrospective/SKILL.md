@@ -52,6 +52,14 @@ Perform structured self-examination of the current conversation through these le
 - **Why it was non-obvious**: What made it hard to anticipate
 - **Impact**: How it affected implementation (time lost, incorrect code written, test failures)
 
+## Phase 1b — Ticket Drift Check (optional)
+
+Compare the ticket's stated setup (from "What to Change" and "Assumption Reassessment") against what was actually implemented. If significant drift exists — different initial values, restructured scenario, omitted or added agents, changed tick budgets — note each divergence briefly.
+
+If drift is found, propose updating the ticket's relevant sections so the ticket remains an accurate record of what was delivered. Present proposed updates alongside Phase 2b doc notes or Phase 3 ticket proposals for user approval.
+
+If no significant drift exists, skip this phase silently.
+
 ## Phase 2 — FOUNDATIONS Alignment & Triage
 
 For each lesson from Phase 1, run this evaluation:
@@ -75,7 +83,7 @@ Is there already an existing ticket in `tickets/` that covers this issue? Grep t
 Check the lesson against `docs/FOUNDATIONS.md`:
 - Does it reveal a principle violation? (cite the principle number and name)
 - Does it reveal a gap where a principle should apply but the infrastructure doesn't support it yet?
-- Does it reveal a missing causal hook, information path, or debuggability surface? (Principle 29, 30)
+- Does it reveal a missing causal hook, information path, or debuggability surface? (Principle 3 — Concrete State; Principle 7 — Locality)
 
 Lessons that do not connect to any FOUNDATIONS principle are unlikely to warrant tickets. Apply skepticism.
 
@@ -93,11 +101,20 @@ For each lesson, state:
 - **Bucket**: DO NOTHING (with reason) | DOC NOTE (with target file and proposed text) | TICKET WARRANTED (with change type)
 - **FOUNDATIONS reference**: Principle number(s) if applicable
 
-**DOC NOTE** is for lessons that don't warrant a ticket but would benefit from a brief addition (1-3 lines) to an existing guide — typically `docs/golden-e2e-testing.md`, `CLAUDE.md`, or a spec. Present the target file and proposed text alongside ticket proposals in Phase 3 for user approval.
+**DOC NOTE** is for lessons that don't warrant a ticket but would benefit from a brief addition (1-3 lines) to an existing guide — typically `docs/golden-e2e-testing.md`, `CLAUDE.md`, or a spec. If no tickets are warranted, doc notes are presented in Phase 2b. If tickets are also warranted, present doc notes alongside ticket proposals in Phase 3.
 
 If all lessons route to DO NOTHING, **report that explicitly and stop**. This is a valid outcome — it means the implementation was clean and the infrastructure is solid. Do not manufacture tickets.
 
-If the only non-DO-NOTHING lessons are DOC NOTEs (no tickets warranted), skip Phase 3's ticket proposal format and present only the doc notes for approval. Apply approved notes directly — no ticket file creation needed.
+If the only non-DO-NOTHING lessons are DOC NOTEs (no tickets warranted), proceed to Phase 2b. Otherwise, proceed to Phase 3 (which handles both tickets and any accompanying doc notes).
+
+## Phase 2b — Doc Note Presentation (no tickets)
+
+When all surviving lessons are DOC NOTEs with no TICKET WARRANTED items:
+
+1. Present each doc note with its target file and proposed text.
+2. **Wait for explicit approval** before applying any changes.
+3. Apply approved notes directly to the target files. No ticket file creation needed.
+4. **Stop** — do not proceed to Phase 3 or Phase 4.
 
 ## Phase 3 — Ticket Proposal
 
