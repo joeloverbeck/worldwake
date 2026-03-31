@@ -122,6 +122,9 @@ Established cross-system political emergence golden coverage: Scenario 44 proves
 ### S33: Opportunity-Scoped Goal Identity — COMPLETED
 Established desire-level `GoalKey` vs opportunity-level `OpportunityKey` separation across the full AI pipeline: per-opportunity `GroundedGoal` emission, post-emission blocker filtering with desire-level blocked diagnostics, opportunity-keyed exhaustion/runtime persistence, ranked same-goal sibling admission without desire-level collapse, `PlannedPlan.opportunity`, and golden proof for blocked-source and exhausted-opportunity source switching. The completed spec is archived at `archive/specs/S33-opportunity-scoped-goal-identity.md`.
 
+### S40: Remote Hostile Pursuit — COMPLETED
+Extended exact combat goals (`EngageHostile`, `LootCorpse`) with belief-backed prerequisite travel, keeping `Attack` strictly local-only. Bandits and agents can now plan multi-step pursuit sequences (travel → attack → loot) toward believed hostile locations using the prerequisite-aware search heuristic. 3 golden E2E tests (Scenarios 68/69/70) prove remote hostile pursuit, loot-after-kill chains, and belief-staleness recovery.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -170,13 +173,13 @@ S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final go
 S33 ✅ ──→ S37 ✅ (cooldown exhaustion shipped on opportunity-scoped identity)
 S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
 S35 ✅ ──→ S38 (learned preferences needs activity observation for source reliability)
-E18 ✅ ──→ S40 (remote hostile pursuit extends bandit combat beyond same-place opportunism)
-S12 ✅ ──→ S40 (remote hostile pursuit reuses prerequisite-aware search)
-S36 ✅ ──→ S40 (remote hostile pursuit extends declaration-owned combat goal surfaces)
+E18 ✅ ──→ S40 ✅ (remote hostile pursuit extends bandit combat beyond same-place opportunism)
+S12 ✅ ──→ S40 ✅ (remote hostile pursuit reuses prerequisite-aware search)
+S36 ✅ ──→ S40 ✅ (remote hostile pursuit extends declaration-owned combat goal surfaces)
 S27 ✅ ──→ S34 ✅ (epistemic actions extend violation detection)
 S34 ✅, S35 ✅ (independent, can parallel with S33)
 E18 ✅, E19 ✅, E20 ✅ ──→ E22 (integration tests need everything)
-S40 ──→ E22 (integration should cover lawful remote combat pursuit if adopted)
+S40 ✅ ──→ E22 (integration should cover lawful remote combat pursuit)
 
 S42 (no deps — per-agent reasoning style)
 S43 (no deps — communication type differentiation)
@@ -365,9 +368,9 @@ S33 ✅ ──→ S39
 S34 ✅ (independent)
 S35 ✅ (independent)
 S35 ✅ ──→ S38
-E18 ✅ ──→ S40
-S12 ✅ ──→ S40
-S36 ✅ ──→ S40
+E18 ✅ ──→ S40 ✅
+S12 ✅ ──→ S40 ✅
+S36 ✅ ──→ S40 ✅
 ```
 
 ---
@@ -384,11 +387,11 @@ S36 ✅ ──→ S40
   - archived spec: `archive/specs/E20-companion-behaviors.md`
 
 **Step 14.5** (after E18, before E22):
-- **S40**: Remote Hostile Pursuit
-  - needs E18, S12, S36
-  - extends exact combat goals with belief-backed prerequisite travel while keeping `Attack` local
+- **S40**: Remote Hostile Pursuit — ✅ COMPLETED
+  - extended exact combat goals with belief-backed prerequisite travel while keeping `Attack` local
+  - golden Scenarios 68/69/70 prove remote pursuit, loot-after-kill, and belief-staleness recovery
 
-**Step 15** (needs E18–E20, S40):
+**Step 15** (all deps met: E18 ✅, E19 ✅, E20 ✅, S40 ✅):
 - **E22**: Scenario Integration & Soak Tests
 
 #### Phase 4 Gate
@@ -491,7 +494,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S29-planning-state-structural-sharing.md`~~ | 3+ | 13.5 W4 | ✅ COMPLETED |
 | ~~`E19-guard-patrol.md`~~ | 4 | 14 | ✅ COMPLETED |
 | ~~`E20-companion-behaviors.md`~~ | 4 | 14 | ✅ COMPLETED |
-| `S40-remote-hostile-pursuit.md` | 4 | 14.5 | E18, S12, S36 |
+| ~~`S40-remote-hostile-pursuit.md`~~ | 4 | 14.5 | ✅ COMPLETED |
 | `E22-integration-soak-tests.md` | 4 | 15 | E18, E19, E20, S40 |
 | `S04-merchant-selling-market-presence.md` | 4+ | 16 | E14 |
 | `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
@@ -529,6 +532,6 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | FND-02 | FND02-001–006 | Phase 2 foundations alignment | ✅ COMPLETED |
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
-| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | IN PROGRESS (E18, E19, and E20 complete; S40 and E22 pending) |
+| 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | IN PROGRESS (E18, E19, E20, S40 complete; E22 pending) |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | PENDING |
 | 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | PENDING |
