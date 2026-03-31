@@ -176,6 +176,14 @@ For social goldens, also document subject choice explicitly. Agent subjects can 
 For spatial-planning goldens, document whether the contract includes the default planning budget itself. If it does, state that explicitly and remove nearer lawful alternatives from setup only when the invariant under test is route reachability from a branchy hub rather than competition among local food branches.
 When a focused planning test is specifically about a planner failure boundary, assert the exact failure mode your scenario is meant to prove instead of only asserting "no plan". Use `BudgetExhausted`, `FrontierExhausted`, or another concrete planner-owned boundary as appropriate. Generic non-success is too weak because it also matches unrelated earlier contract breaks.
 
+## Theft Scenario Calibration
+
+When a golden test requires a `StealItem` goal to be generated, validate the deterrence arithmetic during ticket assumption reassessment:
+
+- `effective_motive = theft_motive_weight - (witness_risk_penalty × co-located_agent_count)`
+- If `effective_motive ≤ 0`, the thief is fully deterred and will never generate `StealItem`. Zero candidates are completely silent — no trace or diagnostic indicates deterrence suppression.
+- Count ALL non-thief agents at the theft location, including human-controlled agents, as the deterrence formula in `assess_theft_deterrence()` (`worldwake-ai/src/theft.rs`) counts every alive agent of kind `Agent`.
+
 ## Trade Cycle Throughput
 
 Each consumer-to-merchant trade involves a full AI decision cycle (candidate

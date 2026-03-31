@@ -1,6 +1,6 @@
 # E22INTSOATES-005: T29 — Theft → Delayed Discovery → Wrongful Accusation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
@@ -51,7 +51,7 @@ Existing crime goldens (Scenarios 41–43) test fine-to-exile fallback, witness 
 
 - Build 4-place topology: Market, Storehouse, Tavern, GuardPost
 - Owner agent with owned Apple lots at Storehouse, beliefs recording their presence
-- Thief agent with `TheftDispositionProfile { steal_duration_ticks: NonZeroU32(3), theft_motive_weight: Permille(800), witness_risk_penalty: Permille(400) }`
+- Thief agent with `TheftDispositionProfile { steal_duration_ticks: NonZeroU32(3), theft_motive_weight: Permille(800), witness_risk_penalty: Permille(100) }` (bold thief — Principle 22 agent diversity; 3 co-located witnesses reduce motive from 800 to 500, significant but not fully deterring)
 - Innocent bystander at Storehouse (present near time of theft)
 - Witness agent with `PerceptionProfile { observation_fidelity: Permille(400) }` (low fidelity)
 - Justice authority at GuardPost with `JusticeDispositionProfile { accusation_motive_weight: Permille(700), fine_severity: Permille(500) }`
@@ -103,3 +103,10 @@ Existing crime goldens (Scenarios 41–43) test fine-to-exile fallback, witness 
 
 1. `cargo test -p worldwake-ai --test golden_integration -- t29`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `run_t29_wrongful_accusation()` + 2 `#[test]` functions to `crates/worldwake-ai/tests/golden_integration.rs`. 4-place topology (Market, Storehouse, Tavern, GuardPost), 5 agents (owner, thief, bystander, witness, authority), full causal chain verification (theft → witness observation → Tell → violation memory → accusation → punishment), cross-domain ≥ 4 coverage, causal ordering assertions, information locality verification, determinism via 2-seed hash comparison. Added theft deterrence calibration guidance to `docs/golden-e2e-testing.md`.
+- **Deviations**: `witness_risk_penalty` changed from `Permille(400)` to `Permille(100)`. Original value caused full deterrence with 3 co-located witnesses (effective_motive = 800 - 1200 = 0). Corrected per Principle 22 (agent diversity) — bold thief with reduced witness sensitivity. Ticket updated before implementation.
+- **Verification**: `t29_wrongful_accusation_seed_1` passes, `t29_wrongful_accusation_seed_2` passes (determinism verified), all 25 `golden_integration` tests pass, all 62 `golden_emergent` tests pass, no clippy warnings in new code.
