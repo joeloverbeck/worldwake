@@ -1422,23 +1422,27 @@ fn emit_engage_hostile_goals(
         .into_iter()
         .collect::<BTreeSet<_>>();
 
-    for target in local_hostility_targets(ctx.view, ctx.agent, ctx.place) {
-        if raid_targets.contains(&target) {
+    let local_hostiles = local_hostility_targets(ctx.view, ctx.agent, ctx.place)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    for target in &local_hostiles {
+        if raid_targets.contains(target) {
             continue;
         }
-        if current_attackers.contains(&target) {
+        if current_attackers.contains(target) {
             continue;
         }
 
-        let mut evidence = Evidence::with_entity(target);
+        let mut evidence = Evidence::with_entity(*target);
         if let Some(place) = ctx.place {
             evidence.places.insert(place);
         }
         let mut trace = EvidenceTrace::default();
         if ctx.tracing_enabled {
-            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == target) {
+            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == *target) {
                 trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                    subject: target,
+                    subject: *target,
                     aspect: BeliefAspect::Hostile,
                     source: state.source,
                     observed_tick: state.observed_tick,
@@ -1448,10 +1452,95 @@ fn emit_engage_hostile_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            GoalKind::EngageHostile { target: *target },
+            OpportunityAnchor::Entity(*target),
+            evidence,
+            trace,
+        );
+    }
+
+    // Remote hostile targets: iterate hostile_targets_of for targets believed
+    // at a remote place that satisfy pursuit-profile constraints.
+    emit_remote_engage_hostile_targets(
+        candidates,
+        diagnostics,
+        ctx,
+        &local_hostiles,
+        &raid_targets,
+        &current_attackers,
+    );
+}
+
+fn emit_remote_engage_hostile_targets(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    local_hostiles: &BTreeSet<EntityId>,
+    raid_targets: &BTreeSet<EntityId>,
+    current_attackers: &BTreeSet<EntityId>,
+) {
+    let Some(pursuit_profile) = ctx.view.pursuit_profile(ctx.agent) else {
+        return;
+    };
+
+    let Some(actor_place) = ctx.place else {
+        return;
+    };
+
+    let policy = ctx.view.belief_confidence_policy(ctx.agent);
+
+    for target in ctx.view.hostile_targets_of(ctx.agent) {
+        // Skip targets already handled locally or as raid targets.
+        if local_hostiles.contains(&target) || raid_targets.contains(&target) {
+            continue;
+        }
+        if current_attackers.contains(&target) {
+            continue;
+        }
+
+        let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) else {
+            continue;
+        };
+
+        let staleness = ctx
+            .current_tick
+            .0
+            .saturating_sub(belief.observed_tick.0);
+        let confidence =
+            worldwake_core::belief_confidence(&belief.source, staleness, &policy);
+        if confidence < pursuit_profile.min_location_confidence {
+            continue;
+        }
+
+        let Some(route_cost) =
+            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place)
+        else {
+            continue;
+        };
+        if route_cost > pursuit_profile.max_pursuit_travel_ticks.get() {
+            continue;
+        }
+
+        let goal_key = GoalKey::from(GoalKind::EngageHostile { target });
+        if ctx.blocked.is_blocked(
+            &goal_key,
+            Some(belief.believed_place),
+            Some(target),
+            None,
+            ctx.current_tick,
+        ) {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(target);
+        evidence.places.insert(belief.believed_place);
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
             GoalKind::EngageHostile { target },
             OpportunityAnchor::Entity(target),
             evidence,
-            trace,
+            EvidenceTrace::default(),
         );
     }
 }
@@ -1481,15 +1570,119 @@ fn emit_raid_target_goals(
         .into_iter()
         .collect::<BTreeSet<_>>();
 
-    for target in local_raid_targets(ctx.view, ctx.agent, ctx.place) {
+    let local_targets = local_raid_targets(ctx.view, ctx.agent, ctx.place)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    for target in &local_targets {
+        if current_attackers.contains(target) {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(*target);
+        if let Some(place) = ctx.place {
+            evidence.places.insert(place);
+        }
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::RaidTarget { target: *target },
+            OpportunityAnchor::Entity(*target),
+            evidence,
+            EvidenceTrace::default(),
+        );
+    }
+
+    // Remote raid targets: iterate entity beliefs for targets believed at a
+    // remote place that satisfy pursuit-profile constraints.
+    emit_remote_raid_targets(candidates, diagnostics, ctx, &local_targets, &current_attackers);
+}
+
+fn emit_remote_raid_targets(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    local_targets: &BTreeSet<EntityId>,
+    current_attackers: &BTreeSet<EntityId>,
+) {
+    let Some(pursuit_profile) = ctx.view.pursuit_profile(ctx.agent) else {
+        return;
+    };
+
+    let bandit_factions = ctx
+        .view
+        .bandit_factions_of(ctx.agent)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if bandit_factions.is_empty() {
+        return;
+    }
+
+    let Some(actor_place) = ctx.place else {
+        return;
+    };
+
+    let policy = ctx.view.belief_confidence_policy(ctx.agent);
+
+    for (target, _state) in ctx.view.known_entity_beliefs(ctx.agent) {
+        // Skip entities already handled as local raid targets.
+        if local_targets.contains(&target) {
+            continue;
+        }
         if current_attackers.contains(&target) {
+            continue;
+        }
+        // Must be an agent.
+        if ctx.view.entity_kind(target) != Some(EntityKind::Agent) {
+            continue;
+        }
+        // Must not be in a bandit faction shared with the actor.
+        let target_in_bandit_faction = ctx
+            .view
+            .factions_of(target)
+            .into_iter()
+            .any(|f| bandit_factions.contains(&f));
+        if target_in_bandit_faction {
+            continue;
+        }
+
+        let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) else {
+            continue;
+        };
+
+        let staleness = ctx
+            .current_tick
+            .0
+            .saturating_sub(belief.observed_tick.0);
+        let confidence =
+            worldwake_core::belief_confidence(&belief.source, staleness, &policy);
+        if confidence < pursuit_profile.min_location_confidence {
+            continue;
+        }
+
+        let Some(route_cost) =
+            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place)
+        else {
+            continue;
+        };
+        if route_cost > pursuit_profile.max_pursuit_travel_ticks.get() {
+            continue;
+        }
+
+        // Check blocked intent for this target/place combination.
+        let goal_key = GoalKey::from(GoalKind::RaidTarget { target });
+        if ctx.blocked.is_blocked(
+            &goal_key,
+            Some(belief.believed_place),
+            Some(target),
+            None,
+            ctx.current_tick,
+        ) {
             continue;
         }
 
         let mut evidence = Evidence::with_entity(target);
-        if let Some(place) = ctx.place {
-            evidence.places.insert(place);
-        }
+        evidence.places.insert(belief.believed_place);
         emit_candidate_with_trace(
             candidates,
             diagnostics,
@@ -2912,6 +3105,38 @@ fn reachable_places_within_horizon(
     ordered
 }
 
+/// Compute minimum travel ticks from `from` to `to` using BFS over the
+/// belief view's adjacency graph.  Returns `None` if unreachable.
+fn min_travel_ticks_via_view(
+    view: &dyn GoalBeliefView,
+    from: EntityId,
+    to: EntityId,
+) -> Option<u32> {
+    if from == to {
+        return Some(0);
+    }
+    let mut visited = BTreeMap::new();
+    let mut heap = std::collections::BinaryHeap::new();
+    visited.insert(from, 0u32);
+    heap.push(std::cmp::Reverse((0u32, from)));
+    while let Some(std::cmp::Reverse((cost, place))) = heap.pop() {
+        if place == to {
+            return Some(cost);
+        }
+        if cost > *visited.get(&place).unwrap_or(&u32::MAX) {
+            continue;
+        }
+        for (adj, ticks) in view.adjacent_places_with_travel_ticks(place) {
+            let next_cost = cost.saturating_add(ticks.get());
+            if next_cost < *visited.get(&adj).unwrap_or(&u32::MAX) {
+                visited.insert(adj, next_cost);
+                heap.push(std::cmp::Reverse((next_cost, adj)));
+            }
+        }
+    }
+    None
+}
+
 fn local_unpossessed_commodity_evidence(
     view: &dyn GoalBeliefView,
     place: EntityId,
@@ -3354,6 +3579,7 @@ mod tests {
         justice_disposition_profiles: BTreeMap<EntityId, worldwake_core::JusticeDispositionProfile>,
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
+        pursuit_profiles: BTreeMap<EntityId, worldwake_core::PursuitProfile>,
         reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
         in_transit: BTreeSet<EntityId>,
         believed_owners: BTreeMap<EntityId, EntityId>,
@@ -3422,6 +3648,7 @@ mod tests {
                 justice_disposition_profiles: BTreeMap::new(),
                 patrol_profiles: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
+                pursuit_profiles: BTreeMap::new(),
                 reservation_ranges: BTreeMap::new(),
                 in_transit: BTreeSet::new(),
                 believed_owners: BTreeMap::new(),
@@ -3685,6 +3912,10 @@ mod tests {
 
         fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
             self.patrol_routes.get(&agent).cloned()
+        }
+
+        fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
+            self.pursuit_profiles.get(&agent).cloned()
         }
 
         fn epistemic_disposition_profile(
@@ -11209,6 +11440,319 @@ mod tests {
     }
 
     // Test 11: In-transit entity excluded from violation detection
+    // ── Remote pursuit candidate generation tests ──────────────────────
+
+    /// Helper: set up a remote pursuit scenario and return generated candidates.
+    fn remote_raid_setup(
+        min_confidence: u16,
+        max_travel: u32,
+        belief_staleness: u64,
+        route_hops: usize,
+    ) -> (Vec<crate::GroundedGoal>, EntityId) {
+        let agent = entity(1);
+        let target = entity(2);
+        let faction = entity(30);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        // Target is NOT at agent_place (remote).
+        view.effective_places.insert(target, remote_place);
+        view.entities_at
+            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(remote_place, vec![target]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        // Agent believes target is at remote_place.
+        let observed_tick = Tick(100u64.saturating_sub(belief_staleness));
+        view.beliefs.insert(
+            agent,
+            vec![(target, belief_at_place(remote_place, observed_tick))],
+        );
+        // Pursuit profile.
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(min_confidence).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(max_travel).unwrap(),
+            },
+        );
+        // Build adjacency chain: agent_place -> intermediate -> ... -> remote_place
+        // Each hop costs 1 tick (TestBeliefView default).
+        let mut places = vec![agent_place];
+        for i in 1..route_hops {
+            places.push(entity(100 + i as u32));
+        }
+        places.push(remote_place);
+        for w in places.windows(2) {
+            view.adjacent_places
+                .entry(w[0])
+                .or_default()
+                .push(w[1]);
+            view.adjacent_places
+                .entry(w[1])
+                .or_default()
+                .push(w[0]);
+        }
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+        );
+        (candidates, target)
+    }
+
+    #[test]
+    fn remote_raid_target_emitted_when_pursuit_conditions_met() {
+        // min_confidence=500, max_travel=5, staleness=0 (confidence=950), hops=2
+        let (candidates, target) = remote_raid_setup(500, 5, 0, 2);
+        assert!(
+            contains_goal(&candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should be emitted when confidence and route cost pass"
+        );
+    }
+
+    #[test]
+    fn remote_raid_target_omitted_when_confidence_too_low() {
+        // min_confidence=960, staleness=5 (confidence=950-60=890 < 960), hops=1
+        let (candidates, target) = remote_raid_setup(960, 10, 5, 1);
+        assert!(
+            !contains_goal(&candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should NOT be emitted when confidence < min_location_confidence"
+        );
+    }
+
+    #[test]
+    fn remote_raid_target_omitted_when_route_too_long() {
+        // min_confidence=500, max_travel=1, staleness=0, hops=3 (route cost = 3 > 1)
+        let (candidates, target) = remote_raid_setup(500, 1, 0, 3);
+        assert!(
+            !contains_goal(&candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should NOT be emitted when route cost > max_pursuit_travel_ticks"
+        );
+    }
+
+    #[test]
+    fn remote_raid_target_omitted_when_blocked() {
+        let agent = entity(1);
+        let target = entity(2);
+        let faction = entity(30);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, remote_place);
+        view.entities_at
+            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(remote_place, vec![target]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.beliefs.insert(
+            agent,
+            vec![(target, belief_at_place(remote_place, Tick(100)))],
+        );
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+        view.adjacent_places
+            .insert(agent_place, vec![remote_place]);
+        view.adjacent_places
+            .insert(remote_place, vec![agent_place]);
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
+                place: Some(remote_place),
+                target: Some(target),
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::TargetGone,
+            diagnostic_context: None,
+            observed_tick: Tick(99),
+            expires_tick: Tick(200),
+        });
+
+        let candidates = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+            6,
+            false,
+        )
+        .candidates;
+
+        assert!(
+            !contains_goal(&candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should NOT be emitted when target/place is blocked"
+        );
+    }
+
+    #[test]
+    fn remote_raid_target_omitted_when_target_place_unknown() {
+        let agent = entity(1);
+        let target = entity(2);
+        let faction = entity(30);
+        let agent_place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        // Target has no effective place and no belief about place.
+        view.entities_at
+            .insert(agent_place, vec![agent]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        // Belief with no place.
+        let mut state = belief_at_place(agent_place, Tick(100));
+        state.last_known_place = None;
+        view.beliefs.insert(agent, vec![(target, state)]);
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+        );
+
+        assert!(
+            !contains_goal(&candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should NOT be emitted when target place is unknown"
+        );
+    }
+
+    #[test]
+    fn remote_engage_hostile_emitted_when_pursuit_conditions_met() {
+        let agent = entity(1);
+        let target = entity(2);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, remote_place);
+        view.entities_at
+            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(remote_place, vec![target]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![target]);
+        view.beliefs.insert(
+            agent,
+            vec![(target, belief_at_place(remote_place, Tick(100)))],
+        );
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+        view.adjacent_places
+            .insert(agent_place, vec![remote_place]);
+        view.adjacent_places
+            .insert(remote_place, vec![agent_place]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+        );
+
+        assert!(
+            contains_goal(&candidates, GoalKind::EngageHostile { target }),
+            "Remote EngageHostile should be emitted when pursuit conditions met"
+        );
+    }
+
+    #[test]
+    fn remote_engage_hostile_omitted_when_confidence_too_low() {
+        let agent = entity(1);
+        let target = entity(2);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, remote_place);
+        view.entities_at
+            .insert(agent_place, vec![agent]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![target]);
+        // Observed at tick 10, current=100 → staleness=90 → penalty=90*12=1080 → confidence=0
+        view.beliefs.insert(
+            agent,
+            vec![(target, belief_at_place(remote_place, Tick(10)))],
+        );
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+        view.adjacent_places
+            .insert(agent_place, vec![remote_place]);
+        view.adjacent_places
+            .insert(remote_place, vec![agent_place]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+        );
+
+        assert!(
+            !contains_goal(&candidates, GoalKind::EngageHostile { target }),
+            "Remote EngageHostile should NOT be emitted when confidence too low"
+        );
+    }
+
     #[test]
     fn violation_in_transit_entity_excluded() {
         let agent = entity(1);

@@ -1,6 +1,6 @@
 # S40REMPUR-004: Remote candidate generation for RaidTarget and EngageHostile
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Deps**: S40REMPUR-001 (PursuitProfile), S40REMPUR-002 (pursuit_target_belief), S40REMPUR-003 (Travel in combat ops)
@@ -115,3 +115,19 @@ Add a test that creates a remote target scenario and verifies `search_plan()` re
 1. `cargo test -p worldwake-ai remote`
 2. `cargo test -p worldwake-ai candidate`
 3. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-31
+
+**What changed**:
+- Added `pursuit_profile()` accessor to `GoalBeliefView`, `RuntimeBeliefView`, `impl_goal_belief_view!` macro, and `PerAgentBeliefView`
+- Added `min_travel_ticks_via_view()` Dijkstra helper for route cost at candidate generation time
+- Extended `emit_raid_target_goals()` with `emit_remote_raid_targets()` — iterates `known_entity_beliefs` for remote non-faction agents satisfying pursuit-profile constraints
+- Extended `emit_engage_hostile_goals()` with `emit_remote_engage_hostile_targets()` — iterates `hostile_targets_of` for remote hostiles satisfying pursuit-profile constraints
+- 7 focused candidate generation unit tests (emitted, omitted-low-confidence, omitted-over-range, omitted-blocked, omitted-unknown-place, engage-emitted, engage-omitted)
+- 2 search tests verifying `Travel + Attack` plan shape for remote `RaidTarget` and `EngageHostile`
+
+**Deviations**: None. All deliverables implemented as specified.
+
+**Verification**: `cargo clippy --workspace` clean, `cargo test --workspace` 2,387 passed / 0 failed.

@@ -724,6 +724,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_pursuit_profile(agent).cloned())
+            .flatten()
+    }
+
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,

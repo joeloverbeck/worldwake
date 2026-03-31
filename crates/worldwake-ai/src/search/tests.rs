@@ -6991,3 +6991,193 @@ fn candidate_pruned_by_blocker_records_place_blocker_trace() {
     assert_eq!(place_blocker_trace.0, Some(town));
     assert_eq!(place_blocker_trace.1, BlockingFact::SourceDepleted);
 }
+
+// ── Remote pursuit search tests ──────────────────────────────────────
+
+#[test]
+fn remote_pursuit_travel_then_attack_for_raid_target() {
+    let actor = entity(1);
+    let target = entity(2);
+    let actor_place = entity(10);
+    let remote_place = entity(11);
+
+    let mut view = TestBeliefView::default();
+    view.current_tick = Tick(10);
+    view.alive.extend([actor, target, actor_place, remote_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(target, EntityKind::Agent);
+    view.kinds.insert(actor_place, EntityKind::Place);
+    view.kinds.insert(remote_place, EntityKind::Place);
+    view.effective_places.insert(actor, actor_place);
+    // Target believed at remote place.
+    view.effective_places.insert(target, remote_place);
+    view.entities_at
+        .insert(actor_place, vec![actor]);
+    view.entities_at
+        .insert(remote_place, vec![target]);
+    view.thresholds.insert(actor, DriveThresholds::default());
+    // Connect places bidirectionally.
+    view.adjacent
+        .insert(actor_place, vec![(remote_place, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(remote_place, vec![(actor_place, NonZeroU32::new(2).unwrap())]);
+    // Actor believes target is at remote_place.
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            target,
+            BelievedEntityState {
+                last_known_place: Some(remote_place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                observed_tick: Tick(9),
+                source: PerceptionSource::DirectObservation,
+            },
+        )],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(target),
+        key: GoalKey::from(GoalKind::RaidTarget { target }),
+        evidence_entities: BTreeSet::from([target]),
+        evidence_places: BTreeSet::from([remote_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(10),
+        None,
+        None,
+    );
+    let plan = result
+        .into_plan()
+        .expect("search should find a Travel+Attack plan for remote raid target");
+
+    assert!(
+        plan.steps.len() >= 2,
+        "plan should have at least 2 steps (Travel + Attack), got {}",
+        plan.steps.len()
+    );
+    assert_eq!(
+        plan.steps[0].op_kind,
+        PlannerOpKind::Travel,
+        "first step should be Travel to remote place"
+    );
+    assert_eq!(
+        plan.steps[1].op_kind,
+        PlannerOpKind::Attack,
+        "second step should be Attack at remote place"
+    );
+}
+
+#[test]
+fn remote_pursuit_travel_then_attack_for_engage_hostile() {
+    let actor = entity(1);
+    let target = entity(2);
+    let actor_place = entity(10);
+    let remote_place = entity(11);
+
+    let mut view = TestBeliefView::default();
+    view.current_tick = Tick(10);
+    view.alive.extend([actor, target, actor_place, remote_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(target, EntityKind::Agent);
+    view.kinds.insert(actor_place, EntityKind::Place);
+    view.kinds.insert(remote_place, EntityKind::Place);
+    view.effective_places.insert(actor, actor_place);
+    view.effective_places.insert(target, remote_place);
+    view.entities_at
+        .insert(actor_place, vec![actor]);
+    view.entities_at
+        .insert(remote_place, vec![target]);
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.hostiles.insert(actor, vec![target]);
+    view.adjacent
+        .insert(actor_place, vec![(remote_place, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(remote_place, vec![(actor_place, NonZeroU32::new(2).unwrap())]);
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            target,
+            BelievedEntityState {
+                last_known_place: Some(remote_place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                observed_tick: Tick(9),
+                source: PerceptionSource::DirectObservation,
+            },
+        )],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(target),
+        key: GoalKey::from(GoalKind::EngageHostile { target }),
+        evidence_entities: BTreeSet::from([target]),
+        evidence_places: BTreeSet::from([remote_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(10),
+        None,
+        None,
+    );
+    let plan = result
+        .into_plan()
+        .expect("search should find a Travel+Attack plan for remote engage hostile");
+
+    assert!(
+        plan.steps.len() >= 2,
+        "plan should have at least 2 steps (Travel + Attack), got {}",
+        plan.steps.len()
+    );
+    assert_eq!(
+        plan.steps[0].op_kind,
+        PlannerOpKind::Travel,
+        "first step should be Travel to remote place"
+    );
+    assert_eq!(
+        plan.steps[1].op_kind,
+        PlannerOpKind::Attack,
+        "second step should be Attack at remote place"
+    );
+}

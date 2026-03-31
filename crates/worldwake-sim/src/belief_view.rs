@@ -150,6 +150,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
+        let _ = agent;
+        None
+    }
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,
@@ -475,6 +479,10 @@ pub trait RuntimeBeliefView {
         None
     }
     fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        let _ = agent;
+        None
+    }
+    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
         let _ = agent;
         None
     }
@@ -966,6 +974,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::PatrolRoute> {
                 $crate::RuntimeBeliefView::patrol_route(self, agent)
+            }
+
+            fn pursuit_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::PursuitProfile> {
+                $crate::RuntimeBeliefView::pursuit_profile(self, agent)
             }
 
             fn epistemic_disposition_profile(
