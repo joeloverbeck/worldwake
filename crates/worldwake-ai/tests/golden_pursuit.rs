@@ -564,8 +564,7 @@ fn run_scenario_2(seed: Seed) -> (StateHash, StateHash) {
     let traveler_wounds = h
         .world
         .get_component_wound_list(ids.traveler)
-        .map(|wl| wl.wounds.len())
-        .unwrap_or(0);
+        .map_or(0, |wl| wl.wounds.len());
     assert_eq!(
         traveler_wounds, 0,
         "traveler should have no wounds — bandit should not have omnisciently found them at C"
@@ -691,8 +690,7 @@ fn run_scenario_3(seed: Seed) -> (StateHash, StateHash) {
     let wounds_before = h
         .world
         .get_component_wound_list(ids.traveler)
-        .map(|wl| wl.wounds.len())
-        .unwrap_or(0);
+        .map_or(0, |wl| wl.wounds.len());
 
     for _ in 0..30 {
         h.step_once();

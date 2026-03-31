@@ -675,8 +675,7 @@ fn golden_travel_interrupt_from_bladder_escalation() {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
             && h.defs
                 .get(e.def_id)
-                .map(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
     });
     assert!(
         relief_committed,
@@ -772,8 +771,7 @@ fn golden_latrine_preferred() {
                 matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
                     && h.defs
                         .get(e.def_id)
-                        .map(|d| d.name.as_str() == "toilet")
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.name.as_str() == "toilet")
             });
             if committed {
                 toilet_committed_tick = Some(tick);
@@ -818,8 +816,7 @@ fn golden_latrine_preferred() {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
             && h.defs
                 .get(e.def_id)
-                .map(|d| d.name.as_str() == "relieve_wilderness")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name.as_str() == "relieve_wilderness")
     });
     assert!(
         !wilderness_committed,
@@ -948,8 +945,7 @@ fn golden_wilderness_fallback() {
                 matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
                     && h.defs
                         .get(e.def_id)
-                        .map(|d| d.name.as_str() == "relieve_wilderness")
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.name.as_str() == "relieve_wilderness")
             });
             if committed {
                 wilderness_committed_tick = Some(tick);
@@ -994,8 +990,7 @@ fn golden_wilderness_fallback() {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
             && h.defs
                 .get(e.def_id)
-                .map(|d| d.name.as_str() == "toilet")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name.as_str() == "toilet")
     });
     assert!(
         !toilet_committed,
@@ -1145,8 +1140,7 @@ fn golden_deprivation_accident() {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
             && h.defs
                 .get(e.def_id)
-                .map(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
     });
     assert!(
         !relief_committed,
@@ -1330,8 +1324,7 @@ fn golden_witness_observation() {
                 matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
                     && h.defs
                         .get(e.def_id)
-                        .map(|d| d.name.as_str() == "relieve_wilderness")
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.name.as_str() == "relieve_wilderness")
             });
             if wilderness_committed {
                 break;
@@ -1536,8 +1529,7 @@ fn golden_no_witness() {
                 matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
                     && h.defs
                         .get(e.def_id)
-                        .map(|d| d.name.as_str() == "relieve_wilderness")
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.name.as_str() == "relieve_wilderness")
             });
             if wilderness_committed {
                 break;
@@ -1689,8 +1681,7 @@ fn golden_need_continuity_toilet() {
                 matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
                     && h.defs
                         .get(e.def_id)
-                        .map(|d| d.name.as_str() == "toilet")
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.name.as_str() == "toilet")
             });
             if toilet_committed {
                 break;
@@ -1778,8 +1769,7 @@ fn golden_need_continuity_wilderness() {
                 matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
                     && h.defs
                         .get(e.def_id)
-                        .map(|d| d.name.as_str() == "relieve_wilderness")
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.name.as_str() == "relieve_wilderness")
             });
             if wilderness_committed {
                 break;
@@ -1877,8 +1867,7 @@ fn golden_need_continuity_accident() {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
             && h.defs
                 .get(e.def_id)
-                .map(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
     });
     assert!(
         !relief_committed,

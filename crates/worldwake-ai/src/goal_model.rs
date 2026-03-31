@@ -503,10 +503,11 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(actor_place) = state.effective_place(actor) else {
                     return Err(GoalPayloadOverrideError::MissingActorPlace);
                 };
-                if !state
-                    .agents_selling_at(actor_place, requested_commodity)
-                    .contains(&counterparty)
-                {
+                let counterparty_is_selling = state
+                    .listed_sale_lots_at(actor_place, requested_commodity)
+                    .into_iter()
+                    .any(|lot| state.seller_for_sale_lot(lot) == Some(counterparty));
+                if !counterparty_is_selling {
                     return Err(GoalPayloadOverrideError::SellerUnavailable);
                 }
                 if state.commodity_quantity(counterparty, requested_commodity) == Quantity(0) {
@@ -2328,6 +2329,8 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        lot_sellers: BTreeMap<EntityId, EntityId>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
@@ -2373,6 +2376,8 @@ mod tests {
                 thresholds: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
+                listed_lots: BTreeMap::new(),
+                lot_sellers: BTreeMap::new(),
                 wounds: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 resource_sources: BTreeMap::new(),
@@ -2635,15 +2640,23 @@ mod tests {
             Vec::new()
         }
 
-        fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.entities_at(place)
-                .into_iter()
-                .filter(|entity| {
-                    self.merchandise_profiles
-                        .get(entity)
-                        .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-                })
-                .collect()
+        fn listed_sale_lots_at(
+            &self,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            self.listed_lots
+                .get(&(place, commodity))
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.lot_sellers.get(&lot).copied()
+        }
+
+        fn has_sale_listing(&self, lot: EntityId) -> bool {
+            self.lot_sellers.contains_key(&lot)
         }
 
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
@@ -2832,6 +2845,24 @@ mod tests {
                 home_market: None,
             },
         );
+        let seller_lot = entity(30);
+        view.alive.insert(seller_lot);
+        view.kinds.insert(seller_lot, EntityKind::ItemLot);
+        view.effective_places.insert(seller_lot, town);
+        view.entities_at
+            .get_mut(&town)
+            .unwrap()
+            .push(seller_lot);
+        view.direct_possessors.insert(seller_lot, seller);
+        view.direct_possessions
+            .entry(seller)
+            .or_default()
+            .push(seller_lot);
+        view.lot_commodities
+            .insert(seller_lot, CommodityKind::Bread);
+        view.listed_lots
+            .insert((town, CommodityKind::Bread), vec![seller_lot]);
+        view.lot_sellers.insert(seller_lot, seller);
         (view, actor, seller)
     }
 

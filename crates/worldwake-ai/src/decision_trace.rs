@@ -4219,7 +4219,7 @@ mod tests {
         ];
         for reason in reasons {
             let opt: Option<PursuitInvalidationReason> = Some(reason);
-            assert_eq!(opt.unwrap(), reason);
+            assert_eq!(opt, Some(reason));
         }
 
         // Verify format_pursuit_diagnostic does not panic on emitted trace
@@ -4237,7 +4237,7 @@ mod tests {
         format_pursuit_diagnostic(&pd_emitted);
 
         // Verify format_pursuit_diagnostic does not panic on omitted trace
-        let pd_omitted = PursuitDiagnostic {
+        let diagnostic_with_omission = PursuitDiagnostic {
             target: entity(10),
             believed_place: None,
             source: None,
@@ -4248,6 +4248,6 @@ mod tests {
             max_travel_ticks: 10,
             omission: Some(PursuitOmissionReason::UnknownPlace),
         };
-        format_pursuit_diagnostic(&pd_omitted);
+        format_pursuit_diagnostic(&diagnostic_with_omission);
     }
 }

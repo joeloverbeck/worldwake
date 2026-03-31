@@ -898,11 +898,11 @@ fn sync_selected_beliefs(
     commit_txn(txn);
 }
 
-fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId) {
+fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, EntityId) {
     let origin = entity(11);
     let destination = entity(12);
     let mut world = World::new(cargo_topology(origin, destination)).unwrap();
-    let (actor, seller) = {
+    let (actor, seller, bread) = {
         let mut txn = new_txn(&mut world, 1);
         let actor = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
         let seller = txn.create_agent("Seller", ControlSource::Ai).unwrap();
@@ -913,6 +913,13 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId) {
         txn.set_ground_location(seller, origin).unwrap();
         txn.set_ground_location(bread, origin).unwrap();
         txn.set_possessor(bread, seller).unwrap();
+        txn.set_component_sale_listing(
+            bread,
+            worldwake_core::SaleListing {
+                listed_at: worldwake_core::Tick(0),
+            },
+        )
+        .unwrap();
         txn.set_component_homeostatic_needs(
             actor,
             HomeostaticNeeds::new(
@@ -952,7 +959,7 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId) {
         )
         .unwrap();
         commit_txn(txn);
-        (actor, seller)
+        (actor, seller, bread)
     };
 
     let mut defs = ActionDefRegistry::new();
@@ -975,14 +982,16 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId) {
         seller,
         origin,
         destination,
+        bread,
     )
 }
 
-fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, EntityId) {
+fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, EntityId, EntityId)
+{
     let origin = entity(21);
     let destination = entity(22);
     let mut world = World::new(cargo_topology(origin, destination)).unwrap();
-    let (actor, seller, local_witness) = {
+    let (actor, seller, local_witness, bread) = {
         let mut txn = new_txn(&mut world, 0);
         let actor = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
         let seller = txn.create_agent("RemoteSeller", ControlSource::Ai).unwrap();
@@ -995,6 +1004,13 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         txn.set_ground_location(seller, destination).unwrap();
         txn.set_ground_location(bread, destination).unwrap();
         txn.set_possessor(bread, seller).unwrap();
+        txn.set_component_sale_listing(
+            bread,
+            worldwake_core::SaleListing {
+                listed_at: worldwake_core::Tick(0),
+            },
+        )
+        .unwrap();
         txn.set_component_homeostatic_needs(
             actor,
             HomeostaticNeeds::new(
@@ -1034,7 +1050,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         )
         .unwrap();
         commit_txn(txn);
-        (actor, seller, local_witness)
+        (actor, seller, local_witness, bread)
     };
 
     let mut defs = ActionDefRegistry::new();
@@ -1044,7 +1060,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
     sync_selected_beliefs(
         &mut world,
         actor,
-        &[seller],
+        &[seller, bread],
         Tick(0),
         PerceptionSource::Inference,
     );
@@ -1066,6 +1082,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         local_witness,
         origin,
         destination,
+        bread,
     )
 }
 
@@ -1588,8 +1605,15 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
-    fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+    fn listed_sale_lots_at(
+        &self,
+        _place: EntityId,
+        _commodity: CommodityKind,
+    ) -> Vec<EntityId> {
         Vec::new()
+    }
+    fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+        None
     }
     fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
         Vec::new()
@@ -3571,7 +3595,7 @@ fn trace_planning_outcome_includes_patrol_route_provenance() {
 
 #[test]
 fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
-    let (mut harness, seller, origin, _destination) = hungry_acquisition_harness();
+    let (mut harness, seller, origin, _destination, bread) = hungry_acquisition_harness();
 
     let before = ranked_goals_at(&mut harness, Tick(1));
     assert!(!has_goal(
@@ -3589,6 +3613,7 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
         .is_none());
 
     run_same_place_observation(&mut harness, Tick(2), origin, seller);
+    run_same_place_observation(&mut harness, Tick(2), origin, bread);
 
     let belief = harness
         .world
@@ -3613,8 +3638,9 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
 
 #[test]
 fn unseen_seller_relocation_preserves_stale_acquisition_belief() {
-    let (mut harness, seller, origin, destination) = hungry_acquisition_harness();
+    let (mut harness, seller, origin, destination, bread) = hungry_acquisition_harness();
     run_same_place_observation(&mut harness, Tick(2), origin, seller);
+    run_same_place_observation(&mut harness, Tick(2), origin, bread);
 
     relocate_entity(&mut harness.world, seller, destination, Tick(3));
 
@@ -3634,8 +3660,9 @@ fn unseen_seller_relocation_preserves_stale_acquisition_belief() {
 
 #[test]
 fn unseen_death_does_not_create_corpse_reaction_without_reobservation() {
-    let (mut harness, seller, origin, destination) = hungry_acquisition_harness();
+    let (mut harness, seller, origin, destination, bread) = hungry_acquisition_harness();
     run_same_place_observation(&mut harness, Tick(2), origin, seller);
+    run_same_place_observation(&mut harness, Tick(2), origin, bread);
 
     relocate_entity(&mut harness.world, seller, destination, Tick(3));
     kill_entity(&mut harness.world, seller, Tick(3));
@@ -3663,7 +3690,7 @@ fn unseen_death_does_not_create_corpse_reaction_without_reobservation() {
 
 #[test]
 fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
-    let (mut harness, seller, _local_witness, _origin, destination) =
+    let (mut harness, seller, _local_witness, _origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
     let before = ranked_goals_at(&mut harness, Tick(1));
@@ -3705,7 +3732,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
 
 #[test]
 fn perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal() {
-    let (mut harness, seller, local_witness, origin, destination) =
+    let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
     let before = ranked_goals_at(&mut harness, Tick(1));

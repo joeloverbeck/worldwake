@@ -118,10 +118,10 @@ const PLACE_BANDIT_ROAD: EntityId = entity(122);
 const PLACE_SAFE_ROUTE: EntityId = entity(123);
 const PLACE_REMOTE_ORCHARD: EntityId = entity(124);
 
-/// Five-place topology with two routes between Market and Farm:
-///   Market ↔ BanditRoad ↔ Farm  (3+3=6 ticks, dangerous)
-///   Market ↔ SafeRoute  ↔ Farm  (5+5=10 ticks, safe)
-///   Farm   ↔ RemoteOrchard      (4 ticks, auxiliary)
+/// Five-place topology with two routes between `Market` and `Farm`:
+///   `Market` ↔ `BanditRoad` ↔ `Farm`  (3+3=6 ticks, dangerous)
+///   `Market` ↔ `SafeRoute`  ↔ `Farm`  (5+5=10 ticks, safe)
+///   `Farm`   ↔ `RemoteOrchard`      (4 ticks, auxiliary)
 fn build_t20_topology() -> Topology {
     let mut t = Topology::new();
     t.add_place(PLACE_MARKET, place("Market", &[PlaceTag::Village]))
@@ -1573,7 +1573,7 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
     let violation_recorded = h
         .world
         .get_component_violation_memory(bandit)
-        .map(|vm| {
+        .is_some_and(|vm| {
             vm.violations.iter().any(|rv| {
                 matches!(
                     rv.kind,
@@ -1583,8 +1583,7 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
                     } if entity == target && expected_place == PLACE_BETA
                 )
             })
-        })
-        .unwrap_or(false);
+        });
     assert!(
         violation_recorded,
         "bandit's ViolationMemory should contain EntityMissing for target at Crossroads"
@@ -1596,8 +1595,7 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
     let target_wounds = h
         .world
         .get_component_wound_list(target)
-        .map(|wl| wl.wounds.len())
-        .unwrap_or(0);
+        .map_or(0, |wl| wl.wounds.len());
     assert_eq!(
         target_wounds, 0,
         "target should have no wounds — bandit must not omnisciently find them"
@@ -1674,7 +1672,6 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
     // Relaxed from the original ≥ 3 requirement: in a pursuit failure scenario
     // the target escapes, so Combat never fires. The investigate action uses
     // Generic domain, not Epistemic. The natural domains are Travel + Generic.
-    use std::collections::BTreeSet;
     let all_events = h
         .action_trace_sink()
         .expect("action tracing enabled")
@@ -1687,8 +1684,7 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
     }
     assert!(
         domains_seen.len() >= 2,
-        "event trace should cover ≥ 2 ActionDomain values; got {:?}",
-        domains_seen
+        "event trace should cover ≥ 2 ActionDomain values; got {domains_seen:?}",
     );
 
     (
@@ -4187,10 +4183,10 @@ const PLACE_T22R_DOWNSTREAM: EntityId = entity(165);
 
 /// Six-place topology for T22R camp reconstitution:
 ///
-///   OldCamp ↔ RallyGlen ↔ Market ↔ SafeRoute ↔ Farm
+///   `OldCamp` ↔ `RallyGlen` ↔ `Market` ↔ `SafeRoute` ↔ `Farm`
 ///                ↑                                 ↑
 ///                └─────────────2────────────────────┘
-///   Market ↔ DownstreamMarket
+///   `Market` ↔ `DownstreamMarket`
 ///
 /// Short route (Market→RallyGlen→Farm): 2+2=4 ticks (becomes dangerous)
 /// Safe route  (Market→SafeRoute→Farm): 3+3=6 ticks (safe, shorter than

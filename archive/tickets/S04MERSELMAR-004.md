@@ -1,6 +1,6 @@
 # S04MERSELMAR-004: Replace `agents_selling_at` with listed-lot belief queries
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — trait method replacement across RuntimeBeliefView and GoalBeliefView
@@ -145,3 +145,13 @@ The `mock_belief_view!` or delegate macro that generates the omniscient/macro vi
 1. `cargo test -p worldwake-sim -- belief_view`
 2. `cargo test -p worldwake-ai -- planning_state`
 3. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+**Completion date**: 2026-04-01
+
+**What changed**: Replaced `agents_selling_at` with `listed_sale_lots_at`, `seller_for_sale_lot`, and `has_sale_listing` on both `RuntimeBeliefView` and `GoalBeliefView` traits. Updated macro delegation, `PerAgentBeliefView` (real impl querying `SaleListing` component), `PlanningState` (snapshot-based impl), 15 stub implementations, and all callers in `candidate_generation.rs`, `goal_model.rs`, `failure_handling.rs`, and `search/tests.rs`. Added `has_sale_listing: bool` to `SnapshotEntity` in `planning_snapshot.rs`. Updated 22+ test setups to use lot-based seller registration. Updated `golden_trade.rs` to attach `SaleListing` to seller lots.
+
+**Deviations from original plan**: Added `has_sale_listing` as a third trait method (with default `false`) beyond the two specified in the ticket. This was necessary for `SnapshotEntity` population during `build_planning_snapshot` — without it, `PlanningState::listed_sale_lots_at` couldn't determine which lots are listed. The ticket's "PlanningState must support hypothetical listing state" requirement implied this but didn't specify the mechanism.
+
+**Verification**: `cargo test --workspace` — 3100+ tests pass, 0 failures. `cargo clippy --workspace` — clean. `agents_selling_at` fully absent from all crate sources (grep-confirmed).

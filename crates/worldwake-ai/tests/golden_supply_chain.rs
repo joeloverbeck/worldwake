@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Golden E2E tests for the multi-role supply chain (S02c).
 //!
 //! These tests exercise the supply chain in two proven segments:

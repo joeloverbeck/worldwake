@@ -610,8 +610,15 @@ mod tests {
         fn current_attackers_of(&self, _entity: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
+        }
+        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+            None
         }
         fn known_recipes(&self, _actor: EntityId) -> Vec<RecipeId> {
             Vec::new()

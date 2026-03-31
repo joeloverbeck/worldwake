@@ -19,7 +19,7 @@ use worldwake_core::{
 ///
 /// Classification:
 /// - subjective reads: observed non-self state such as `effective_place`, `commodity_quantity`,
-///   `corpse_entities_at`, `agents_selling_at`
+///   `corpse_entities_at`, `listed_sale_lots_at`, `seller_for_sale_lot`
 /// - self-authoritative reads: self needs, wounds, recipes, inventory, load, profiles
 /// - public structure reads: topology, place tags, workstation and source discovery
 ///
@@ -226,7 +226,12 @@ pub trait GoalBeliefView {
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId>;
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
-    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        let _ = lot;
+        false
+    }
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
     fn record_data(&self, record: EntityId) -> Option<RecordData> {
@@ -549,7 +554,12 @@ pub trait RuntimeBeliefView {
     }
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
-    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        let _ = lot;
+        false
+    }
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
@@ -1102,12 +1112,26 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::current_attackers_of(self, agent)
             }
 
-            fn agents_selling_at(
+            fn listed_sale_lots_at(
                 &self,
                 place: worldwake_core::EntityId,
                 commodity: worldwake_core::CommodityKind,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::agents_selling_at(self, place, commodity)
+                $crate::RuntimeBeliefView::listed_sale_lots_at(self, place, commodity)
+            }
+
+            fn seller_for_sale_lot(
+                &self,
+                lot: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::EntityId> {
+                $crate::RuntimeBeliefView::seller_for_sale_lot(self, lot)
+            }
+
+            fn has_sale_listing(
+                &self,
+                lot: worldwake_core::EntityId,
+            ) -> bool {
+                $crate::RuntimeBeliefView::has_sale_listing(self, lot)
             }
 
             fn demand_memory(
