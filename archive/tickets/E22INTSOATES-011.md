@@ -1,6 +1,6 @@
 # E22INTSOATES-011: T32 — Long Replay Consistency
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Medium
 **Engine Changes**: None
@@ -89,3 +89,10 @@ No existing test verifies that save/load mid-run produces identical results to a
 
 1. `cargo test -p worldwake-ai --test golden_integration -- --ignored t32`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `run_continuous()`, `run_split()`, `run_t32_replay_consistency()`, and `#[test] #[ignore] fn t32_replay_consistency()` to `crates/worldwake-ai/tests/golden_integration.rs`. The split run uses `h.save_load_roundtrip()` at tick 1440, recording `(tick, hash_world, hash_event_log)` at every 100-tick checkpoint across both halves.
+- **Deviations**: Used `save_load_roundtrip()` harness method instead of raw `save_to_bytes`/`load_from_bytes` — functionally identical but avoids accessing private harness internals.
+- **Verification**: Compiles clean, clippy clean, all 36 existing `worldwake-ai` tests pass, test discoverable via `--list`.

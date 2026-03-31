@@ -6337,3 +6337,128 @@ fn t31_stress_disruptions() {
     seed_bytes[31] = 0xAB;
     run_t31_stress(Seed(seed_bytes));
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 32: Long Replay Consistency
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, Production, Trade, Combat, Travel, Social, Politics, Perception
+// GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, RestockCommodity, ShareBelief,
+//   ClaimOffice, StealItem, Patrol, Harvest, Craft
+// ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport
+// Places: T30Hub, T30Market, T30Farm, T30Forge, T30Barracks, T30RulersHall,
+//   T30Forest, T30BanditCamp, T30Road, T30Orchard
+// Principles: 3, 4, 6, 12
+//
+// Setup: Reuses T30's 10-place topology and 20-agent population. A continuous
+//   2880-tick run records (hash_world, hash_event_log) at every 100-tick
+//   checkpoint. A split run saves at tick 1440, loads the snapshot, and
+//   continues for another 1440 ticks, recording the same checkpoints.
+//
+// Proves: Save/load mid-run preserves all world meaning (Principle 12).
+//   Deterministic execution: same seed + same inputs = identical StateHash
+//   at every checkpoint, whether run continuously or split across a
+//   serialization boundary. No state leakage through save/load.
+//
+// Chain: seed -> continuous 2880-tick run -> checkpoint hashes
+//   vs seed -> 1440 ticks -> save_to_bytes -> load_from_bytes -> 1440 ticks
+//   -> checkpoint hashes must match exactly at every 100-tick boundary.
+
+/// Run 2880 ticks continuously, recording (tick, world_hash, log_hash) at
+/// every 100-tick checkpoint.
+fn run_continuous(seed: Seed, total_ticks: u64) -> Vec<(u64, StateHash, StateHash)> {
+    let (mut h, _agents, _rf, _bf, _office) = build_t30_world(seed);
+    let mut checkpoints = Vec::new();
+
+    for tick_idx in 1..=total_ticks {
+        h.step_once();
+        if tick_idx % 100 == 0 {
+            let world_hash = hash_world(&h.world).unwrap();
+            let log_hash = hash_event_log(&h.event_log).unwrap();
+            checkpoints.push((tick_idx, world_hash, log_hash));
+        }
+    }
+
+    checkpoints
+}
+
+/// Run `save_at` ticks, save to bytes, load from bytes, then continue for
+/// `total_ticks - save_at` more ticks. Record checkpoints at every 100-tick
+/// boundary across both halves.
+fn run_split(
+    seed: Seed,
+    save_at: u64,
+    total_ticks: u64,
+) -> Vec<(u64, StateHash, StateHash)> {
+    let (mut h, _agents, _rf, _bf, _office) = build_t30_world(seed);
+    let mut checkpoints = Vec::new();
+
+    // --- First half: run up to save_at ---
+    for tick_idx in 1..=save_at {
+        h.step_once();
+        if tick_idx % 100 == 0 {
+            let world_hash = hash_world(&h.world).unwrap();
+            let log_hash = hash_event_log(&h.event_log).unwrap();
+            checkpoints.push((tick_idx, world_hash, log_hash));
+        }
+    }
+
+    // --- Save → Load boundary ---
+    let mut h = h.save_load_roundtrip();
+
+    // --- Second half: continue from save_at+1 to total_ticks ---
+    for tick_idx in (save_at + 1)..=total_ticks {
+        h.step_once();
+        if tick_idx % 100 == 0 {
+            let world_hash = hash_world(&h.world).unwrap();
+            let log_hash = hash_event_log(&h.event_log).unwrap();
+            checkpoints.push((tick_idx, world_hash, log_hash));
+        }
+    }
+
+    checkpoints
+}
+
+/// Run both continuous and split, assert exact checkpoint match.
+fn run_t32_replay_consistency(seed: Seed) {
+    let total_ticks: u64 = 2880;
+    let save_at: u64 = 1440;
+
+    let continuous = run_continuous(seed, total_ticks);
+    let split = run_split(seed, save_at, total_ticks);
+
+    assert_eq!(
+        continuous.len(),
+        split.len(),
+        "T32: checkpoint count mismatch: continuous={}, split={}",
+        continuous.len(),
+        split.len()
+    );
+
+    for (c, s) in continuous.iter().zip(split.iter()) {
+        assert_eq!(
+            c.0, s.0,
+            "T32: checkpoint tick mismatch: continuous={}, split={}",
+            c.0, s.0
+        );
+        assert_eq!(
+            c.1, s.1,
+            "T32: world hash mismatch at tick {}: continuous={:?}, split={:?}",
+            c.0, c.1, s.1
+        );
+        assert_eq!(
+            c.2, s.2,
+            "T32: event log hash mismatch at tick {}: continuous={:?}, split={:?}",
+            c.0, c.2, s.2
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn t32_replay_consistency() {
+    let mut seed_bytes = [0u8; 32];
+    seed_bytes[0] = 0x32;
+    seed_bytes[31] = 0xCC;
+    run_t32_replay_consistency(Seed(seed_bytes));
+}
