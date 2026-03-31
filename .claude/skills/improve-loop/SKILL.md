@@ -5,7 +5,7 @@ description: Iterative improvement loop — autonomously optimizes a mutable sys
 
 # Improve Loop Skill
 
-Implements Karpathy's iterative improvement pattern as an autonomous optimization loop, enhanced with UCB1 category selection, MAD confidence scoring, Goodhart's Law defenses, lightweight backtracking, intermediate metrics, cross-run lesson store, self-improving research strategy, near-miss tracking, plateau detection, structured reflection, multi-run averaging, human steering, condition drift anchoring, correctness guards, scope enforcement, lesson curation gating, and structured lesson categories.
+Implements Karpathy's iterative improvement pattern as an autonomous optimization loop, enhanced with UCB1 category selection, MAD confidence scoring, Goodhart's Law defenses, lightweight backtracking, intermediate metrics, cross-run lesson store, self-improving research strategy, near-miss tracking, plateau detection, structured reflection, multi-run averaging, human steering, condition drift anchoring, correctness guards, scope enforcement, lesson curation gating, structured lesson categories, ceiling detection, dependent fixture updates, and tiered mutability.
 
 ## Invocation
 
@@ -23,12 +23,15 @@ Implements Karpathy's iterative improvement pattern as an autonomous optimizatio
   - `musings.md` — structured reflection log (created automatically if missing)
   - `next-idea.md` — human-provided hypothesis override (consumed and renamed after use)
   - `checks.sh` — correctness guard (tests, types, lint); blocks metric-improving changes that break correctness
+  - `sync-fixtures.sh` — fixture synchronization script (see "Dependent Fixture Updates" below)
 
 ### results.tsv Schema
 
 ```
-experiment_id	combined_duration_ms	lines_delta	category	status	description
+experiment_id	metric_value	lines_delta	category	status	description
 ```
+
+The `metric_value` column holds the primary metric from the harness (identified by `PRIMARY_METRIC_KEY`). The column name is generic — the actual metric name is defined in program.md.
 
 Status values: `ACCEPT`, `REJECT`, `NEAR_MISS`, `EARLY_ABORT`, `CRASH`, `SUSPICIOUS_ACCEPT`, `BACKTRACK`
 
@@ -74,6 +77,70 @@ Campaign Completes" step explicitly commits this file.
 | `METRIC_DIRECTION` | `lower-is-better` | Optimization direction (`lower-is-better` or `higher-is-better`) |
 | `MAX_ITERATIONS` | `unlimited` | Hard cap on total experiments (graceful stop when reached) |
 | `CHECKS_TIMEOUT` | 120 | Timeout in seconds for correctness checks (`checks.sh`) |
+| `PRIMARY_METRIC_KEY` | `combined_duration_ms` | Key name to parse from harness output (e.g., `compositeScore`) |
+| `CEILING_THRESHOLD` | `2 * PLATEAU_THRESHOLD` | Consecutive non-accepts across ALL strategies before ceiling report |
+
+## Dependent Fixture Updates
+
+Some campaigns mutate files (e.g., configuration, data definitions) whose compiled output is captured in snapshot/golden test fixtures. When the harness runs tests, these fixtures fail — not because the code is broken, but because the fixtures are stale.
+
+**Detection**: If the harness CRASH error mentions "golden", "snapshot", "fixture", or "expected vs actual" comparison failures, and the failure appeared immediately after a mutable file change, this is a **fixture sync issue**, not a code bug.
+
+**Resolution protocol**:
+
+1. If `$WT/campaigns/<campaign>/sync-fixtures.sh` exists:
+   ```bash
+   cd $WT && bash campaigns/<campaign>/sync-fixtures.sh
+   ```
+   This script should regenerate all dependent fixtures from the current compiled state. It runs AFTER build but BEFORE the harness test gate.
+
+2. If no `sync-fixtures.sh` exists, the agent must identify and regenerate stale fixtures manually:
+   - Build the project to produce fresh compiled output
+   - Identify which fixture files compare against compiled output (search for "golden", "snapshot", or assertion patterns)
+   - Regenerate those fixtures from the current compiled state
+   - Retry the harness
+
+3. Fixture regeneration counts as part of the IMPLEMENT step, not as a CRASH retry. The 3-retry limit for CRASH applies to actual code bugs, not fixture sync.
+
+4. Regenerated fixture files are committed alongside the mutable file changes (same commit for ACCEPT, same rollback for REJECT).
+
+5. **Auto-generate sync-fixtures.sh**: After the first successful manual fixture regeneration, write the working regeneration steps as `$WT/campaigns/<campaign>/sync-fixtures.sh`. This eliminates manual regeneration overhead for all subsequent experiments.
+
+**Campaign authors**: If your mutable files feed into compiled output that has golden/snapshot tests, create `sync-fixtures.sh` to automate regeneration. This prevents the agent from spending experiment iterations on fixture discovery.
+
+## Tiered Mutability with Split Commits
+
+Some campaigns define multiple mutability tiers with different commit policies. For example:
+
+- **Tier 1** (primary target): Configuration or data changes — committed on ACCEPT, rolled back on REJECT
+- **Tier 2** (infrastructure): Extensions that enable Tier 1 — committed separately, may persist even if Tier 1 REJECT
+- **Tier 3** (observability): Trace/logging improvements — always committed regardless of experiment outcome
+
+**Detection**: If `program.md` defines tiers, levels, or layers in its "Mutable System" section with different commit/rollback policies, use the tiered protocol below.
+
+**Tiered commit protocol**:
+
+1. **During IMPLEMENT**: Tag each changed file with its tier.
+
+2. **On ACCEPT**: Commit all tiers together (or in tier order if program.md requires split commits).
+
+3. **On REJECT with split-commit policy**:
+   - Rollback Tier 1 (primary target) changes: `git checkout -- <tier-1-files>`
+   - Evaluate Tier 2 (infrastructure) changes independently:
+     - Do they pass all tests on their own (without the rejected Tier 1 change)?
+     - Do they align with project architectural principles?
+     - Are they a genuine improvement, not just scaffolding for a failed experiment?
+     - If YES to all: commit Tier 2 separately with description `"infra: <description> (independent of rejected exp-NNN)"`
+     - If NO: rollback Tier 2 as well
+   - Tier 3 (observability): Always commit if tests pass, regardless of Tier 1/2 outcome
+
+4. **Scope check adjustment**: When tiers have different rollback policies, the scope check in Step 3 must validate against the UNION of all tier file lists, not just Tier 1.
+
+5. **Lines delta accounting**: Count only Tier 1 lines delta for the accept/reject decision. Tier 2 and Tier 3 lines are infrastructure overhead, not experiment complexity.
+
+6. **Fixture re-regeneration after Tier 1 rollback**: If golden/snapshot fixtures were regenerated during the experiment (because Tier 1 changes altered compiled output), re-run fixture regeneration (or `sync-fixtures.sh`) AFTER Tier 1 rollback to restore fixtures to the post-Tier-2-only state. Verify with a build+test cycle before committing Tier 2.
+
+**Campaign authors**: Define tiers explicitly in `program.md` with file lists and commit policies. If no tiers are defined, all mutable files follow the default single-tier protocol.
 
 ## Worktree Requirement (NON-NEGOTIABLE)
 
@@ -87,6 +154,8 @@ The improvement loop commits and rolls back frequently. It MUST run inside a ded
 3. ALL subsequent file operations use the worktree root as the base path.
 
 Set `WT` = the worktree root path. Every file path in every tool call below is prefixed with `$WT/`.
+
+4. If the project requires dependency installation or build setup in the worktree, run that before proceeding (e.g., `cd $WT && cargo build` for Rust projects, `cd $WT && pnpm install` for JS projects).
 
 ## Phase 0 — Setup
 
@@ -102,6 +171,8 @@ Set `WT` = the worktree root path. Every file path in every tool call below is p
 10. Read `$WT/campaigns/<campaign>/lessons.jsonl` if resuming — prune lessons with `decay_weight < 0.3`. For lessons lacking a `type` field (backward compatibility), treat as `finding` (if `polarity: positive`) or `negative` (if `polarity: negative`).
 11. **Metric direction validation**: Read `METRIC_DIRECTION` from program.md (default: `lower-is-better`). Verify the accept/reject logic in program.md is consistent with this direction (e.g., "improved" means lower for `lower-is-better`, higher for `higher-is-better`). **Hard error** if mismatched — do not proceed.
 12. Read `MAX_ITERATIONS` from program.md (default: `unlimited`). Initialize `experiment_count = 0` (or resume from results.tsv row count if resuming).
+13. Read `PRIMARY_METRIC_KEY` from program.md (default: `combined_duration_ms`). This is the key name used to parse the harness output.
+14. **Continuation campaign detection**: If results.tsv has only the header row but musings.md contains prior experiment history, this is a continuation campaign building on a prior campaign's optimized state. Read prior musings to understand the optimization history and note in musings: `**CONTINUATION**: This campaign builds on prior optimization. Prior history preserved in musings.md.` Avoid repeating approaches already proven exhausted in the prior history.
 
 ## Phase 1 — Baseline
 
@@ -109,21 +180,21 @@ Set `WT` = the worktree root path. Every file path in every tool call below is p
    ```bash
    cd $WT && bash campaigns/<campaign>/harness.sh
    ```
-2. Parse the output line: `combined_duration_ms=XXXXX pass=YY tests=ZZ`
-3. If multi-run: collect all `combined_duration_ms` values, compute MAD (see Step 4 for MAD formula), record `baseline_ms` = median.
-4. If single-run: record `baseline_ms` = the `combined_duration_ms` value.
-5. Set `best_ms` = `baseline_ms`.
+2. Parse the harness output as key=value lines. Extract the primary metric using `PRIMARY_METRIC_KEY` (e.g., `compositeScore=10.5333` when `PRIMARY_METRIC_KEY=compositeScore`, or `combined_duration_ms=12345` for the default).
+3. If multi-run: collect all primary metric values, compute MAD (see Step 4 for MAD formula), record `baseline_metric` = median.
+4. If single-run: record `baseline_metric` = the primary metric value.
+5. Set `best_metric` = `baseline_metric`.
 6. Commit current state as baseline:
    ```bash
-   cd $WT && git add -A && git commit --allow-empty -m "improve-loop: baseline (${baseline_ms}ms)"
+   cd $WT && git add -A && git commit --allow-empty -m "improve-loop: baseline (${PRIMARY_METRIC_KEY}=${baseline_metric})"
    ```
 7. Append to results.tsv:
    ```
-   baseline	<baseline_ms>	0	baseline	ACCEPT	baseline measurement
+   baseline	<baseline_metric>	0	baseline	ACCEPT	baseline measurement
    ```
 8. Initialize `$WT/campaigns/<campaign>/checkpoints.jsonl` with the baseline:
    ```json
-   {"exp_id": "baseline", "metric": <baseline_ms>, "commit": "<commit-hash>", "lines_delta_cumulative": 0, "description": "baseline", "timestamp": "<ISO-8601>"}
+   {"exp_id": "baseline", "metric": <baseline_metric>, "commit": "<commit-hash>", "lines_delta_cumulative": 0, "description": "baseline", "timestamp": "<ISO-8601>"}
    ```
 
 ## Phase 2 — Improvement Loop
@@ -150,7 +221,7 @@ Run this loop INDEFINITELY (or until `MAX_ITERATIONS` reached). Never stop. Neve
 - Re-read mutable files **from disk** (not from stale context). This ensures each iteration operates on fresh state.
 - Verify that no immutable files have been modified since baseline. If any have, **hard error** — abort the loop.
 - Review experiment history in results.tsv — what's been tried, what worked, what failed.
-- Note the current `best_ms` and cumulative `lines_delta`.
+- Note the current `best_metric` and cumulative `lines_delta`.
 
 ### Step 1b: CHECK STRATEGY (Plateau Detection)
 
@@ -176,12 +247,12 @@ Run this loop INDEFINITELY (or until `MAX_ITERATIONS` reached). Never stop. Neve
 
 - If strategy is `backtrack`:
   1. Read `$WT/campaigns/<campaign>/checkpoints.jsonl`.
-  2. Select the checkpoint with the best metric (lowest `metric` value). If metrics are within 1%, prefer the one with lower `lines_delta_cumulative`.
+  2. Select the checkpoint with the best metric (using Metric Direction Comparison Helpers below). If metrics are within 1%, prefer the one with lower `lines_delta_cumulative`.
   3. Execute: `cd $WT && git reset --hard <commit>`
-  4. Append to results.tsv: `backtrack-NNN	<checkpoint_metric>	0	backtrack	BACKTRACK	backtracked to <exp_id> (metric: <X>ms)`
-  5. Append to musings: `## backtrack-NNN\n**Backtracked to <exp_id>** (metric: <X>ms). Previous HEAD was at exp-MMM (metric: <Y>ms). Reason: exhausted all strategies from current position.`
+  4. Append to results.tsv: `backtrack-NNN	<checkpoint_metric>	0	backtrack	BACKTRACK	backtracked to <exp_id> (metric: <X>)`
+  5. Append to musings: `## backtrack-NNN\n**Backtracked to <exp_id>** (metric: <X>). Previous HEAD was at exp-MMM (metric: <Y>). Reason: exhausted all strategies from current position.`
   6. Reset `strategy = "normal"`, `consecutive_rejects = 0`.
-  7. Update `best_ms` to the checkpoint's metric.
+  7. Update `best_metric` to the checkpoint's metric.
   8. Cross-reference musings and results.tsv to identify experiments already tried from this checkpoint — avoid repeating them.
 
 ### Step 1e: PROCEED/REFINE/PIVOT CHECK
@@ -191,7 +262,26 @@ Run this loop INDEFINITELY (or until `MAX_ITERATIONS` reached). Never stop. Neve
   - **REFINE** (accept rate >= 10% and <= 20%): Approach has potential but is underperforming. Adjust parameters — tighten/loosen thresholds, shift category priorities, re-read mutable files for missed angles.
   - **PIVOT** (accept rate < 10%): Approach is exhausted. Consult lessons (local and global) for alternative strategies. If lessons suggest a pattern, adopt it. If no relevant lessons, trigger `radical` strategy regardless of consecutive reject count.
 
-### Step 1f: META-REVIEW (Self-Improving program.md)
+### Step 1f: CEILING DETECTION (Hard Ceiling Report)
+
+- Count total consecutive non-accepts (REJECT, NEAR_MISS, EARLY_ABORT, CRASH) from the tail of results.tsv.
+- If count >= `CEILING_THRESHOLD` (default: `2 * PLATEAU_THRESHOLD`) AND all strategies (normal, combine, ablation, radical, backtrack) have been attempted since the last ACCEPT:
+  1. Generate a **ceiling report** in musings.md:
+     ```markdown
+     ## CEILING REPORT
+     **Ceiling metric**: <best_metric value>
+     **Experiments since last accept**: <N>
+     **Strategies exhausted**: normal, combine, ablation, radical, backtrack
+     **Categories attempted**: <list with attempt counts and success rates>
+     **Architectural bottlenecks identified**: <list of root causes preventing improvement>
+     **Recommended next steps**: <specs, infrastructure changes, or scope adjustments>
+     ```
+  2. Append to results.tsv: `ceiling-NNN	<best_metric>	0	ceiling	REJECT	hard ceiling reached after N experiments`
+  3. **Pause for human input**: Present the ceiling report to the user and wait for direction. This is NOT "stopping the loop" — it is a structured handoff when the mutable system is proven incapable of further improvement within the current architectural constraints.
+  4. If the human provides a `next-idea.md`, resume the loop with that hypothesis.
+  5. If the human says to stop, proceed to "After Campaign Completes."
+
+### Step 1g: META-REVIEW (Self-Improving program.md)
 
 - **Only if `meta_improvement: true` in program.md.**
 - Every `META_REVIEW_INTERVAL` experiments:
@@ -257,13 +347,27 @@ Append to `$WT/campaigns/<campaign>/musings.md`:
 ### Step 3: IMPLEMENT
 
 - Apply the change to the mutable files in the worktree.
-- **Scope check**: Verify that ONLY declared mutable files were modified (`git diff --name-only` against mutable file list from program.md). If any non-mutable file was changed:
+- **Scope check**: Verify that ONLY declared mutable files were modified (`git diff --name-only` against mutable file list from program.md). When tiered mutability is active, validate against the UNION of all tier file lists. If any non-mutable file was changed:
   - Rollback: `cd $WT && git checkout -- <all-changed-files>`
   - Log as `REJECT` with description `"scope violation: touched immutable file <path>"`
   - Append to musings: `**SCOPE VIOLATION**: Attempted to modify <path>, which is not in the mutable file list.`
   - Skip to Step 8 (REPEAT).
-- Count `lines_delta` for this change (net lines added minus lines removed across all mutable files).
+- Count `lines_delta` for this change (net lines added minus lines removed across mutable files). When tiered mutability is active, count only Tier 1 lines delta for the accept/reject decision.
 - Tag the change with a `category` from program.md's experiment categories list.
+
+### Metric Direction Comparison Helpers
+
+All comparisons in Steps 4-6 MUST respect `METRIC_DIRECTION`:
+
+| Operation | `lower-is-better` | `higher-is-better` |
+|-----------|--------------------|--------------------|
+| improved | `new_metric < best_metric` | `new_metric > best_metric` |
+| worsened | `new_metric > best_metric` | `new_metric < best_metric` |
+| early_abort | `running > best_metric * (1 + ABORT_THRESHOLD)` | `running < best_metric * (1 - ABORT_THRESHOLD)` |
+| best_checkpoint | lowest `metric` value | highest `metric` value |
+| improvement_pct | `(best_metric - new_metric) / best_metric * 100` | `(new_metric - best_metric) / best_metric * 100` |
+
+Apply these consistently throughout. Never hardcode a comparison direction.
 
 ### Step 4: EXECUTE
 
@@ -273,12 +377,12 @@ Append to `$WT/campaigns/<campaign>/musings.md`:
   cd $WT && bash campaigns/<campaign>/harness.sh
   ```
 
-**Early abort (per-run):** If the harness supports intermediate output (one line per target file), parse after each line. If the running `combined_duration_ms` already exceeds `best_ms * (1 + ABORT_THRESHOLD)`, kill the harness process. Log status as `EARLY_ABORT` and REJECT immediately (skip to Step 7).
+**Early abort (per-run):** If the harness supports intermediate output (one line per target file), parse after each line. If the running metric value is worse than `best_metric` by more than `ABORT_THRESHOLD` (using the Metric Direction Comparison Helpers above), kill the harness process. Log status as `EARLY_ABORT` and REJECT immediately (skip to Step 7).
 
 **Intermediate metric capture:** While parsing intermediate output for early abort, also record each checkpoint's label and metric value for `intermediates.jsonl` (see Step 5).
 
 **Multi-run averaging with MAD:** If `HARNESS_RUNS > 1`:
-  - Run the harness N times, collecting all `combined_duration_ms` values.
+  - Run the harness N times, collecting all primary metric values.
   - Early abort still applies per-run (abort any single run that's clearly losing).
   - Compute **median** as the metric for the accept/reject decision.
   - Compute **MAD** (Median Absolute Deviation):
@@ -298,11 +402,11 @@ After a successful harness run (non-crash, non-abort), apply these guards:
 
 **Multi-seed evaluation (if `HARNESS_SEEDS > 1`):**
 - Re-run the harness with env var `HARNESS_SEED=N` for each additional seed (seeds 2 through `HARNESS_SEEDS`).
-- Accept only if the improvement holds across ALL seeds (worst-case metric across all seeds must still beat `best_ms`).
+- Accept only if the improvement holds across ALL seeds (worst-case metric across all seeds must still beat `best_metric`).
 - If any seed shows regression, classify as REJECT.
 
 **Suspicion gate:**
-- Compute `improvement_pct = (best_ms - new_ms) / best_ms * 100`.
+- Compute `improvement_pct` using the Metric Direction Comparison Helpers.
 - If `improvement_pct > MAX_IMPROVEMENT_PCT` (default 30%):
   - Log status as `SUSPICIOUS_ACCEPT` instead of `ACCEPT`.
   - Append to musings: `**WARNING**: Unusually large improvement (X%). Verify this is not metric gaming.`
@@ -311,16 +415,16 @@ After a successful harness run (non-crash, non-abort), apply these guards:
 **Periodic regression check:**
 - Every `REGRESSION_CHECK_INTERVAL` accepts (tracked via `total_accepts` counter):
   - Re-run the harness WITHOUT any new changes.
-  - If the measured metric has drifted from `best_ms` by more than `NOISE_TOLERANCE`:
+  - If the measured metric has drifted from `best_metric` by more than `NOISE_TOLERANCE`:
     - Flag as "metric drift detected" in musings.
-    - Update `best_ms` to the re-measured value (recalibrate).
-    - Log: `regression-check-NNN	<measured_ms>	0	regression	ACCEPT	metric recalibrated from <old_best> to <new_best>`
+    - Update `best_metric` to the re-measured value (recalibrate).
+    - Log: `regression-check-NNN	<measured_value>	0	regression	ACCEPT	metric recalibrated from <old_best> to <new_best>`
 
 ### Step 5: MEASURE
 
-- Parse `combined_duration_ms` from harness output (or median if multi-run).
+- Parse the primary metric (by `PRIMARY_METRIC_KEY`) from harness output (or median if multi-run).
 - If harness exited non-zero or output is unparseable, treat as CRASH.
-- Compute improvement: `improvement_pct = (best_ms - new_ms) / best_ms * 100`
+- Compute improvement: `improvement_pct` using the Metric Direction Comparison Helpers.
 
 **Intermediate metric parsing:**
 - If the harness produced intermediate output lines (per-file or per-checkpoint), parse each one.
@@ -333,9 +437,10 @@ After a successful harness run (non-crash, non-abort), apply these guards:
 
 ### Step 6: DECIDE
 
-Apply the accept/reject logic from program.md:
+Apply the accept/reject logic from program.md. **If program.md defines its own accept/reject conditions** (thresholds, noise tolerance, complexity penalties), use those EXCLUSIVELY. The defaults below apply ONLY when program.md does not specify its own logic:
 
 **CRASH/FAIL:**
+- **Fixture sync crash**: If the error is a golden/snapshot test failure immediately after mutable file changes, this is a dependent fixture issue — follow the "Dependent Fixture Updates" protocol. This does NOT count toward the 3-retry limit.
 - If the error is trivial (typo, missing import, off-by-one), fix and retry (up to 3 times).
 - Otherwise, REJECT.
 
@@ -379,13 +484,18 @@ Apply the accept/reject logic from program.md:
 - If checks **pass** (or `checks.sh` does not exist): proceed with ACCEPT.
 
 **On ACCEPT (after passing Step 6b):**
+
+For single-tier campaigns (default):
 ```bash
-cd $WT && git add <changed-files> && git commit -m "improve-loop: <description> (<old_ms> -> <new_ms> ms)"
+cd $WT && git add <changed-files> && git commit -m "improve-loop: <description> (<PRIMARY_METRIC_KEY>: <old_metric> -> <new_metric>)"
 ```
-Update `best_ms = new_ms`. Reset `strategy = "normal"`, `consecutive_rejects = 0`. Increment `total_accepts`.
+
+For tiered campaigns: commit according to the tiered commit protocol defined above.
+
+Update `best_metric = new_metric`. Reset `strategy = "normal"`, `consecutive_rejects = 0`. Increment `total_accepts`.
 Append to `$WT/campaigns/<campaign>/checkpoints.jsonl`:
 ```json
-{"exp_id": "exp-NNN", "metric": <new_ms>, "commit": "<commit-hash>", "lines_delta_cumulative": <total>, "description": "...", "timestamp": "<ISO-8601>"}
+{"exp_id": "exp-NNN", "metric": <new_metric>, "commit": "<commit-hash>", "lines_delta_cumulative": <total>, "description": "...", "timestamp": "<ISO-8601>"}
 ```
 
 **On NEAR_MISS:**
@@ -394,15 +504,19 @@ cd $WT && git stash push -m "near-miss-exp-NNN: <description>"
 ```
 
 **On REJECT / EARLY_ABORT:**
+
+For single-tier campaigns (default):
 ```bash
 cd $WT && git checkout -- <changed-files>
 ```
+
+For tiered campaigns: follow the tiered rollback protocol (Tier 1 rolls back; Tier 2 evaluated independently; Tier 3 always commits if tests pass).
 
 ### Step 7: LOG
 
 Append a row to `$WT/campaigns/<campaign>/results.tsv`:
 ```
-<experiment_id>	<combined_duration_ms>	<lines_delta>	<category>	<ACCEPT|REJECT|NEAR_MISS|EARLY_ABORT|CRASH|SUSPICIOUS_ACCEPT|BACKTRACK>	<description>
+<experiment_id>	<metric_value>	<lines_delta>	<category>	<ACCEPT|REJECT|NEAR_MISS|EARLY_ABORT|CRASH|SUSPICIOUS_ACCEPT|BACKTRACK>	<description>
 ```
 
 Use a sequential experiment ID: `exp-001`, `exp-002`, etc. (continue from where results.tsv left off).
@@ -411,7 +525,7 @@ Use a sequential experiment ID: `exp-001`, `exp-002`, etc. (continue from where 
 
 Append to `$WT/campaigns/<campaign>/musings.md`:
 ```markdown
-**Result**: <status> (<old_ms> -> <new_ms> ms, noise_floor: X%)
+**Result**: <status> (<old_metric> -> <new_metric>, noise_floor: X%)
 **Partial signals**: <if any intermediate metrics showed directional improvement/regression>
 **Learning**: <what was learned — confirmed/refuted hypothesis, surprising observations, what to try differently>
 ```
@@ -498,15 +612,16 @@ When the human decides to stop the loop (or `MAX_ITERATIONS` is reached):
 - **Never modify immutable files** (harness.sh, engine source, game data, other tests).
 - **Never weaken assertions** — the tests must remain equally rigorous.
 - **Never add dependencies** — optimize with what's available.
-- **Never stop the loop** — run until externally interrupted or `MAX_ITERATIONS` reached.
+- **Never stop the loop** — run until externally interrupted, `MAX_ITERATIONS` reached, or ceiling detected.
 - **Always use worktree paths** — never operate on the main working tree.
 - **Always tag experiments with a category** from program.md's taxonomy.
 - **Always record hypothesis and learning** in musings.md.
 - **Always extract lessons** on ACCEPT and on repeated category failures (subject to curation gate).
-- **Never modify safety-critical config during meta-review** (see Step 1f forbidden list).
+- **Never modify safety-critical config during meta-review** (see Step 1g forbidden list).
 - **Never accept improvements within noise floor** without additional confirmation runs.
 - **Always re-read program.md objective at each iteration** (Step 0: ANCHOR) — prevents condition drift.
 - **Always verify scope after IMPLEMENT** (Step 3) — reject any change that touches immutable files.
 - **Always run correctness checks** (Step 6b) if `checks.sh` exists — metric improvement that breaks correctness is not real improvement.
 - **Always apply curation gate before persisting lessons** — not every observation is worth keeping.
 - **Always validate metric direction at startup** (Phase 0, step 11) — optimizing the wrong direction is a silent, expensive bug.
+- **Always respect program.md custom accept/reject logic** — when program.md defines its own conditions, they are authoritative over skill defaults.

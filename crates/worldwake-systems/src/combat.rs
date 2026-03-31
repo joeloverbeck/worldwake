@@ -298,7 +298,13 @@ fn latest_wound_event(
     event_log: &EventLog,
     entity: worldwake_core::EntityId,
 ) -> Option<worldwake_core::EventId> {
-    (0..event_log.len())
+    // Bound the backward search to avoid O(total_events) scans on large logs.
+    // Wound events are typically recent (bleeding wounds are updated each tick).
+    // For stable wounds the cause is historical; a bounded window is sufficient
+    // for attribution without per-tick O(n) degradation.
+    let log_len = event_log.len();
+    let search_start = log_len.saturating_sub(500);
+    (search_start..log_len)
         .rev()
         .map(|index| worldwake_core::EventId(index as u64))
         .find(|event_id| {
