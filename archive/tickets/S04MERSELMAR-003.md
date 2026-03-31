@@ -1,6 +1,6 @@
 # S04MERSELMAR-003: `staff_market` action definition and handler
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new trade-domain action with start/tick/commit/abort lifecycle
@@ -121,3 +121,17 @@ Add `register_staff_market_action` to `crates/worldwake-systems/src/lib.rs` expo
 
 1. `cargo test -p worldwake-systems -- trade_action`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**:
+  - Added `DurationExpr::ActorMarketPresence` variant in `action_semantics.rs`, resolving to `market_presence_ticks` from `TradeDispositionProfile`
+  - Implemented `register_staff_market_action()` in `trade_actions.rs` with full start/tick/commit/abort lifecycle
+  - Start attaches `SaleListing` to eligible local lots; commit/abort removes them
+  - Commit records `WantedToSellButNoBuyer` demand observation on unproductive cycles
+  - Wired registration in `action_registry.rs`, exported from `lib.rs`
+  - Added `PlannerOpKind::StaffMarket` in `planner_ops.rs` with non-barrier semantics
+  - Updated exhaustive matches in `belief_view.rs`, `planner_duration_contract.rs`, `planning_state.rs`, `goal_model.rs`, `failure_handling.rs`, `observation.rs`
+- **Deviations**: Used `clear_component_sale_listing` (WorldTxn API) instead of `remove_component_sale_listing` (World-only). Used `txn.tick()` instead of `current_tick()`. Both are API naming differences, not behavioral deviations.
+- **Verification**: 9 new staff_market tests pass. Full workspace: clippy clean, all tests pass (0 failures)

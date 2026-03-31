@@ -4044,6 +4044,11 @@ mod tests {
                     Vec::new(),
                     ActionPayload::None,
                 ),
+                PlannerDurationDependency::ActorMarketPresence => (
+                    DurationExpr::ActorMarketPresence,
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
                 PlannerDurationDependency::ActorPatrolProfile => (
                     DurationExpr::ActorPatrolProfile,
                     Vec::new(),

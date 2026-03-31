@@ -1251,6 +1251,9 @@ pub fn estimate_duration_from_beliefs(
         DurationExpr::ActorTradeDisposition => view
             .trade_disposition_profile(actor)
             .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get())),
+        DurationExpr::ActorMarketPresence => view
+            .trade_disposition_profile(actor)
+            .map(|profile| ActionDuration::new(profile.market_presence_ticks.get())),
         DurationExpr::ActorPatrolProfile => view.patrol_profile(actor).map(|profile| {
             ActionDuration::new(crate::action_semantics::patrol_duration_ticks(&profile))
         }),

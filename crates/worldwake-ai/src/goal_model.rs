@@ -785,6 +785,7 @@ impl GoalKindPlannerExt for GoalKind {
                 _ => state,
             },
             PlannerOpKind::Trade
+            | PlannerOpKind::StaffMarket
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::Attack
@@ -1139,6 +1140,7 @@ impl GoalKindPlannerExt for GoalKind {
         match op_kind {
             PlannerOpKind::Travel
             | PlannerOpKind::Trade
+            | PlannerOpKind::StaffMarket
             | PlannerOpKind::EstablishCamp
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft

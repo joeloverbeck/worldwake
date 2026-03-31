@@ -6,6 +6,7 @@ pub enum PlannerDurationDependency {
     ActorMetabolism,
     BanditCampEstablishmentProfile,
     ActorTradeDisposition,
+    ActorMarketPresence,
     ActorPatrolProfile,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
@@ -17,11 +18,12 @@ pub enum PlannerDurationDependency {
     TravelToTarget,
 }
 
-pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 13] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 14] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
     PlannerDurationDependency::BanditCampEstablishmentProfile,
     PlannerDurationDependency::ActorTradeDisposition,
+    PlannerDurationDependency::ActorMarketPresence,
     PlannerDurationDependency::ActorPatrolProfile,
     PlannerDurationDependency::ActorTheftDisposition,
     PlannerDurationDependency::ActorInvestigationDisposition,
@@ -44,6 +46,7 @@ impl PlannerDurationDependency {
             Self::ActorMetabolism => "ActorMetabolism",
             Self::BanditCampEstablishmentProfile => "BanditCampEstablishmentProfile",
             Self::ActorTradeDisposition => "ActorTradeDisposition",
+            Self::ActorMarketPresence => "ActorMarketPresence",
             Self::ActorPatrolProfile => "ActorPatrolProfile",
             Self::ActorTheftDisposition => "ActorTheftDisposition",
             Self::ActorInvestigationDisposition => "ActorInvestigationDisposition",
@@ -61,6 +64,7 @@ impl PlannerDurationDependency {
             DurationExpr::TargetConsumable { .. } => Some(Self::TargetConsumable),
             DurationExpr::ActorMetabolism { .. } => Some(Self::ActorMetabolism),
             DurationExpr::ActorTradeDisposition => Some(Self::ActorTradeDisposition),
+            DurationExpr::ActorMarketPresence => Some(Self::ActorMarketPresence),
             DurationExpr::ActorPatrolProfile => Some(Self::ActorPatrolProfile),
             DurationExpr::ActorTheftDisposition => Some(Self::ActorTheftDisposition),
             DurationExpr::ActorInvestigationDisposition => {

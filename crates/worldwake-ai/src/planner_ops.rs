@@ -38,6 +38,7 @@ pub enum PlannerOpKind {
     YieldForceClaim,
     Investigate,
     AskWitness,
+    StaffMarket,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -79,6 +80,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Needs, "wash") => Some(PlannerOpKind::Wash),
         (ActionDomain::Generic, "establish_camp") => Some(PlannerOpKind::EstablishCamp),
         (ActionDomain::Trade, "trade") => Some(PlannerOpKind::Trade),
+        (ActionDomain::Trade, "staff_market") => Some(PlannerOpKind::StaffMarket),
         (ActionDomain::Production, "queue_for_facility_use") => {
             Some(PlannerOpKind::QueueForFacilityUse)
         }
@@ -142,7 +144,8 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::Wash
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
-        | PlannerOpKind::Heal => base_semantics(
+        | PlannerOpKind::Heal
+        | PlannerOpKind::StaffMarket => base_semantics(
             op_kind,
             true,
             false,

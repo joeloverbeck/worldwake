@@ -115,6 +115,7 @@ pub enum DurationExpr {
         kind: MetabolismDurationKind,
     },
     ActorTradeDisposition,
+    ActorMarketPresence,
     ActorPatrolProfile,
     ActorTheftDisposition,
     ActorInvestigationDisposition,
@@ -138,6 +139,7 @@ impl DurationExpr {
             | Self::TravelToTarget { .. }
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
+            | Self::ActorMarketPresence
             | Self::ActorPatrolProfile
             | Self::ActorTheftDisposition
             | Self::ActorInvestigationDisposition
@@ -203,6 +205,10 @@ impl DurationExpr {
             Self::ActorTradeDisposition => world
                 .get_component_trade_disposition_profile(actor)
                 .map(|profile| ActionDuration::new(profile.negotiation_round_ticks.get()))
+                .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
+            Self::ActorMarketPresence => world
+                .get_component_trade_disposition_profile(actor)
+                .map(|profile| ActionDuration::new(profile.market_presence_ticks.get()))
                 .ok_or_else(|| format!("actor {actor} lacks trade disposition profile")),
             Self::ActorPatrolProfile => world
                 .get_component_patrol_profile(actor)
@@ -449,7 +455,7 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 15] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 16] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
         DurationExpr::ConsultRecord { target_index: 0 },
@@ -459,6 +465,7 @@ mod tests {
             kind: MetabolismDurationKind::Wash,
         },
         DurationExpr::ActorTradeDisposition,
+        DurationExpr::ActorMarketPresence,
         DurationExpr::ActorPatrolProfile,
         DurationExpr::ActorTheftDisposition,
         DurationExpr::ActorInvestigationDisposition,
@@ -522,6 +529,7 @@ mod tests {
             None
         );
         assert_eq!(DurationExpr::ActorTradeDisposition.fixed_ticks(), None);
+        assert_eq!(DurationExpr::ActorMarketPresence.fixed_ticks(), None);
         assert_eq!(DurationExpr::ActorPatrolProfile.fixed_ticks(), None);
         assert_eq!(DurationExpr::ActorTheftDisposition.fixed_ticks(), None);
         assert_eq!(
@@ -850,6 +858,12 @@ mod tests {
             ActionDuration::new(11)
         );
         assert_eq!(
+            DurationExpr::ActorMarketPresence
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap(),
+            ActionDuration::new(30)
+        );
+        assert_eq!(
             DurationExpr::ActorPatrolProfile
                 .resolve_for(&world, actor, &[], &ActionPayload::None)
                 .unwrap(),
@@ -965,6 +979,12 @@ mod tests {
             actor
         };
 
+        assert_eq!(
+            DurationExpr::ActorMarketPresence
+                .resolve_for(&world, actor, &[], &ActionPayload::None)
+                .unwrap_err(),
+            format!("actor {actor} lacks trade disposition profile")
+        );
         assert_eq!(
             DurationExpr::ActorPatrolProfile
                 .resolve_for(&world, actor, &[], &ActionPayload::None)

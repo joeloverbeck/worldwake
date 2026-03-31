@@ -1,14 +1,15 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, Quantity,
-    VisibilitySpec, WorldTxn, WoundList,
+    ActionDefId, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, EntityId, EntityKind, EventTag, MerchandiseProfile, Quantity,
+    SaleListing, VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
     ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
     ActionPayload, ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr,
     Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RuntimeBeliefView,
-    TargetSpec, TradeAcceptance, TradeActionPayload,
+    StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
 };
 
 pub fn register_trade_action(
@@ -601,6 +602,227 @@ fn local_alternatives(
         }
     }
     alternatives
+}
+
+// ---------------------------------------------------------------------------
+// staff_market action — seller-side market presence
+// ---------------------------------------------------------------------------
+
+pub fn register_staff_market_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_staff_market,
+        tick_staff_market,
+        commit_staff_market,
+        abort_staff_market,
+    ));
+    defs.register(staff_market_action_def(
+        ActionDefId(defs.len() as u32),
+        handler,
+    ))
+}
+
+fn staff_market_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    ActionDef {
+        id,
+        name: "staff_market".to_string(),
+        domain: worldwake_core::ActionDomain::Trade,
+        actor_constraints: vec![],
+        targets: vec![],
+        preconditions: vec![Precondition::ActorAlive],
+        reservation_requirements: vec![],
+        duration: DurationExpr::ActorMarketPresence,
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: vec![Precondition::ActorAlive],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::Trade, EventTag::WorldMutation]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
+fn staff_market_payload<'a>(
+    def: &ActionDef,
+    instance: &'a ActionInstance,
+) -> Result<&'a StaffMarketPayload, ActionError> {
+    instance.payload.as_staff_market().ok_or_else(|| {
+        ActionError::InternalError(format!(
+            "action instance for def {} is missing staff_market payload",
+            def.id
+        ))
+    })
+}
+
+/// Validate that actor is at `home_market`, has `MerchandiseProfile` with the
+/// payload commodity in `sale_kinds`, and controls local stock.
+fn validate_staff_market_preconditions(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+) -> Result<(EntityId, MerchandiseProfile), ActionError> {
+    let place = txn.effective_place(actor).ok_or(ActionError::AbortRequested(
+        ActionAbortRequestReason::ActorNotPlaced { actor },
+    ))?;
+    let profile = txn
+        .get_component_merchandise_profile(actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!("actor {actor} lacks MerchandiseProfile"))
+        })?;
+    if profile.home_market != Some(place) {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::ActorNotPlaced { actor },
+        ));
+    }
+    if !profile.sale_kinds.contains(&commodity) {
+        return Err(ActionError::InternalError(format!(
+            "commodity {commodity:?} not in actor {actor} sale_kinds"
+        )));
+    }
+    // Must control at least one local lot of the commodity.
+    let has_local_stock = txn
+        .possessions_of(actor)
+        .into_iter()
+        .any(|entity| {
+            txn.get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+                && txn.effective_place(entity) == Some(place)
+        });
+    if !has_local_stock {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                holder: actor,
+                commodity,
+                quantity: Quantity(1),
+            },
+        ));
+    }
+    Ok((place, profile))
+}
+
+/// Find all directly-possessed local lots of `commodity` at `place`.
+fn eligible_sale_lots(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Vec<EntityId> {
+    let mut lots: Vec<EntityId> = txn
+        .possessions_of(actor)
+        .into_iter()
+        .filter(|entity| {
+            txn.get_component_item_lot(*entity)
+                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+                && txn.effective_place(*entity) == Some(place)
+        })
+        .collect();
+    lots.sort();
+    lots
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn start_staff_market(
+    def: &ActionDef,
+    instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let payload = staff_market_payload(def, instance)?;
+    let commodity = payload.commodity;
+    let (place, _profile) = validate_staff_market_preconditions(txn, instance.actor, commodity)?;
+    let current_tick = txn.tick();
+    for lot in eligible_sale_lots(txn, instance.actor, place, commodity) {
+        if txn.get_component_sale_listing(lot).is_none() {
+            txn.set_component_sale_listing(lot, SaleListing { listed_at: current_tick })
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        }
+    }
+    Ok(Some(ActionState::Empty))
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_staff_market(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_staff_market(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let payload = staff_market_payload(def, instance)?;
+    let commodity = payload.commodity;
+    let place = txn.effective_place(instance.actor);
+    // Remove SaleListing from still-possessed local lots.
+    if let Some(place) = place {
+        let listed_lots: Vec<EntityId> = eligible_sale_lots(txn, instance.actor, place, commodity)
+            .into_iter()
+            .filter(|lot| txn.get_component_sale_listing(*lot).is_some())
+            .collect();
+        let had_listed = !listed_lots.is_empty();
+        for lot in &listed_lots {
+            let _ = txn.clear_component_sale_listing(*lot);
+        }
+        // If listed lots remain (none were traded away), record WantedToSellButNoBuyer.
+        if had_listed {
+            record_unproductive_demand(txn, instance.actor, commodity, place);
+        }
+    }
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_staff_market(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let payload = staff_market_payload(def, instance)?;
+    let commodity = payload.commodity;
+    if let Some(place) = txn.effective_place(instance.actor) {
+        for lot in eligible_sale_lots(txn, instance.actor, place, commodity) {
+            if txn.get_component_sale_listing(lot).is_some() {
+                let _ = txn.clear_component_sale_listing(lot);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Record a `WantedToSellButNoBuyer` demand observation on unproductive commit.
+fn record_unproductive_demand(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) {
+    let current_tick = txn.tick();
+    let mut memory = txn
+        .get_component_demand_memory(actor)
+        .cloned()
+        .unwrap_or(DemandMemory {
+            observations: Vec::new(),
+        });
+    memory.observations.push(DemandObservation {
+        commodity,
+        quantity: Quantity(1),
+        place,
+        tick: current_tick,
+        counterparty: None,
+        reason: DemandObservationReason::WantedToSellButNoBuyer,
+    });
+    let _ = txn.set_component_demand_memory(actor, memory);
 }
 
 #[cfg(test)]
@@ -1529,6 +1751,375 @@ mod tests {
                 commodity: CommodityKind::Grain,
                 quantity: Quantity(1),
             })
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // staff_market action tests
+    // -----------------------------------------------------------------------
+
+    use super::register_staff_market_action;
+    use worldwake_core::SaleListing;
+    use worldwake_sim::StaffMarketPayload;
+
+    struct StaffMarketHarness {
+        world: World,
+        defs: ActionDefRegistry,
+        handlers: ActionHandlerRegistry,
+        log: EventLog,
+        rng: DeterministicRng,
+        next_instance_id: ActionInstanceId,
+        actor: EntityId,
+        lot: EntityId,
+        place: EntityId,
+        def_id: ActionDefId,
+        commodity: CommodityKind,
+    }
+
+    impl StaffMarketHarness {
+        fn new() -> Self {
+            Self::with_commodity(CommodityKind::Bread)
+        }
+
+        fn with_commodity(commodity: CommodityKind) -> Self {
+            let mut world = World::new(build_prototype_world()).unwrap();
+            let place = world.topology().place_ids().next().unwrap();
+            let (actor, lot) = {
+                let mut txn = new_txn(&mut world, 1);
+                let actor = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+                let lot = txn.create_item_lot(commodity, Quantity(5)).unwrap();
+                commit_txn(txn);
+                (actor, lot)
+            };
+            {
+                let mut txn = new_txn(&mut world, 2);
+                txn.set_ground_location(actor, place).unwrap();
+                txn.set_ground_location(lot, place).unwrap();
+                txn.set_possessor(lot, actor).unwrap();
+                txn.set_owner(lot, actor).unwrap();
+                txn.set_component_merchandise_profile(
+                    actor,
+                    MerchandiseProfile {
+                        sale_kinds: [commodity].into_iter().collect(),
+                        home_market: Some(place),
+                    },
+                )
+                .unwrap();
+                txn.set_component_trade_disposition_profile(
+                    actor,
+                    TradeDispositionProfile {
+                        negotiation_round_ticks: nz(5),
+                        initial_offer_bias: pm(500),
+                        concession_rate: pm(200),
+                        demand_memory_retention_ticks: 10,
+                        market_presence_ticks: nz(10),
+                    },
+                )
+                .unwrap();
+                txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::new_sated())
+                    .unwrap();
+                commit_txn(txn);
+            }
+
+            let mut defs = ActionDefRegistry::new();
+            let mut handlers = ActionHandlerRegistry::new();
+            let def_id = register_staff_market_action(&mut defs, &mut handlers);
+            Self {
+                world,
+                defs,
+                handlers,
+                log: EventLog::new(),
+                rng: test_rng(),
+                next_instance_id: ActionInstanceId(0),
+                actor,
+                lot,
+                place,
+                def_id,
+                commodity,
+            }
+        }
+
+        fn start_with_active(
+            &mut self,
+        ) -> (
+            ActionInstanceId,
+            BTreeMap<ActionInstanceId, worldwake_sim::ActionInstance>,
+        ) {
+            let affordance = Affordance {
+                def_id: self.def_id,
+                actor: self.actor,
+                bound_targets: vec![],
+                payload_override: Some(ActionPayload::StaffMarket(StaffMarketPayload {
+                    commodity: self.commodity,
+                })),
+                explanation: None,
+            };
+            let mut active = BTreeMap::new();
+            let instance_id = start_action(
+                &affordance,
+                &self.defs,
+                &self.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut self.world,
+                    event_log: &mut self.log,
+                    rng: &mut self.rng,
+                },
+                &mut self.next_instance_id,
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(3),
+                },
+            )
+            .unwrap();
+            (instance_id, active)
+        }
+
+        fn start_result(&mut self) -> Result<ActionInstanceId, ActionError> {
+            self.start_result_with_commodity(self.commodity)
+        }
+
+        fn start_result_with_commodity(
+            &mut self,
+            commodity: CommodityKind,
+        ) -> Result<ActionInstanceId, ActionError> {
+            let affordance = Affordance {
+                def_id: self.def_id,
+                actor: self.actor,
+                bound_targets: vec![],
+                payload_override: Some(ActionPayload::StaffMarket(StaffMarketPayload {
+                    commodity,
+                })),
+                explanation: None,
+            };
+            let mut active = BTreeMap::new();
+            start_action(
+                &affordance,
+                &self.defs,
+                &self.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut self.world,
+                    event_log: &mut self.log,
+                    rng: &mut self.rng,
+                },
+                &mut self.next_instance_id,
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(3),
+                },
+            )
+        }
+    }
+
+    #[test]
+    fn staff_market_start_attaches_sale_listing_to_eligible_lots() {
+        let mut h = StaffMarketHarness::new();
+        assert!(h.world.get_component_sale_listing(h.lot).is_none());
+
+        let (_id, _active) = h.start_with_active();
+
+        assert!(h.world.get_component_sale_listing(h.lot).is_some());
+        let listing = h.world.get_component_sale_listing(h.lot).unwrap();
+        assert_eq!(listing.listed_at, Tick(3));
+    }
+
+    #[test]
+    fn staff_market_start_does_not_double_list_already_listed_lots() {
+        let mut h = StaffMarketHarness::new();
+        // Pre-list the lot at tick 1.
+        {
+            let mut txn = new_txn(&mut h.world, 2);
+            txn.set_component_sale_listing(h.lot, SaleListing { listed_at: Tick(1) })
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        let (_id, _active) = h.start_with_active();
+
+        // Should still have the original listing, not overwritten.
+        let listing = h.world.get_component_sale_listing(h.lot).unwrap();
+        assert_eq!(listing.listed_at, Tick(1));
+    }
+
+    #[test]
+    fn staff_market_commit_removes_listings_from_possessed_lots() {
+        let mut h = StaffMarketHarness::new();
+        let (instance_id, mut active) = h.start_with_active();
+        assert!(h.world.get_component_sale_listing(h.lot).is_some());
+
+        // Tick until completion (duration = 10 ticks from market_presence_ticks).
+        for tick in 4..14 {
+            let outcome = tick_action(
+                instance_id,
+                &h.defs,
+                &h.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut h.world,
+                    event_log: &mut h.log,
+                    rng: &mut h.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+            if matches!(outcome, TickOutcome::Committed { .. }) {
+                break;
+            }
+        }
+
+        // After commit, listing should be removed.
+        assert!(h.world.get_component_sale_listing(h.lot).is_none());
+    }
+
+    #[test]
+    fn staff_market_commit_records_wanted_to_sell_but_no_buyer() {
+        let mut h = StaffMarketHarness::new();
+        let (instance_id, mut active) = h.start_with_active();
+
+        // Run to completion.
+        for tick in 4..14 {
+            let outcome = tick_action(
+                instance_id,
+                &h.defs,
+                &h.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut h.world,
+                    event_log: &mut h.log,
+                    rng: &mut h.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+            if matches!(outcome, TickOutcome::Committed { .. }) {
+                break;
+            }
+        }
+
+        let memory = h.world.get_component_demand_memory(h.actor).unwrap();
+        assert_eq!(memory.observations.len(), 1);
+        let obs = &memory.observations[0];
+        assert_eq!(obs.commodity, CommodityKind::Bread);
+        assert_eq!(obs.reason, DemandObservationReason::WantedToSellButNoBuyer);
+        assert_eq!(obs.place, h.place);
+    }
+
+    #[test]
+    fn staff_market_abort_removes_listings() {
+        let mut h = StaffMarketHarness::new();
+        let (instance_id, mut active) = h.start_with_active();
+        assert!(h.world.get_component_sale_listing(h.lot).is_some());
+
+        // Tick once then abort.
+        let outcome = tick_action(
+            instance_id,
+            &h.defs,
+            &h.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut h.world,
+                event_log: &mut h.log,
+                rng: &mut h.rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(4),
+            },
+        )
+        .unwrap();
+        assert!(matches!(outcome, TickOutcome::Continuing));
+
+        // Call the abort handler directly.
+        let instance = active.get(&instance_id).unwrap();
+        let def = h.defs.get(instance.def_id).unwrap();
+        let handler_entry = h.handlers.get(def.handler).unwrap();
+        let mut txn = WorldTxn::new(
+            &mut h.world,
+            Tick(5),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        (handler_entry.on_abort)(
+            def,
+            instance,
+            &worldwake_sim::AbortReason::Interrupted {
+                kind: worldwake_sim::InterruptReason::Other,
+                detail: None,
+            },
+            &mut h.rng,
+            &mut txn,
+        )
+        .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+
+        assert!(h.world.get_component_sale_listing(h.lot).is_none());
+    }
+
+    #[test]
+    fn staff_market_fails_if_actor_not_at_home_market() {
+        let mut h = StaffMarketHarness::new();
+        // Move actor to a different place.
+        let other_place = h
+            .world
+            .topology()
+            .place_ids()
+            .find(|p| *p != h.place)
+            .unwrap();
+        {
+            let mut txn = new_txn(&mut h.world, 3);
+            txn.set_ground_location(h.actor, other_place).unwrap();
+            commit_txn(txn);
+        }
+
+        let result = h.start_result();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn staff_market_fails_if_commodity_not_in_sale_kinds() {
+        let mut h = StaffMarketHarness::new();
+        // Try to list Sword, which is not in sale_kinds (only Bread is).
+        let result = h.start_result_with_commodity(CommodityKind::Sword);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn staff_market_fails_if_no_local_stock() {
+        let mut h = StaffMarketHarness::new();
+        // Remove the lot from actor's possession.
+        {
+            let mut txn = new_txn(&mut h.world, 3);
+            txn.clear_possessor(h.lot).unwrap();
+            txn.clear_owner(h.lot).unwrap();
+            txn.archive_entity(h.lot).unwrap();
+            commit_txn(txn);
+        }
+
+        let result = h.start_result();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn staff_market_duration_resolves_to_market_presence_ticks() {
+        let mut h = StaffMarketHarness::new();
+        let (_id, active) = h.start_with_active();
+        let instance = active.values().next().unwrap();
+
+        // market_presence_ticks = 10
+        assert_eq!(
+            instance.remaining_duration,
+            worldwake_sim::ActionDuration::new(10)
         );
     }
 }
