@@ -1913,4 +1913,34 @@ mod tests {
         assert_eq!(candidates[0].targets, vec![hypothetical]);
         assert_eq!(candidates[0].payload_override, None);
     }
+
+    #[test]
+    fn classify_staff_market_action() {
+        let registry = build_phase_two_registry();
+        let def = registry
+            .iter()
+            .find(|def| def.name == "staff_market")
+            .expect("staff_market action must exist");
+        assert_eq!(classify_action_def(def), Some(PlannerOpKind::StaffMarket));
+    }
+
+    #[test]
+    fn staff_market_semantics_allows_mid_plan_and_no_materialization_barrier() {
+        let registry = build_phase_two_registry();
+        let def = registry
+            .iter()
+            .find(|def| def.name == "staff_market")
+            .expect("staff_market action must exist");
+        let sem = semantics_for(def, PlannerOpKind::StaffMarket);
+        assert_eq!(sem.op_kind, PlannerOpKind::StaffMarket);
+        assert!(
+            sem.may_appear_mid_plan,
+            "StaffMarket should be allowed mid-plan"
+        );
+        assert!(
+            !sem.is_materialization_barrier,
+            "StaffMarket should NOT be a materialization barrier"
+        );
+        assert_eq!(sem.transition_kind, PlannerTransitionKind::GoalModelFallback);
+    }
 }

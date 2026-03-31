@@ -833,6 +833,12 @@ impl GoalKindPlannerExt for GoalKind {
             return true;
         }
 
+        if matches!(self, GoalKind::SellCommodity { .. })
+            && step.op_kind == PlannerOpKind::StaffMarket
+        {
+            return true;
+        }
+
         if matches!(self, GoalKind::PunishAccused { .. })
             && matches!(step.op_kind, PlannerOpKind::Fine | PlannerOpKind::Exile)
         {
@@ -7232,6 +7238,46 @@ mod tests {
         assert!(
             !op_kinds.contains(&PlannerOpKind::Threaten),
             "plan should NOT contain Threaten against high-courage target, got: {op_kinds:?}"
+        );
+    }
+
+    #[test]
+    fn sell_commodity_staff_market_is_progress_barrier() {
+        let goal = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let step = PlannedStep {
+            def_id: ActionDefId(200),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::StaffMarket,
+            estimated_ticks: 5,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+        assert!(
+            goal.is_progress_barrier(&step),
+            "SellCommodity + StaffMarket should be a ProgressBarrier"
+        );
+    }
+
+    #[test]
+    fn sell_commodity_travel_is_not_progress_barrier() {
+        let goal = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let step = PlannedStep {
+            def_id: ActionDefId(201),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 2,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+        assert!(
+            !goal.is_progress_barrier(&step),
+            "SellCommodity + Travel should NOT be a ProgressBarrier"
         );
     }
 }
