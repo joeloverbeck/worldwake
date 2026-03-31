@@ -116,6 +116,19 @@ pub(super) fn refresh_runtime_for_read_phase(
         runtime.dirty.insert(crate::DirtySet::QUEUE_PATIENCE);
     }
 
+    // Pursuit plan invalidation: if the active plan is a remote pursuit
+    // (Travel + Attack for RaidTarget/EngageHostile), check whether the
+    // underlying belief assumptions still hold. If not, clear the plan
+    // and force replanning.
+    if let Some(plan) = runtime.current_plan.as_ref() {
+        if !crate::is_pursuit_plan_valid(&view, agent, plan, phase.tick) {
+            runtime.current_plan = None;
+            runtime.current_step_index = 0;
+            runtime.materialization_bindings.clear();
+            runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
+        }
+    }
+
     let candidates = generate_candidates_with_travel_horizon(
         &view,
         agent,

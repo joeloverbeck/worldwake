@@ -1,6 +1,6 @@
 # S40REMPUR-005: Pursuit invalidation and blocker semantics
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Deps**: S40REMPUR-002 (pursuit_target_belief), S40REMPUR-004 (remote candidates exist)
@@ -116,3 +116,15 @@ Verify and if necessary adjust `BlockedIntentMemory` lookup to check both target
 2. `cargo test -p worldwake-ai revalidat`
 3. `cargo test -p worldwake-ai failure`
 4. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**:
+  - `plan_revalidation.rs`: Added `is_pursuit_plan_valid()` with helpers `is_pursuit_plan()`, `pursuit_target()`, `planned_pursuit_destination()`. Checks belief freshness (believed place matches plan destination), target alive/known, and derived confidence above `min_location_confidence`.
+  - `agent_tick/observation.rs`: Integrated pursuit invalidation into `refresh_runtime_for_read_phase()`. When `is_pursuit_plan_valid()` returns false, plan is cleared and `REPLAN_SIGNAL` dirty flag is set.
+  - `failure_handling.rs`: Modified `target_gone()` to detect pursuit arrival failure (target alive but not co-located for `Attack`/`Defend` steps → `TargetGone`). Updated `blocker_resolved()` so `TargetGone` for `RaidTarget`/`EngageHostile` does not auto-resolve (relies on TTL expiry).
+  - `lib.rs`: Exported `is_pursuit_plan_valid`.
+  - `blocked_intent.rs` (core): Added pursuit-specific blocker scoping test.
+- **Deviations**: None. All deliverables implemented as specified. No new `BlockingFact` variants needed — `TargetGone` suffices as predicted.
+- **Verification**: clippy clean, 0 test failures across workspace. 10 new focused tests added (7 in plan_revalidation, 2 in failure_handling, 1 in blocked_intent).

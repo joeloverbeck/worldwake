@@ -99,7 +99,7 @@ fn derive_blocking_fact(
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
 ) -> BlockingFact {
-    if target_gone(view, step) {
+    if target_gone(view, agent, step) {
         return BlockingFact::TargetGone;
     }
 
@@ -388,7 +388,7 @@ fn classify_input_failure(
         .then_some(BlockingFact::MissingInput(commodity))
 }
 
-fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
+fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep) -> bool {
     if matches!(step.op_kind, PlannerOpKind::Travel | PlannerOpKind::Patrol) {
         return false;
     }
@@ -406,6 +406,17 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft => view.entity_kind(target).is_none(),
+        PlannerOpKind::Attack | PlannerOpKind::Defend => {
+            if view.entity_kind(target).is_none() || view.is_dead(target) {
+                return true;
+            }
+            // Pursuit arrival failure: target is alive but not co-located.
+            // This covers the case where a pursuer arrives at the believed
+            // place and the target has moved elsewhere.
+            let actor_place = view.effective_place(agent);
+            let target_place = view.effective_place(target);
+            actor_place.is_some() && target_place != actor_place
+        }
         PlannerOpKind::Consume
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
@@ -413,8 +424,6 @@ fn target_gone(view: &dyn RuntimeBeliefView, step: &PlannedStep) -> bool {
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
-        | PlannerOpKind::Attack
-        | PlannerOpKind::Defend
         | PlannerOpKind::Bribe
         | PlannerOpKind::Threaten
         | PlannerOpKind::Accuse
@@ -618,6 +627,10 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
                 .blocker_key
                 .target
                 .is_some_and(|entity| view.entity_kind(entity).is_some() && view.is_alive(entity)),
+            // Pursuit arrival failure: target was alive but not co-located.
+            // Do not auto-resolve — let the TTL expire so repeated pursuit
+            // at the same stale place is suppressed.
+            GoalKind::RaidTarget { .. } | GoalKind::EngageHostile { .. } => false,
             _ => intent
                 .blocker_key
                 .target
@@ -1700,5 +1713,66 @@ mod tests {
 
         clear_resolved_blockers(&view, agent, &mut blocked, Tick(10));
         assert_eq!(blocked.intents.len(), 0);
+    }
+
+    #[test]
+    fn pursuit_arrival_failure_records_target_gone_when_not_colocated() {
+        let agent = entity(1);
+        let target = entity(2);
+        let agent_place = entity(10);
+        let target_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        // Agent at agent_place, target at target_place → not co-located.
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, target_place);
+
+        let fact = derive_blocking_fact(
+            &view,
+            agent,
+            &GoalKey::from(GoalKind::RaidTarget { target }),
+            &attack_step(target),
+            None,
+        );
+        assert_eq!(fact, BlockingFact::TargetGone);
+    }
+
+    #[test]
+    fn pursuit_target_gone_blocker_does_not_auto_resolve() {
+        let agent = entity(1);
+        let target = entity(2);
+        let agent_place = entity(10);
+        let target_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, target_place);
+
+        let goal = GoalKey::from(GoalKind::RaidTarget { target });
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: goal,
+                place: Some(agent_place),
+                target: Some(target),
+                action_def: Some(ActionDefId(4)),
+            },
+            blocking_fact: BlockingFact::TargetGone,
+            diagnostic_context: None,
+            observed_tick: Tick(5),
+            expires_tick: Tick(50),
+        });
+
+        // The blocker should NOT auto-resolve even though the target entity
+        // still exists — pursuit TargetGone relies on TTL expiry.
+        clear_resolved_blockers(&view, agent, &mut blocked, Tick(10));
+        assert_eq!(blocked.intents.len(), 1, "pursuit TargetGone blocker should not auto-resolve");
     }
 }

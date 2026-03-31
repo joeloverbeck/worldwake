@@ -577,4 +577,30 @@ mod tests {
         };
         assert!(intent.blocks_goal_generation());
     }
+
+    #[test]
+    fn pursuit_target_gone_blocker_scoped_to_target_and_place() {
+        let target = entity_id(2, 0);
+        let place_a = entity_id(10, 0);
+        let place_b = entity_id(11, 0);
+        let goal = GoalKind::RaidTarget { target };
+        let key = crate::GoalKey::from(goal);
+
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            BlockerKey {
+                goal_key: key,
+                place: Some(place_a),
+                target: Some(target),
+                action_def: None,
+            },
+            BlockingFact::TargetGone,
+            Tick(50),
+        ));
+
+        // Blocked at place_a for this target.
+        assert!(memory.is_blocked(&key, Some(place_a), Some(target), None, Tick(5)));
+        // NOT blocked at place_b — pursuit to a different believed place is allowed.
+        assert!(!memory.is_blocked(&key, Some(place_b), Some(target), None, Tick(5)));
+    }
 }

@@ -1,6 +1,9 @@
-use crate::{resolve_planning_targets_with, MaterializationBindings, PlannedStep};
+use crate::{
+    authoritative_target, resolve_planning_targets_with, MaterializationBindings, PlannedPlan,
+    PlannedStep, PlannerOpKind,
+};
 use std::collections::BTreeSet;
-use worldwake_core::EntityId;
+use worldwake_core::{belief_confidence, EntityId, GoalKind, Tick};
 use worldwake_sim::{
     get_affordances_for_defs, requested_affordance_matches, ActionDefRegistry,
     ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
@@ -77,21 +80,125 @@ fn revalidate_exact_target_step(
     )
 }
 
+/// Returns `true` if the given plan is a remote pursuit plan
+/// (a `RaidTarget` or `EngageHostile` goal with Travel + Attack steps).
+fn is_pursuit_plan(plan: &PlannedPlan) -> bool {
+    let is_pursuit_goal = matches!(
+        plan.goal.kind,
+        GoalKind::RaidTarget { .. } | GoalKind::EngageHostile { .. }
+    );
+    if !is_pursuit_goal || plan.steps.len() < 2 {
+        return false;
+    }
+    let has_travel = plan.steps.iter().any(|s| s.op_kind == PlannerOpKind::Travel);
+    let has_attack = plan.steps.iter().any(|s| s.op_kind == PlannerOpKind::Attack);
+    has_travel && has_attack
+}
+
+/// Extract the pursuit target from a pursuit plan's goal.
+fn pursuit_target(plan: &PlannedPlan) -> Option<EntityId> {
+    match plan.goal.kind {
+        GoalKind::RaidTarget { target } | GoalKind::EngageHostile { target } => Some(target),
+        _ => None,
+    }
+}
+
+/// Extract the planned travel destination (the place the pursuit plan intends
+/// to reach before attacking). This is the target of the last Travel step.
+fn planned_pursuit_destination(plan: &PlannedPlan) -> Option<EntityId> {
+    plan.steps
+        .iter()
+        .rev()
+        .find(|s| s.op_kind == PlannerOpKind::Travel)
+        .and_then(|s| s.targets.first().copied())
+        .and_then(authoritative_target)
+}
+
+/// Check whether an active pursuit plan's underlying belief assumptions
+/// are still valid. Returns `false` (plan invalid) when:
+///
+/// - The target's believed place has changed from the plan's destination
+/// - Target is believed dead, place unknown, or now co-located
+/// - Derived confidence has decayed below `min_location_confidence`
+///
+/// This is called during the dirty-flag phase each tick for agents with
+/// active pursuit plans. Confidence is re-derived each tick, never cached.
+#[must_use]
+pub fn is_pursuit_plan_valid(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    plan: &PlannedPlan,
+    current_tick: Tick,
+) -> bool {
+    if !is_pursuit_plan(plan) {
+        return true;
+    }
+    let Some(target) = pursuit_target(plan) else {
+        return true;
+    };
+
+    let Some(profile) = view.pursuit_profile(actor) else {
+        // No pursuit profile → cannot validate pursuit constraints; invalidate.
+        return false;
+    };
+
+    // Extract the target's believed state from the actor's beliefs.
+    let beliefs = view.known_entity_beliefs(actor);
+    let target_state = beliefs.iter().find(|(id, _)| *id == target).map(|(_, s)| s);
+    let Some(state) = target_state else {
+        // No belief about target → pursuit invalid.
+        return false;
+    };
+
+    if !state.alive {
+        return false;
+    }
+
+    let Some(believed_place) = state.last_known_place else {
+        // Place unknown → pursuit invalid.
+        return false;
+    };
+
+    // Co-located → local combat, not remote pursuit.
+    let actor_place = view.effective_place(actor);
+    if actor_place == Some(believed_place) {
+        return false;
+    }
+
+    // Check if believed place still matches the plan's destination.
+    if let Some(planned_dest) = planned_pursuit_destination(plan) {
+        if believed_place != planned_dest {
+            return false;
+        }
+    }
+
+    // Re-derive confidence and check against profile threshold.
+    let staleness = current_tick.0.saturating_sub(state.observed_tick.0);
+    let policy = view.belief_confidence_policy(actor);
+    let confidence = belief_confidence(&state.source, staleness, &policy);
+    if confidence < profile.min_location_confidence {
+        return false;
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
-    use super::revalidate_next_step;
+    use super::{is_pursuit_plan_valid, revalidate_next_step};
     use crate::{
-        ExpectedMaterialization, HypotheticalEntityId, MaterializationBindings, PlannedStep,
-        PlannerOpKind, PlanningEntityRef,
+        ExpectedMaterialization, HypotheticalEntityId, MaterializationBindings, PlanTerminalKind,
+        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TickRange, TradeDispositionProfile, UniqueItemKind,
-        VisibilitySpec, WorkstationTag, Wound,
+        ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey,
+        PerceptionSource, Permille, PursuitProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
@@ -112,6 +219,8 @@ mod tests {
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
+        entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        pursuit_profiles: BTreeMap<EntityId, PursuitProfile>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -260,6 +369,20 @@ mod tests {
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
+        }
+
+        fn known_entity_beliefs(
+            &self,
+            agent: EntityId,
+        ) -> Vec<(EntityId, BelievedEntityState)> {
+            self.entity_beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn pursuit_profile(&self, agent: EntityId) -> Option<PursuitProfile> {
+            self.pursuit_profiles.get(&agent).cloned()
         }
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
@@ -875,5 +998,218 @@ mod tests {
             &registry,
             &handlers,
         ));
+    }
+
+    // ── Pursuit plan validity tests ──────────────────────────────────
+
+    fn pursuit_plan(target: EntityId, destination: EntityId) -> PlannedPlan {
+        PlannedPlan::new(
+            OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
+                anchor: OpportunityAnchor::Entity(target),
+            },
+            GoalKey::from(GoalKind::RaidTarget { target }),
+            vec![
+                PlannedStep {
+                    def_id: ActionDefId(10),
+                    targets: vec![PlanningEntityRef::Authoritative(destination)],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 3,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+                PlannedStep {
+                    def_id: ActionDefId(11),
+                    targets: vec![PlanningEntityRef::Authoritative(target)],
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Attack,
+                    estimated_ticks: 0,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::GoalSatisfied,
+        )
+    }
+
+    fn alive_belief(place: Option<EntityId>, observed: Tick) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: place,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            observed_tick: observed,
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn dead_belief(place: Option<EntityId>, observed: Tick) -> BelievedEntityState {
+        let mut s = alive_belief(place, observed);
+        s.alive = false;
+        s
+    }
+
+    fn default_pursuit_profile() -> PursuitProfile {
+        PursuitProfile {
+            min_location_confidence: Permille::new(500).unwrap(),
+            max_pursuit_travel_ticks: NonZeroU32::new(10).unwrap(),
+        }
+    }
+
+    #[test]
+    fn pursuit_valid_when_belief_matches_plan() {
+        let actor = entity(1);
+        let target = entity(2);
+        let dest = entity(10);
+        let actor_place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target]);
+        view.effective_places.insert(actor, actor_place);
+        view.pursuit_profiles
+            .insert(actor, default_pursuit_profile());
+        view.entity_beliefs.insert(
+            actor,
+            vec![(target, alive_belief(Some(dest), Tick(1)))],
+        );
+
+        let plan = pursuit_plan(target, dest);
+        assert!(is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+    }
+
+    #[test]
+    fn pursuit_invalidated_on_place_change() {
+        let actor = entity(1);
+        let target = entity(2);
+        let original_dest = entity(10);
+        let new_place = entity(11);
+        let actor_place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target]);
+        view.effective_places.insert(actor, actor_place);
+        view.pursuit_profiles
+            .insert(actor, default_pursuit_profile());
+        // Target is now believed at new_place, but plan targets original_dest.
+        view.entity_beliefs.insert(
+            actor,
+            vec![(target, alive_belief(Some(new_place), Tick(1)))],
+        );
+
+        let plan = pursuit_plan(target, original_dest);
+        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+    }
+
+    #[test]
+    fn pursuit_invalidated_on_confidence_decay() {
+        let actor = entity(1);
+        let target = entity(2);
+        let dest = entity(10);
+        let actor_place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target]);
+        view.effective_places.insert(actor, actor_place);
+        // Profile requires 500 permille confidence.
+        view.pursuit_profiles
+            .insert(actor, default_pursuit_profile());
+        // Belief observed a long time ago → staleness will decay confidence
+        // below 500 permille with default policy.
+        view.entity_beliefs.insert(
+            actor,
+            vec![(target, alive_belief(Some(dest), Tick(0)))],
+        );
+
+        // At tick 1000, staleness is 1000 ticks → confidence should be very low.
+        let plan = pursuit_plan(target, dest);
+        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(1000)));
+    }
+
+    #[test]
+    fn pursuit_drops_when_target_believed_dead() {
+        let actor = entity(1);
+        let target = entity(2);
+        let dest = entity(10);
+        let actor_place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target]);
+        view.effective_places.insert(actor, actor_place);
+        view.pursuit_profiles
+            .insert(actor, default_pursuit_profile());
+        view.entity_beliefs.insert(
+            actor,
+            vec![(target, dead_belief(Some(dest), Tick(1)))],
+        );
+
+        let plan = pursuit_plan(target, dest);
+        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+    }
+
+    #[test]
+    fn pursuit_drops_when_target_place_unknown() {
+        let actor = entity(1);
+        let target = entity(2);
+        let dest = entity(10);
+        let actor_place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target]);
+        view.effective_places.insert(actor, actor_place);
+        view.pursuit_profiles
+            .insert(actor, default_pursuit_profile());
+        // Belief has no known place.
+        view.entity_beliefs.insert(
+            actor,
+            vec![(target, alive_belief(None, Tick(1)))],
+        );
+
+        let plan = pursuit_plan(target, dest);
+        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+    }
+
+    #[test]
+    fn pursuit_drops_when_target_co_located() {
+        let actor = entity(1);
+        let target = entity(2);
+        let same_place = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, target]);
+        view.effective_places.insert(actor, same_place);
+        view.pursuit_profiles
+            .insert(actor, default_pursuit_profile());
+        // Target now believed at actor's place → co-located, not remote.
+        view.entity_beliefs.insert(
+            actor,
+            vec![(target, alive_belief(Some(same_place), Tick(1)))],
+        );
+
+        let plan = pursuit_plan(target, same_place);
+        assert!(!is_pursuit_plan_valid(&view, actor, &plan, Tick(2)));
+    }
+
+    #[test]
+    fn non_pursuit_plan_always_valid() {
+        let actor = entity(1);
+        let view = TestBeliefView::default();
+        // A single-step travel plan (not a pursuit).
+        let plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: OpportunityAnchor::None,
+            },
+            GoalKey::from(GoalKind::Sleep),
+            vec![PlannedStep {
+                def_id: ActionDefId(0),
+                targets: Vec::new(),
+                payload_override: None,
+                op_kind: PlannerOpKind::Sleep,
+                estimated_ticks: 5,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+            }],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        assert!(is_pursuit_plan_valid(&view, actor, &plan, Tick(0)));
     }
 }

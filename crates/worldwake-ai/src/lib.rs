@@ -83,7 +83,7 @@ pub use goal_policy::{
 };
 pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
-pub use plan_revalidation::revalidate_next_step;
+pub use plan_revalidation::{is_pursuit_plan_valid, revalidate_next_step};
 pub use plan_selection::select_best_plan;
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
