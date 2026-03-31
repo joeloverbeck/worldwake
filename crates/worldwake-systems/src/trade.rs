@@ -1,6 +1,6 @@
 use worldwake_core::{
-    CauseRef, CommodityKind, DemandMemory, EntityId, EventTag, Quantity, Tick, VisibilitySpec,
-    WitnessData, World, WorldTxn,
+    CauseRef, CommodityKind, DemandMemory, EntityId, EventLog, EventTag, Quantity, Tick,
+    VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -16,6 +16,8 @@ pub fn trade_system_tick(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         tick,
         system_id: _system_id,
     } = ctx;
+
+    prune_invalid_listings(world, event_log, tick);
 
     let updates = collect_aging_updates(world, tick);
     if updates.is_empty() {
@@ -58,6 +60,68 @@ pub fn restock_candidates(agent: EntityId, world: &World) -> Vec<CommodityKind> 
         .collect()
 }
 
+fn is_listing_valid(world: &World, lot: EntityId) -> bool {
+    // Lot must be alive.
+    if !world.is_alive(lot) {
+        return false;
+    }
+    // Lot must have a direct possessor.
+    let Some(possessor) = world.possessor_of(lot) else {
+        return false;
+    };
+    // Possessor must be alive.
+    if !world.is_alive(possessor) {
+        return false;
+    }
+    // Possessor must be at the same effective place as the lot.
+    let lot_place = world.effective_place(lot);
+    let possessor_place = world.effective_place(possessor);
+    if lot_place != possessor_place || lot_place.is_none() {
+        return false;
+    }
+    // Lot must have an ItemLot component to determine commodity.
+    let Some(item_lot) = world.get_component_item_lot(lot) else {
+        return false;
+    };
+    let commodity = item_lot.commodity;
+    // Possessor must have a MerchandiseProfile with the commodity in sale_kinds.
+    let Some(profile) = world.get_component_merchandise_profile(possessor) else {
+        return false;
+    };
+    profile.sale_kinds.contains(&commodity)
+}
+
+fn prune_invalid_listings(world: &mut World, event_log: &mut EventLog, tick: Tick) {
+    let invalid_lots: Vec<EntityId> = world
+        .query_sale_listing()
+        .filter(|(lot, _)| !is_listing_valid(world, *lot))
+        .map(|(lot, _)| lot)
+        .collect();
+
+    if invalid_lots.is_empty() {
+        return;
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::WorldMutation);
+
+    for lot in &invalid_lots {
+        txn.add_target(*lot);
+        let _ = txn.clear_component_sale_listing(*lot);
+    }
+
+    let _ = txn.commit(event_log);
+}
+
 fn collect_aging_updates(
     world: &World,
     tick: Tick,
@@ -92,8 +156,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, EventLog, EventTag, EventView,
-        MerchandiseProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile,
+        DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag, EventView,
+        MerchandiseProfile, Permille, Quantity, SaleListing, Seed, Tick, TradeDispositionProfile,
         VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
@@ -653,5 +717,149 @@ mod tests {
             right.get_component_demand_memory(right_agent)
         );
         assert_eq!(left_log.len(), right_log.len());
+    }
+
+    // --- Listing pruning helpers ---
+
+    fn place_agent_at(world: &mut World, agent: EntityId, place: EntityId) {
+        let mut txn = new_txn(world, 2);
+        txn.set_ground_location(agent, place).unwrap();
+        commit_txn(txn);
+    }
+
+    fn list_lot(world: &mut World, lot: EntityId, tick: u64) {
+        let mut txn = new_txn(world, tick);
+        txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(tick) })
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    fn run_trade_tick(world: &mut World, tick: u64) -> EventLog {
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([10; 32]));
+        trade_system_tick(system_context(
+            world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            tick,
+        ))
+        .unwrap();
+        event_log
+    }
+
+    // --- Listing pruning tests ---
+
+    #[test]
+    fn prune_listing_when_seller_is_dead() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "DeadSeller", None, None);
+        place_agent_at(&mut world, agent, place);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Bread]));
+        let lot = grant_stock(&mut world, agent, place, CommodityKind::Bread, Quantity(5));
+        list_lot(&mut world, lot, 4);
+
+        // Kill the seller by archiving.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.clear_possessor(lot).unwrap();
+            txn.clear_owner(lot).unwrap();
+            txn.archive_entity(agent).unwrap();
+            commit_txn(txn);
+        }
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 6);
+        assert!(world.get_component_sale_listing(lot).is_none());
+    }
+
+    #[test]
+    fn prune_listing_when_seller_departs() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places: Vec<EntityId> = world.topology().place_ids().collect();
+        let place_a = places[0];
+        let place_b = places[1];
+        let agent = seed_agent(&mut world, "Departed", None, None);
+        place_agent_at(&mut world, agent, place_a);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Bread]));
+        let lot = grant_stock(&mut world, agent, place_a, CommodityKind::Bread, Quantity(3));
+        list_lot(&mut world, lot, 4);
+
+        // Move seller to a different place.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_ground_location(agent, place_b).unwrap();
+            commit_txn(txn);
+        }
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 6);
+        assert!(world.get_component_sale_listing(lot).is_none());
+    }
+
+    #[test]
+    fn prune_listing_when_lot_unpossessed() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "LostStock", None, None);
+        place_agent_at(&mut world, agent, place);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Bread]));
+        let lot = grant_stock(&mut world, agent, place, CommodityKind::Bread, Quantity(2));
+        list_lot(&mut world, lot, 4);
+
+        // Remove possession.
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.clear_possessor(lot).unwrap();
+            commit_txn(txn);
+        }
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 6);
+        assert!(world.get_component_sale_listing(lot).is_none());
+    }
+
+    #[test]
+    fn prune_listing_when_commodity_removed_from_sale_kinds() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "ChangedMind", None, None);
+        place_agent_at(&mut world, agent, place);
+        set_merchandise_profile(
+            &mut world,
+            agent,
+            sale_profile(&[CommodityKind::Bread, CommodityKind::Water]),
+        );
+        let lot = grant_stock(&mut world, agent, place, CommodityKind::Bread, Quantity(3));
+        list_lot(&mut world, lot, 4);
+
+        // Remove Bread from sale_kinds (keep Water).
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Water]));
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 6);
+        assert!(world.get_component_sale_listing(lot).is_none());
+    }
+
+    #[test]
+    fn valid_listing_is_preserved() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = seed_agent(&mut world, "HappySeller", None, None);
+        place_agent_at(&mut world, agent, place);
+        set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Bread]));
+        let lot = grant_stock(&mut world, agent, place, CommodityKind::Bread, Quantity(5));
+        list_lot(&mut world, lot, 4);
+
+        assert!(world.get_component_sale_listing(lot).is_some());
+        let _log = run_trade_tick(&mut world, 6);
+        assert!(
+            world.get_component_sale_listing(lot).is_some(),
+            "valid listing should persist"
+        );
     }
 }
