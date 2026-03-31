@@ -30,6 +30,7 @@ pub mod planner_ops;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
+pub mod pursuit_belief;
 pub mod ranking;
 mod route_threat;
 pub mod search;
@@ -104,6 +105,7 @@ pub use ranking::{
     build_decision_context, rank_candidates, RankedGoalComparison, RankedGoalComparisonDimension,
     RankingOutcome,
 };
+pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
 pub use search::{search_plan, PlanSearchResult};
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 

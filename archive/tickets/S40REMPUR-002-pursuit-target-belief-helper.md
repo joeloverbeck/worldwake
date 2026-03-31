@@ -1,6 +1,6 @@
 # S40REMPUR-002: Centralized pursuit_target_belief() helper
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Deps**: S40REMPUR-001 (PursuitProfile must exist)
@@ -104,3 +104,10 @@ Make `pursuit_target_belief` and `PursuitTargetBelief` available to other module
 
 1. `cargo test -p worldwake-ai pursuit_target_belief`
 2. `cargo clippy -p worldwake-ai && cargo test -p worldwake-ai`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Created `crates/worldwake-ai/src/pursuit_belief.rs` with `PursuitTargetBelief` struct and `pursuit_target_belief()` function. Registered module and re-exported from `crates/worldwake-ai/src/lib.rs`.
+- **Deviations from original plan**: None. All deliverables implemented as specified.
+- **Verification**: 6 focused unit tests (remote alive target, unknown place, believed dead, co-located, not in beliefs, provenance match). Clippy clean. Full AI crate suite (894 unit + all golden tests) passes.
