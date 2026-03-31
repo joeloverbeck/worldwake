@@ -11,7 +11,7 @@ use crate::{
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
-    RelationTables, ResourceSource, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    RelationTables, ResourceSource, SaleListing, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
 };
@@ -5637,6 +5637,7 @@ mod tests {
                     initial_offer_bias: Permille::new(500).unwrap(),
                     concession_rate: Permille::new(100).unwrap(),
                     demand_memory_retention_ticks: 60,
+                    market_presence_ticks: NonZeroU32::new(30).unwrap(),
                 },
             )
             .unwrap_err();

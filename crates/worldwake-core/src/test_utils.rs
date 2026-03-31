@@ -57,6 +57,7 @@ pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
         initial_offer_bias: Permille::new(650).unwrap(),
         concession_rate: Permille::new(125).unwrap(),
         demand_memory_retention_ticks: 240,
+        market_presence_ticks: NonZeroU32::new(30).unwrap(),
     }
 }
 

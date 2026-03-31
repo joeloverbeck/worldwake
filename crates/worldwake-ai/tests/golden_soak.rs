@@ -414,6 +414,7 @@ fn build_t30_world(
                 initial_offer_bias: pm(600),
                 concession_rate: pm(100),
                 demand_memory_retention_ticks: 500,
+                market_presence_ticks: std::num::NonZeroU32::new(30).unwrap(),
             },
         )
         .unwrap();

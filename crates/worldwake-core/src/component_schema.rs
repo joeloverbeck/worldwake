@@ -1279,6 +1279,31 @@ macro_rules! with_component_schema_entries {
                 clear_component_container_unused,
                 no_txn_simple_set
             }
+            {
+                sale_listings,
+                SaleListing,
+                insert_sale_listing,
+                get_sale_listing,
+                get_sale_listing_mut,
+                remove_sale_listing,
+                has_sale_listing,
+                iter_sale_listings,
+                insert_component_sale_listing,
+                get_component_sale_listing,
+                get_component_sale_listing_mut,
+                remove_component_sale_listing,
+                has_component_sale_listing,
+                entities_with_sale_listing,
+                query_sale_listing,
+                count_with_sale_listing,
+                "SaleListing",
+                |kind| kind == EntityKind::ItemLot,
+                SaleListing,
+                crate::SaleListing,
+                set_component_sale_listing,
+                clear_component_sale_listing,
+                txn_simple_set
+            }
         }
     };
 }

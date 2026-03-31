@@ -2070,6 +2070,7 @@ fn golden_utility_weight_diversity_in_need_selection() {
                 initial_offer_bias: pm(500),
                 concession_rate: pm(100),
                 demand_memory_retention_ticks: 240,
+                market_presence_ticks: nz(30),
             },
         )
         .unwrap();

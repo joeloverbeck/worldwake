@@ -1,6 +1,6 @@
 # S04MERSELMAR-001: Add `SaleListing` component and extend `TradeDispositionProfile`
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new component type, extended existing component
@@ -111,3 +111,10 @@ Ensure `SaleListing` is publicly exported.
 
 1. `cargo test -p worldwake-core`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added `SaleListing { listed_at: Tick }` component on `ItemLot` in `trade.rs`, registered in `component_schema.rs` with `txn_simple_set`. Extended `TradeDispositionProfile` with `market_presence_ticks: NonZeroU32`. Updated 19 construction sites across core, sim, systems, ai, and cli crates. Added 3 new tests (component bounds, SaleListing serde round-trip, extended TradeDispositionProfile round-trip). Updated `delta.rs` test samples and `scenarios/default.ron`.
+- **Deviations**: Ticket listed `delta.rs` as needing a manual `ComponentDelta` variant addition; in reality `ComponentKind`/`ComponentValue` are auto-generated from the schema macro. Only the test functions in `delta.rs` needed updating. No functional deviation.
+- **Verification**: `cargo clippy --workspace` clean, `cargo test --workspace` — 3,248+ tests pass, 0 failures.

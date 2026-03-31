@@ -210,6 +210,7 @@ fn t20_trade_disposition() -> TradeDispositionProfile {
         initial_offer_bias: pm(500),
         concession_rate: pm(100),
         demand_memory_retention_ticks: 240,
+        market_presence_ticks: nz(30),
     }
 }
 
@@ -2665,6 +2666,7 @@ fn t21_trade_disposition() -> TradeDispositionProfile {
         initial_offer_bias: pm(500),
         concession_rate: pm(100),
         demand_memory_retention_ticks: 480,
+        market_presence_ticks: nz(30),
     }
 }
 
@@ -4361,6 +4363,7 @@ fn t22r_trade_disposition() -> TradeDispositionProfile {
         initial_offer_bias: pm(500),
         concession_rate: pm(100),
         demand_memory_retention_ticks: 240,
+        market_presence_ticks: nz(30),
     }
 }
 

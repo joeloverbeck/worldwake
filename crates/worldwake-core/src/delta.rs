@@ -10,7 +10,7 @@ use crate::{
     JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
     OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PursuitProfile,
     PerceptionProfile, Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity,
-    RecordData, ReservationRecord, ResourceSource, SubstitutePreferences, TellProfile,
+    RecordData, ReservationRecord, ResourceSource, SaleListing, SubstitutePreferences, TellProfile,
     TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
 };
@@ -252,7 +252,7 @@ mod tests {
         PatrolRoute, PerceptionProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
         QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, TellProfile, TheftDispositionProfile, Tick, TickRange,
+        ReservationRecord, ResourceSource, SaleListing, TellProfile, TheftDispositionProfile, Tick, TickRange,
         TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile, ViolationMemory,
         WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
@@ -566,6 +566,9 @@ mod tests {
                 allows_unique_items: true,
                 allows_nested_containers: false,
             }),
+            ComponentValue::SaleListing(SaleListing {
+                listed_at: Tick(10),
+            }),
         ]
     }
 
@@ -697,6 +700,7 @@ mod tests {
                 ComponentKind::ItemLot,
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,
+                ComponentKind::SaleListing,
             ]
         );
     }
@@ -781,7 +785,7 @@ mod tests {
         };
         let removed = ComponentDelta::Removed {
             entity: entity(4),
-            component_kind: ComponentKind::Container,
+            component_kind: ComponentKind::SaleListing,
             before: component_samples().pop().unwrap(),
         };
 
@@ -798,8 +802,8 @@ mod tests {
             removed,
             ComponentDelta::Removed {
                 entity: removed_entity,
-                component_kind: ComponentKind::Container,
-                before: ComponentValue::Container(_)
+                component_kind: ComponentKind::SaleListing,
+                before: ComponentValue::SaleListing(_)
             } if removed_entity == entity(4)
         ));
     }

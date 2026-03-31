@@ -168,6 +168,7 @@ mod tests {
                     initial_offer_bias: pm(500),
                     concession_rate: pm(100),
                     demand_memory_retention_ticks: retention_ticks,
+                    market_presence_ticks: nz(30),
                 },
             )
             .unwrap();

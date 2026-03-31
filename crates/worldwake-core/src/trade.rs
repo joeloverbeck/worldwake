@@ -14,6 +14,18 @@ pub struct MerchandiseProfile {
 
 impl Component for MerchandiseProfile {}
 
+/// Marks an `ItemLot` as actively offered for sale at the time it was listed.
+///
+/// Only `listed_at` is stored. Seller, commodity, and place are all derived
+/// from authoritative relations (direct possessor, `ItemLot.commodity`,
+/// lot effective place).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SaleListing {
+    pub listed_at: Tick,
+}
+
+impl Component for SaleListing {}
+
 /// Local concrete memory of missed demand and sale opportunities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DemandMemory {
@@ -29,6 +41,7 @@ pub struct TradeDispositionProfile {
     pub initial_offer_bias: Permille,
     pub concession_rate: Permille,
     pub demand_memory_retention_ticks: u32,
+    pub market_presence_ticks: NonZeroU32,
 }
 
 impl Component for TradeDispositionProfile {}
@@ -64,7 +77,7 @@ pub enum DemandObservationReason {
 #[cfg(test)]
 mod tests {
     use super::{
-        DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
+        DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, SaleListing,
         SubstitutePreferences, TradeDispositionProfile,
     };
     use crate::{
@@ -169,5 +182,34 @@ mod tests {
                 crate::TradeCategory::Medicine,
             ]
         );
+    }
+
+    #[test]
+    fn sale_listing_component_bounds() {
+        assert_component_bounds::<SaleListing>();
+        assert_value_bounds::<SaleListing>();
+    }
+
+    #[test]
+    fn sale_listing_roundtrips_through_bincode() {
+        let listing = SaleListing {
+            listed_at: crate::Tick(42),
+        };
+
+        let bytes = bincode::serialize(&listing).unwrap();
+        let roundtrip: SaleListing = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, listing);
+    }
+
+    #[test]
+    fn trade_disposition_profile_with_market_presence_roundtrips() {
+        let profile = sample_trade_disposition_profile();
+        assert!(profile.market_presence_ticks.get() > 0);
+
+        let bytes = bincode::serialize(&profile).unwrap();
+        let roundtrip: TradeDispositionProfile = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, profile);
     }
 }

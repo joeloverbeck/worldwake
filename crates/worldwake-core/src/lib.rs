@@ -171,7 +171,7 @@ pub use topology::{
 };
 pub use trade::{
     DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
-    SubstitutePreferences, TradeDispositionProfile,
+    SaleListing, SubstitutePreferences, TradeDispositionProfile,
 };
 pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;

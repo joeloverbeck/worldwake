@@ -779,6 +779,7 @@ mod tests {
                     initial_offer_bias: pm(40),
                     concession_rate: pm(25),
                     demand_memory_retention_ticks: 180,
+                    market_presence_ticks: nz(30),
                 },
             )
             .unwrap();

@@ -3878,6 +3878,7 @@ mod tests {
                 initial_offer_bias: pm(120),
                 concession_rate: pm(80),
                 demand_memory_retention_ticks: 12,
+                market_presence_ticks: NonZeroU32::new(30).unwrap(),
             },
         );
         view.patrol_profiles.insert(
