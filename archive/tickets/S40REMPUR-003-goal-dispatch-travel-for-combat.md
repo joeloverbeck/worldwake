@@ -1,6 +1,6 @@
 # S40REMPUR-003: Add Travel to combat goal relevant ops
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Deps**: None (independent structural change)
@@ -86,3 +86,19 @@ That's the entire code change.
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai && cargo test --workspace`
+
+## Outcome
+
+**Completed**: 2026-03-31
+
+**Changes**:
+- `goal_dispatch_decl.rs`: Added `PlannerOpKind::Travel` to `ENGAGE_HOSTILE_OPS` and `RAID_TARGET_OPS`.
+- `goal_model.rs`: Fixed `is_satisfied` for `EngageHostile` and `RaidTarget` — replaced co-location/visibility checks with `is_dead(*target)` only. The old predicates (`!visible_hostiles_for` and `effective_place != effective_place`) were latent bugs: they treated "actor moved away from target" as goal satisfaction, which Travel exploited to produce flee-instead-of-fight plans.
+- `goal_model.rs` tests: Renamed `*_attack_only` tests to `*_include_travel_and_attack` and updated assertions.
+
+**Deviations from original plan**:
+- The ticket stated "That's the entire code change" for the two-line constant update. In practice, adding Travel exposed a latent `is_satisfied` bug where the planner chose Travel-away as a cheaper "satisfaction" of combat goals. Fixing `is_satisfied` was required for correctness (Principle 20: goals name desired world conditions; Principle 3: concrete state over derived visibility).
+
+**Verification**:
+- `cargo clippy --workspace` — clean
+- `cargo test --workspace` — all tests pass (894 lib + 62 golden + 36 conformance + all other crates)

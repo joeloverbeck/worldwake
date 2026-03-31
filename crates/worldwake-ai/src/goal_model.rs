@@ -912,12 +912,8 @@ impl GoalKindPlannerExt for GoalKind {
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
                 .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
-            GoalKind::EngageHostile { target } => {
-                state.is_dead(*target) || !state.visible_hostiles_for(actor).contains(target)
-            }
-            GoalKind::RaidTarget { target } => {
+            GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target } => {
                 state.is_dead(*target)
-                    || state.effective_place(actor) != state.effective_place(*target)
             }
             GoalKind::ReduceDanger => state.drive_thresholds(actor).is_some_and(|thresholds| {
                 derive_danger_pressure(state, actor) < thresholds.danger.high()
@@ -2006,21 +2002,27 @@ mod tests {
     }
 
     #[test]
-    fn engage_hostile_goal_relevant_ops_are_attack_only() {
+    fn engage_hostile_goal_relevant_ops_include_travel_and_attack() {
         let goal = GoalKind::EngageHostile {
             target: entity_id(4, 0),
         };
 
-        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Attack]);
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::Attack]
+        );
     }
 
     #[test]
-    fn raid_target_goal_relevant_ops_are_attack_only() {
+    fn raid_target_goal_relevant_ops_include_travel_and_attack() {
         let goal = GoalKind::RaidTarget {
             target: entity_id(4, 1),
         };
 
-        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Attack]);
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::Attack]
+        );
     }
 
     #[test]
