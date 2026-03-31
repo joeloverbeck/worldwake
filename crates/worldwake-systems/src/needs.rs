@@ -106,7 +106,7 @@ fn collect_updates(
             profile,
             &mut next_needs,
             &mut next_exposure,
-        )?;
+        );
 
         if next_needs != *needs
             || next_exposure != exposure
@@ -217,7 +217,7 @@ fn apply_deprivation_consequences(
     profile: worldwake_core::MetabolismProfile,
     needs: &mut HomeostaticNeeds,
     exposure: &mut DeprivationExposure,
-) -> Result<(Option<WoundList>, Option<worldwake_core::EntityId>), SystemError> {
+) -> (Option<WoundList>, Option<worldwake_core::EntityId>) {
     let mut wound_list = None;
     let mut wounds_changed = false;
 
@@ -248,11 +248,7 @@ fn apply_deprivation_consequences(
     let waste_place =
         if exposure.bladder_critical_ticks >= profile.bladder_accident_tolerance_ticks.get() {
             let bladder_pressure = needs.bladder;
-            let place = world.effective_place(entity).ok_or_else(|| {
-                SystemError::new(format!(
-                    "agent {entity} cannot create waste without an effective place"
-                ))
-            })?;
+            // Physiological relief happens regardless of location.
             *needs = HomeostaticNeeds::new(
                 needs.hunger,
                 needs.thirst,
@@ -261,15 +257,17 @@ fn apply_deprivation_consequences(
                 needs.dirtiness.saturating_add(bladder_pressure),
             );
             exposure.bladder_critical_ticks = 0;
-            Some(place)
+            // Waste is only deposited when the agent occupies a modeled place;
+            // agents in transit have no effective_place so no waste entity is created.
+            world.effective_place(entity)
         } else {
             None
         };
 
-    Ok((
+    (
         wounds_changed.then_some(wound_list.unwrap_or_default()),
         waste_place,
-    ))
+    )
 }
 
 fn worsen_or_create_deprivation_wound(
@@ -1243,6 +1241,90 @@ mod tests {
             })
             .collect();
         assert_eq!(waste_lots.len(), 1);
+    }
+
+    #[test]
+    fn needs_system_bladder_accident_in_transit_skips_waste_but_resets_bladder() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = first_place(&world);
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        place_agent(&mut world, agent, place);
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), thresholds.bladder.critical(), pm(30)),
+            DeprivationExposure {
+                bladder_critical_ticks: 99,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+
+        // Put the agent in transit so effective_place returns None.
+        {
+            let tick_val = 1u64;
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(tick_val),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            txn.set_in_transit(agent).unwrap();
+            let mut event_log_tmp = EventLog::new();
+            let _ = txn.commit(&mut event_log_tmp);
+        }
+        assert!(world.is_in_transit(agent));
+        assert_eq!(world.effective_place(agent), None);
+
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([14; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        // Bladder should have reset and dirtiness should have increased.
+        assert_eq!(
+            world.get_component_homeostatic_needs(agent),
+            Some(&HomeostaticNeeds::new(
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(30).saturating_add(thresholds.bladder.critical()),
+            ))
+        );
+        assert_eq!(
+            world
+                .get_component_deprivation_exposure(agent)
+                .unwrap()
+                .bladder_critical_ticks,
+            0
+        );
+
+        // No waste entity should have been created anywhere.
+        let waste_at_place: Vec<_> = world
+            .ground_entities_at(place)
+            .into_iter()
+            .filter(|entity| {
+                world
+                    .get_component_item_lot(*entity)
+                    .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
+            })
+            .collect();
+        assert!(waste_at_place.is_empty(), "no waste should exist when agent is in transit");
     }
 
     #[test]

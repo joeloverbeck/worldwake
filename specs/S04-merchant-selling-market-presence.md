@@ -74,12 +74,14 @@ Buyer planning and trade affordance enumeration must stop discovering sellers fr
 Replace the conceptual query:
 - `agents_selling_at(place, commodity)`
 
-With concrete lot-oriented queries:
+With concrete lot-oriented queries added to the `RuntimeBeliefView` and `GoalBeliefView` traits:
 
 ```rust
 fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
 fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
 ```
+
+Remove `agents_selling_at` from both traits.
 
 `listed_sale_lots_at` returns lots where all of the following hold:
 - lot has `SaleListing`
@@ -90,6 +92,12 @@ fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
 `seller_for_sale_lot` derives the seller from the lot's direct possessor. If the lot is not possessed, contained, or colocated with a capable seller, the listing is invalid and should not be surfaced.
 
 This is the central architectural cleanup. Buyers discover actual offered lots, not profile-declared merchant intent.
+
+#### Trait Implementation Sites
+All implementations of `agents_selling_at` must be replaced with the two new methods:
+- `per_agent_belief_view.rs` — primary runtime implementation (currently filters agents by `MerchandiseProfile` at line ~996)
+- `omniscient_belief_view.rs` — omniscient stand-in (currently delegates to world state)
+- Test stubs in: `pressure.rs`, `feasibility.rs`, `affordance_query.rs`, `trade_valuation.rs`, `belief_view.rs` — all currently return `Vec::new()`
 
 ### 3. `SellCommodity` Goal Becomes Real
 `SellCommodity { commodity }` becomes an active enterprise goal instead of a deferred enum variant.
@@ -124,20 +132,35 @@ Add a seller-side trade-domain action that lists local eligible lots for sale an
 Action shape:
 - domain: `Trade`
 - name: `staff_market`
+- targets: none (untargeted — actor's current place is implicit from `home_market`)
+- payload: `ActionPayload::StaffMarket(StaffMarketPayload)`
 - duration: `DurationExpr::Finite(market_presence_ticks)`
 - interruptibility: `FreelyInterruptible`
 - visibility: `VisibilitySpec::SamePlace`
 - body cost: non-zero attention/time cost
+
+Payload:
+```rust
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StaffMarketPayload {
+    pub commodity: CommodityKind,
+}
+```
+
+Add `StaffMarket(StaffMarketPayload)` as a variant of `ActionPayload` in `action_payload.rs`.
+
+Each `staff_market` action covers one commodity. A merchant who sells both Bread and Sword needs separate market-presence cycles for each, matching the per-commodity `SellCommodity { commodity }` goal granularity.
 
 Preconditions:
 - actor alive
 - actor not in transit
 - actor effectively at `home_market`
 - actor has `MerchandiseProfile`
-- actor controls at least one local lot of the target commodity
+- payload commodity is in `MerchandiseProfile.sale_kinds`
+- actor controls at least one local lot of the payload commodity
 
 Start behavior:
-- add `SaleListing { listed_at: current_tick }` to all eligible local controlled lots of the target commodity not already listed
+- add `SaleListing { listed_at: current_tick }` to all eligible local controlled lots of the payload commodity not already listed
 
 Tick behavior:
 - no special mutation beyond remaining active
@@ -174,16 +197,29 @@ This avoids bootstrapping deadlock. Merchants can choose to establish a market p
 Relevant op kinds:
 - `Travel`
 - `MoveCargo`
-- `Trade`
+- `StaffMarket` (new `PlannerOpKind`)
+
+Add `PlannerOpKind::StaffMarket` classified from `(ActionDomain::Trade, "staff_market")` in `planner_ops.rs`. Update `SELL_OPS` in `goal_dispatch_decl.rs` to `[Travel, MoveCargo, StaffMarket]`.
 
 Interpretation:
 - `Travel` gets the merchant to `home_market`
 - `MoveCargo` gets stock to `home_market`
-- `Trade` via `staff_market` establishes explicit sale presence
+- `StaffMarket` establishes explicit sale presence
 
+#### Goal-Relevant Places
+`goal_relevant_places` for `SellCommodity` must return `[home_market]` from `MerchandiseProfile`. The current implementation (`goal_model.rs:1038`) incorrectly uses `demand_memory_places()`, which finds places where demand was *observed*. The goal is to go to `home_market` and list stock — not to chase demand signals. Demand memory boosts **ranking** only (Section 7), not place selection.
+
+#### Goal Satisfaction
 `SellCommodity` is satisfied when:
 - actor is at `home_market`
 - at least one local controlled lot of `commodity` has `SaleListing`
+
+Update `is_satisfied()` in `goal_model.rs` (currently hard-returns `false` for `SellCommodity` at line ~962) to check these concrete conditions.
+
+#### Feasibility Strategy
+Update `FeasibilityStrategy::SellCheck` in `feasibility.rs` to check:
+- actor has at least one unit of the commodity (existing check)
+- `home_market` is reachable (replace current `check_evidence_places_local` which queries `demand_memory_places`)
 
 This makes seller-side readiness a concrete state change rather than an eternal background desire.
 
@@ -203,7 +239,7 @@ For a listed lot path, evidence must include:
 Trade payload selection must target a concrete lot, not just an abstract commodity.
 
 ### 10. Update `TradeActionPayload`
-Trade should operate against an identified listed lot.
+The buyer-initiated `trade` action should operate against an identified listed lot. (The seller's market presence uses `StaffMarketPayload` from Section 5, not this payload.)
 
 ```rust
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -261,6 +297,8 @@ In this design it does three things:
 
 It does not directly make a seller visible. Visibility comes from `SaleListing`.
 
+Note: `DemandObservationReason::WantedToSellButNoBuyer` already exists in the codebase (`worldwake-core/src/trade.rs`) and is ready to use for seller-side frustration memory. An unproductive `staff_market` cycle (listed stock, no trades completed) should record a `WantedToSellButNoBuyer` observation for the relevant commodity and place.
+
 ### 14. No Compatibility Layer
 When this spec is implemented:
 - remove buyer discovery that treats `MerchandiseProfile` alone as active sell availability
@@ -284,7 +322,12 @@ No new market singleton, market object, or price table component is permitted.
 - extend trade commit logic to require `sale_lot` and listing validity
 
 ### `worldwake-ai`
-- emit `SellCommodity`
+- add `PlannerOpKind::StaffMarket` and classify from `(ActionDomain::Trade, "staff_market")` in `planner_ops.rs`
+- update `SELL_OPS` in `goal_dispatch_decl.rs` to `[Travel, MoveCargo, StaffMarket]`
+- update `goal_relevant_places` for `SellCommodity` to return `[home_market]` from `MerchandiseProfile` (replace current `demand_memory_places` delegation in `goal_model.rs`)
+- update `is_satisfied` for `SellCommodity` in `goal_model.rs` to check: actor at `home_market` + at least one local listed lot
+- update `FeasibilityStrategy::SellCheck` in `feasibility.rs` to check commodity presence + `home_market` reachability (replace `check_evidence_places_local`)
+- emit `SellCommodity` (candidate generation per Section 7)
 - plan `SellCommodity` through travel / cargo / `staff_market`
 - update `AcquireCommodity` evidence and payload generation to use listed lots
 - update ranking so remembered local demand can increase sell-goal motive without overpowering self-care
@@ -334,6 +377,22 @@ All interactions remain state-mediated:
 - travel time and carry capacity: stock must be physically brought to market
 - listing invalidation: sellers who leave or lose control of stock stop being sale-visible immediately
 - demand-memory retention window: remembered demand naturally decays
+
+### Temporal and Scheduling Semantics (Principle 30.11)
+- `SaleListing` becomes visible to co-located agents in the same tick as `staff_market` start. This matches existing action-start side-effect visibility (e.g., `set_in_transit` in travel).
+- Listings are removed in the same tick as commit/abort.
+- No cross-tick delay is needed because listings are local-only observations at the seller's place.
+- Listing cleanup (Section 12) runs during the trade system tick, so stale listings from dead or departed sellers are pruned within one tick of the invalidating event.
+
+### Boundary Conditions (Principle 30.12)
+- Off-map merchants arriving via boundary processes must go through the same `staff_market` action to list goods. No pre-listed arrivals.
+- If future boundary systems introduce lower-fidelity merchant simulation, those systems must still produce explicit `SaleListing` state when merchant entities enter the simulated region.
+- Off-map demand signals do not directly create `DemandMemory` for local merchants. External demand must arrive through explicit boundary processes (caravans, reports, trade convoys) per Principle 13.
+
+### Save/Load/Replay (Principle 30.14)
+- `SaleListing` is authoritative component state and must be serialized/deserialized through the standard component persistence path (bincode via serde).
+- Active `staff_market` actions must survive save/load via the standard `ActionInstance` persistence.
+- Deterministic replay must reproduce identical listing/unlisting sequences given the same seed and inputs. No special replay handling beyond what the standard action framework provides.
 
 ### Stored vs Derived State
 Stored authoritative state:

@@ -12,6 +12,7 @@ worldwake-systems = { path = "../worldwake-systems" }
 
 [features]
 bench-profiling = ["worldwake-sim/bench-profiling"]
+soak = []
 
 [dev-dependencies]
 blake3 = "1"
