@@ -1685,22 +1685,40 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .unwrap_or_default()
     }
 
-    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        let mut sellers = self
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        let mut lots = self
             .entities_at(place)
             .into_iter()
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
+            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+            .filter(|entity| self.has_sale_listing(*entity))
             .filter(|entity| {
-                self.snapshot
-                    .entities
-                    .get(entity)
-                    .and_then(|snapshot| snapshot.merchandise_profile.as_ref())
-                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+                self.direct_possessor(*entity).is_some_and(|possessor| {
+                    self.is_alive(possessor) && self.effective_place(possessor) == Some(place)
+                })
             })
             .collect::<Vec<_>>();
-        sellers.sort();
-        sellers.dedup();
-        sellers
+        lots.sort();
+        lots.dedup();
+        lots
+    }
+
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        if !self.has_sale_listing(lot) {
+            return None;
+        }
+        let possessor = self.direct_possessor(lot)?;
+        if !self.is_alive(possessor) {
+            return None;
+        }
+        Some(possessor)
+    }
+
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&lot)
+            .is_some_and(|snapshot| snapshot.has_sale_listing)
     }
 
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
@@ -2278,15 +2296,16 @@ mod tests {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.entities_at(place)
-                .into_iter()
-                .filter(|entity| {
-                    self.merchandise_profiles
-                        .get(entity)
-                        .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-                })
-                .collect()
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+            None
         }
 
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {

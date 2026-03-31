@@ -64,6 +64,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) current_attackers: Vec<EntityId>,
     pub(crate) demand_memory: Vec<DemandObservation>,
     pub(crate) merchandise_profile: Option<MerchandiseProfile>,
+    pub(crate) has_sale_listing: bool,
     pub(crate) reservation_ranges: Vec<TickRange>,
     pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
     /// For Office entities: authoritative office metadata preserved for planning.
@@ -109,6 +110,7 @@ impl Default for SnapshotEntity {
             current_attackers: Vec::new(),
             demand_memory: Vec::new(),
             merchandise_profile: None,
+            has_sale_listing: false,
             reservation_ranges: Vec::new(),
             facility_queue: None,
             office_data: None,
@@ -652,6 +654,7 @@ fn build_snapshot_entity(
         current_attackers: view.current_attackers_of(entity),
         demand_memory: view.demand_memory(entity),
         merchandise_profile: view.merchandise_profile(entity),
+        has_sale_listing: view.has_sale_listing(entity),
         reservation_ranges: view.reservation_ranges(entity),
         facility_queue: snapshot_facility_queue(view, actor, entity),
         office_data: view.office_data(entity),
@@ -1120,8 +1123,16 @@ mod tests {
             Vec::new()
         }
 
-        fn agents_selling_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+            None
         }
 
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {

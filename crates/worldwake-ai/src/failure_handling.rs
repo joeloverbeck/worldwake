@@ -193,13 +193,15 @@ fn classify_trade_failure(
         });
     }
 
-    let sellers = view
-        .agents_selling_at(place, commodity)
+    let has_other_seller = view
+        .listed_sale_lots_at(place, commodity)
         .into_iter()
-        .filter(|seller| *seller != agent)
-        .collect::<Vec<_>>();
+        .any(|lot| {
+            view.seller_for_sale_lot(lot)
+                .is_some_and(|seller| seller != agent)
+        });
 
-    if sellers.is_empty() {
+    if !has_other_seller {
         return Some(BlockingFact::NoKnownSeller);
     }
 
@@ -584,9 +586,12 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
             let Some(current_place) = view.effective_place(agent) else {
                 return false;
             };
-            view.agents_selling_at(current_place, commodity)
+            view.listed_sale_lots_at(current_place, commodity)
                 .into_iter()
-                .any(|seller| seller != agent)
+                .any(|lot| {
+                    view.seller_for_sale_lot(lot)
+                        .is_some_and(|seller| seller != agent)
+                })
         }
         BlockingFact::SellerOutOfStock => {
             let Some(seller) = intent.blocker_key.target else {
@@ -828,7 +833,8 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
-        sellers: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        lot_sellers: BTreeMap<EntityId, EntityId>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -992,11 +998,21 @@ mod tests {
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
-        fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.sellers
+        fn listed_sale_lots_at(
+            &self,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            self.listed_lots
                 .get(&(place, commodity))
                 .cloned()
                 .unwrap_or_default()
+        }
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.lot_sellers.get(&lot).copied()
+        }
+        fn has_sale_listing(&self, lot: EntityId) -> bool {
+            self.lot_sellers.contains_key(&lot)
         }
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
             Vec::new()
@@ -1211,8 +1227,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        let sale_lot = entity(50);
+        view.listed_lots
+            .insert((place, CommodityKind::Bread), vec![sale_lot]);
+        view.lot_sellers.insert(sale_lot, seller);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         let mut runtime = runtime_with_plan(goal, step.clone());
@@ -1259,8 +1277,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        let sale_lot = entity(50);
+        view.listed_lots
+            .insert((place, CommodityKind::Bread), vec![sale_lot]);
+        view.lot_sellers.insert(sale_lot, seller);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
 
@@ -1425,8 +1445,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        let sale_lot = entity(50);
+        view.listed_lots
+            .insert((place, CommodityKind::Bread), vec![sale_lot]);
+        view.lot_sellers.insert(sale_lot, seller);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         view.commodity_quantities

@@ -993,16 +993,33 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
-    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
         self.entities_at(place)
             .into_iter()
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
+            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+            .filter(|entity| self.world.has_component_sale_listing(*entity))
             .filter(|entity| {
-                self.world
-                    .get_component_merchandise_profile(*entity)
-                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+                self.direct_possessor(*entity).is_some_and(|possessor| {
+                    self.is_alive(possessor) && self.effective_place(possessor) == Some(place)
+                })
             })
             .collect()
+    }
+
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        if !self.world.has_component_sale_listing(lot) {
+            return None;
+        }
+        let possessor = self.direct_possessor(lot)?;
+        if !self.is_alive(possessor) {
+            return None;
+        }
+        Some(possessor)
+    }
+
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        self.world.has_component_sale_listing(lot)
     }
 
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
@@ -1391,7 +1408,7 @@ mod tests {
     fn unknown_entities_and_unbelieved_merchants_stay_hidden() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
-        let (agent, believed_merchant, hidden_merchant) = {
+        let (agent, believed_merchant, hidden_merchant, listed_lot, hidden_lot) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let believed_merchant = txn.create_agent("Seller", ControlSource::Ai).unwrap();
@@ -1415,12 +1432,37 @@ mod tests {
                 },
             )
             .unwrap();
+            let listed_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(5))
+                .unwrap();
+            txn.set_possessor(listed_lot, believed_merchant)
+                .unwrap();
+            txn.set_component_sale_listing(
+                listed_lot,
+                worldwake_core::SaleListing {
+                    listed_at: worldwake_core::Tick(0),
+                },
+            )
+            .unwrap();
+            let hidden_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(5))
+                .unwrap();
+            txn.set_possessor(hidden_lot, hidden_merchant)
+                .unwrap();
+            txn.set_component_sale_listing(
+                hidden_lot,
+                worldwake_core::SaleListing {
+                    listed_at: worldwake_core::Tick(0),
+                },
+            )
+            .unwrap();
             commit_txn(txn);
-            (agent, believed_merchant, hidden_merchant)
+            (agent, believed_merchant, hidden_merchant, listed_lot, hidden_lot)
         };
 
         let mut beliefs = AgentBeliefStore::new();
         beliefs.update_entity(believed_merchant, entity_belief(place, true, 3, 5));
+        beliefs.update_entity(listed_lot, entity_belief(place, true, 3, 5));
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
@@ -1434,11 +1476,21 @@ mod tests {
         );
         assert_eq!(
             RuntimeBeliefView::entities_at(&view, place),
-            vec![agent, believed_merchant]
+            vec![agent, believed_merchant, listed_lot]
+        );
+        // Only the listed lot of the believed merchant is visible; hidden merchant's lot is not
+        assert_eq!(
+            RuntimeBeliefView::listed_sale_lots_at(&view, place, CommodityKind::Bread),
+            vec![listed_lot]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_selling_at(&view, place, CommodityKind::Bread),
-            vec![believed_merchant]
+            RuntimeBeliefView::seller_for_sale_lot(&view, listed_lot),
+            Some(believed_merchant)
+        );
+        // Hidden lot's seller is not discoverable (agent doesn't know about hidden_lot)
+        assert_eq!(
+            RuntimeBeliefView::seller_for_sale_lot(&view, hidden_lot),
+            None
         );
     }
 

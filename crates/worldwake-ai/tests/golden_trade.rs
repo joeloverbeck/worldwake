@@ -10,7 +10,7 @@ use worldwake_core::{
     total_live_lot_quantity, AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind,
     ControlSource, DemandMemory, DemandObservation, DemandObservationReason, DeprivationKind,
     EventTag, HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile,
-    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
+    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, SaleListing, Seed, Tick,
     TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
@@ -100,7 +100,7 @@ fn run_buyer_driven_trade_scenario(
         KnownRecipes::new(),
     );
 
-    give_commodity(
+    let seller_bread_lot = give_commodity(
         &mut h.world,
         &mut h.event_log,
         seller,
@@ -118,6 +118,13 @@ fn run_buyer_driven_trade_scenario(
     );
 
     let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_sale_listing(
+        seller_bread_lot,
+        SaleListing {
+            listed_at: Tick(0),
+        },
+    )
+    .unwrap();
     txn.set_component_merchandise_profile(
         seller,
         MerchandiseProfile {

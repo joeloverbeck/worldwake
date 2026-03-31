@@ -3184,11 +3184,17 @@ fn acquisition_path_evidence_inner(
         let mut place_evidence = Evidence::default();
         let mut place_trace = EvidenceTrace::default();
 
-        for seller in view.agents_selling_at(candidate_place, commodity) {
-            if seller != agent {
-                place_evidence.places.insert(candidate_place);
-                place_evidence.entities.insert(seller);
-                place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
+        for lot in view.listed_sale_lots_at(candidate_place, commodity) {
+            if let Some(seller) = view.seller_for_sale_lot(lot) {
+                if seller != agent {
+                    place_evidence.places.insert(candidate_place);
+                    place_evidence.entities.insert(seller);
+                    place_trace.contributor(
+                        CandidateEvidenceKind::Seller,
+                        candidate_place,
+                        seller,
+                    );
+                }
             }
         }
         if let Some(local_lots) =
@@ -3277,11 +3283,13 @@ fn acquisition_path_evidence_at_place(
     let mut place_evidence = Evidence::default();
     let mut place_trace = EvidenceTrace::default();
 
-    for seller in view.agents_selling_at(candidate_place, commodity) {
-        if seller != agent {
-            place_evidence.places.insert(candidate_place);
-            place_evidence.entities.insert(seller);
-            place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
+    for lot in view.listed_sale_lots_at(candidate_place, commodity) {
+        if let Some(seller) = view.seller_for_sale_lot(lot) {
+            if seller != agent {
+                place_evidence.places.insert(candidate_place);
+                place_evidence.entities.insert(seller);
+                place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
+            }
         }
     }
     if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity)
@@ -3812,7 +3820,8 @@ mod tests {
         courage: BTreeMap<EntityId, Permille>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
-        sellers: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        lot_sellers: BTreeMap<EntityId, EntityId>,
         known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
         workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
         sources_at: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
@@ -3885,7 +3894,8 @@ mod tests {
                 courage: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 attackers: BTreeMap::new(),
-                sellers: BTreeMap::new(),
+                listed_lots: BTreeMap::new(),
+                lot_sellers: BTreeMap::new(),
                 known_recipes: BTreeMap::new(),
                 workstations: BTreeMap::new(),
                 sources_at: BTreeMap::new(),
@@ -3921,6 +3931,29 @@ mod tests {
                 in_transit: BTreeSet::new(),
                 believed_owners: BTreeMap::new(),
             }
+        }
+    }
+
+    static SALE_LOT_COUNTER: std::sync::atomic::AtomicU32 =
+        std::sync::atomic::AtomicU32::new(5000);
+
+    impl TestBeliefView {
+        /// Register a seller as having listed lots of `commodity` at `place`.
+        /// Creates a synthetic lot entity and maps it to the seller.
+        fn register_seller(
+            &mut self,
+            place: EntityId,
+            commodity: CommodityKind,
+            seller: EntityId,
+        ) {
+            let lot_slot =
+                SALE_LOT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let lot = entity(lot_slot);
+            self.listed_lots
+                .entry((place, commodity))
+                .or_default()
+                .push(lot);
+            self.lot_sellers.insert(lot, seller);
         }
     }
 
@@ -4330,11 +4363,23 @@ mod tests {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.sellers
+        fn listed_sale_lots_at(
+            &self,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            self.listed_lots
                 .get(&(place, commodity))
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.lot_sellers.get(&lot).copied()
+        }
+
+        fn has_sale_listing(&self, lot: EntityId) -> bool {
+            self.lot_sellers.contains_key(&lot)
         }
 
         fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
@@ -5012,8 +5057,7 @@ mod tests {
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
 
         let candidates = generate_candidates(
             &view,
@@ -5046,8 +5090,7 @@ mod tests {
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
         view.beliefs
             .insert(agent, vec![known_entity(seller, place)]);
         view.epistemic_disposition_profiles
@@ -5294,8 +5337,7 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers
-            .insert((orchard, CommodityKind::Bread), vec![seller]);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
 
         let result = generate_candidates_with_travel_horizon(
@@ -5382,10 +5424,8 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers
-            .insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
-        view.sellers
-            .insert((market, CommodityKind::Bread), vec![market_seller]);
+        view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
+        view.register_seller(market, CommodityKind::Bread, market_seller);
 
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
@@ -5442,10 +5482,8 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers
-            .insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
-        view.sellers
-            .insert((market, CommodityKind::Bread), vec![market_seller]);
+        view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
+        view.register_seller(market, CommodityKind::Bread, market_seller);
 
         let mut blocked = BlockedIntentMemory::default();
         for place in [orchard, market] {
@@ -5520,10 +5558,8 @@ mod tests {
         view.adjacent_places.insert(home, vec![orchard, market]);
         view.adjacent_places.insert(orchard, vec![home]);
         view.adjacent_places.insert(market, vec![home]);
-        view.sellers
-            .insert((orchard, CommodityKind::Bread), vec![orchard_seller]);
-        view.sellers
-            .insert((market, CommodityKind::Bread), vec![market_seller]);
+        view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
+        view.register_seller(market, CommodityKind::Bread, market_seller);
 
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
@@ -6515,8 +6551,7 @@ mod tests {
         view.known_recipes.insert(agent, vec![recipe_id]);
         view.workstations
             .insert((place, WorkstationTag::Mill), vec![workstation]);
-        view.sellers
-            .insert((place, CommodityKind::Firewood), vec![seller]);
+        view.register_seller(place, CommodityKind::Firewood, seller);
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(RecipeDefinition {
@@ -6581,8 +6616,7 @@ mod tests {
         view.known_recipes.insert(agent, vec![recipe_id]);
         view.workstations
             .insert((remote, WorkstationTag::Mill), vec![workstation]);
-        view.sellers
-            .insert((remote, CommodityKind::Firewood), vec![seller]);
+        view.register_seller(remote, CommodityKind::Firewood, seller);
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(RecipeDefinition {
@@ -6838,8 +6872,7 @@ mod tests {
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
         view.known_recipes.insert(agent, vec![recipe_id]);
-        view.sellers
-            .insert((place, CommodityKind::Firewood), vec![seller]);
+        view.register_seller(place, CommodityKind::Firewood, seller);
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(RecipeDefinition {
@@ -6962,8 +6995,7 @@ mod tests {
                 reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
             }],
         );
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
 
         let candidates = generate_candidates(
             &view,
@@ -7008,8 +7040,7 @@ mod tests {
                 reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
             }],
         );
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
         view.known_recipes.insert(agent, vec![RecipeId(0)]);
         view.unique_item_counts
             .insert((agent, UniqueItemKind::SimpleTool), 1);
@@ -9297,8 +9328,7 @@ mod tests {
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
         view.known_recipes.insert(agent, vec![RecipeId(0)]);
         view.unique_item_counts
             .insert((agent, UniqueItemKind::SimpleTool), 1);
@@ -10059,8 +10089,7 @@ mod tests {
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -10099,8 +10128,7 @@ mod tests {
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
         // Provide belief provenance for the seller
         view.beliefs.insert(
             agent,
@@ -10154,8 +10182,7 @@ mod tests {
         view.homeostatic_needs.insert(agent, hunger(250));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
         // Agent has belief about the seller from a report
         view.beliefs.insert(
             agent,
@@ -10417,8 +10444,7 @@ mod tests {
         view.demand_memory
             .insert(agent, vec![demand(place, CommodityKind::Bread, 5)]);
         // Seller has bread for sale
-        view.sellers
-            .insert((place, CommodityKind::Bread), vec![seller]);
+        view.register_seller(place, CommodityKind::Bread, seller);
         view.beliefs.insert(
             agent,
             vec![(

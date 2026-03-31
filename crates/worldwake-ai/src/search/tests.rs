@@ -58,6 +58,8 @@ struct TestBeliefView {
     trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
     theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
     merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+    listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+    lot_sellers: BTreeMap<EntityId, EntityId>,
     demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
     hostiles: BTreeMap<EntityId, Vec<EntityId>>,
     attackers: BTreeMap<EntityId, Vec<EntityId>>,
@@ -94,6 +96,8 @@ impl Default for TestBeliefView {
             trade_profiles: BTreeMap::new(),
             theft_profiles: BTreeMap::new(),
             merchandise_profiles: BTreeMap::new(),
+            listed_lots: BTreeMap::new(),
+            lot_sellers: BTreeMap::new(),
             demand_memory: BTreeMap::new(),
             hostiles: BTreeMap::new(),
             attackers: BTreeMap::new(),
@@ -303,15 +307,21 @@ impl RuntimeBeliefView for TestBeliefView {
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
         self.attackers.get(&agent).cloned().unwrap_or_default()
     }
-    fn agents_selling_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| {
-                self.merchandise_profiles
-                    .get(entity)
-                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-            })
-            .collect()
+    fn listed_sale_lots_at(
+        &self,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        self.listed_lots
+            .get(&(place, commodity))
+            .cloned()
+            .unwrap_or_default()
+    }
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        self.lot_sellers.get(&lot).copied()
+    }
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        self.lot_sellers.contains_key(&lot)
     }
     fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
         Vec::new()
@@ -1096,6 +1106,21 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         .insert((actor, CommodityKind::Coin), Quantity(3));
     view.commodity_quantities
         .insert((seller, CommodityKind::Firewood), Quantity(1));
+    let sale_lot = entity(50);
+    view.alive.insert(sale_lot);
+    view.kinds.insert(sale_lot, EntityKind::ItemLot);
+    view.effective_places.insert(sale_lot, town);
+    view.entities_at.get_mut(&town).unwrap().push(sale_lot);
+    view.lot_commodities
+        .insert(sale_lot, CommodityKind::Firewood);
+    view.direct_possessors.insert(sale_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(sale_lot);
+    view.listed_lots
+        .insert((town, CommodityKind::Firewood), vec![sale_lot]);
+    view.lot_sellers.insert(sale_lot, seller);
 
     let (registry, handlers) = build_registry();
     let goal = GroundedGoal {
