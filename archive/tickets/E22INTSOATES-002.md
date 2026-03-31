@@ -1,6 +1,6 @@
 # E22INTSOATES-002: T27 — Controlled Agent Death
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -96,3 +96,10 @@ No existing golden tests human-controlled agent death and control continuity. T2
 
 1. `cargo test -p worldwake-ai --test golden_integration -- t27`
 2. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-03-31
+- **What changed**: Added T27 scenario (`run_t27_controlled_agent_death`) and two test functions (`t27_controlled_agent_death_seed_1`, `t27_controlled_agent_death_seed_2`) to `crates/worldwake-ai/tests/golden_integration.rs`.
+- **Deviations**: Inventory persistence assertion was relaxed from "items remain on corpse" to "apple conservation across corpse + attacker equals initial quantity." The loot system legitimately transfers items from corpses, so asserting frozen inventory would overfit to a non-contract. Entity persistence (Principle 4) is verified via `entity_kind`.
+- **Verification**: `cargo test -p worldwake-ai --test golden_integration -- t27` (2/2 pass), `cargo test -p worldwake-ai` (36/36 pass), `cargo test --workspace` (all pass), `cargo clippy -p worldwake-ai --test golden_integration` (clean).
