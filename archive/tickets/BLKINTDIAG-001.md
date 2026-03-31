@@ -1,6 +1,6 @@
 # BLKINTDIAG-001: BlockedIntentMemory Silently Suppresses New-Target Candidates After Compound Goal Sequences
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — AI crate diagnostics and possibly blocker scoping
@@ -52,6 +52,13 @@ Add a unit test in `candidate_generation.rs` that:
 
 Trace the path from `refresh_runtime_for_read_phase` through `handle_facility_queue_transitions` and `clear_resolved_blockers` to determine whether either function re-introduces blockers that were cleared by a test's world-component modification. If so, determine whether this is correct behavior or a bug.
 
+**Investigation result (2026-03-31):** Neither function re-introduces blockers for `RaidTarget`:
+- `clear_resolved_blockers` only *removes* entries (expired + resolved via `blocker_resolved`). Never adds.
+- `handle_facility_queue_transitions` only adds `ExclusiveFacilityUnavailable` blockers, which are excluded from candidate filtering by `blocks_goal_generation() == false`.
+- For `RaidTarget` with `TargetGone`, `blocker_resolved` explicitly returns `false` (TTL-based expiration by design).
+- The original observation ("clearing memory didn't help") was likely caused by incomplete candidate-generation prerequisites (hostility lists, faction membership, bandit flags) for the new targets, not blocker re-introduction. The new blocker match diagnostics will make this visible in future debugging.
+- No code change to `observation.rs` required.
+
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — diagnostics + focused test)
@@ -89,3 +96,17 @@ Trace the path from `refresh_runtime_for_read_phase` through `handle_facility_qu
 1. `cargo test -p worldwake-ai -- compound_sequence_blocker`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace`
+
+## Outcome
+
+**Completion date**: 2026-03-31
+
+**What changed**:
+- `decision_trace.rs`: Added `BlockerMatchDetail` struct (blocker_key, blocking_fact, expires_tick). Added `blocker_matches` field to `DesireFullyBlocked`. Updated `dump_agent` to print per-opportunity blocker details (goal, place, target, action name, fact, expiration).
+- `candidate_generation.rs`: Renamed `is_candidate_blocked` → `find_matching_blocker` returning `Option<BlockerMatchDetail>`. Updated `filter_blocked_candidates` to collect and propagate match details. Added `compound_sequence_blocker_does_not_suppress_unrelated_goal` unit test.
+
+**Investigation result**: Neither `clear_resolved_blockers` nor `handle_facility_queue_transitions` re-introduce blockers for `RaidTarget`. The original suppression was likely caused by incomplete candidate-generation prerequisites (hostility/faction setup), not blocker re-introduction. No change to `observation.rs` required.
+
+**Deviations**: None. All three deliverables addressed as specified.
+
+**Verification**: 1,463 tests passed, 0 failed. Clippy clean.

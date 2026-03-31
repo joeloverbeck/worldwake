@@ -1,9 +1,9 @@
 use crate::{
     decision_trace::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
-        CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
-        PursuitDiagnostic, PursuitOmissionReason,
+        BlockerMatchDetail, CandidateEvidenceContributor, CandidateEvidenceExclusion,
+        CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
+        CandidateLegalityTrace, DesireFullyBlocked, PursuitDiagnostic, PursuitOmissionReason,
         PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
         SocialCandidateOmission, ViolationDetectionOmission, ViolationDetectionOmissionReason,
     },
@@ -263,20 +263,24 @@ fn filter_blocked_candidates(
     current_tick: Tick,
     diagnostics: &mut CandidateGenerationDiagnostics,
 ) -> Vec<GroundedGoal> {
-    let mut blocked_by_goal: BTreeMap<GoalKey, Vec<OpportunityKey>> = BTreeMap::new();
+    let mut blocked_by_goal: BTreeMap<GoalKey, Vec<(OpportunityKey, Option<BlockerMatchDetail>)>> =
+        BTreeMap::new();
     let mut emitted_counts: BTreeMap<GoalKey, usize> = BTreeMap::new();
     let mut surviving = Vec::new();
 
     for candidate in candidates {
         *emitted_counts.entry(candidate.key).or_default() += 1;
-        if is_candidate_blocked(&candidate, blocked, current_tick) {
+        if let Some(detail) = find_matching_blocker(&candidate, blocked, current_tick) {
             blocked_by_goal
                 .entry(candidate.key)
                 .or_default()
-                .push(OpportunityKey {
-                    goal_key: candidate.key,
-                    anchor: candidate.anchor,
-                });
+                .push((
+                    OpportunityKey {
+                        goal_key: candidate.key,
+                        anchor: candidate.anchor,
+                    },
+                    Some(detail),
+                ));
             continue;
         }
         surviving.push(candidate);
@@ -284,15 +288,18 @@ fn filter_blocked_candidates(
 
     diagnostics.fully_blocked_desires = blocked_by_goal
         .into_iter()
-        .filter_map(|(goal_key, mut blocked_opportunities)| {
+        .filter_map(|(goal_key, mut entries)| {
             let emitted = emitted_counts.get(&goal_key).copied().unwrap_or_default();
-            if emitted == 0 || blocked_opportunities.len() != emitted {
+            if emitted == 0 || entries.len() != emitted {
                 return None;
             }
-            blocked_opportunities.sort();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            let (blocked_opportunities, blocker_matches): (Vec<_>, Vec<_>) =
+                entries.into_iter().unzip();
             Some(DesireFullyBlocked {
                 goal_key,
                 blocked_opportunities,
+                blocker_matches: blocker_matches.into_iter().flatten().collect(),
             })
         })
         .collect();
@@ -300,16 +307,21 @@ fn filter_blocked_candidates(
     surviving
 }
 
-fn is_candidate_blocked(
+fn find_matching_blocker(
     candidate: &GroundedGoal,
     blocked: &BlockedIntentMemory,
     current_tick: Tick,
-) -> bool {
-    blocked.intents.values().any(|intent| {
-        intent.blocker_key.goal_key == candidate.key
+) -> Option<BlockerMatchDetail> {
+    blocked.intents.values().find_map(|intent| {
+        let matches = intent.blocker_key.goal_key == candidate.key
             && intent.expires_tick > current_tick
             && intent.blocks_goal_generation()
-            && candidate_matches_blocker(candidate, &intent.blocker_key)
+            && candidate_matches_blocker(candidate, &intent.blocker_key);
+        matches.then(|| BlockerMatchDetail {
+            blocker_key: intent.blocker_key,
+            blocking_fact: intent.blocking_fact,
+            expires_tick: intent.expires_tick,
+        })
     })
 }
 
@@ -12124,6 +12136,52 @@ mod tests {
         assert!(
             result.diagnostics.omitted_violation_detection.is_empty(),
             "Should NOT emit violation-detection omission when profile and place are present"
+        );
+    }
+
+    #[test]
+    fn compound_sequence_blocker_does_not_suppress_unrelated_goal() {
+        // A blocked intent for EstablishBanditCamp should NOT suppress
+        // RaidTarget candidates for a different entity.
+        let agent = entity(1);
+        let new_target = entity(2);
+        let faction = entity(30);
+        let place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, new_target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(new_target, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(new_target, place);
+        view.entities_at.insert(place, vec![agent, new_target]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![new_target]);
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+
+        // Block EstablishBanditCamp for the faction at this place.
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::EstablishBanditCamp { faction }),
+                place: Some(place),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::Unknown,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(100),
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        assert!(
+            contains_goal(&candidates, GoalKind::RaidTarget { target: new_target }),
+            "RaidTarget for a new target must NOT be suppressed by an EstablishBanditCamp blocker"
         );
     }
 }

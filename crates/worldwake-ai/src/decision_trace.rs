@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
+    ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
     OpportunityKey, PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace,
     SuspensionReason, TellTopic, Tick,
@@ -372,6 +372,17 @@ impl CandidateTrace {
 pub struct DesireFullyBlocked {
     pub goal_key: GoalKey,
     pub blocked_opportunities: Vec<OpportunityKey>,
+    /// Per-opportunity blocker match details (parallel to `blocked_opportunities`).
+    /// Empty when tracing is disabled.
+    pub blocker_matches: Vec<BlockerMatchDetail>,
+}
+
+/// Records which blocker matched a specific filtered candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockerMatchDetail {
+    pub blocker_key: BlockerKey,
+    pub blocking_fact: BlockingFact,
+    pub expires_tick: Tick,
 }
 
 /// Political goal families that can be omitted before candidate emission.
@@ -1420,6 +1431,23 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                     format_goal_key(&blocked.goal_key),
                     blocked.blocked_opportunities
                 );
+                for detail in &blocked.blocker_matches {
+                    let action_name = detail
+                        .blocker_key
+                        .action_def
+                        .and_then(|id| action_defs.get(id))
+                        .map_or("none".to_string(), |d| d.name.clone());
+                    let _ = write!(
+                        out,
+                        "\n    blocker: goal={}, place={:?}, target={:?}, action={}, fact={:?}, expires={}",
+                        format_goal_key(&detail.blocker_key.goal_key),
+                        detail.blocker_key.place,
+                        detail.blocker_key.target,
+                        action_name,
+                        detail.blocking_fact,
+                        detail.expires_tick.0,
+                    );
+                }
             }
             for attempt in &planning.planning.attempts {
                 let _ = write!(
@@ -3157,6 +3185,7 @@ mod tests {
                             anchor: OpportunityAnchor::Place(entity(12)),
                         },
                     ],
+                    blocker_matches: vec![],
                 }],
                 ranked: vec![],
                 top_ranked_comparison: None,
