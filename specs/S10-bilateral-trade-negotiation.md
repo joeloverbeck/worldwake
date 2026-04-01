@@ -10,7 +10,7 @@ Replace the fixed 1:1 price trade offers with a belief-driven, multi-round bilat
 
 ### The Problem
 
-`enumerate_trade_payloads` (trade_actions.rs:104-110) hardcodes every trade offer as `offered_quantity: Quantity(1), requested_quantity: Quantity(1)` — one coin for one unit. The `evaluate_trade_bundle` valuation function correctly rejects trades where the post-trade snapshot does not dominate the pre-trade snapshot. When a merchant has high `enterprise_weight`, few units of stock, and existing coins, 1 coin per apple is legitimately insufficient payment.
+`enumerate_trade_payloads` (`trade_actions.rs:81-127`) hardcodes every trade offer as `offered_quantity: Quantity(1), requested_quantity: Quantity(1)` — one coin for one unit. The `evaluate_trade_bundle` valuation function correctly rejects trades where the post-trade snapshot does not dominate the pre-trade snapshot. When a merchant has high `enterprise_weight`, few units of stock, and existing coins, 1 coin per apple is legitimately insufficient payment.
 
 The consumer retries the same 1-coin offer every 4 ticks (the `negotiation_round_ticks` duration), the merchant rejects every time with `InsufficientPayment`, and the loop never terminates. The consumer cannot bid higher because the system generates no alternative price points.
 
@@ -49,18 +49,18 @@ Post-Phase-2 hardening. No dependency on E14+ epics (perception already implemen
 ## Crates
 
 - `worldwake-systems` (primary — trade action handler modifications)
-- `worldwake-sim` (minor — `TradeActionPayload` extension, possible `NegotiationState` in `ActionState`)
-- `worldwake-core` (minor — `DemandObservationReason` variant addition)
-- `worldwake-ai` (test-only — golden test un-ignore and budget change)
+- `worldwake-sim` (minor — `NegotiationState` variant in `ActionState`)
+- `worldwake-core` (minor — `DemandObservationReason` variant addition, `TradeDispositionProfile` field addition)
+- `worldwake-ai` (test-only — golden test creation)
 
 ## Design Principles
 
 1. **Concrete state over abstract prices (Principle 3)** — Reservation prices are derived at query time from needs, inventory, wounds, alternatives, and demand memory. No stored "price" component exists.
 2. **Actions have duration and cost (Principle 8)** — Each negotiation round occupies one tick. Multi-round negotiation costs real time, during which both agents are occupied and cannot do other things.
-3. **Granular outcomes leave aftermath (Principle 9)** — Failed negotiations produce `DemandObservation` records with rejection reasons, which inform future opening offers.
-4. **Agent diversity through concrete variation (Principle 20)** — Per-agent `TradeDispositionProfile` parameters (`initial_offer_bias`, `concession_rate`) create distinct bargaining styles (aggressive/patient vs cooperative/quick).
-5. **Systems interact through state (Principle 24)** — The trade action writes `DemandObservation` to the agent's memory. Future affordance generation reads it. No cross-system calls.
-6. **Belief-only planning (Principle 12)** — Each agent evaluates offers against its own belief view. Neither agent accesses the other's internal valuation.
+3. **Granular outcomes leave aftermath (Principle 10)** — Failed negotiations produce `DemandObservation` records with rejection reasons, which inform future opening offers.
+4. **Agent diversity through concrete variation (Principle 22)** — Per-agent `TradeDispositionProfile` parameters (`initial_offer_bias`, `concession_rate`, `rejection_escalation_rate`) create distinct bargaining styles (aggressive/patient vs cooperative/quick).
+5. **Systems interact through state (Principle 26)** — The trade action writes `DemandObservation` to the agent's memory. Future affordance generation reads it. No cross-system calls.
+6. **Belief-only planning (Principle 14)** — Affordance generation uses belief views: each agent evaluates opening offers against its own belief state. Neither agent accesses the other's internal valuation during planning. During action execution (`tick_trade`, `commit_trade`), handlers use `WorldTxn` (authoritative state) per the established action handler pattern — this is consistent with all other action handlers.
 7. **Locality (Principle 7)** — Negotiation is strictly bilateral and co-located. No global price signals, no market aggregation.
 
 ## Architecture
@@ -71,7 +71,7 @@ The negotiation protocol is **alternating offers with monotonic concession const
 
 ### Component 1: Reservation Price Derivation
 
-A pure function that computes an agent's walkaway price from concrete state. No new stored state — this is a derived computation (Principle 3, 25).
+A pure function that computes an agent's walkaway price from concrete state. No new stored state — this is a derived computation (Principle 3, 27).
 
 ```rust
 /// Buyer's maximum willingness to pay (in coins) for one unit.
@@ -94,6 +94,8 @@ fn seller_reservation_price(
 ) -> Quantity
 ```
 
+**Note on caller contexts**: During affordance generation (`enumerate_trade_payloads`), these functions are called with data assembled from `RuntimeBeliefView` via the existing helpers `wounds_for(view, actor)` and `demand_memory_for(view, actor)`, which already construct `WoundList` and `DemandMemory` wrappers from the view's vector returns. During tick execution (`tick_trade`), they are called with components from `WorldTxn` via `txn.get_component_wound_list()` and `txn.get_component_demand_memory()`.
+
 **Buyer reservation logic:**
 - Base: marginal relief the commodity provides for the agent's most urgent need (hunger/thirst/wound)
 - Scarcity adjustment: fewer local alternatives → higher willingness to pay (concrete count, not abstract weight)
@@ -106,7 +108,7 @@ fn seller_reservation_price(
 - Stock scarcity: fewer units in stock → higher reservation (each unit is more valuable)
 - Demand pressure: more remembered demand observations → higher reservation (scarce good, hold for better price)
 
-All inputs are `Permille` or `Quantity` values already available on the agent's belief view. No new components.
+All inputs are `Permille` or `Quantity` values already available on the agent's state. No new components.
 
 ### Component 2: Offer Generation via Faratin Concession Curve
 
@@ -135,16 +137,20 @@ fn generate_offer(
 
 ### Component 3: Negotiation State in Trade Action
 
-The trade action's `ActionState` stores the negotiation progress:
+The trade action's `ActionState` stores the negotiation progress as a new enum variant:
 
 ```rust
-/// Stored in ActionState during trade negotiation.
-pub struct NegotiationState {
-    pub round: u32,
-    pub initiator_role: TradeRole,  // Buyer or Seller
-    pub initiator_last_offer: Option<Quantity>,
-    pub responder_last_offer: Option<Quantity>,
-    pub agreed_price: Option<Quantity>,
+// New variant added to the existing ActionState enum.
+// All fields are Copy, preserving ActionState's Copy derive.
+pub enum ActionState {
+    // ... existing variants (Empty, Heal, Investigate, Travel) ...
+    Trade {
+        round: u32,
+        initiator_role: TradeRole,
+        initiator_last_offer: Option<Quantity>,
+        responder_last_offer: Option<Quantity>,
+        agreed_price: Option<Quantity>,
+    },
 }
 
 pub enum TradeRole {
@@ -153,18 +159,20 @@ pub enum TradeRole {
 }
 ```
 
-This is transient action state — it lives only for the duration of the trade action instance and is not a stored component. It is serializable for replay determinism.
+**Note**: `ActionState` currently derives `Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize`. All proposed fields are `Copy`-compatible (`u32`, `TradeRole`, `Option<Quantity>`). The existing bincode roundtrip test must be extended to cover the `Trade` variant. `TradeRole` goes in `worldwake-core/src/trade.rs` alongside `TradeDispositionProfile`.
 
 ### Component 4: Modified Trade Action Lifecycle
 
 #### `enumerate_trade_payloads` (affordance generation)
 
-Currently generates a single 1:1 payload filtered by mutual acceptance. Changed to:
+Currently generates payloads filtered by `trade_bundle_is_mutually_accepted`. Changed to emit payloads whenever the buyer has coins (≥1) and a sale lot exists, trusting the negotiation protocol to handle disagreement:
 
-1. Compute buyer's reservation price from belief state.
-2. Compute seller's reservation price from belief state (using consumer's belief about seller's state).
-3. If buyer's reservation ≥ seller's reservation (zone of possible agreement exists), emit a trade payload with the buyer's opening offer as `offered_quantity`.
-4. The payload now represents an *initial* offer, not a final price.
+1. Iterate `profile.sale_kinds` → `listed_sale_lots_at(place, commodity)` → individual lots (preserving the existing lot-based iteration pattern).
+2. For each lot: check that the buyer has at least 1 coin.
+3. Compute buyer's opening offer from reservation price + `initial_offer_bias` + rejection memory.
+4. Emit a `TradeActionPayload` with the computed opening offer as `offered_quantity`.
+
+The `trade_bundle_is_mutually_accepted` pre-filter is removed. The buyer doesn't know the seller's reservation and shouldn't pretend to (Principle 16 — ignorance is first-class). If the negotiation fails, the aftermath teaches the buyer for next time (Principle 10).
 
 ```rust
 fn enumerate_trade_payloads(
@@ -175,43 +183,71 @@ fn enumerate_trade_payloads(
 ) -> Vec<ActionPayload> {
     // ... existing counterparty/place/merchandise validation ...
 
-    let buyer_reservation = buyer_reservation_price(
-        view.homeostatic_needs(actor).as_ref(),
-        view.wound_list(actor).as_ref(),
-        requested_commodity,
-        view.commodity_quantity(actor, CommodityKind::Coin),
-        count_local_alternatives(view, actor, counterparty, place, requested_commodity),
-    );
-
-    // Check zone of possible agreement exists using belief-estimated
-    // seller reservation (conservative: assume seller wants at least 1)
-    if buyer_reservation < Quantity(1) {
-        return Vec::new();  // cannot afford anything
+    // Check buyer has any coins at all
+    if view.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
+        return Vec::new();
     }
 
-    let disposition = view.trade_disposition_profile(actor)?;
-    let opening_offer = derive_opening_offer(
-        TradeRole::Buyer,
-        buyer_reservation,
-        disposition.initial_offer_bias,
-        // Shift opening up based on prior rejections with this counterparty
-        rejection_count_for(view, actor, counterparty, requested_commodity),
+    let disposition = view.trade_disposition_profile(actor);
+    let Some(disposition) = disposition else {
+        return Vec::new();
+    };
+
+    let buyer_res = buyer_reservation_price(
+        view.homeostatic_needs(actor).as_ref(),
+        wounds_for(view, actor).as_ref(),
+        // commodity determined per-lot below
+        // ... (computed inside the loop for each lot's commodity)
     );
 
-    // Emit single payload with the computed opening offer
-    vec![ActionPayload::Trade(TradeActionPayload {
-        counterparty,
-        offered_commodity: CommodityKind::Coin,
-        offered_quantity: opening_offer,
-        requested_commodity,
-        requested_quantity: Quantity(1),
-    })]
+    let profile = view.merchandise_profile(counterparty).unwrap();
+    let mut payloads: Vec<ActionPayload> = Vec::new();
+    for commodity in &profile.sale_kinds {
+        let buyer_res = buyer_reservation_price(
+            view.homeostatic_needs(actor).as_ref(),
+            wounds_for(view, actor).as_ref(),
+            *commodity,
+            view.commodity_quantity(actor, CommodityKind::Coin),
+            count_local_alternatives(view, actor, counterparty, place, *commodity),
+        );
+        if buyer_res < Quantity(1) {
+            continue; // cannot afford anything for this commodity
+        }
+
+        let opening_offer = derive_opening_offer(
+            TradeRole::Buyer,
+            buyer_res,
+            disposition.initial_offer_bias,
+            disposition.rejection_escalation_rate,
+            rejection_count_for(view, actor, counterparty, *commodity),
+        );
+
+        for lot in view.listed_sale_lots_at(place, *commodity) {
+            if view.seller_for_sale_lot(lot) != Some(counterparty) {
+                continue;
+            }
+            payloads.push(ActionPayload::Trade(TradeActionPayload {
+                counterparty,
+                sale_lot: lot,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: opening_offer,
+                requested_quantity: Quantity(1),
+            }));
+        }
+    }
+    payloads.sort();
+    payloads.dedup();
+    payloads
 }
 ```
 
+**`count_local_alternatives`**: New helper counting how many other sellers at the same place offer the same commodity. Derived from the existing `local_trade_alternatives` pattern (which returns full tuples) but returns only a count.
+
+**`rejection_count_for`**: New helper counting `DemandObservation` entries with reason `WantedToBuyButTooExpensive` for the given counterparty and commodity within the agent's demand memory.
+
 #### `start_trade` (action start)
 
-Initialize `NegotiationState` with round 0, the initiator's opening offer from the payload, and no responder offer yet.
+Initialize `ActionState::Trade` with round 0, the initiator's role as `Buyer`, the initiator's opening offer from the payload, and no responder offer yet.
 
 #### `tick_trade` (per-tick negotiation round)
 
@@ -230,14 +266,28 @@ Currently a no-op. Changed to execute one negotiation round:
 
 Each round is one tick. The action's total duration is no longer fixed at `negotiation_round_ticks` — it ends early on agreement or walkaway. The `negotiation_round_ticks` value becomes the *maximum* rounds (the agent's base patience).
 
+**Contention**: If two buyers attempt to trade with the same seller simultaneously, the seller's occupancy during the first trade prevents starting a second (the seller is a target of an active action). The second buyer's action fails at `start_trade` validation and they replan. This is the existing action contention pattern — no special negotiation-specific handling is needed.
+
 #### `commit_trade` (trade execution)
 
-Currently evaluates a fixed bundle. Changed to:
+Currently evaluates a fixed bundle via `ensure_bundle_accepted`. Changed to:
 
-1. Check `NegotiationState.agreed_price` exists (both sides accepted).
+1. Check `ActionState::Trade { agreed_price, .. }` exists and `agreed_price` is `Some`.
 2. If no agreement → abort (both walked away or deadline).
-3. Execute transfer at the agreed price: buyer transfers `agreed_price` coins, seller transfers 1 unit of commodity.
+3. Execute transfer at the agreed price: buyer transfers `agreed_price` coins, seller transfers 1 unit of commodity via `execute_trade_transfers` (using the existing lot-based transfer machinery).
 4. Record negotiation outcome in both agents' `DemandMemory`.
+
+The `ensure_bundle_accepted` call is removed from `commit_trade` — acceptance was determined during negotiation rounds, not at commit time.
+
+#### `abort_trade` (negotiation failure)
+
+Currently a no-op. Changed to record failed negotiation outcomes in both agents' `DemandMemory`:
+- Buyer records `WantedToBuyButTooExpensive` with the counterparty.
+- Seller records `WantedToSellButNoBuyer`.
+
+#### Payload override validator
+
+The existing `with_payload_override_validator` registration (if present) or a new `validate_trade_payload_override` must be updated to account for variable `offered_quantity` in planner-synthesized payloads. The validator should accept any `offered_quantity` ≤ buyer's coin balance and ≥ 1, since the negotiation protocol will determine the final price.
 
 ### Component 5: Post-Negotiation Learning via DemandMemory
 
@@ -270,14 +320,17 @@ fn derive_opening_offer(
     role: TradeRole,
     reservation: Quantity,
     initial_offer_bias: Permille,
+    rejection_escalation_rate: Permille,
     prior_rejections: u32,
 ) -> Quantity {
     // Base opening from reservation + bias
     let base = /* reservation adjusted by initial_offer_bias */;
 
-    // Each prior rejection shifts opening toward reservation
-    // Buyer: bid higher after rejections. Seller: ask less.
-    let shift_per_rejection = reservation.0 / 5;  // 20% per rejection
+    // Each prior rejection shifts opening toward reservation.
+    // The per-rejection shift is derived from the agent's profile parameter
+    // `rejection_escalation_rate`, not a hardcoded fraction.
+    // Example: rejection_escalation_rate of pm(200) = 20% of reservation per rejection.
+    let shift_per_rejection = (reservation.0 as u64 * rejection_escalation_rate.value() as u64 / 1000) as u32;
     let total_shift = shift_per_rejection * prior_rejections.min(4);
 
     match role {
@@ -287,7 +340,7 @@ fn derive_opening_offer(
 }
 ```
 
-This means an agent who was rejected 3 times by the same seller will open at a substantially higher price on attempt 4, breaking the infinite-retry loop that is the root cause of the test failure.
+This means an agent who was rejected 3 times by the same seller will open at a substantially higher price on attempt 4, breaking the infinite-retry loop that is the root cause of the test failure. The escalation rate varies per agent via `rejection_escalation_rate`, enabling diverse bargaining strategies (Principle 22).
 
 ### Component 6: Emergent Price Properties
 
@@ -311,18 +364,18 @@ All of these emerge from the intersection of concrete agent state — no pricing
 
 **How does price information reach agents?**
 
-1. Each agent's reservation price is derived locally from its own belief view (needs, inventory, wounds, demand memory). No information travels.
+1. Each agent's reservation price is derived locally from its own state (needs, inventory, wounds, demand memory). No information travels.
 2. The counterparty's offers arrive through the negotiation protocol — direct co-located communication (Principle 7).
 3. Trade outcomes are recorded in `DemandMemory` as observations. These are local to the agent and age out.
 4. No global price signals exist. An agent at Place A does not learn what prices were agreed at Place B unless it travels there and observes or is told (future E15 rumor system).
 
 **Information path for "what price should I offer?":**
 ```
-Agent's own needs (authoritative) → marginal relief computation
+Agent's own needs (authoritative, via WorldTxn during tick) → marginal relief computation
 Agent's own inventory (authoritative) → coin budget
-Agent's belief about local sellers (belief store) → alternative count
-Agent's demand memory observations (belief store) → rejection history
-→ All local, all belief-based, no global queries
+Agent's belief about local sellers (belief store, during affordance gen) → alternative count
+Agent's demand memory observations (belief store / authoritative) → rejection history
+→ All local, no global queries
 ```
 
 ### H.2: Positive-Feedback Analysis
@@ -355,8 +408,8 @@ All dampeners are physical world processes (resource depletion, memory decay, al
 - `TradeDispositionProfile` (per-agent component) — negotiation personality parameters
 - `DemandMemory.observations` (per-agent component) — historical trade observations
 - `HomeostaticNeeds` (per-agent component) — current physiological state
-- `NegotiationState` (transient `ActionState` during trade action) — current round, offers
-- `TradeActionPayload` (action instance data) — the initial offer
+- `ActionState::Trade { .. }` (transient action state during trade action) — current round, offers
+- `TradeActionPayload` (action instance data) — the initial offer and target sale lot
 
 **Derived computations (never stored):**
 - Reservation prices — always recomputed from current state
@@ -365,6 +418,21 @@ All dampeners are physical world processes (resource depletion, memory decay, al
 - Effective deadline — derived from `negotiation_round_ticks` × urgency factor
 
 No derived value is promoted to authoritative state.
+
+### H.5: Contention Analysis
+
+**Simultaneous negotiation attempts**: If two buyers try to trade with the same seller, the seller's occupancy as a target of an active trade action prevents the second trade from starting. The second buyer's `start_trade` validation fails (target already occupied), and they replan. This uses the existing action contention mechanism — no negotiation-specific contention logic needed.
+
+**Lot contention**: Two buyers targeting different lots from the same seller can negotiate in parallel (future extension; currently the seller occupancy prevents this). If the seller's lot is sold mid-negotiation to another buyer (e.g., if occupancy rules change), `commit_trade` validation catches the missing lot via `sale_lot_commodity` and aborts gracefully.
+
+### H.6: Save/Load and Replay
+
+All negotiation state survives save/load and replay:
+- `ActionState::Trade { .. }` is `Serialize + Deserialize` (bincode, via serde derives).
+- `TradeRole` is `Serialize + Deserialize`.
+- `DemandObservationReason::TradeAgreed` serializes identically to existing variants.
+- The Faratin concession curve is deterministic given the same inputs (Permille arithmetic, u32 operations, no floats).
+- `ChaCha8Rng` is not used in negotiation (no randomness in the protocol). Determinism is guaranteed by the monotonic concession constraint and deterministic reservation price derivation.
 
 ## SystemFn Integration
 
@@ -383,12 +451,16 @@ Tick N:
 
 **Modified components (no new registration):**
 - `DemandObservationReason` — add `TradeAgreed` variant
-- `ActionState` — extend to support `NegotiationState` serialization
-- `TradeActionPayload` — semantics change (offered_quantity is opening offer, not final price)
+- `ActionState` — add `Trade { .. }` variant (preserves existing `Copy` derive)
+- `TradeActionPayload` — semantics change (`offered_quantity` is opening offer, not final price); struct shape unchanged
 
-**No new components.** All state either exists already or is transient action state.
+**New type (not a component):**
+- `TradeRole` — `Copy + Clone + Eq + Ord + Hash + Debug + Serialize + Deserialize` enum in `worldwake-core/src/trade.rs`
 
-## Cross-System Interactions (Principle 24)
+**Modified component:**
+- `TradeDispositionProfile` — add `rejection_escalation_rate: Permille` field
+
+## Cross-System Interactions (Principle 26)
 
 All interactions are state-mediated:
 
@@ -415,10 +487,10 @@ No system calls another system's logic. The trade action reads world state to ma
 
 ### Golden Test Gate
 
-7. `test_full_supply_chain` passes with `PlanningBudget::default()` (512 expansions, beam width 8) — the consumer successfully trades with the merchant at a mutually acceptable price.
-8. `test_full_supply_chain_replay` passes — deterministic replay is preserved.
-9. All existing golden tests pass unchanged: `cargo test -p worldwake-ai` — no regressions. The segment tests (`test_consumer_trade_with_traces`, `test_merchant_restock_with_traces`) continue to pass because 1:1 trades remain acceptable when the seller has low enterprise weight and surplus stock.
-10. `cargo test --workspace && cargo clippy --workspace` — clean.
+7. A new `test_full_supply_chain` golden test passes with `PlanningBudget::default()` (224 expansions, beam width 8) — the consumer successfully trades with the merchant at a mutually acceptable price.
+8. A new `test_full_supply_chain_replay` golden test passes — deterministic replay is preserved.
+9. All existing golden tests pass unchanged: `cargo test -p worldwake-ai` — no regressions. The segment helpers (`run_consumer_trade_with_traces`, `run_merchant_restock_with_traces`) continue to pass because 1:1 trades remain acceptable when the seller has low enterprise weight and surplus stock.
+10. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — clean.
 
 ### Invariants
 
@@ -426,16 +498,15 @@ No system calls another system's logic. The trade action reads world state to ma
 12. Deterministic replay holds — same seed, same inputs produce identical event logs and negotiation outcomes.
 13. Conservation invariants hold — coins and commodities are neither created nor destroyed by negotiation.
 14. No stored "price" or "market rate" component exists — all prices are derived at query time.
-15. The negotiation protocol is symmetric under agent swap — a human-controlled agent using the same `TradeDispositionProfile` would negotiate identically to an AI-controlled one (Principle 17).
+15. The negotiation protocol is symmetric under agent swap — a human-controlled agent using the same `TradeDispositionProfile` would negotiate identically to an AI-controlled one (Principle 19).
 
 ## Files to Touch
 
-- `crates/worldwake-systems/src/trade_actions.rs` (major — negotiation protocol in tick_trade, reservation price functions, modified enumerate_trade_payloads, post-negotiation learning)
+- `crates/worldwake-systems/src/trade_actions.rs` (major — negotiation protocol in tick_trade, reservation price functions, modified enumerate_trade_payloads, removal of `trade_bundle_is_mutually_accepted` filter, post-negotiation learning, updated payload override validator)
 - `crates/worldwake-sim/src/trade_valuation.rs` (minor — expose helper functions for reservation price derivation, or keep self-contained in trade_actions)
-- `crates/worldwake-sim/src/action_payload.rs` (minor — `TradeActionPayload` semantics documentation)
-- `crates/worldwake-sim/src/action_state.rs` (minor — `NegotiationState` serialization support)
-- `crates/worldwake-core/src/trade.rs` (minor — add `TradeAgreed` to `DemandObservationReason`)
-- `crates/worldwake-ai/tests/golden_supply_chain.rs` (test — remove `#[ignore]`, switch to `PlanningBudget::default()`, update comments)
+- `crates/worldwake-sim/src/action_state.rs` (minor — `Trade` variant with negotiation fields, bincode roundtrip test extension)
+- `crates/worldwake-core/src/trade.rs` (minor — add `TradeAgreed` to `DemandObservationReason`, add `TradeRole` enum, add `rejection_escalation_rate: Permille` to `TradeDispositionProfile`)
+- `crates/worldwake-ai/tests/golden_supply_chain.rs` (test — create `test_full_supply_chain` and `test_full_supply_chain_replay` test functions, update `default_trade_disposition` to include `rejection_escalation_rate`)
 
 ## Out of Scope
 
@@ -446,7 +517,7 @@ No system calls another system's logic. The trade action reads world state to ma
 - `S06-commodity-opportunity-valuation` integration (future — indirect commodity utility)
 - Changes to `PlanningBudget` defaults
 - Changes to the perception system
-- New golden tests beyond un-ignoring the existing full supply chain test
+- New golden tests beyond the full supply chain E2E test
 
 ## Test Plan
 
@@ -461,7 +532,7 @@ No system calls another system's logic. The trade action reads world state to ma
 7. `generate_offer` with Conceder rate concedes rapidly then slowly
 8. `generate_offer` with Linear rate concedes uniformly
 9. Monotonic concession constraint: buyer offers never decrease, seller asks never increase
-10. `derive_opening_offer` shifts with rejection count
+10. `derive_opening_offer` shifts with rejection count proportional to `rejection_escalation_rate`
 11. Urgency modulation: effective deadline shrinks with higher need
 12. Negotiation converges when buyer reservation > seller reservation
 13. Negotiation fails (walkaway) when buyer reservation < seller reservation
@@ -469,8 +540,8 @@ No system calls another system's logic. The trade action reads world state to ma
 
 ### Integration Tests (golden tests)
 
-15. `test_full_supply_chain` — un-ignored, passes with default budget
-16. `test_full_supply_chain_replay` — un-ignored, deterministic
+15. `test_full_supply_chain` — new test, passes with default budget
+16. `test_full_supply_chain_replay` — new test, deterministic
 17. All existing golden tests pass unchanged (no regressions)
 
 ### Commands
@@ -479,7 +550,7 @@ No system calls another system's logic. The trade action reads world state to ma
 cargo test -p worldwake-systems -- trade   # unit tests
 cargo test -p worldwake-ai --test golden_supply_chain  # golden tests
 cargo test -p worldwake-ai  # all AI golden tests
-cargo test --workspace && cargo clippy --workspace  # full suite
+cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings  # full suite
 ```
 
 ## References

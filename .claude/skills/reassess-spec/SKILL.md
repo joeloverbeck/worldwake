@@ -61,8 +61,10 @@ For every reference extracted in Step 2, validate against the actual codebase:
 2. **Types and interfaces**: Grep for each type name. Confirm it exists, check its current shape (fields, members). If the spec assumes a field that does not exist or has a different name/type, record the discrepancy.
 3. **Functions and methods**: Grep for each function. Confirm signature, module location, and export status. Note any signature differences from what the spec assumes.
 4. **Dependencies (specs/tickets)**: For each dependency, verify whether it lives in `specs/`, `archive/specs/`, `tickets/`, or `archive/tickets/`. Record the correct path. If a dependency is listed as incomplete but has since been implemented, note this.
-5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration.
+5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration. For types or enums the spec proposes to extend (new variants, new fields), check the existing derive macros and trait bounds. Record any constraints that new additions must satisfy (e.g., `Copy`, `Serialize`, `Ord`).
 6. **Downstream consumers**: For types or interfaces the spec proposes to modify, grep for all import sites and usage points. Record the blast radius — files that would need updating.
+
+For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation.
 
 Do not present findings yet. Collect everything for Step 4.
 
@@ -79,6 +81,7 @@ Review each section of the spec against `docs/FOUNDATIONS.md`:
    - **Principle 28** (No Backward Compatibility) — does the spec leave compatibility shims or defer migration?
    - **Principle 30** (Causal Hooks Declaration) — does the spec declare its causal hooks per the required 15-point checklist?
 3. Record each alignment issue with the specific Foundation number and what conflicts.
+4. If the spec modifies action preconditions, `validate_*` functions, affordance generation (`enumerate_*_payloads`), or `can_exercise_control`, verify compliance with the Authoritative-to-AI Impact Rule checklist in CLAUDE.md. Check all 7 points: `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, payload revalidation (`with_payload_override_validator`), and golden test pass.
 
 ### Step 5: Classify Findings
 
@@ -120,7 +123,7 @@ Present all findings to the user in a structured report:
 1. <question>
 ```
 
-**Question discipline**: Ask at most 3 questions in this initial report. If you have more than 3, prioritize the ones that block further reassessment and defer the rest to a follow-up round after the user responds.
+**Question discipline**: Ask at most 3 questions in this initial report. If you have more than 3, prioritize the ones that block further reassessment and defer the rest to a follow-up round after the user responds. If two questions are interdependent (the answer to one constrains the other), present them as a single combined question with clearly labeled option combinations, rather than asking sequentially and potentially invalidating the first answer.
 
 **Wait for user response.** Do not proceed to Step 7 until the user has:
 - Approved, rejected, or modified each finding
@@ -132,12 +135,10 @@ If the user's answers raise new questions or invalidate previous findings, prese
 
 After all findings are resolved and the user has approved the changes:
 
-1. **Draft the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon.
-2. **Present the diff summary** to the user: list each section that will change and what the change is.
-3. **Wait for final approval** before writing the file.
-4. **Write the updated spec** to the same path as the original, overwriting it.
+1. **Write the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon.
+2. **Present a post-write diff summary**: list each section that changed and what the change was. This confirms what was written — the user already approved each finding individually in Step 6, so a separate pre-write approval gate is not required.
 
-If the user requests changes to the draft, incorporate them and re-present before writing.
+If the user requests corrections after reviewing, apply them and re-present the affected sections.
 
 ### Step 8: Final Summary
 
@@ -145,6 +146,7 @@ After writing the updated spec, present:
 
 - Number of issues fixed, improvements applied, and additions incorporated
 - Any deferred items the user chose not to address now
+- 1-3 sections that changed most substantially, with a note to review them before proceeding
 - Suggested next step: `/spec-to-tickets <spec-path> <NAMESPACE>` to decompose into tickets
 
 Do NOT commit. Leave the file for user review.
