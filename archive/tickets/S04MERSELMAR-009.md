@@ -59,9 +59,9 @@ When the trade commits and lot transfer occurs:
   - The transferred portion (new lot going to buyer): do NOT attach `SaleListing`
   - The seller's remainder lot: preserve `SaleListing` if the remainder still meets listing conditions (still possessed, still at market, commodity still in `sale_kinds`)
 
-### 3. Derive `requested_commodity` from `sale_lot`
+### 3. ~~Derive `requested_commodity` from `sale_lot`~~ (ALREADY DONE by ticket 008)
 
-In the commit handler, derive `requested_commodity` from `world.item_lot(payload.sale_lot).commodity` instead of reading a now-removed payload field. (Structural change from ticket 008, but the derivation logic lives here.)
+`sale_lot_commodity()` helper already exists at `trade_actions.rs:131` and is called in `validate_trade_bundle_context` and `execute_trade_transfers`. No work needed.
 
 ## Files to Touch
 

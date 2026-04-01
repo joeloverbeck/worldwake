@@ -159,6 +159,8 @@ pub enum BlockingFact {
     PatienceExhausted,
     /// A critical frame assumption failed (target dead, route severed).
     AssumptionFailed,
+    /// Seller staffed a market but no trade occurred during the presence cycle.
+    NoBuyer,
 }
 
 #[cfg(test)]
