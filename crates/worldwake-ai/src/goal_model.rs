@@ -579,6 +579,16 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
+            PlannerOpKind::StaffMarket => match self {
+                GoalKind::SellCommodity { commodity } => {
+                    Ok(Some(ActionPayload::StaffMarket(
+                        worldwake_sim::StaffMarketPayload {
+                            commodity: *commodity,
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::Loot => build_loot_payload_override(targets),
             PlannerOpKind::MoveCargo => match self {
                 GoalKind::MoveCargo {

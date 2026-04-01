@@ -663,16 +663,29 @@ fn local_alternatives(
 // staff_market action — seller-side market presence
 // ---------------------------------------------------------------------------
 
+fn validate_staff_market_payload_override(
+    _def: &ActionDef,
+    _actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    _view: &dyn RuntimeBeliefView,
+) -> bool {
+    payload.as_staff_market().is_some()
+}
+
 pub fn register_staff_market_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_staff_market,
-        tick_staff_market,
-        commit_staff_market,
-        abort_staff_market,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(
+            start_staff_market,
+            tick_staff_market,
+            commit_staff_market,
+            abort_staff_market,
+        )
+        .with_payload_override_validator(validate_staff_market_payload_override),
+    );
     defs.register(staff_market_action_def(
         ActionDefId(defs.len() as u32),
         handler,
