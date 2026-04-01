@@ -17,6 +17,7 @@ The full facility stock lifecycle (store→stage→sell, restock delivery, unsta
 3. Replay companions (deterministic replay) are the standard for golden tests — check existing replay companion pattern.
 4. `PerceptionProfile` required on agents that need to observe post-production output — confirmed in CLAUDE.md.
 5. All prerequisite systems (stock actions, sale visibility, MoveCargo evolution, AI planning) are complete via dependencies.
+6. Golden test setup was partially migrated in ticket 005: `seed_merchant` creates facilities with display containers, `seed_merchant_with_stored_stock` creates unstaged stock, Scenario 75 rewritten. If ticket 007 resolves all deferred golden test failures, this ticket focuses on NEW scenarios only. If any deferred failures remain after 007, address them here first.
 
 ## Architecture Check
 

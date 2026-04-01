@@ -64,11 +64,21 @@ In `search/candidates.rs`: ensure plan search generates staging steps as prerequ
 - `crates/worldwake-ai/src/blocked_intent.rs` (modify)
 - `crates/worldwake-ai/src/failure_handling.rs` (modify)
 
+## Deferred from S05MERSTOSTALL-005
+
+Ticket 005 was completed partially — all production code and focused tests pass, but 11 golden tests fail because the AI planner does not yet support facility-based selling. The golden test setup (helpers, test bodies) was already migrated in 005:
+- `seed_merchant` now creates a facility with display container and stages stock
+- `seed_merchant_with_stored_stock` creates unstaged stock in the stock container
+- Scenario 75 rewritten to test presence-only staff_market behavior
+- `golden_trade.rs` trade harness updated with facility setup
+
+**Once this ticket (007) provides AI planning support for displayed stock, the 11 failing golden tests should pass.** Verify by running `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade` after implementation. Any remaining failures belong in ticket 010.
+
 ## Out of Scope
 
 - Authorization/theft distinction (008)
 - Audit hooks (009)
-- Golden tests (010)
+- New golden test scenarios (010) — but deferred golden test migration from 005 IS in scope
 
 ## Acceptance Criteria
 
@@ -79,7 +89,8 @@ In `search/candidates.rs`: ensure plan search generates staging steps as prerequ
 3. Stock action affordances generated for facility controllers
 4. Dampening applies correctly for facility-based sell cycles
 5. BlockingFact variants produced on storage/staging failures
-6. Existing suite: `cargo test -p worldwake-ai`
+6. Deferred golden tests from 005 pass: `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade`
+7. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 
