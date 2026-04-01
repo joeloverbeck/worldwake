@@ -40,7 +40,10 @@ fn merchant_utility() -> UtilityProfile {
 }
 
 /// Seed a merchant at `place` with `MerchandiseProfile`, trade disposition,
-/// perception, AI control, enterprise utility, and stock of `commodity`.
+/// perception, AI control, enterprise utility, a facility with display
+/// container, and stock of `commodity` staged in the display container
+/// (with `SaleListing` and `StockAssignment::Displayed`).
+///
 /// Returns `(merchant_entity, stock_lot_entity)`.
 fn seed_merchant(
     h: &mut GoldenHarness,
@@ -49,6 +52,8 @@ fn seed_merchant(
     commodity: CommodityKind,
     quantity: Quantity,
 ) -> (worldwake_core::EntityId, worldwake_core::EntityId) {
+    use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+
     let merchant = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
@@ -97,6 +102,102 @@ fn seed_merchant(
         },
     )
     .unwrap();
+    // Create facility with display container and stage the stock lot.
+    let (facility, _stock_container, display) = txn
+        .create_merchant_facility(place, merchant, LoadUnits(500), Some(LoadUnits(300)))
+        .unwrap();
+    let display_container = display.unwrap();
+    // Move lot from direct possession into the display container.
+    txn.clear_possessor(stock_lot).unwrap();
+    txn.put_into_container(stock_lot, display_container).unwrap();
+    txn.set_component_stock_assignment(
+        stock_lot,
+        StockAssignment {
+            facility,
+            kind: StockAssignmentKind::Displayed,
+        },
+    )
+    .unwrap();
+    txn.set_component_sale_listing(stock_lot, SaleListing { listed_at: Tick(0) })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    (merchant, stock_lot)
+}
+
+/// Like `seed_merchant` but puts the lot in the STOCK container (Stored)
+/// WITHOUT `SaleListing`.  Use for tests that need non-sale-visible stock.
+fn seed_merchant_with_stored_stock(
+    h: &mut GoldenHarness,
+    name: &str,
+    place: worldwake_core::EntityId,
+    commodity: CommodityKind,
+    quantity: Quantity,
+) -> (worldwake_core::EntityId, worldwake_core::EntityId) {
+    use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+
+    let merchant = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        name,
+        place,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        merchant_utility(),
+        KnownRecipes::new(),
+    );
+
+    let stock_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        place,
+        commodity,
+        quantity,
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_merchandise_profile(
+        merchant,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([commodity]),
+            home_market: Some(place),
+        },
+    )
+    .unwrap();
+    txn.set_component_trade_disposition_profile(merchant, merchant_trade_disposition())
+        .unwrap();
+    txn.set_component_perception_profile(merchant, PerceptionProfile::default())
+        .unwrap();
+    txn.set_component_demand_memory(
+        merchant,
+        DemandMemory {
+            observations: vec![DemandObservation {
+                commodity,
+                quantity: Quantity(5),
+                place,
+                tick: Tick(0),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        },
+    )
+    .unwrap();
+    // Create facility and put lot in stock container (NOT displayed).
+    let (facility, stock_container, _display) = txn
+        .create_merchant_facility(place, merchant, LoadUnits(500), Some(LoadUnits(300)))
+        .unwrap();
+    txn.clear_possessor(stock_lot).unwrap();
+    txn.put_into_container(stock_lot, stock_container).unwrap();
+    txn.set_component_stock_assignment(
+        stock_lot,
+        StockAssignment {
+            facility,
+            kind: StockAssignmentKind::Stored,
+        },
+    )
+    .unwrap();
+    // No SaleListing — stock is stored, not displayed.
     commit_txn(txn, &mut h.event_log);
 
     (merchant, stock_lot)
@@ -140,16 +241,17 @@ fn seed_buyer(
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 75: staff_market Lists on Start, Unlists on Complete
+// Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 // Systems: Trade, AI
 // GoalKinds: SellCommodity
 // ActionDomains: Trade
-// Principles: P1, P3, P8
-// Proves: staff_market attaches SaleListing on start and removes it on commit
+// Principles: P1, P3, P4
+// Proves: SaleListing on displayed lot persists through staff_market
+//         presence cycle — staging manages listings, not staff_market
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
-fn run_staff_market_lists_unlists(
+fn run_displayed_lot_retains_listing(
     seed: Seed,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
@@ -164,7 +266,6 @@ fn run_staff_market_lists_unlists(
         Quantity(3),
     );
 
-    // Seed beliefs so the AI can perceive the world.
     seed_actor_local_beliefs(
         &mut h.world,
         &mut h.event_log,
@@ -173,13 +274,13 @@ fn run_staff_market_lists_unlists(
         worldwake_core::PerceptionSource::Inference,
     );
 
-    // Before any ticks: no SaleListing on the stock lot.
+    // Before any ticks: SaleListing present from staging during seed_merchant.
     assert!(
-        h.world.get_component_sale_listing(stock_lot).is_none(),
-        "stock lot should not have SaleListing before staff_market starts"
+        h.world.get_component_sale_listing(stock_lot).is_some(),
+        "displayed stock lot should have SaleListing from staging"
     );
 
-    // Run ticks until staff_market starts.
+    // Run ticks until staff_market starts (presence action).
     let mut staff_market_started = false;
     for _ in 0..80 {
         h.step_once();
@@ -198,10 +299,10 @@ fn run_staff_market_lists_unlists(
         "merchant should start staff_market within 80 ticks"
     );
 
-    // After staff_market starts, the stock lot should have SaleListing.
+    // SaleListing still present during staff_market (presence-only, no listing management).
     assert!(
         h.world.get_component_sale_listing(stock_lot).is_some(),
-        "stock lot should have SaleListing after staff_market starts"
+        "SaleListing must persist during staff_market presence"
     );
 
     // Run until staff_market commits.
@@ -220,27 +321,28 @@ fn run_staff_market_lists_unlists(
     }
     assert!(
         staff_market_committed,
-        "merchant should commit staff_market within 30 more ticks"
+        "merchant should commit staff_market within 80 more ticks"
     );
 
-    // After staff_market commits (unproductive — no buyer), listing should be removed.
+    // After staff_market commits: SaleListing STILL present.
+    // In the new model, staging/unstaging manages listings, not staff_market.
     assert!(
-        h.world.get_component_sale_listing(stock_lot).is_none(),
-        "stock lot should not have SaleListing after unproductive staff_market commits"
+        h.world.get_component_sale_listing(stock_lot).is_some(),
+        "SaleListing must persist after staff_market commit (managed by unstage, not staff_market)"
     );
 
     (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
 }
 
 #[test]
-fn staff_market_lists_on_start_unlists_on_complete() {
-    run_staff_market_lists_unlists(Seed([60; 32]));
+fn staff_market_retains_displayed_listing_through_presence_cycle() {
+    run_displayed_lot_retains_listing(Seed([60; 32]));
 }
 
 #[test]
-fn staff_market_lists_on_start_unlists_on_complete_replays_deterministically() {
-    let (w1, e1) = run_staff_market_lists_unlists(Seed([60; 32]));
-    let (w2, e2) = run_staff_market_lists_unlists(Seed([60; 32]));
+fn staff_market_retains_displayed_listing_replays_deterministically() {
+    let (w1, e1) = run_displayed_lot_retains_listing(Seed([60; 32]));
+    let (w2, e2) = run_displayed_lot_retains_listing(Seed([60; 32]));
     assert_eq!(w1, w2, "world hash mismatch on replay");
     assert_eq!(e1, e2, "event log hash mismatch on replay");
 }
@@ -376,7 +478,7 @@ fn unlisted_stock_not_sellable() {
     let mut h = GoldenHarness::with_recipes(Seed([62; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
 
-    let (merchant, stock_lot) = seed_merchant(
+    let (merchant, stock_lot) = seed_merchant_with_stored_stock(
         &mut h,
         "Merchant",
         VILLAGE_SQUARE,
@@ -542,8 +644,8 @@ fn deterministic_replay_preserves_listing_behavior() {
     assert_eq!(w1, w2, "world hash mismatch on replay");
     assert_eq!(e1, e2, "event log hash mismatch on replay");
 
-    let (w3, e3) = run_staff_market_lists_unlists(Seed([65; 32]));
-    let (w4, e4) = run_staff_market_lists_unlists(Seed([65; 32]));
+    let (w3, e3) = run_displayed_lot_retains_listing(Seed([65; 32]));
+    let (w4, e4) = run_displayed_lot_retains_listing(Seed([65; 32]));
     assert_eq!(w3, w4, "staff_market world hash mismatch on replay");
     assert_eq!(e3, e4, "staff_market event log hash mismatch on replay");
 }
@@ -993,8 +1095,8 @@ fn demand_memory_raises_sell_ranking() {
 fn planning_state_preserves_listing_determinism() {
     // Run the same scenario twice with the same seed and verify identical
     // plan search results via world + event log hash comparison.
-    let (w1, e1) = run_staff_market_lists_unlists(Seed([76; 32]));
-    let (w2, e2) = run_staff_market_lists_unlists(Seed([76; 32]));
+    let (w1, e1) = run_displayed_lot_retains_listing(Seed([76; 32]));
+    let (w2, e2) = run_displayed_lot_retains_listing(Seed([76; 32]));
     assert_eq!(w1, w2, "planning state world hash mismatch");
     assert_eq!(e1, e2, "planning state event log hash mismatch");
 }
