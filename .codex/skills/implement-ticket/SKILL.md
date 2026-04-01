@@ -106,6 +106,8 @@ Typical order:
 
 When the change touches more than one focused proof surface inside the same crate, run each focused selector needed to cover those boundaries rather than assuming one name filter is sufficient.
 
+Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
+
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
@@ -125,6 +127,8 @@ When a ticket changes whether an action should be available at all, include at l
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
 
 If the architecture change invalidates the old scenario invariant itself rather than just a timing detail or output shape, rewrite the scenario to prove the new contract and update the scenario header/comments to match.
+
+When a ticket intentionally lands pure scaffolding ahead of downstream integration, either wire the immediate call sites if they are in scope or mark the temporary unused surface deliberately and record why. Do not let staged helper work fail later CI clippy passes by accident.
 
 ### 7. Close the loop on the ticket
 

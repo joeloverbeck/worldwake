@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, num::NonZeroU32};
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
@@ -440,6 +440,76 @@ pub(crate) fn seller_reservation_price(
 }
 
 #[allow(dead_code)]
+pub(crate) fn generate_offer(
+    role: worldwake_core::TradeRole,
+    reservation: Quantity,
+    opening: Quantity,
+    round: u32,
+    deadline: u32,
+    concession_rate: worldwake_core::Permille,
+) -> Quantity {
+    let progress = concession_progress(round, deadline, concession_rate);
+    match role {
+        worldwake_core::TradeRole::Buyer => {
+            let floor = 1;
+            let ceiling = reservation.0.max(floor);
+            let start = opening.0.clamp(floor, ceiling);
+            let span = ceiling.saturating_sub(start);
+            Quantity(start.saturating_add(scale_by_permille(span, progress)).min(ceiling))
+        }
+        worldwake_core::TradeRole::Seller => {
+            let floor = reservation.0.max(1);
+            let start = opening.0.max(floor);
+            let span = start.saturating_sub(floor);
+            Quantity(start.saturating_sub(scale_by_permille(span, progress)).max(floor))
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn derive_opening_offer(
+    role: worldwake_core::TradeRole,
+    reservation: Quantity,
+    initial_offer_bias: worldwake_core::Permille,
+    rejection_escalation_rate: worldwake_core::Permille,
+    prior_rejections: u32,
+) -> Quantity {
+    let bias = u32::from(initial_offer_bias.value());
+    let capped_rejections = prior_rejections.min(4);
+    let shift_per_rejection =
+        scale_by_permille(reservation.0.max(1), u32::from(rejection_escalation_rate.value()));
+    let total_shift = shift_per_rejection.saturating_mul(capped_rejections);
+
+    match role {
+        worldwake_core::TradeRole::Buyer => {
+            let generous_floor = 1;
+            let span = reservation.0.saturating_sub(generous_floor);
+            let base =
+                reservation.0.saturating_sub(scale_by_permille(span, bias)).max(generous_floor);
+            Quantity(base.saturating_add(total_shift).min(reservation.0.max(generous_floor)))
+        }
+        worldwake_core::TradeRole::Seller => {
+            let floor = 1;
+            let span = reservation.0.saturating_sub(floor);
+            let base = reservation.0.saturating_add(scale_by_permille(span, bias));
+            Quantity(base.saturating_sub(total_shift).max(floor))
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn urgency_modulated_deadline(
+    base_patience: NonZeroU32,
+    needs: Option<&worldwake_core::HomeostaticNeeds>,
+    commodity: CommodityKind,
+) -> u32 {
+    let urgency = relevant_trade_urgency(needs, commodity);
+    let scaled = (u64::from(base_patience.get()) * u64::from(1000_u32.saturating_sub(urgency))
+        / 1000) as u32;
+    scaled.max(1)
+}
+
+#[allow(dead_code)]
 fn commodity_need_pressure(
     needs: Option<&worldwake_core::HomeostaticNeeds>,
     wounds: Option<&WoundList>,
@@ -504,6 +574,54 @@ fn units_to_cover_pressure(pressure: u32, relief_per_unit: u32) -> u32 {
         return 0;
     }
     pressure.div_ceil(relief_per_unit)
+}
+
+#[allow(dead_code)]
+fn concession_progress(round: u32, deadline: u32, concession_rate: worldwake_core::Permille) -> u32 {
+    let capped_deadline = deadline.max(1);
+    let normalized_round = round.min(capped_deadline);
+    let linear = ((u64::from(normalized_round) * 1000) / u64::from(capped_deadline)) as u32;
+    let slow_curve = scale_by_permille(linear, linear);
+    let remaining = 1000_u32.saturating_sub(linear);
+    let fast_curve = 1000_u32.saturating_sub(scale_by_permille(remaining, remaining));
+    let rate = u32::from(concession_rate.value());
+
+    match rate.cmp(&500) {
+        std::cmp::Ordering::Less => blend_permille(linear, slow_curve, (500 - rate) * 2),
+        std::cmp::Ordering::Equal => linear,
+        std::cmp::Ordering::Greater => blend_permille(linear, fast_curve, (rate - 500) * 2),
+    }
+}
+
+#[allow(dead_code)]
+fn relevant_trade_urgency(
+    needs: Option<&worldwake_core::HomeostaticNeeds>,
+    commodity: CommodityKind,
+) -> u32 {
+    let Some(needs) = needs else {
+        return 0;
+    };
+
+    match commodity {
+        CommodityKind::Water => u32::from(needs.thirst.value()),
+        CommodityKind::Apple | CommodityKind::Grain | CommodityKind::Bread => {
+            u32::from(needs.hunger.value())
+        }
+        _ => 0,
+    }
+}
+
+#[allow(dead_code)]
+fn scale_by_permille(value: u32, permille: u32) -> u32 {
+    ((u64::from(value) * u64::from(permille)) / 1000) as u32
+}
+
+#[allow(dead_code)]
+fn blend_permille(start: u32, end: u32, weight: u32) -> u32 {
+    let capped = weight.min(1000);
+    let start_weight = 1000_u32.saturating_sub(capped);
+    ((u64::from(start) * u64::from(start_weight) + u64::from(end) * u64::from(capped)) / 1000)
+        as u32
 }
 
 fn wounds_for(view: &dyn RuntimeBeliefView, actor: EntityId) -> Option<WoundList> {
@@ -1055,8 +1173,9 @@ fn record_sell_blocked_intent(
 #[cfg(test)]
 mod tests {
     use super::{
-        buyer_reservation_price, count_local_alternatives, register_trade_action,
-        select_substitute_trade_candidate, seller_reservation_price, SubstituteTradeCandidate,
+        buyer_reservation_price, count_local_alternatives, derive_opening_offer, generate_offer,
+        register_trade_action, select_substitute_trade_candidate, seller_reservation_price,
+        urgency_modulated_deadline, SubstituteTradeCandidate,
     };
     use crate::trade_actions::local_alternatives;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1384,6 +1503,213 @@ mod tests {
         assert_eq!(apple_count, 2);
         assert_eq!(bread_count, 1);
         assert_ne!(seller_a, seller_b);
+    }
+
+    #[test]
+    fn generate_offer_boulware_concedes_slowly_then_rapidly() {
+        let early = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            2,
+            10,
+            pm(100),
+        );
+        let mid = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            5,
+            10,
+            pm(100),
+        );
+        let late = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            9,
+            10,
+            pm(100),
+        );
+
+        assert!(mid.0 - early.0 <= 2);
+        assert!(late.0 - mid.0 >= 3);
+    }
+
+    #[test]
+    fn generate_offer_conceder_concedes_rapidly_then_slowly() {
+        let early = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            2,
+            10,
+            pm(900),
+        );
+        let mid = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            5,
+            10,
+            pm(900),
+        );
+        let late = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            9,
+            10,
+            pm(900),
+        );
+
+        assert!(mid.0 - early.0 >= 2);
+        assert!(late.0 - mid.0 <= 2);
+    }
+
+    #[test]
+    fn generate_offer_linear_concedes_uniformly() {
+        let early = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            2,
+            10,
+            pm(500),
+        );
+        let mid = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            5,
+            10,
+            pm(500),
+        );
+        let late = generate_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            Quantity(2),
+            8,
+            10,
+            pm(500),
+        );
+
+        assert_eq!(early, Quantity(3));
+        assert_eq!(mid, Quantity(6));
+        assert_eq!(late, Quantity(8));
+    }
+
+    #[test]
+    fn generate_offer_preserves_monotonic_concession_for_buyer_and_seller() {
+        let mut previous_buyer = Quantity(1);
+        let mut previous_seller = Quantity(10);
+        for round in 0..=10 {
+            let buyer = generate_offer(
+                worldwake_core::TradeRole::Buyer,
+                Quantity(10),
+                Quantity(1),
+                round,
+                10,
+                pm(700),
+            );
+            let seller = generate_offer(
+                worldwake_core::TradeRole::Seller,
+                Quantity(4),
+                Quantity(10),
+                round,
+                10,
+                pm(300),
+            );
+            assert!(buyer >= previous_buyer);
+            assert!(seller <= previous_seller);
+            assert!((1..=10).contains(&buyer.0));
+            assert!((4..=10).contains(&seller.0));
+            previous_buyer = buyer;
+            previous_seller = seller;
+        }
+    }
+
+    #[test]
+    fn derive_opening_offer_without_rejections_returns_bias_derived_base() {
+        let buyer = derive_opening_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            pm(500),
+            pm(200),
+            0,
+        );
+        let seller = derive_opening_offer(
+            worldwake_core::TradeRole::Seller,
+            Quantity(10),
+            pm(500),
+            pm(200),
+            0,
+        );
+
+        assert_eq!(buyer, Quantity(6));
+        assert_eq!(seller, Quantity(14));
+    }
+
+    #[test]
+    fn derive_opening_offer_shifts_toward_counterparty_after_rejections() {
+        let base = derive_opening_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            pm(700),
+            pm(200),
+            0,
+        );
+        let shifted = derive_opening_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            pm(700),
+            pm(200),
+            3,
+        );
+
+        assert!(shifted > base);
+    }
+
+    #[test]
+    fn derive_opening_offer_respects_rejection_escalation_rate() {
+        let gentle = derive_opening_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            pm(700),
+            pm(100),
+            3,
+        );
+        let assertive = derive_opening_offer(
+            worldwake_core::TradeRole::Buyer,
+            Quantity(10),
+            pm(700),
+            pm(300),
+            3,
+        );
+
+        assert!(assertive > gentle);
+    }
+
+    #[test]
+    fn urgency_modulated_deadline_preserves_base_patience_at_zero_urgency() {
+        let deadline = urgency_modulated_deadline(
+            nz(8),
+            Some(&HomeostaticNeeds::new_sated()),
+            CommodityKind::Apple,
+        );
+
+        assert_eq!(deadline, 8);
+    }
+
+    #[test]
+    fn urgency_modulated_deadline_never_drops_below_one() {
+        let deadline = urgency_modulated_deadline(
+            nz(8),
+            Some(&HomeostaticNeeds::new(pm(1000), pm(0), pm(0), pm(0), pm(0))),
+            CommodityKind::Apple,
+        );
+
+        assert_eq!(deadline, 1);
     }
 
     struct TradeHarness {

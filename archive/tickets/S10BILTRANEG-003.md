@@ -1,6 +1,6 @@
 # S10BILTRANEG-003: Faratin concession curve and opening offer derivation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-systems` (new pure functions in trade_actions.rs)
@@ -135,3 +135,26 @@ Logic:
 
 1. `cargo test -p worldwake-systems -- concession` — targeted concession tests
 2. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+**Completed**: 2026-04-02
+
+Implemented the bilateral-trade pure negotiation helpers in `crates/worldwake-systems/src/trade_actions.rs`:
+- `generate_offer`
+- `derive_opening_offer`
+- `urgency_modulated_deadline`
+
+The final implementation keeps the ticket's deterministic pure-function boundary while using integer-only easing approximations for Boulware, Linear, and Conceder concession behavior. Focused unit coverage now proves curve shape, monotonic buyer/seller concession, opening-offer bias and rejection shifting, escalation-rate sensitivity, and urgency-based deadline shrinkage.
+
+**Deviations from original plan**:
+1. The implementation uses deterministic integer easing approximations rather than floating-point Faratin math so the concession surface remains repo-compliant.
+2. The new helpers remain staged scaffolding for later S10 integration tickets and are intentionally not wired into runtime trade flow yet.
+
+**Verification results**:
+1. `cargo test -p worldwake-systems generate_offer_ -- --nocapture`
+2. `cargo test -p worldwake-systems derive_opening_offer -- --nocapture`
+3. `cargo test -p worldwake-systems urgency_modulated_deadline -- --nocapture`
+4. `cargo test -p worldwake-systems`
+5. `cargo test --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
