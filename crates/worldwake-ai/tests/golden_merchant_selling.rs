@@ -748,15 +748,9 @@ fn dead_seller_invalidates_listing() {
 
 // ---------------------------------------------------------------------------
 // Test 9: move cargo then sell commodity (plan shape)
-// NOTE: This test is currently ignored because the remote-merchant → travel →
-// sell pipeline requires MoveCargo/RestockCommodity candidate generation to
-// fire for a merchant at a non-home-market place. That wiring is not yet
-// complete in the current architecture. A follow-up ticket should address the
-// full remote-merchant restock+sell chain.
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "remote-merchant travel+sell pipeline not yet wired"]
 fn move_cargo_then_sell_commodity_plan_shape() {
     let mut h = GoldenHarness::with_recipes(Seed([74; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
