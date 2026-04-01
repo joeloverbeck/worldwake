@@ -52,7 +52,7 @@ Apply the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) when the correct direc
 
 Do not silently skip deliverables. Do not "fix" the problem by weakening the ticket without user confirmation.
 
-When the user confirms a direction that changes the ticket's exact architecture boundary, affected files, or proof surface, update the relevant ticket sections before coding so the implementation and eventual archive remain faithful to the chosen plan.
+When the user confirms a direction that changes the ticket's exact architecture boundary, affected files, or proof surface, update the relevant ticket sections before coding so the implementation and eventual archive remain faithful to the chosen plan. This commonly includes `Files to Touch`, `Verification Layers`, and `Test Plan`, not just the prose summary.
 
 ### 4. Extract the implementation scope
 
@@ -85,7 +85,8 @@ If the ticket's requested invariant exposes a production contradiction, correct 
    - determinism
    - conservation
    - unique location
-7. If authoritative validation or control checks change, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md).
+7. If authoritative validation, control checks, action preconditions, target specs, or other affordance-surface behavior changes, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md).
+8. When widening an existing action into a new custody or state regime, audit all related stored state carriers so the moved entity does not keep stale assignment, listing, queue, or other regime-specific markers after the transition.
 
 ### 6. Verify at the right boundary
 
@@ -109,6 +110,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 For AI, planner, golden, or start-failure work, prove behavior at the strongest available layer instead of relying on a weaker downstream proxy.
+
+When a ticket changes whether an action should be available at all, include at least one focused proof that goes through real affordance enumeration rather than only constructing action instances directly.
 
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
 

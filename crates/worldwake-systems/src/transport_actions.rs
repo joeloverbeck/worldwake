@@ -142,7 +142,6 @@ pub fn register_transport_actions(
                     target_index: 0,
                     kind: EntityKind::ItemLot,
                 },
-                Precondition::TargetNotInContainer(0),
                 Precondition::TargetUnpossessed(0),
             ],
             reservation_requirements: Vec::new(),
@@ -156,7 +155,6 @@ pub fn register_transport_actions(
                     target_index: 0,
                     kind: EntityKind::ItemLot,
                 },
-                Precondition::TargetNotInContainer(0),
                 Precondition::TargetUnpossessed(0),
             ],
             visibility: VisibilitySpec::Hidden,
@@ -308,11 +306,6 @@ fn validate_steal(
     if txn.entity_kind(target) != Some(EntityKind::ItemLot) {
         return Err(ActionError::InvalidTarget(target));
     }
-    if txn.direct_container(target).is_some() {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} is inside a container"
-        )));
-    }
     let owner = txn.owner_of(target).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("target {target} is unowned and not stealable"))
     })?;
@@ -441,6 +434,10 @@ fn commit_steal(
     let actor_place = txn.effective_place(instance.actor).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("actor {} has no place", instance.actor))
     })?;
+    if txn.get_component_stock_assignment(target).is_some() {
+        let _ = txn.clear_component_stock_assignment(target);
+        let _ = txn.clear_component_sale_listing(target);
+    }
     move_entity_to_direct_possession(txn, target, instance.actor, actor_place)?;
     Ok(CommitOutcome::empty())
 }
@@ -518,8 +515,9 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
-        EventLog, EventView, LoadUnits, PerceptionSource, Place, Quantity, Seed, Tick, Topology,
-        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+        EventLog, EventView, LoadUnits, PerceptionSource, Place, Quantity, SaleListing, Seed,
+        StockAssignment, StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
@@ -699,6 +697,11 @@ mod tests {
         assert!(put_down
             .preconditions
             .contains(&Precondition::TargetDirectlyPossessedByActor(0)));
+        assert!(
+            !steal
+                .preconditions
+                .contains(&Precondition::TargetNotInContainer(0))
+        );
         assert_eq!(steal.duration, DurationExpr::ActorTheftDisposition);
         assert_eq!(steal.visibility, VisibilitySpec::Hidden);
         assert!(steal.causal_event_tags.contains(&EventTag::Crime));
@@ -1516,13 +1519,10 @@ mod tests {
             owner
         };
         let (defs, handlers, _, _, steal_id) = setup_registries();
-        let affordance = worldwake_sim::Affordance {
-            def_id: steal_id,
-            actor,
-            bound_targets: vec![lot],
-            payload_override: None,
-            explanation: None,
-        };
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == steal_id && affordance.bound_targets == vec![lot])
+            .expect("contained displayed lot should expose a steal affordance");
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut next_instance_id = ActionInstanceId(1);
@@ -1602,6 +1602,179 @@ mod tests {
         assert_eq!(record.visibility(), VisibilitySpec::Hidden);
         assert!(record.tags().contains(&EventTag::Crime));
         assert!(record.tags().contains(&EventTag::Transfer));
+    }
+
+    #[test]
+    fn steal_happy_path_removes_facility_stock_markers_from_displayed_lot() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        let owner = {
+            let mut txn = new_txn(&mut world, 2);
+            let owner = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            let (facility, _stock_container, display_container) = txn
+                .create_merchant_facility(place, owner, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display_container = display_container.expect("display container should exist");
+            txn.set_owner(lot, owner).unwrap();
+            txn.put_into_container(lot, display_container).unwrap();
+            txn.set_component_stock_assignment(
+                lot,
+                StockAssignment {
+                    facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(2) })
+                .unwrap();
+            txn.set_component_theft_disposition_profile(
+                actor,
+                worldwake_core::TheftDispositionProfile {
+                    steal_duration_ticks: NonZeroU32::new(2).unwrap(),
+                    theft_motive_weight: worldwake_core::Permille::new(500).unwrap(),
+                    witness_risk_penalty: worldwake_core::Permille::new(100).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            owner
+        };
+        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == steal_id && affordance.bound_targets == vec![lot])
+            .expect("contained displayed lot should expose a steal affordance");
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        let first_tick = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(6),
+            },
+        )
+        .unwrap();
+        assert_eq!(first_tick, TickOutcome::Continuing);
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(7),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(lot), Some(actor));
+        assert_eq!(world.owner_of(lot), Some(owner));
+        assert_eq!(world.effective_place(lot), Some(place));
+        assert_eq!(world.direct_container(lot), None);
+        assert_eq!(world.get_component_stock_assignment(lot), None);
+        assert_eq!(world.get_component_sale_listing(lot), None);
+    }
+
+    #[test]
+    fn steal_rejects_lawfully_controllable_displayed_lot() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let (facility, _stock_container, display_container) = txn
+                .create_merchant_facility(place, actor, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display_container = display_container.expect("display container should exist");
+            txn.set_owner(lot, actor).unwrap();
+            txn.put_into_container(lot, display_container).unwrap();
+            txn.set_component_stock_assignment(
+                lot,
+                StockAssignment {
+                    facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(2) })
+                .unwrap();
+            txn.set_component_theft_disposition_profile(
+                actor,
+                worldwake_core::TheftDispositionProfile {
+                    steal_duration_ticks: NonZeroU32::new(2).unwrap(),
+                    theft_motive_weight: worldwake_core::Permille::new(500).unwrap(),
+                    witness_risk_penalty: worldwake_core::Permille::new(100).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let affordance = worldwake_sim::Affordance {
+            def_id: steal_id,
+            actor,
+            bound_targets: vec![lot],
+            payload_override: None,
+            explanation: None,
+        };
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("already owns") || message.contains("use pick_up"))
+        );
     }
 
     #[test]

@@ -2718,7 +2718,7 @@ fn emit_theft_candidates(
         if owner == ctx.agent || ctx.view.can_control(ctx.agent, item) {
             continue;
         }
-        if ctx.view.direct_container(item).is_some() || ctx.view.direct_possessor(item).is_some() {
+        if ctx.view.direct_possessor(item).is_some() {
             continue;
         }
         let Some(item_load) = ctx.view.load_of_entity(item) else {
@@ -7757,12 +7757,17 @@ mod tests {
                 target_item: valid_item
             }
         ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::StealItem {
+                target_item: contained
+            }
+        ));
         for rejected in [
             self_owned,
             unowned,
             controllable,
             possessed,
-            contained,
             too_heavy,
         ] {
             assert!(
