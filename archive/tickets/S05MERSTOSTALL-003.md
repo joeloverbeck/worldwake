@@ -1,6 +1,6 @@
 # S05MERSTOSTALL-003: Add store_stock and collect_display_stock actions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new action definitions and handlers in worldwake-systems
@@ -90,3 +90,24 @@ Re-export the new module from `crates/worldwake-systems/src/lib.rs`.
 1. `cargo test -p worldwake-systems -- stock`
 2. `cargo test -p worldwake-systems`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome (2026-04-01)
+
+### What changed
+
+1. Created `crates/worldwake-systems/src/stock_actions.rs` with `store_stock` and `collect_display_stock` action handlers (start/tick/commit/abort for each)
+2. `store_stock`: validates actor possesses lot and controls a local facility, moves lot from possession into `stock_container` via `put_into_container`, sets `StockAssignment { kind: Stored }`
+3. `collect_display_stock`: validates lot has `StockAssignment` and actor controls the facility, moves lot from container to direct possession via `move_entity_to_direct_possession`, clears `StockAssignment`
+4. `resolve_controlled_facility` helper finds a `StockStoragePolicy`-bearing facility at the actor's place that the actor can control
+5. Registered both actions in `action_registry.rs`, declared module and re-exported `register_stock_actions` in `lib.rs`
+6. 5 focused tests: store moves lot, store sets assignment, collect reverses, authorization rejection, conservation
+
+### Deviations
+
+- Used `ActionDomain::Transport` (not a new domain) — stock movement is physical transport of goods
+- Used `PreconditionFailed` for missing target and actor place errors — `ActionError` has no `MissingTarget` or `InvalidActor` variants
+
+### Verification
+
+- `cargo test -p worldwake-systems`: 441 passed, 0 failed (436 baseline + 5 new)
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean
