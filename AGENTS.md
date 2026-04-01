@@ -15,6 +15,7 @@ This file provides guidance to coding agents working in this repository.
 - Use TDD for bug fixes. Add or adjust tests to capture the bug, then fix the behavior. Never adapt tests to preserve a bug.
 - Respect worktree boundaries. If the user asks you to work inside `.claude/worktrees/<name>/`, use that worktree root for all reads, writes, searches, moves, and archival actions.
 - Maintain ticket fidelity. Do not silently skip explicit deliverables from a spec or ticket. If a deliverable seems wrong or blocked, surface it with the 1-3-1 rule instead of deciding unilaterally.
+- Before running any destructive git command (`git reset --hard`, `git checkout -- .`, `git clean`), run `git status` and verify the working tree is clean. If uncommitted changes exist, commit or stash them first. Use `git pull` rather than `git fetch && git reset --hard` when syncing a branch with its remote.
 
 ## Ticket Expectations
 
