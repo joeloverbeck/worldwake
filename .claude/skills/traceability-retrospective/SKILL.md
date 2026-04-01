@@ -30,7 +30,7 @@ The argument is the ticket identifier that was just implemented. The skill resol
 
 Read ALL of the following files completely:
 
-1. **Implemented ticket**: Find `tickets/*{arg}*` or `archive/tickets/*{arg}*`. If multiple matches, list them and ask the user to disambiguate.
+1. **Implemented ticket**: Find `tickets/*{arg}*` or `archive/tickets/*{arg}*`. If working in a worktree, check the worktree's `archive/tickets/` first, then fall back to main repo paths. If multiple matches, list them and ask the user to disambiguate.
 2. **Foundations**: `docs/FOUNDATIONS.md` — the alignment reference for all proposed changes. Skip only if explicitly read earlier in this session (not from memory or training knowledge).
 3. **Ticket authoring contract**: `tickets/README.md` — conventions that proposed tickets must follow.
 4. **Ticket template**: `tickets/_TEMPLATE.md` — format for any tickets created.

@@ -43,16 +43,17 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
 
 ### Phase 4: Extract Deliverables
 
-10. **Extract deliverables** from the ticket's "What to Change" and "Acceptance Criteria" sections into a numbered task list
+10. **Extract deliverables** from the ticket's "What to Change" and "Acceptance Criteria" sections into a numbered task list. Exclude deliverables already marked as done during the reassessment phase (Phase 3).
 11. **Present the task list** to the user for confirmation before starting implementation
 
 ### Phase 5: Implement
 
-12. **Create a feature branch**. If the project uses worktrees (check CLAUDE.md), set one up before implementation.
+12. **Create a feature branch**. If the project uses worktrees (check CLAUDE.md), set one up before implementation. Verify a clean test baseline before starting work. If tests fail, report and stop.
 13. **Execute in batches** of ~3 tasks:
     - Mark each task as `in_progress` before starting, `completed` when done
     - After each batch, report what was implemented and verification output
     - Wait for feedback before continuing to the next batch
+    - If implementation reveals a blocking infrastructure gap (test failures due to missing planner wiring, unimplemented transitions, etc.), stop the batch. Diagnose the root cause, assess against FOUNDATIONS.md, present the 1-3-1 analysis, and fix the gap before resuming. Do not work around infrastructure gaps with manual injection or test mocking.
 14. **Run lint, typecheck, and tests** before claiming completion (per Pre-Completion Verification rule)
 
 ### Phase 6: Archive
@@ -61,6 +62,7 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
     - Mark status as `✅ COMPLETED`
     - Add an `## Outcome` section (completion date, what changed, deviations, verification results)
     - Move to `archive/tickets/`
+    - If the ticket is only partially complete (user-approved scope reduction), mark status as `✅ COMPLETED (partial)` with a note about what was deferred. Create a follow-up ticket for the remaining work before archiving.
 
 ## Rules
 
