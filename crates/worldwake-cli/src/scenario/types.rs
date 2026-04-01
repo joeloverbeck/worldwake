@@ -67,14 +67,14 @@ pub struct AgentDef {
 
 /// Scenario-specific merchandise profile using string names instead of `EntityId`.
 ///
-/// `MerchandiseProfile` in core contains `home_market: Option<EntityId>`, which
+/// `MerchandiseProfile` in core contains `home_facility: Option<EntityId>`, which
 /// cannot appear in a RON file before entities are spawned. This def uses a
-/// place name string, resolved to `EntityId` during spawning.
+/// facility/entity name string, resolved to `EntityId` during spawning.
 #[derive(Clone, Debug, Deserialize)]
 pub struct MerchandiseProfileDef {
     pub sale_kinds: Vec<CommodityKind>,
     #[serde(default)]
-    pub home_market: Option<String>,
+    pub home_facility: Option<String>,
 }
 
 /// An item lot to place in the world.
@@ -198,7 +198,7 @@ mod tests {
                     ),
                     merchandise_profile: (
                         sale_kinds: [Apple, Bread],
-                        home_market: "Town",
+                        home_facility: "Town",
                     ),
                     trade_disposition: (
                         negotiation_round_ticks: 2,
@@ -251,7 +251,7 @@ mod tests {
             merch.sale_kinds,
             vec![CommodityKind::Apple, CommodityKind::Bread]
         );
-        assert_eq!(merch.home_market, Some("Town".to_string()));
+        assert_eq!(merch.home_facility, Some("Town".to_string()));
         assert!(bob.trade_disposition.is_some());
 
         assert_eq!(def.items.len(), 2);

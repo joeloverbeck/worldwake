@@ -202,6 +202,45 @@ fn require_item_lot_target(instance: &ActionInstance) -> Result<EntityId, Action
         ))
 }
 
+fn controlled_facility_policy(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    facility: EntityId,
+) -> Result<(EntityId, StockStoragePolicy), ActionError> {
+    let actor_place = txn
+        .effective_place(actor)
+        .ok_or(ActionError::PreconditionFailed("actor has no effective place".to_string()))?;
+    if txn.effective_place(facility) != Some(actor_place) {
+        return Err(ActionError::PreconditionFailed(
+            "facility is not at actor's place".to_string(),
+        ));
+    }
+    txn.can_exercise_control(actor, facility)
+        .map_err(|err| ActionError::PreconditionFailed(err.to_string()))?;
+    let policy = txn
+        .get_component_stock_storage_policy(facility)
+        .cloned()
+        .ok_or(ActionError::PreconditionFailed(
+            "facility lacks StockStoragePolicy".to_string(),
+        ))?;
+    Ok((facility, policy))
+}
+
+fn resolve_merchant_home_facility(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+) -> Result<(EntityId, StockStoragePolicy), ActionError> {
+    let profile = txn
+        .get_component_merchandise_profile(actor)
+        .ok_or(ActionError::PreconditionFailed(
+            "actor lacks MerchandiseProfile".to_string(),
+        ))?;
+    let facility = profile.home_facility.ok_or(ActionError::PreconditionFailed(
+        "actor lacks a bound home facility".to_string(),
+    ))?;
+    controlled_facility_policy(txn, actor, facility)
+}
+
 /// Resolve the facility at the actor's place that has a `StockStoragePolicy`
 /// and that the actor can control.
 fn resolve_controlled_facility(
@@ -228,6 +267,20 @@ fn resolve_controlled_facility(
     ))
 }
 
+fn resolve_facility_for_lot(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    lot: EntityId,
+) -> Result<(EntityId, StockStoragePolicy), ActionError> {
+    let facility = txn
+        .get_component_stock_assignment(lot)
+        .map(|assignment| assignment.facility)
+        .ok_or(ActionError::PreconditionFailed(
+            "target lot has no StockAssignment".to_string(),
+        ))?;
+    controlled_facility_policy(txn, actor, facility)
+}
+
 // ---------------------------------------------------------------------------
 // store_stock handlers
 // ---------------------------------------------------------------------------
@@ -246,7 +299,8 @@ fn start_store_stock(
         ));
     }
     // Actor must control a local facility with StockStoragePolicy.
-    let _ = resolve_controlled_facility(txn, instance.actor)?;
+    let _ = resolve_merchant_home_facility(txn, instance.actor)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
     Ok(None)
 }
 
@@ -257,7 +311,8 @@ fn commit_store_stock(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let lot = require_item_lot_target(instance)?;
-    let (facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+    let (facility, policy) = resolve_merchant_home_facility(txn, instance.actor)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
 
     // Clear possession.
     txn.clear_possessor(lot)
@@ -296,7 +351,8 @@ fn start_collect_display_stock(
         ));
     }
     // Actor must control the facility.
-    let _ = resolve_controlled_facility(txn, instance.actor)?;
+    let _ = resolve_facility_for_lot(txn, instance.actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
     Ok(None)
 }
 
@@ -340,7 +396,8 @@ fn start_stage_stock_for_sale(
         }
     }
     // Facility must have a display container.
-    let (_facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+    let (_facility, policy) = resolve_facility_for_lot(txn, instance.actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
     if policy.display_container.is_none() {
         return Err(ActionError::PreconditionFailed(
             "facility has no display container for staging".to_string(),
@@ -356,7 +413,8 @@ fn commit_stage_stock_for_sale(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let lot = require_item_lot_target(instance)?;
-    let (facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+    let (facility, policy) = resolve_facility_for_lot(txn, instance.actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
     let display_container = policy.display_container.ok_or_else(|| {
         ActionError::PreconditionFailed(
             "facility has no display container for staging".to_string(),
@@ -404,7 +462,8 @@ fn start_unstage_stock(
             ));
         }
     }
-    let _ = resolve_controlled_facility(txn, instance.actor)?;
+    let _ = resolve_facility_for_lot(txn, instance.actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
     Ok(None)
 }
 
@@ -415,7 +474,8 @@ fn commit_unstage_stock(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let lot = require_item_lot_target(instance)?;
-    let (facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+    let (facility, policy) = resolve_facility_for_lot(txn, instance.actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
 
     // Move lot from display container back to stock container.
     txn.remove_from_container(lot)

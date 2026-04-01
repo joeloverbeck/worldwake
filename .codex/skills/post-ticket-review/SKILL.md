@@ -63,6 +63,7 @@ The review covers:
 - test architecture
 - traceability/debuggability
 - ticket and documentation handoff quality
+- active downstream ticket roadmap drift when the completed work changed what remains to be done
 
 ### 4. Audit against FOUNDATIONS and architecture quality
 
@@ -100,6 +101,8 @@ Do not create tickets for vague stylistic preferences or speculative cleanup.
 When a concern is already covered by an active ticket in [tickets/](../../../tickets):
 - if the existing ticket fully covers it, cite that ticket in the report and do not duplicate it
 - if the existing ticket should be expanded or clarified to capture the concern accurately, update that ticket factually
+
+When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets factually to remove already-delivered work, stale failure claims, or obsolete roadmap ownership.
 
 Prefer small, distinct tickets split by architectural concern.
 
@@ -143,6 +146,7 @@ Return a structured report in the conversation with these sections:
 
 - <archived / already archived / blocked>
 - <Outcome + verification notes check result>
+- <validated unchanged / factually corrected>
 - <any ticket updates made before archival>
 
 ## What This Ticket Solved

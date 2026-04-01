@@ -4,20 +4,20 @@
 **Priority**: LOW
 **Effort**: Large
 **Engine Changes**: None — golden test additions only
-**Deps**: S05MERSTOSTALL-005, S05MERSTOSTALL-006, S05MERSTOSTALL-007
+**Deps**: S05MERSTOSTALL-005, S05MERSTOSTALL-006, S05MERSTOSTALL-007, S05MERSTOSTALL-011
 
 ## Problem
 
-The full facility stock lifecycle (store→stage→sell, restock delivery, unstage round-trip) needs golden E2E test coverage to ensure cross-system emergent behavior works correctly and remains stable under replay.
+The remaining uncovered parts of the facility stock lifecycle still need golden E2E coverage so the exact-facility merchant model stays stable under replay. Buyer trade against displayed lots, listing persistence, and merchant restock-return coverage now exist; this ticket should focus only on the lifecycle paths that still lack dedicated golden proof.
 
 ## Assumption Reassessment (2026-04-01)
 
 1. Golden test harness exists in `golden_harness/mod.rs` — check for facility creation helpers or whether they need to be added to the harness.
-2. `golden_merchant_selling.rs` exists with merchant selling scenarios — check current scenarios and what new ones are needed.
+2. `golden_merchant_selling.rs` already covers displayed listing persistence, buyer trade against listed lots, and `move_cargo`-to-sell plan shape — check only what lifecycle gaps remain after those completed scenarios.
 3. Replay companions (deterministic replay) are the standard for golden tests — check existing replay companion pattern.
-4. `PerceptionProfile` required on agents that need to observe post-production output — confirmed in CLAUDE.md.
-5. All prerequisite systems (stock actions, sale visibility, MoveCargo evolution, AI planning) are complete via dependencies.
-6. Golden test setup was partially migrated in ticket 005: `seed_merchant` creates facilities with display containers, `seed_merchant_with_stored_stock` creates unstaged stock, Scenario 75 rewritten. If ticket 007 resolves all deferred golden test failures, this ticket focuses on NEW scenarios only. If any deferred failures remain after 007, address them here first.
+4. `PerceptionProfile` is required on agents that need to observe produced or newly materialized output — confirmed in `AGENTS.md` under `Authoritative-To-AI Impact Rule`.
+5. Exact facility identity is now complete via 011 and should be treated as part of the live contract under test.
+6. The previously deferred merchant golden failures are already resolved: `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade` are green. This ticket should focus only on genuinely new scenario coverage, not on re-owning those older migrations.
 
 ## Architecture Check
 
@@ -27,10 +27,10 @@ The full facility stock lifecycle (store→stage→sell, restock delivery, unsta
 ## Verification Layers
 
 1. Autonomous store→stage→sell lifecycle → golden E2E test with replay companion
-2. Buyer trades against displayed lot → golden E2E test with replay companion
-3. Carrier delivers to facility without becoming seller → golden E2E test with replay companion
-4. Unstage preserves ownership and item integrity → golden E2E test with replay companion
-5. All scenarios deterministically replay → replay companion verification
+2. Carrier delivers to facility without becoming seller → golden E2E test with replay companion
+3. Unstage preserves ownership and item integrity → golden E2E test with replay companion
+4. All new scenarios deterministically replay → replay companion verification
+5. Existing merchant goldens stay green while the new scenarios are added
 6. Single-layer ticket (golden E2E only) — additional layer mapping not applicable.
 
 ## What to Change
@@ -39,30 +39,26 @@ The full facility stock lifecycle (store→stage→sell, restock delivery, unsta
 
 In `golden_harness/mod.rs`: add a helper for creating test facilities with stock/display containers, using the creation helpers from ticket 002.
 
-### 2. Add store→stage→sell scenario
+### 2. Add autonomous store→stage→sell scenario
 
 Merchant autonomously stores goods, stages for sale, buyer purchases. Verify the full lifecycle through event log.
 
-### 3. Add buyer trade against displayed lot scenario
-
-Buyer agent arrives at facility place, perceives displayed lots, initiates trade. Verify trade completes against displayed (not possessed) stock.
-
-### 4. Add carrier delivery scenario
+### 3. Add carrier delivery scenario
 
 Carrier agent delivers goods to facility via MoveCargo. Verify goods end up in stock container and carrier does not become the seller.
 
-### 5. Add unstage round-trip scenario
+### 4. Add unstage round-trip scenario
 
 Merchant stages then unstages goods. Verify ownership preserved, item integrity maintained, SaleListing cleared.
 
-### 6. Add replay companions
+### 5. Add replay companions
 
 Each scenario gets a deterministic replay companion verifying identical outcomes.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify — add facility helper)
-- `crates/worldwake-ai/tests/golden_merchant_selling.rs` (modify — add scenarios)
+- `crates/worldwake-ai/tests/golden_merchant_selling.rs` (modify — add only the remaining uncovered scenarios)
 
 ## Out of Scope
 
@@ -75,10 +71,10 @@ Each scenario gets a deterministic replay companion verifying identical outcomes
 ### Tests That Must Pass
 
 1. Autonomous store→stage→sell lifecycle completes successfully
-2. Buyer trades against displayed lot (not possessed lot)
-3. Carrier delivers to facility stock container without becoming seller
-4. Unstage round-trip preserves ownership and clears SaleListing
-5. All scenarios replay deterministically
+2. Carrier delivers to facility stock container without becoming seller
+3. Unstage round-trip preserves ownership and clears `SaleListing`
+4. All new scenarios replay deterministically
+5. Existing merchant goldens stay green: `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade`
 6. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -93,10 +89,10 @@ Each scenario gets a deterministic replay companion verifying identical outcomes
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — store→stage→sell golden scenario
-2. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — buyer trade against displayed lot
-3. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — carrier delivery to facility
-4. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — unstage round-trip preservation
-5. `crates/worldwake-ai/tests/golden_harness/mod.rs` — facility helper for golden tests
+2. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — carrier delivery to facility
+3. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — unstage round-trip preservation
+4. replay companions for each new scenario
+5. `crates/worldwake-ai/tests/golden_harness/mod.rs` — facility helper only if a remaining scenario truly needs one
 
 ### Commands
 

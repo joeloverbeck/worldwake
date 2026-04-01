@@ -278,7 +278,7 @@ fn run_t20_apple_stockout(seed: Seed) -> (StateHash, StateHash) {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(PLACE_MARKET),
+                home_facility: Some(PLACE_MARKET),
             },
         )
         .unwrap();
@@ -3144,7 +3144,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(PLACE_T21_MARKET),
+                home_facility: Some(PLACE_T21_MARKET),
             },
         )
         .unwrap();
@@ -4656,7 +4656,7 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
         merchant,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-            home_market: Some(PLACE_T22R_MARKET),
+            home_facility: Some(PLACE_T22R_MARKET),
         },
     )
     .unwrap();

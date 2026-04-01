@@ -302,7 +302,7 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(general_store),
+                home_facility: Some(general_store),
             },
         )
         .unwrap();

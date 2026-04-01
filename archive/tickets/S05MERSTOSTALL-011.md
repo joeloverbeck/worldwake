@@ -1,6 +1,6 @@
 # S05MERSTOSTALL-011: Bind merchant stock logistics to explicit facility identity
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — merchant stock ownership/intent model, AI planning targets, and facility resolution
@@ -12,7 +12,7 @@ Merchant stock custody is now facility-aware, but merchant intent is still keyed
 
 ## Assumption Reassessment (2026-04-01)
 
-1. `MerchandiseProfile` still stores only `home_market: Option<EntityId>` with no facility reference in [`crates/worldwake-core/src/trade.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/trade.rs).
+1. `MerchandiseProfile` still stores only `home_market: Option<EntityId>` with no facility reference in [`crates/worldwake-core/src/trade.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/trade.rs). Existing call sites already overload that field with both place ids and facility ids, which confirms the abstraction drift this ticket is correcting.
 2. The completed 006 implementation made `MoveCargo` facility-custody aware, but the destination proof still starts from place-level intent: `restock_gap_at_destination` discovers controlled facilities by iterating entities at the destination place and aggregating their custody containers in [`crates/worldwake-ai/src/enterprise.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/enterprise.rs).
 3. Hypothetical storage after travel still chooses an arbitrary controlled stock container at the destination place: `controlled_stock_containers_at_place(...).into_iter().next()` in [`crates/worldwake-ai/src/planner_ops.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planner_ops.rs).
 4. Authoritative stock actions resolve the target facility the same way: `resolve_controlled_facility` returns the first controlled facility with `StockStoragePolicy` at the actor's place in [`crates/worldwake-systems/src/stock_actions.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-systems/src/stock_actions.rs).
@@ -36,9 +36,9 @@ Merchant stock custody is now facility-aware, but merchant intent is still keyed
 
 ## What to Change
 
-### 1. Replace place-only merchant stock intent with explicit facility identity
+### 1. Replace the overloaded home-market field with explicit facility identity
 
-Reassess whether `MerchandiseProfile` should directly name a stock/selling facility or whether a new merchant-facility binding component is cleaner. The chosen model must let merchant planning and runtime logic name one exact facility while still deriving the relevant place from that facility's location.
+Migrate `MerchandiseProfile` from place-level `home_market` semantics to an explicit facility reference. The chosen model must let merchant planning and runtime logic name one exact facility while deriving the relevant place from that facility's location where place-based travel, demand memory, or action anchoring still need it.
 
 ### 2. Update AI restock planning to target exact facilities
 
@@ -59,10 +59,13 @@ Update active tickets that currently assume place-only merchant stock intent, st
 - `crates/worldwake-ai/src/goal_model.rs` (modify)
 - `crates/worldwake-ai/src/planner_ops.rs` (modify)
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify)
+- `crates/worldwake-ai/src/feasibility.rs` (modify)
 - `crates/worldwake-ai/src/planning_snapshot.rs` (modify)
 - `crates/worldwake-ai/src/planning_state.rs` (modify)
 - `crates/worldwake-systems/src/stock_actions.rs` (modify)
 - `crates/worldwake-systems/src/trade_actions.rs` (modify)
+- `crates/worldwake-cli/src/scenario/mod.rs` (modify)
+- `crates/worldwake-cli/src/scenario/types.rs` (modify)
 - `tickets/S05MERSTOSTALL-007.md` (modify)
 
 ## Out of Scope
@@ -101,3 +104,23 @@ Update active tickets that currently assume place-only merchant stock intent, st
 2. `cargo test -p worldwake-systems -- stock`
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- Completed: 2026-04-01
+- What changed:
+  - Replaced the overloaded merchant home endpoint with explicit `MerchandiseProfile.home_facility` identity and propagated that contract through core fixtures, CLI scenario definitions, AI candidate generation, goal satisfaction, feasibility checks, planner transitions, belief/snapshot surfaces, and authoritative stock/trade actions.
+  - Removed place-level "any controlled facility at destination" restock routing for merchant logistics by targeting the exact merchant facility in `MoveCargo`, `store_stock`, display staging, and related runtime validation.
+  - Reassessed downstream ticket handoff and updated `S05MERSTOSTALL-007` to depend on the new exact-facility contract.
+  - Refreshed focused and golden coverage so merchant restock, merchant selling, buyer-driven trade, and stale local-trade start-failure flows all prove the exact-facility model.
+- Deviations from original plan:
+  - The live codebase already used the old `home_market` field as both place and facility identity. The ticket was corrected before implementation to reflect the real symbol boundary and the broader touched files needed to remove that ambiguity safely.
+  - Golden trade coverage required adapting stale scenario assumptions around listed/displayed stock and stale sale-lot failures. The final assertions now prove the current lawful failure family instead of assuming one older abort reason.
+- Verification results:
+  - `cargo test -p worldwake-ai -- facility`
+  - `cargo test -p worldwake-ai goal_stability_across_cargo_materialization_continuity -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling`
+  - `cargo test -p worldwake-ai --test golden_trade`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-systems -- stock`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

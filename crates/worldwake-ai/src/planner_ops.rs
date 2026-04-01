@@ -5,7 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
-use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
+use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -508,9 +508,22 @@ fn apply_store_stock_transition<'snapshot>(
     let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
     let actor_place = state.effective_place_ref(actor_ref)?;
     let stock_container = state
-        .controlled_stock_containers_at_place(actor_ref, actor_place)
-        .into_iter()
-        .next()?;
+        .merchandise_profile(state.snapshot().actor())
+        .and_then(|profile| profile.home_facility)
+        .filter(|facility| state.effective_place(*facility) == Some(actor_place))
+        .and_then(|facility| {
+            state
+                .can_control(state.snapshot().actor(), facility)
+                .then(|| state.stock_storage_policy(facility))
+                .flatten()
+        })
+        .map(|policy| PlanningEntityRef::Authoritative(policy.stock_container))
+        .or_else(|| {
+            state
+                .controlled_stock_containers_at_place(actor_ref, actor_place)
+                .into_iter()
+                .next()
+        })?;
     let lot_ref = targets.first().copied()?;
     if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
         return None;

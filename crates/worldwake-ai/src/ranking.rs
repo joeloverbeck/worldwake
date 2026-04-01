@@ -1736,6 +1736,13 @@ mod tests {
         view
     }
 
+    fn add_home_facility(view: &mut TestBeliefView, market: EntityId, facility: EntityId) {
+        view.alive.insert(facility);
+        view.entity_kinds.insert(facility, EntityKind::Facility);
+        view.effective_places.insert(facility, market);
+        view.place_entities.entry(market).or_default().push(facility);
+    }
+
     #[test]
     fn crime_goals_use_profile_driven_motive_scores() {
         let agent = entity(1);
@@ -2100,12 +2107,14 @@ mod tests {
     fn enterprise_goals_are_capped_at_medium_even_with_full_signal() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2131,14 +2140,16 @@ mod tests {
     fn production_competition_discount_applies_to_restock_goals() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let competitor_a = entity(10);
         let competitor_b = entity(11);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2190,6 +2201,7 @@ mod tests {
     fn production_competition_discount_caps_at_three_competitors() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(RecipeDefinition {
@@ -2201,11 +2213,12 @@ mod tests {
             required_tool_kinds: Vec::new(),
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2256,13 +2269,15 @@ mod tests {
     fn production_competition_discount_respects_zero_awareness_weight() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let competitor = entity(10);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2358,12 +2373,14 @@ mod tests {
     fn acquire_commodity_is_not_discounted_by_observed_production_activity() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2438,12 +2455,14 @@ mod tests {
     fn move_cargo_scoring_uses_goal_commodity_directly() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2814,7 +2833,9 @@ mod tests {
         let listener = entity(2);
         let subject = entity(3);
         let market = entity(4);
+        let facility = entity(5);
         let mut enterprise_view = base_view(agent);
+        add_home_facility(&mut enterprise_view, market, facility);
         enterprise_view.beliefs.insert(
             agent,
             vec![(
@@ -2826,7 +2847,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         enterprise_view
@@ -2896,7 +2917,9 @@ mod tests {
     fn enterprise_does_not_outrank_critical_self_care() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         let thresholds = DriveThresholds::default();
         view.needs.insert(
             agent,
@@ -2906,7 +2929,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -2941,14 +2964,16 @@ mod tests {
     fn same_priority_candidates_sort_by_motive_then_kind_then_ids() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let corpse_a = entity(10);
         let corpse_b = entity(11);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory.insert(
@@ -3004,12 +3029,14 @@ mod tests {
     fn opportunity_signal_is_zero_without_demand_memory() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 
@@ -3152,12 +3179,14 @@ mod tests {
     fn produce_commodity_uses_recipe_outputs_for_opportunity_signal() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Firewood]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -3228,12 +3257,14 @@ mod tests {
     fn ranking_is_deterministic_for_identical_inputs() {
         let agent = entity(1);
         let market = entity(2);
+        let facility = entity(3);
         let mut view = base_view(agent);
+        add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory

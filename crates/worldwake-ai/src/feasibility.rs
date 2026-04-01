@@ -11,7 +11,9 @@ use worldwake_core::{
 };
 use worldwake_sim::GoalBeliefView;
 
-use crate::{goal_model::RankedGoal, FeasibilityStrategy, GoalDispatchKey};
+use crate::{
+    enterprise::merchant_home_place, goal_model::RankedGoal, FeasibilityStrategy, GoalDispatchKey,
+};
 
 /// Cheap pre-GOAP estimate of whether a goal is locally actionable.
 /// Used to reorder candidates within the same `GoalPriorityClass` —
@@ -151,17 +153,20 @@ fn goal_specific_feasibility(
             let Some(profile) = view.merchandise_profile(agent) else {
                 return Some(FeasibilityHint::Unlikely);
             };
-            let Some(home_market) = profile.home_market else {
+            let Some(_home_facility) = profile.home_facility else {
+                return Some(FeasibilityHint::Unlikely);
+            };
+            let Some(home_place) = merchant_home_place(view, agent, None) else {
                 return Some(FeasibilityHint::Unlikely);
             };
             let agent_place = view.effective_place(agent);
-            if agent_place == Some(home_market) {
+            if agent_place == Some(home_place) {
                 return Some(FeasibilityHint::Likely);
             }
-            // Check if home_market is reachable (adjacent).
+            // Check if the home facility's place is reachable (adjacent).
             if let Some(place) = agent_place {
                 let adjacent = view.adjacent_places_with_travel_ticks(place);
-                if adjacent.iter().any(|(p, _)| *p == home_market) {
+                if adjacent.iter().any(|(p, _)| *p == home_place) {
                     return Some(FeasibilityHint::Likely);
                 }
             }
@@ -858,14 +863,16 @@ mod tests {
     // ── Test 19: SellCommodity with stock and local evidence → Likely ──
 
     #[test]
-    fn test_sell_commodity_with_stock_and_at_home_market_likely() {
+    fn test_sell_commodity_with_stock_and_at_home_facility_likely() {
         let place = entity(10);
+        let facility = entity(11);
         let view = MockView {
             agent_place: Some(place),
+            entity_places: vec![(facility, place)],
             commodities: vec![(CommodityKind::Bread, Quantity(5))],
             merchandise: Some(MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(facility),
             }),
             ..Default::default()
         };
@@ -1080,14 +1087,16 @@ mod tests {
     // ── SellCheck feasibility ──
 
     #[test]
-    fn sell_check_likely_when_has_commodity_and_at_home_market() {
+    fn sell_check_likely_when_has_commodity_and_at_home_facility() {
         let market = entity(10);
+        let facility = entity(11);
         let view = MockView {
             agent_place: Some(market),
+            entity_places: vec![(facility, market)],
             commodities: vec![(CommodityKind::Bread, Quantity(3))],
             merchandise: Some(MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             }),
             ..Default::default()
         };
@@ -1103,16 +1112,18 @@ mod tests {
     }
 
     #[test]
-    fn sell_check_likely_when_has_commodity_and_home_market_adjacent() {
+    fn sell_check_likely_when_has_commodity_and_home_facility_adjacent() {
         let current = entity(9);
         let market = entity(10);
+        let facility = entity(11);
         let view = MockView {
             agent_place: Some(current),
+            entity_places: vec![(facility, market)],
             commodities: vec![(CommodityKind::Bread, Quantity(3))],
             adjacent: vec![(market, NonZeroU32::new(2).unwrap())],
             merchandise: Some(MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             }),
             ..Default::default()
         };
@@ -1134,7 +1145,7 @@ mod tests {
             agent_place: Some(market),
             merchandise: Some(MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(market),
             }),
             ..Default::default()
         };

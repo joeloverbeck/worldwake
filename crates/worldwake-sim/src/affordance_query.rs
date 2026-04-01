@@ -1353,7 +1353,7 @@ mod tests {
             seller,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
 

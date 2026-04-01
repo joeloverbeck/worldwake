@@ -4,7 +4,7 @@ use crate::{
         PrerequisiteGuidanceTrace,
     },
     derive_danger_pressure,
-    enterprise::restock_gap_at_destination,
+    enterprise::{merchant_home_place, restock_gap_at_destination},
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
     GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget,
@@ -977,13 +977,11 @@ impl GoalKindPlannerExt for GoalKind {
                 None => false,
             },
             GoalKind::SellCommodity { commodity } => {
-                let profile = state.merchandise_profile(actor);
-                let home_market = profile.as_ref().and_then(|p| p.home_market);
-                let at_market =
-                    home_market.is_some() && state.effective_place(actor) == home_market;
+                let home_place = merchant_home_place(state, actor, None);
+                let at_market = home_place.is_some() && state.effective_place(actor) == home_place;
                 at_market
                     && !state
-                        .listed_sale_lots_at(home_market.unwrap(), *commodity)
+                        .listed_sale_lots_at(home_place.unwrap(), *commodity)
                         .is_empty()
             }
             GoalKind::ProduceCommodity { .. }
@@ -1066,7 +1064,8 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::SellCommodity { .. } => state
                 .merchandise_profile(actor)
-                .and_then(|p| p.home_market)
+                .and_then(|p| p.home_facility)
+                .and_then(|facility| state.effective_place(facility))
                 .into_iter()
                 .collect(),
             GoalKind::RestockCommodity { commodity } => {
@@ -1076,7 +1075,11 @@ impl GoalKindPlannerExt for GoalKind {
                     places_with_resource_source(state, *commodity)
                 }
             }
-            GoalKind::MoveCargo { destination, .. } => vec![*destination],
+            GoalKind::MoveCargo { destination, .. } => state
+                .effective_place(*destination)
+                .or(Some(*destination))
+                .into_iter()
+                .collect(),
             GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
                 state.effective_place(*corpse).into_iter().collect()
             }
@@ -2395,7 +2398,7 @@ mod tests {
 
         assert!(!GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
-            destination,
+            destination: facility,
         }
         .is_satisfied(&state));
     }
@@ -2454,7 +2457,7 @@ mod tests {
 
         assert!(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
-            destination,
+            destination: facility,
         }
         .is_satisfied(&state));
     }
@@ -3009,7 +3012,7 @@ mod tests {
             seller,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: None,
+                home_facility: None,
             },
         );
         let seller_lot = entity(30);
@@ -4876,7 +4879,7 @@ mod tests {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place_c),
+                home_facility: Some(place_c),
             },
         );
         view.trade_profiles
@@ -5146,7 +5149,7 @@ mod tests {
             seller,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Medicine]),
-                home_market: None,
+                home_facility: None,
             },
         );
         view.resource_sources.insert(
@@ -7443,17 +7446,20 @@ mod tests {
     }
 
     #[test]
-    fn sell_commodity_satisfied_when_at_home_market_with_listed_lot() {
+    fn sell_commodity_satisfied_when_at_home_facility_with_listed_lot() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
-        let bread_lot = entity_id(3, 0);
+        let facility = entity_id(3, 0);
+        let bread_lot = entity_id(4, 0);
         let mut view = TestBeliefView::default();
-        view.alive.extend([actor, bread_lot]);
+        view.alive.extend([actor, facility, bread_lot]);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.kinds.insert(bread_lot, EntityKind::ItemLot);
         view.effective_places.insert(actor, market);
+        view.effective_places.insert(facility, market);
         view.effective_places.insert(bread_lot, market);
-        view.entities_at.insert(market, vec![actor, bread_lot]);
+        view.entities_at.insert(market, vec![actor, facility, bread_lot]);
         view.direct_possessions.insert(actor, vec![bread_lot]);
         view.direct_possessors.insert(bread_lot, actor);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
@@ -7463,7 +7469,7 @@ mod tests {
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
         view.listed_lots
@@ -7486,19 +7492,23 @@ mod tests {
     }
 
     #[test]
-    fn sell_commodity_not_satisfied_when_not_at_home_market() {
+    fn sell_commodity_not_satisfied_when_not_at_home_facility() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
+        let facility = entity_id(3, 0);
         let other = entity_id(4, 0);
         let mut view = TestBeliefView::default();
         view.alive.insert(actor);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(actor, other);
+        view.effective_places.insert(facility, market);
+        view.entities_at.insert(market, vec![facility]);
         view.merchandise_profiles.insert(
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 
@@ -7521,15 +7531,19 @@ mod tests {
     fn sell_commodity_not_satisfied_when_no_listed_lot() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
+        let facility = entity_id(3, 0);
         let mut view = TestBeliefView::default();
         view.alive.insert(actor);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(actor, market);
+        view.effective_places.insert(facility, market);
+        view.entities_at.insert(market, vec![actor, facility]);
         view.merchandise_profiles.insert(
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 
@@ -7549,18 +7563,22 @@ mod tests {
     }
 
     #[test]
-    fn sell_commodity_relevant_places_returns_home_market() {
+    fn sell_commodity_relevant_places_returns_home_facility_place() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
+        let facility = entity_id(3, 0);
         let mut view = TestBeliefView::default();
         view.alive.insert(actor);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(actor, market);
+        view.effective_places.insert(facility, market);
+        view.entities_at.insert(market, vec![actor, facility]);
         view.merchandise_profiles.insert(
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 

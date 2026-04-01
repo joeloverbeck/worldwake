@@ -8,17 +8,17 @@
 
 ## Problem
 
-AI agents need to plan the full store→stage→sell flow for facility-based merchants. `SellCommodity` must originate from displayed stock, affordances must include stock actions, and `StaffMarket` planner ops must evolve for the facility model. Blocking facts must cover storage/staging failures.
+AI agents still need to plan the remaining autonomous store→stage→sell flow for facility-based merchants. Exact facility identity, displayed-lot trading, and the basic `StaffMarket` sell path now work, but the AI still needs cleaner autonomous stock-management planning around when to store, stage, collect, and re-stage facility stock. Any remaining blocker vocabulary should be driven by the exact current stock-management failure surface, not by assumptions from the older place-level model.
 
 ## Assumption Reassessment (2026-04-01)
 
 1. Sale visibility evolution (005) is complete — `listed_sale_lots_at` queries display containers, `authorized_seller_for_sale_lot` derives from facility control.
 2. MoveCargo evolution (006) is complete — facility restock targets stock containers.
-3. Facility identity is still place-level, not explicit per facility — see S05MERSTOSTALL-011. This ticket should build on the exact facility-targeting contract rather than extending the current "any controlled facility at the place" behavior.
-4. `SellCommodity` candidate generation exists — check how it currently identifies sellable lots and whether it assumes direct possession.
-5. `StaffMarket` planner op exists — check current implementation and whether it needs evolution or replacement for facility model.
-6. `BlockingFact` variants exist for plan failure handling — check `blocked_intent.rs` for existing variants and where storage/staging failures should be added.
-7. Affordance generation for stock actions (store, stage, collect, unstage) does not yet exist — must be added to `affordance_query.rs`.
+3. Facility identity is now explicit per facility via completed ticket 011. This ticket should build on that exact facility-targeting contract rather than re-solving identity.
+4. `SellCommodity` candidate generation and goal satisfaction already use the home-facility place and listed-lot completion, but the at-home candidate path still keys off broad local controlled lots and suppresses when any lot is already listed in `candidate_generation.rs`. Reassess the remaining autonomous staging gap against that live behavior rather than assuming a direct-possession-only model.
+5. `StaffMarket` planner op already exists and is the live sell-side progress barrier in `goal_model.rs` / `planner_ops.rs`. This ticket should focus on the remaining prerequisite stock-management path, not on inventing a new sell operator.
+6. Failure handling already covers `StaffMarket` and generic `StockManagement` plan failures in `failure_handling.rs`. Reassess whether new blocker variants are still required before expanding the vocabulary.
+7. Stock action defs and planner-op classification exist (`store_stock`, `collect_display_stock`, `stage_stock_for_sale`, `unstage_stock`), but autonomous affordance exposure and use still need reassessment against the current AI boundary.
 
 ## Architecture Check
 
@@ -35,45 +35,38 @@ AI agents need to plan the full store→stage→sell flow for facility-based mer
 
 ## What to Change
 
-### 1. Evolve SellCommodity candidate generation
+### 1. Evolve SellCommodity candidate generation and staging admission
 
-In `candidate_generation.rs`: `SellCommodity` candidates must originate from lots with `StockAssignment::Displayed` in display containers, not from direct possession.
+In `candidate_generation.rs`: reassess the live local sell heuristic and evolve it so merchants can admit the right sell/stage work when they have stored stock, partially displayed stock, or mixed displayed + stored stock at the home facility. Do not reintroduce place-level ambiguity or a direct-possession-only contract.
 
-### 2. Add stock action affordances
+### 2. Add the missing stock action affordance or admission surface
 
-In `affordance_query.rs`: generate affordances for `store_stock`, `collect_display_stock`, `stage_stock_for_sale`, `unstage_stock` when agent controls a facility.
+In the live affordance/candidate pipeline: expose whatever additional stock-management affordances or planner admissions are still required for autonomous store/stage/collect/unstage behavior at the merchant's exact home facility.
 
-### 3. Evolve StaffMarket planner op
+### 3. Evolve prerequisite stock-management planning around StaffMarket
 
-In `planner_ops.rs`: evolve `StaffMarket` to work with the facility-based model — staging as a prerequisite for selling.
+In `planner_ops.rs` and related search surfaces: ensure staging and related stock-management steps can appear as prerequisites around the existing `StaffMarket` sell path where the live planner still lacks them.
 
-### 4. Add BlockingFact variants
+### 4. Add or refine BlockingFact coverage only if the live failure surface requires it
 
-In `blocked_intent.rs` and `failure_handling.rs`: add variants for storage failures (no facility, no stock container) and staging failures (no display container, lot not stored).
+In `failure_handling.rs` and related blocker surfaces: only add new variants when the current stock-management failures cannot be expressed clearly with the existing structured reasons.
 
 ### 5. Update search candidates
 
 In `search/candidates.rs`: ensure plan search generates staging steps as prerequisites for sell plans.
 
-## Files to Touch
+## Candidate Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify)
 - `crates/worldwake-ai/src/goal_model.rs` (modify)
 - `crates/worldwake-ai/src/planner_ops.rs` (modify)
 - `crates/worldwake-ai/src/search/candidates.rs` (modify)
 - `crates/worldwake-ai/src/affordance_query.rs` (modify)
-- `crates/worldwake-ai/src/blocked_intent.rs` (modify)
 - `crates/worldwake-ai/src/failure_handling.rs` (modify)
 
 ## Deferred from S05MERSTOSTALL-005
 
-Ticket 005 was completed partially — all production code and focused tests pass, but 11 golden tests fail because the AI planner does not yet support facility-based selling. The golden test setup (helpers, test bodies) was already migrated in 005:
-- `seed_merchant` now creates a facility with display container and stages stock
-- `seed_merchant_with_stored_stock` creates unstaged stock in the stock container
-- Scenario 75 rewritten to test presence-only staff_market behavior
-- `golden_trade.rs` trade harness updated with facility setup
-
-**Once this ticket (007) provides AI planning support for displayed stock, the 11 failing golden tests should pass.** Verify by running `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade` after implementation. Any remaining failures belong in ticket 010.
+The previously deferred merchant goldens from 005 no longer fail after the completed 011 work and adjacent test migration. This ticket no longer owns "make the old deferred goldens pass"; it owns only the remaining autonomous stock-management planning gaps that still exist after those suites turned green.
 
 ## Out of Scope
 
@@ -85,12 +78,12 @@ Ticket 005 was completed partially — all production code and focused tests pas
 
 ### Tests That Must Pass
 
-1. Sell candidates derive from displayed stock, not direct possession
-2. Plan search includes staging step before selling
-3. Stock action affordances generated for facility controllers
-4. Dampening applies correctly for facility-based sell cycles
-5. BlockingFact variants produced on storage/staging failures
-6. Deferred golden tests from 005 pass: `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade`
+1. Sell-side candidate generation reflects the exact facility contract rather than a broad local-lot heuristic
+2. Merchants with mixed displayed + stored stock at the same facility still admit the correct next sell or staging work
+3. Plan search includes staging or related stock-management steps before selling when the live state requires it
+4. Any missing stock-action affordance or admission surface for facility controllers is present
+5. Dampening applies correctly for facility-based sell cycles
+6. Existing merchant goldens stay green while the new behavior is added: `cargo test -p worldwake-ai --test golden_merchant_selling` and `cargo test -p worldwake-ai --test golden_trade`
 7. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -103,10 +96,10 @@ Ticket 005 was completed partially — all production code and focused tests pas
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs` — sell candidates from displayed stock
-2. `crates/worldwake-ai/src/affordance_query.rs` — stock action affordances for facility controllers
-3. `crates/worldwake-ai/src/planner_ops.rs` — staging prerequisite in sell plans
-4. `crates/worldwake-ai/src/blocked_intent.rs` — storage/staging blocking fact variants
+1. `crates/worldwake-ai/src/candidate_generation.rs` — mixed displayed/stored stock still admits the correct sell or staging work
+2. live affordance/candidate surface — any missing stock action exposure for facility controllers
+3. `crates/worldwake-ai/src/planner_ops.rs` / `search/candidates.rs` — staging prerequisite in sell plans
+4. `crates/worldwake-ai/src/failure_handling.rs` — storage/staging failure mapping only if the current reasons are insufficient
 
 ### Commands
 

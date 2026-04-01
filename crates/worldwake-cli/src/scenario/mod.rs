@@ -285,21 +285,21 @@ fn spawn_agent(
         txn.set_component_utility_profile(agent_id, utility.clone())?;
     }
     if let Some(ref merch_def) = agent_def.merchandise_profile {
-        let home_market = merch_def
-            .home_market
+        let home_facility = merch_def
+            .home_facility
             .as_ref()
             .map(|name| {
                 resolve_name(
                     names,
                     name,
-                    &format!("agent '{}' merchandise home_market", agent_def.name),
+                    &format!("agent '{}' merchandise home_facility", agent_def.name),
                 )
             })
             .transpose()?;
 
         let profile = MerchandiseProfile {
             sale_kinds: merch_def.sale_kinds.iter().copied().collect(),
-            home_market,
+            home_facility,
         };
         txn.set_component_merchandise_profile(agent_id, profile)?;
     }

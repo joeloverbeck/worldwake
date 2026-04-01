@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MerchandiseProfile {
     pub sale_kinds: BTreeSet<CommodityKind>,
-    pub home_market: Option<EntityId>,
+    pub home_facility: Option<EntityId>,
 }
 
 impl Component for MerchandiseProfile {}

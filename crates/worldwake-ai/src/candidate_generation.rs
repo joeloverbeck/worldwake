@@ -8,7 +8,10 @@ use crate::{
         SocialCandidateOmission, ViolationDetectionOmission, ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
-    enterprise::{analyze_candidate_enterprise, restock_gap_at_destination, EnterpriseSignals},
+    enterprise::{
+        analyze_candidate_enterprise, merchant_home_facility, merchant_home_place,
+        restock_gap_at_destination, EnterpriseSignals,
+    },
     institutional_queries::consulted_office_holder_read_for_record_data,
     knowledge_path::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
@@ -2392,16 +2395,19 @@ fn emit_sell_goals(
     let Some(profile) = ctx.view.merchandise_profile(ctx.agent) else {
         return;
     };
-    let Some(home_market) = profile.home_market else {
+    let Some(home_facility) = profile.home_facility else {
+        return;
+    };
+    let Some(home_place) = merchant_home_place(ctx.view, ctx.agent, ctx.place) else {
         return;
     };
     let Some(current_place) = ctx.place else {
         return;
     };
-    let at_home_market = current_place == home_market;
+    let at_home_place = current_place == home_place;
 
     for commodity in profile.sale_kinds {
-        if at_home_market {
+        if at_home_place {
             // At home market: check local lots and skip if already listed.
             let local_lots =
                 ctx.view
@@ -2445,13 +2451,14 @@ fn emit_sell_goals(
                 trace,
             );
         } else {
-            // Remote: merchant has stock somewhere but isn't at home_market.
-            // Emit SellCommodity anchored at home_market so the planner
+            // Remote: merchant has stock somewhere but isn't at the home facility's place.
+            // Emit SellCommodity anchored at the home place so the planner
             // searches Travel + StaffMarket.
             if ctx.view.commodity_quantity(ctx.agent, commodity) == Quantity(0) {
                 continue;
             }
-            let evidence = Evidence::with_place(home_market);
+            let mut evidence = Evidence::with_place(home_place);
+            evidence.entities.insert(home_facility);
             let mut trace = EvidenceTrace::default();
             if ctx.tracing_enabled {
                 trace
@@ -2463,7 +2470,7 @@ fn emit_sell_goals(
                 candidates,
                 diagnostics,
                 GoalKind::SellCommodity { commodity },
-                OpportunityAnchor::Place(home_market),
+                OpportunityAnchor::Place(home_place),
                 evidence,
                 trace,
             );
@@ -2482,12 +2489,12 @@ fn emit_move_cargo_goals(
     let Some(current_place) = ctx.place else {
         return;
     };
-    let Some(destination) = profile.home_market else {
+    let Some(destination) = merchant_home_facility(ctx.view, ctx.agent) else {
         return;
     };
-    if current_place == destination {
+    let Some(destination_place) = merchant_home_place(ctx.view, ctx.agent, None) else {
         return;
-    }
+    };
 
     for commodity in profile.sale_kinds {
         let local_lots = ctx
@@ -2503,7 +2510,8 @@ fn emit_move_cargo_goals(
         }
 
         let mut evidence = Evidence::with_place(current_place);
-        evidence.places.insert(destination);
+        evidence.places.insert(destination_place);
+        evidence.entities.insert(destination);
         evidence.entities.extend(local_lots.iter().copied());
         let mut trace = EvidenceTrace::default();
         for &lot in &local_lots {
@@ -5065,7 +5073,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: std::iter::once(CommodityKind::Apple).collect(),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
 
@@ -7068,7 +7076,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
         view.demand_memory.insert(
@@ -7113,7 +7121,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
         view.demand_memory.insert(
@@ -7337,18 +7345,21 @@ mod tests {
     }
 
     #[test]
-    fn merchant_at_home_market_with_unlisted_stock_emits_sell_commodity() {
+    fn merchant_at_home_facility_with_unlisted_stock_emits_sell_commodity() {
         let agent = entity(1);
         let place = entity(10);
+        let facility = entity(11);
         let bread = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, place, bread]);
+        view.alive.extend([agent, place, facility, bread]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(place, EntityKind::Place);
+        view.entity_kinds.insert(facility, EntityKind::Facility);
         view.entity_kinds.insert(bread, EntityKind::ItemLot);
         view.effective_places.insert(agent, place);
+        view.effective_places.insert(facility, place);
         view.effective_places.insert(bread, place);
-        view.entities_at.insert(place, vec![agent, bread]);
+        view.entities_at.insert(place, vec![agent, facility, bread]);
         view.direct_possessions.insert(agent, vec![bread]);
         view.direct_possessors.insert(bread, agent);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
@@ -7361,7 +7372,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(facility),
             },
         );
 
@@ -7382,18 +7393,21 @@ mod tests {
     }
 
     #[test]
-    fn merchant_at_home_market_with_already_listed_stock_does_not_emit_sell_commodity() {
+    fn merchant_at_home_facility_with_already_listed_stock_does_not_emit_sell_commodity() {
         let agent = entity(1);
         let place = entity(10);
+        let facility = entity(11);
         let bread = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, place, bread]);
+        view.alive.extend([agent, place, facility, bread]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(place, EntityKind::Place);
+        view.entity_kinds.insert(facility, EntityKind::Facility);
         view.entity_kinds.insert(bread, EntityKind::ItemLot);
         view.effective_places.insert(agent, place);
+        view.effective_places.insert(facility, place);
         view.effective_places.insert(bread, place);
-        view.entities_at.insert(place, vec![agent, bread]);
+        view.entities_at.insert(place, vec![agent, facility, bread]);
         view.direct_possessions.insert(agent, vec![bread]);
         view.direct_possessors.insert(bread, agent);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
@@ -7406,7 +7420,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(facility),
             },
         );
         // Mark the lot as already listed for sale.
@@ -7429,21 +7443,25 @@ mod tests {
     }
 
     #[test]
-    fn merchant_not_at_home_market_emits_sell_commodity_anchored_at_home() {
+    fn merchant_not_at_home_facility_emits_sell_commodity_anchored_at_home() {
         let agent = entity(1);
         let home = entity(10);
+        let facility = entity(12);
         let other_place = entity(11);
         let bread = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, home, other_place, bread]);
+        view.alive.extend([agent, home, other_place, facility, bread]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(home, EntityKind::Place);
         view.entity_kinds.insert(other_place, EntityKind::Place);
+        view.entity_kinds.insert(facility, EntityKind::Facility);
         view.entity_kinds.insert(bread, EntityKind::ItemLot);
         view.effective_places.insert(agent, other_place);
+        view.effective_places.insert(facility, home);
         view.effective_places.insert(bread, other_place);
         view.entities_at
             .insert(other_place, vec![agent, bread]);
+        view.entities_at.insert(home, vec![facility]);
         view.direct_possessions.insert(agent, vec![bread]);
         view.direct_possessors.insert(bread, agent);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
@@ -7456,7 +7474,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(home),
+                home_facility: Some(facility),
             },
         );
 
@@ -7474,7 +7492,7 @@ mod tests {
                 commodity: CommodityKind::Bread,
             }
         ));
-        // Anchor should be home_market, not current place.
+        // Anchor should be home_facility, not current place.
         let sell_candidate = candidates.iter().find(|c| {
             matches!(
                 c.key.kind,
@@ -7486,7 +7504,7 @@ mod tests {
         assert_eq!(
             sell_candidate.unwrap().anchor,
             OpportunityAnchor::Place(home),
-            "remote SellCommodity should be anchored at home_market"
+            "remote SellCommodity should be anchored at home_facility"
         );
     }
 
@@ -9261,16 +9279,20 @@ mod tests {
         let agent = entity(1);
         let origin = entity(10);
         let destination = entity(11);
+        let facility = entity(12);
         let bread = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, origin, destination, bread]);
+        view.alive.extend([agent, origin, destination, facility, bread]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(origin, EntityKind::Place);
         view.entity_kinds.insert(destination, EntityKind::Place);
+        view.entity_kinds.insert(facility, EntityKind::Facility);
         view.entity_kinds.insert(bread, EntityKind::ItemLot);
         view.effective_places.insert(agent, origin);
+        view.effective_places.insert(facility, destination);
         view.effective_places.insert(bread, origin);
         view.entities_at.insert(origin, vec![agent, bread]);
+        view.entities_at.insert(destination, vec![facility]);
         view.lot_commodities.insert(bread, CommodityKind::Bread);
         view.commodity_quantities
             .insert((bread, CommodityKind::Bread), Quantity(3));
@@ -9281,7 +9303,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(destination),
+                home_facility: Some(facility),
             },
         );
         view.demand_memory
@@ -9301,7 +9323,7 @@ mod tests {
                 candidate.key.kind
                     == GoalKind::MoveCargo {
                         commodity: CommodityKind::Bread,
-                        destination,
+                        destination: facility,
                     }
             })
             .unwrap();
@@ -9340,7 +9362,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(destination),
+                home_facility: Some(destination),
             },
         );
         view.demand_memory
@@ -9386,7 +9408,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(destination),
+                home_facility: Some(destination),
             },
         );
         view.demand_memory
@@ -9434,7 +9456,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(destination),
+                home_facility: Some(destination),
             },
         );
         view.demand_memory
@@ -9471,7 +9493,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(destination),
+                home_facility: Some(destination),
             },
         );
         view.demand_memory
@@ -9525,7 +9547,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
         view.demand_memory.insert(
@@ -10552,7 +10574,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Sword]),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
         // Demand memory creates the restock gap
@@ -10622,7 +10644,7 @@ mod tests {
             agent,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place),
+                home_facility: Some(place),
             },
         );
         // Demand memory creates the restock gap

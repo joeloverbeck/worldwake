@@ -10,7 +10,7 @@ on:
 jobs:
   resilience:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
