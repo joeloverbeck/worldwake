@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 104
+- Scenario blocks with explicit metadata: 105
 - Files contributing scenario metadata: 16
-- Tests associated with scenario blocks: 237
+- Tests associated with scenario blocks: 239
 
 ## Scenario Inventory
 
@@ -72,6 +72,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `84` | Remote Merchant Travels to Home Market to Sell | `golden_merchant_selling.rs:789` | `move_cargo_then_sell_commodity_plan_shape` | — |
 | `85` | Demand Memory Raises Sell Ranking | `golden_merchant_selling.rs:886` | `demand_memory_raises_sell_ranking` | — |
 | `86` | Planning State Preserves Listing Determinism | `golden_merchant_selling.rs:986` | `planning_state_preserves_listing_determinism` | — |
+| `87` | Hungry Merchant Eats Own Listed Sale Stock | `golden_merchant_selling.rs:1003` | `hungry_merchant_eats_listed_stock` | `hungry_merchant_eats_listed_stock_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -977,6 +978,23 @@ It does not claim that planned spec scenarios already exist in live test source.
 - All tests: `planning_state_preserves_listing_determinism`
 
 **Proves**: identical seeds produce identical plan search results for merchant scenarios
+
+### Scenario 87: Hungry Merchant Eats Own Listed Sale Stock
+
+- Source: `golden_merchant_selling.rs:1003`
+- Systems: Needs, Trade, AI
+- GoalKinds: ConsumeOwnedCommodity, SellCommodity
+- ActionDomains: Needs (eat), Trade (staff_market)
+- Principles: P1, P3, P20
+- Primary tests: `hungry_merchant_eats_listed_stock`
+- Replay tests: `hungry_merchant_eats_listed_stock_replays_deterministically`
+- All tests: `hungry_merchant_eats_listed_stock`, `hungry_merchant_eats_listed_stock_replays_deterministically`
+
+**Setup**: single merchant, critical hunger pm(950), Quantity(1) bread with SaleListing
+
+**Proves**: survival-class ConsumeOwnedCommodity outranks enterprise-class SellCommodity; eating the listed lot archives it, removing SaleListing as a side effect
+
+**Cross-system chain**: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium) → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 

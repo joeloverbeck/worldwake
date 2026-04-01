@@ -998,3 +998,161 @@ fn planning_state_preserves_listing_determinism() {
     assert_eq!(w1, w2, "planning state world hash mismatch");
     assert_eq!(e1, e2, "planning state event log hash mismatch");
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 87: Hungry Merchant Eats Own Listed Sale Stock
+// Systems: Needs, Trade, AI
+// GoalKinds: ConsumeOwnedCommodity, SellCommodity
+// ActionDomains: Needs (eat), Trade (staff_market)
+// Principles: P1, P3, P20
+// Setup: single merchant, critical hunger pm(950), Quantity(1) bread with SaleListing
+// Proves: survival-class ConsumeOwnedCommodity outranks enterprise-class SellCommodity;
+//         eating the listed lot archives it, removing SaleListing as a side effect
+// Chain: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium)
+//        → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
+// ---------------------------------------------------------------------------
+
+fn run_hungry_merchant_eats_listed_stock(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let (merchant, bread_lot) = seed_merchant(
+        &mut h,
+        "HungryMerchant",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    // Override needs: critical hunger (pm(950) > critical threshold pm(900)).
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_homeostatic_needs(
+            merchant,
+            HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        )
+        .unwrap();
+        // Manually add SaleListing — in normal flow staff_market adds it, but here
+        // we want the listing pre-existing so the eat action competes with sell.
+        txn.set_component_sale_listing(bread_lot, SaleListing { listed_at: Tick(0) })
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Seed beliefs so the AI can perceive.
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    // Confirm pre-conditions.
+    assert!(
+        h.world.get_component_sale_listing(bread_lot).is_some(),
+        "bread lot should have SaleListing before ticking"
+    );
+    assert!(
+        h.world.get_component_item_lot(bread_lot).is_some(),
+        "bread lot should exist before ticking"
+    );
+    let initial_hunger = h
+        .world
+        .get_component_homeostatic_needs(merchant)
+        .unwrap()
+        .hunger;
+
+    // Tick until eat action completes (or up to budget).
+    let mut eat_committed = false;
+    for _ in 0..60 {
+        h.step_once();
+        if let Some(sink) = h.action_trace_sink() {
+            eat_committed |= sink.events_for(merchant).iter().any(|event| {
+                event.action_name == "eat"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        }
+        if eat_committed {
+            break;
+        }
+    }
+    assert!(
+        eat_committed,
+        "merchant should commit eat action within 60 ticks"
+    );
+
+    // Post-condition: bread lot archived (no ItemLot component).
+    assert!(
+        h.world.get_component_item_lot(bread_lot).is_none(),
+        "bread lot should be archived after eating"
+    );
+
+    // Post-condition: SaleListing gone with the archived lot.
+    assert!(
+        h.world.get_component_sale_listing(bread_lot).is_none(),
+        "SaleListing should be removed after lot is archived"
+    );
+
+    // Post-condition: hunger decreased.
+    let final_hunger = h
+        .world
+        .get_component_homeostatic_needs(merchant)
+        .unwrap()
+        .hunger;
+    assert!(
+        final_hunger < initial_hunger,
+        "hunger should decrease after eating: initial={initial_hunger:?}, final={final_hunger:?}"
+    );
+
+    // Decision trace: verify ConsumeOwnedCommodity was a candidate.
+    let sink = h.driver.trace_sink().expect("tracing enabled");
+    let trace = sink
+        .trace_at(merchant, Tick(0))
+        .expect("merchant should have decision trace at tick 0");
+    match &trace.outcome {
+        DecisionOutcome::Planning(planning) => {
+            let has_consume = planning.candidates.ranked.iter().any(|c| {
+                matches!(
+                    c.opportunity.goal_key.kind,
+                    GoalKind::ConsumeOwnedCommodity {
+                        commodity: CommodityKind::Bread,
+                    }
+                )
+            });
+            assert!(
+                has_consume,
+                "decision trace should contain ConsumeOwnedCommodity{{Bread}} candidate"
+            );
+        }
+        other => panic!("expected Planning outcome at tick 0, got {other:?}"),
+    }
+
+    // Conservation: bread quantity decreased by exactly 1 (lawful consumption sink).
+    let final_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+    assert_eq!(
+        final_bread, 0,
+        "Quantity(1) bread should be fully consumed"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn hungry_merchant_eats_listed_stock() {
+    run_hungry_merchant_eats_listed_stock(Seed([87; 32]));
+}
+
+#[test]
+fn hungry_merchant_eats_listed_stock_replays_deterministically() {
+    let (w1, e1) = run_hungry_merchant_eats_listed_stock(Seed([87; 32]));
+    let (w2, e2) = run_hungry_merchant_eats_listed_stock(Seed([87; 32]));
+    assert_eq!(w1, w2, "world hash mismatch on replay");
+    assert_eq!(e1, e2, "event log hash mismatch on replay");
+}

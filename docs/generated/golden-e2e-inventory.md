@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 18
 - Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 252
+- Total `golden_*` tests: 254
 
 ## Per-File Inventory
 
@@ -19,7 +19,7 @@ Do not hand-edit it.
 | `golden_determinism.rs` | 10 |
 | `golden_emergent.rs` | 47 |
 | `golden_integration.rs` | 16 |
-| `golden_merchant_selling.rs` | 14 |
+| `golden_merchant_selling.rs` | 16 |
 | `golden_offices.rs` | 22 |
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
@@ -200,6 +200,8 @@ Do not hand-edit it.
 - `move_cargo_then_sell_commodity_plan_shape`
 - `demand_memory_raises_sell_ranking`
 - `planning_state_preserves_listing_determinism`
+- `hungry_merchant_eats_listed_stock`
+- `hungry_merchant_eats_listed_stock_replays_deterministically`
 
 ### `golden_offices.rs`
 

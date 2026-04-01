@@ -24,13 +24,10 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 **S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
 
-**S47: Hungry Merchant Eats Own Listed Sale Stock** (2 tests: main + replay) — Merchant with critical hunger autonomously consumes their own listed bread, demonstrating survival-over-enterprise priority ordering where the survival action directly consumes the trade asset. Proves cross-system emergence: Needs + Trade (S04) + AI ranking. See `specs/S47-golden-gaps-S04.md`.
-
 ### Recommended Implementation Order
 
-1. S47 hungry merchant eats listed stock (1 scenario + replay)
-2. S46 patrol-driven crime discovery chain (1 scenario + replay)
-3. S02c multi-role emergent supply chain
+1. S46 patrol-driven crime discovery chain (1 scenario + replay)
+2. S02c multi-role emergent supply chain
 
 ---
 
@@ -53,6 +50,8 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 ## Removed Backlog Items
 
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
+
+- **S47 Hungry Merchant Eats Own Listed Sale Stock** (removed 2026-04-01) — Implemented as Scenario 87 in `golden_merchant_selling.rs` (`hungry_merchant_eats_listed_stock` plus deterministic replay). Also removed the blanket `sale_kinds` suppression in `candidate_generation.rs` that prevented merchants from considering consumption of their own sale stock. The ranking system now handles the survival-vs-enterprise tradeoff through `GoalPriorityClass`: `ConsumeOwnedCommodity` escalates with hunger pressure while `SellCommodity` stays at Medium, so merchants only eat sale stock when survival urgency exceeds enterprise value (High or Critical hunger bands).
 
 - **S33OPPSCOGOAIDE-009 Opportunity-scoped source switching goldens** (removed 2026-03-28) — Implemented across `golden_production.rs` and `golden_ai_decisions.rs`. The suite now closes the remaining S33 golden gap at the right ownership boundaries: the blocked-source branch is proven by the strengthened `golden_contested_harvest_start_failure_recovers_via_remote_fallback`, which now asserts the first fresh post-failure selected opportunity is the remote sibling after the local authoritative `StartFailed`/blocker path, and the exhausted-opportunity branch is proven by `golden_exhausted_opportunity_switches_to_sibling_source` plus deterministic replay, which shows a seeded exhausted `OpportunityKey` is suppressed while its sibling loose-lot opportunity is still generated and selected.
 
