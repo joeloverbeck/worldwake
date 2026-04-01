@@ -556,6 +556,10 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Blockin
                 worldwake_sim::TradeRejectionReason::NoNeed => Some(BlockingFact::NoKnownSeller),
             },
         },
+        ActionAbortRequestReason::SaleLotNotListed { .. }
+        | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. } => {
+            Some(BlockingFact::SellerOutOfStock)
+        }
     }
 }
 

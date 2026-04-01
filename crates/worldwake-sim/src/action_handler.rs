@@ -317,6 +317,13 @@ pub enum ActionAbortRequestReason {
         participant: EntityId,
         acceptance: TradeAcceptance,
     },
+    SaleLotNotListed {
+        sale_lot: EntityId,
+    },
+    SaleLotNotPossessedBySeller {
+        sale_lot: EntityId,
+        seller: EntityId,
+    },
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
