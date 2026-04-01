@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, EntityId, EntityKind, EventTag, MerchandiseProfile, Quantity,
-    SaleListing, VisibilitySpec, WorldTxn, WoundList,
+    ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
+    CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
+    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SaleListing, Tick, VisibilitySpec,
+    WorldTxn, WoundList,
 };
 use worldwake_sim::{
     evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
@@ -826,9 +827,11 @@ fn commit_staff_market(
         for lot in &listed_lots {
             let _ = txn.clear_component_sale_listing(*lot);
         }
-        // If listed lots remain (none were traded away), record WantedToSellButNoBuyer.
+        // If listed lots remain (none were traded away), record WantedToSellButNoBuyer
+        // and suppress immediate re-emission via BlockedIntentMemory.
         if had_listed {
             record_unproductive_demand(txn, instance.actor, commodity, place);
+            record_sell_blocked_intent(txn, instance.actor, commodity, place);
         }
     }
     Ok(CommitOutcome::empty())
@@ -879,6 +882,38 @@ fn record_unproductive_demand(
     let _ = txn.set_component_demand_memory(actor, memory);
 }
 
+/// Create a `BlockedIntent` for `SellCommodity { commodity }` after an unproductive
+/// market-presence cycle.  The blocking period equals `market_presence_ticks` from
+/// the actor's `TradeDispositionProfile`, so per-agent diversity is preserved.
+fn record_sell_blocked_intent(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) {
+    let current_tick = txn.tick();
+    let blocking_period = txn
+        .get_component_trade_disposition_profile(actor)
+        .map_or(30, |profile| profile.market_presence_ticks.get());
+    let mut memory = txn
+        .get_component_blocked_intent_memory(actor)
+        .cloned()
+        .unwrap_or_default();
+    memory.record(BlockedIntent {
+        blocker_key: BlockerKey {
+            goal_key: GoalKey::from(GoalKind::SellCommodity { commodity }),
+            place: Some(place),
+            target: None,
+            action_def: None,
+        },
+        blocking_fact: BlockingFact::NoBuyer,
+        diagnostic_context: None,
+        observed_tick: current_tick,
+        expires_tick: Tick(current_tick.0 + u64::from(blocking_period)),
+    });
+    let _ = txn.set_component_blocked_intent_memory(actor, memory);
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -890,11 +925,11 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
-        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
-        DemandObservationReason, EntityId, EventLog, EventTag, EventView, HomeostaticNeeds,
-        LotOperation, MerchandiseProfile, PerceptionSource, Permille, Quantity, SaleListing, Seed,
-        SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        AgentBeliefStore, BlockingFact, CauseRef, CommodityKind, ControlSource, DemandMemory,
+        DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag, EventView,
+        GoalKind, HomeostaticNeeds, LotOperation, MerchandiseProfile, PerceptionSource, Permille,
+        Quantity, SaleListing, Seed, SubstitutePreferences, Tick, TradeCategory,
+        TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
@@ -2209,6 +2244,55 @@ mod tests {
         assert_eq!(obs.commodity, CommodityKind::Bread);
         assert_eq!(obs.reason, DemandObservationReason::WantedToSellButNoBuyer);
         assert_eq!(obs.place, h.place);
+    }
+
+    #[test]
+    fn staff_market_unproductive_commit_creates_blocked_intent_for_sell_commodity() {
+        let mut h = StaffMarketHarness::new();
+        let (instance_id, mut active) = h.start_with_active();
+
+        // Run to completion without any trades occurring.
+        for tick in 4..14 {
+            let outcome = tick_action(
+                instance_id,
+                &h.defs,
+                &h.handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut h.world,
+                    event_log: &mut h.log,
+                    rng: &mut h.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+            .unwrap();
+            if matches!(outcome, TickOutcome::Committed { .. }) {
+                break;
+            }
+        }
+
+        let blocked = h
+            .world
+            .get_component_blocked_intent_memory(h.actor)
+            .expect("blocked intent memory should exist after unproductive cycle");
+        let sell_blocker = blocked.intents.values().find(|intent| {
+            intent.blocking_fact == BlockingFact::NoBuyer
+                && intent.blocker_key.goal_key.kind
+                    == GoalKind::SellCommodity {
+                        commodity: CommodityKind::Bread,
+                    }
+                && intent.blocker_key.place == Some(h.place)
+        });
+        assert!(
+            sell_blocker.is_some(),
+            "unproductive staff_market commit should create a NoBuyer blocked intent for SellCommodity"
+        );
+        let intent = sell_blocker.unwrap();
+        // Blocking period should equal market_presence_ticks (10 in harness).
+        assert!(intent.expires_tick.0 > intent.observed_tick.0);
     }
 
     #[test]
