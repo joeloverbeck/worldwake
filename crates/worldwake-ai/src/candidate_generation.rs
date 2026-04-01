@@ -2401,53 +2401,76 @@ fn emit_sell_goals(
     let Some(current_place) = ctx.place else {
         return;
     };
-    if current_place != home_market {
-        return;
-    }
+    let at_home_market = current_place == home_market;
 
     for commodity in profile.sale_kinds {
-        let local_lots =
-            ctx.view
-                .local_controlled_lots_for(ctx.agent, current_place, commodity);
-        if local_lots.is_empty() {
-            continue;
-        }
-        // Skip if any controlled local lot already has a SaleListing.
-        let already_listed = local_lots
-            .iter()
-            .any(|&lot| ctx.view.has_sale_listing(lot));
-        if already_listed {
-            continue;
-        }
+        if at_home_market {
+            // At home market: check local lots and skip if already listed.
+            let local_lots =
+                ctx.view
+                    .local_controlled_lots_for(ctx.agent, current_place, commodity);
+            if local_lots.is_empty() {
+                continue;
+            }
+            let already_listed = local_lots
+                .iter()
+                .any(|&lot| ctx.view.has_sale_listing(lot));
+            if already_listed {
+                continue;
+            }
 
-        let mut evidence = Evidence::with_place(current_place);
-        evidence.entities.extend(local_lots.iter().copied());
-        let mut trace = EvidenceTrace::default();
-        for &lot in &local_lots {
-            trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
-        }
-        if ctx.tracing_enabled {
-            trace
-                .knowledge_path
-                .self_knowledge
-                .push(SelfKnowledgeProvenance::MerchantIdentity);
-            trace.knowledge_path.entity_beliefs.extend(
-                belief_provenance_for_contributors(
-                    ctx.view,
-                    ctx.agent,
-                    &trace.contributors,
-                    commodity,
-                ),
+            let mut evidence = Evidence::with_place(current_place);
+            evidence.entities.extend(local_lots.iter().copied());
+            let mut trace = EvidenceTrace::default();
+            for &lot in &local_lots {
+                trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
+            }
+            if ctx.tracing_enabled {
+                trace
+                    .knowledge_path
+                    .self_knowledge
+                    .push(SelfKnowledgeProvenance::MerchantIdentity);
+                trace.knowledge_path.entity_beliefs.extend(
+                    belief_provenance_for_contributors(
+                        ctx.view,
+                        ctx.agent,
+                        &trace.contributors,
+                        commodity,
+                    ),
+                );
+            }
+            emit_candidate_with_trace(
+                candidates,
+                diagnostics,
+                GoalKind::SellCommodity { commodity },
+                OpportunityAnchor::Place(current_place),
+                evidence,
+                trace,
+            );
+        } else {
+            // Remote: merchant has stock somewhere but isn't at home_market.
+            // Emit SellCommodity anchored at home_market so the planner
+            // searches Travel + StaffMarket.
+            if ctx.view.commodity_quantity(ctx.agent, commodity) == Quantity(0) {
+                continue;
+            }
+            let evidence = Evidence::with_place(home_market);
+            let mut trace = EvidenceTrace::default();
+            if ctx.tracing_enabled {
+                trace
+                    .knowledge_path
+                    .self_knowledge
+                    .push(SelfKnowledgeProvenance::MerchantIdentity);
+            }
+            emit_candidate_with_trace(
+                candidates,
+                diagnostics,
+                GoalKind::SellCommodity { commodity },
+                OpportunityAnchor::Place(home_market),
+                evidence,
+                trace,
             );
         }
-        emit_candidate_with_trace(
-            candidates,
-            diagnostics,
-            GoalKind::SellCommodity { commodity },
-            OpportunityAnchor::Place(current_place),
-            evidence,
-            trace,
-        );
     }
 }
 
@@ -7407,7 +7430,7 @@ mod tests {
     }
 
     #[test]
-    fn merchant_not_at_home_market_does_not_emit_sell_commodity() {
+    fn merchant_not_at_home_market_emits_sell_commodity_anchored_at_home() {
         let agent = entity(1);
         let home = entity(10);
         let other_place = entity(11);
@@ -7446,12 +7469,26 @@ mod tests {
             Tick(5),
         );
 
-        assert!(!contains_goal(
+        assert!(contains_goal(
             &candidates,
             GoalKind::SellCommodity {
                 commodity: CommodityKind::Bread,
             }
         ));
+        // Anchor should be home_market, not current place.
+        let sell_candidate = candidates.iter().find(|c| {
+            matches!(
+                c.key.kind,
+                GoalKind::SellCommodity {
+                    commodity: CommodityKind::Bread,
+                }
+            )
+        });
+        assert_eq!(
+            sell_candidate.unwrap().anchor,
+            OpportunityAnchor::Place(home),
+            "remote SellCommodity should be anchored at home_market"
+        );
     }
 
     #[test]
