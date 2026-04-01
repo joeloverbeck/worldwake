@@ -1,6 +1,6 @@
 # S04MERSELMAR-009: Trade commit rules for `sale_lot` validity
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — trade commit handler validation and lot transfer logic
@@ -110,3 +110,19 @@ In the commit handler, derive `requested_commodity` from `world.item_lot(payload
 
 1. `cargo test -p worldwake-systems -- trade_action`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - Added `SaleLotNotListed` and `SaleLotNotPossessedBySeller` variants to `ActionAbortRequestReason`
+  - `validate_trade_bundle_context` now checks sale_lot has `SaleListing` and seller possesses it before proceeding
+  - `transfer_trade_lot` removes `SaleListing` from lots transferred to the buyer
+  - `map_handler_abort_reason` in failure_handling.rs maps new variants to `SellerOutOfStock`
+  - Existing `partial_lot_trade_splits_and_preserves_conservation` test updated to add `SaleListing` to replacement lot
+  - Golden trade test assertions widened to accept new sale-lot-specific failure reasons
+  - 4 new focused tests: listing-removed abort, possession-lost abort, listing removal on transfer, listing preservation on split remainder
+- **Deviations from original plan**:
+  - Deliverable 3 (derive `requested_commodity` from `sale_lot`) was already done by ticket 008; skipped
+  - Golden trade test needed assertion updates for new failure reason priority
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` all tests pass
