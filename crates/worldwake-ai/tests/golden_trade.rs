@@ -677,6 +677,16 @@ fn run_local_trade_start_failure_production_fallback_scenario(
                     quantity: Quantity(1),
                 }
             ) if holder == seller
+        ) || matches!(
+            loser_failures[0].reason,
+            ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::SaleLotNotListed { sale_lot }
+            ) if sale_lot == seller_bread_lot
+        ) || matches!(
+            loser_failures[0].reason,
+            ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::SaleLotNotPossessedBySeller { sale_lot, .. }
+            ) if sale_lot == seller_bread_lot
         ),
         "unexpected loser start-failure reason: {:?}",
         loser_failures[0].reason
@@ -715,16 +725,24 @@ fn run_local_trade_start_failure_production_fallback_scenario(
         other => panic!("expected planning trace after failure, got {other:?}"),
     };
     assert_eq!(loser_planning_after_failure.action_start_failures.len(), 1);
-    assert!(matches!(
-        loser_planning_after_failure.action_start_failures[0].reason,
-        ActionStartFailureReason::AbortRequested(
-            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-                holder,
-                commodity: CommodityKind::Bread,
-                quantity: Quantity(1),
-            }
-        ) if holder == seller
-    ));
+    assert!(
+        matches!(
+            loser_planning_after_failure.action_start_failures[0].reason,
+            ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::HolderLacksAccessibleCommodity {
+                    holder,
+                    commodity: CommodityKind::Bread,
+                    quantity: Quantity(1),
+                }
+            ) if holder == seller
+        ) || matches!(
+            loser_planning_after_failure.action_start_failures[0].reason,
+            ActionStartFailureReason::AbortRequested(
+                ActionAbortRequestReason::SaleLotNotListed { .. }
+                | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. }
+            )
+        )
+    );
     assert!(
         loser_planning_after_failure.selection.selected_plan_source
             != Some(SelectedPlanSource::RetainedCurrentPlan),

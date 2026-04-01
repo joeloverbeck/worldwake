@@ -232,7 +232,25 @@ fn validate_trade_bundle_context(
     payload: &TradeActionPayload,
 ) -> Result<(EntityId, EntityId), ActionError> {
     let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
+    // sale_lot_commodity validates the lot entity still exists.
     let requested_commodity = sale_lot_commodity(txn, payload.sale_lot)?;
+    // The sale lot must still be listed.
+    if txn.get_component_sale_listing(payload.sale_lot).is_none() {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::SaleLotNotListed {
+                sale_lot: payload.sale_lot,
+            },
+        ));
+    }
+    // The seller must still possess the sale lot.
+    if txn.possessor_of(payload.sale_lot) != Some(counterparty) {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::SaleLotNotPossessedBySeller {
+                sale_lot: payload.sale_lot,
+                seller: counterparty,
+            },
+        ));
+    }
     ensure_accessible_quantity(
         txn,
         instance.actor,
@@ -597,6 +615,12 @@ fn transfer_trade_lot(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_possessor(lot_id, new_holder)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // The buyer is not the seller — remove any SaleListing from the
+    // transferred lot.  Split-off portions never inherit SaleListing
+    // (fresh entities), but whole-lot transfers carry the original component.
+    if txn.get_component_sale_listing(lot_id).is_some() {
+        let _ = txn.clear_component_sale_listing(lot_id);
+    }
     txn.append_transfer_provenance(lot_id, quantity)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot_id);
@@ -868,7 +892,7 @@ mod tests {
         build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
         DemandObservationReason, EntityId, EventLog, EventTag, EventView, HomeostaticNeeds,
-        LotOperation, MerchandiseProfile, PerceptionSource, Permille, Quantity, Seed,
+        LotOperation, MerchandiseProfile, PerceptionSource, Permille, Quantity, SaleListing, Seed,
         SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, VisibilitySpec,
         WitnessData, World, WorldTxn,
     };
@@ -1328,6 +1352,13 @@ mod tests {
             txn.set_possessor(replacement, harness.counterparty)
                 .unwrap();
             txn.set_owner(replacement, harness.counterparty).unwrap();
+            txn.set_component_sale_listing(
+                replacement,
+                SaleListing {
+                    listed_at: Tick(3),
+                },
+            )
+            .unwrap();
             commit_txn(txn);
             harness.counterparty_offer = replacement;
             harness.payload.sale_lot = replacement;
@@ -1757,11 +1788,178 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // sale_lot commit validation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn trade_aborts_when_sale_lot_listing_removed_before_commit() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let (instance_id, mut active) = harness.start_with_active();
+        // Remove the SaleListing between start and commit.
+        {
+            let mut txn = new_txn(&mut harness.world, 4);
+            let _ = txn.clear_component_sale_listing(harness.counterparty_offer);
+            commit_txn(txn);
+        }
+
+        let outcome = tick_action(
+            instance_id,
+            &harness.defs,
+            &harness.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut harness.world,
+                event_log: &mut harness.log,
+                rng: &mut harness.rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+    }
+
+    #[test]
+    fn trade_aborts_when_seller_loses_possession_of_sale_lot_before_commit() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let (instance_id, mut active) = harness.start_with_active();
+        // Transfer possession away from the seller before commit.
+        {
+            let mut txn = new_txn(&mut harness.world, 4);
+            txn.clear_possessor(harness.counterparty_offer).unwrap();
+            commit_txn(txn);
+        }
+
+        let outcome = tick_action(
+            instance_id,
+            &harness.defs,
+            &harness.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut harness.world,
+                event_log: &mut harness.log,
+                rng: &mut harness.rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Aborted { .. }));
+    }
+
+    #[test]
+    fn trade_removes_sale_listing_from_transferred_lot() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        // Confirm listing exists before trade.
+        assert!(harness
+            .world
+            .get_component_sale_listing(harness.counterparty_offer)
+            .is_some());
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let _outcome = tick_action(
+            instance_id,
+            &harness.defs,
+            &harness.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut harness.world,
+                event_log: &mut harness.log,
+                rng: &mut harness.rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        // After trade, the transferred lot should not have SaleListing.
+        assert!(harness
+            .world
+            .get_component_sale_listing(harness.counterparty_offer)
+            .is_none());
+    }
+
+    #[test]
+    fn trade_preserves_sale_listing_on_seller_remainder_after_partial_trade() {
+        // Seller has Quantity(3) of Bread, buyer wants Quantity(1).
+        // After split + transfer, seller's original lot retains SaleListing.
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            // Create counterparty lot with 3 units so a split occurs.
+            Quantity(3),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        // Override requested_quantity to 1 so only part of the lot transfers.
+        harness.payload.requested_quantity = Quantity(1);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let _outcome = tick_action(
+            instance_id,
+            &harness.defs,
+            &harness.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut harness.world,
+                event_log: &mut harness.log,
+                rng: &mut harness.rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(5),
+            },
+        )
+        .unwrap();
+
+        // Seller's original lot should retain SaleListing (it still has Quantity(2)).
+        assert!(harness
+            .world
+            .get_component_sale_listing(harness.counterparty_offer)
+            .is_some());
+        // Seller's remainder should still have quantity.
+        let remainder = harness
+            .world
+            .get_component_item_lot(harness.counterparty_offer)
+            .unwrap();
+        assert_eq!(remainder.quantity, Quantity(2));
+    }
+
+    // -----------------------------------------------------------------------
     // staff_market action tests
     // -----------------------------------------------------------------------
 
     use super::register_staff_market_action;
-    use worldwake_core::SaleListing;
     use worldwake_sim::StaffMarketPayload;
 
     struct StaffMarketHarness {
