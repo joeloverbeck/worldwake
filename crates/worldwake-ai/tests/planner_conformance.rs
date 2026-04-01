@@ -984,7 +984,7 @@ fn conformance_trade_exact_acquisition() {
         CommodityKind::Coin,
         Quantity(5),
     );
-    give_commodity(
+    let seller_bread_lot = give_commodity(
         &mut ch.h.world,
         &mut ch.h.event_log,
         seller,
@@ -996,6 +996,13 @@ fn conformance_trade_exact_acquisition() {
     // Set trade disposition profiles so duration can be resolved.
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
+        txn.set_component_sale_listing(
+            seller_bread_lot,
+            worldwake_core::SaleListing {
+                listed_at: Tick(0),
+            },
+        )
+        .unwrap();
         txn.set_component_trade_disposition_profile(
             buyer,
             worldwake_core::TradeDispositionProfile {
@@ -1059,9 +1066,9 @@ fn conformance_trade_exact_acquisition() {
     // Trade requires a TradeActionPayload.
     let trade_payload = ActionPayload::Trade(worldwake_sim::TradeActionPayload {
         counterparty: seller,
+        sale_lot: seller_bread_lot,
         offered_commodity: CommodityKind::Coin,
         offered_quantity: Quantity(1),
-        requested_commodity: CommodityKind::Bread,
         requested_quantity: Quantity(1),
     });
     let buyer_bread_before =

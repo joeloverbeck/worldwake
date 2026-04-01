@@ -614,8 +614,8 @@ pub fn build_t30_world(
             &format!("T30Civ{}", i + 1),
             civ_place,
             HomeostaticNeeds {
-                hunger: pm(500 + i as u16 * 50),
-                thirst: pm(300 + i as u16 * 30),
+                hunger: pm(500 + u16::try_from(i).unwrap() * 50),
+                thirst: pm(300 + u16::try_from(i).unwrap() * 30),
                 ..HomeostaticNeeds::new_sated()
             },
             t30_default_metabolism(),

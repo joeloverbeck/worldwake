@@ -274,9 +274,9 @@ pub struct CraftActionPayload {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct TradeActionPayload {
     pub counterparty: EntityId,
+    pub sale_lot: EntityId,
     pub offered_commodity: CommodityKind,
     pub offered_quantity: Quantity,
-    pub requested_commodity: CommodityKind,
     pub requested_quantity: Quantity,
 }
 
@@ -433,9 +433,12 @@ mod tests {
                 slot: 11,
                 generation: 0,
             },
+            sale_lot: EntityId {
+                slot: 50,
+                generation: 0,
+            },
             offered_commodity: CommodityKind::Coin,
             offered_quantity: Quantity(4),
-            requested_commodity: CommodityKind::Bread,
             requested_quantity: Quantity(2),
         }
     }

@@ -710,9 +710,9 @@ mod tests {
             ],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(3),
+                sale_lot: EntityId { slot: 50, generation: 0 },
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(2),
-                requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
             })),
             op_kind: PlannerOpKind::Trade,
