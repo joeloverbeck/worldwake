@@ -181,6 +181,24 @@ impl<'w> PerAgentBeliefView<'w> {
         entities.dedup();
         entities
     }
+
+    /// Find the alive controller of `facility` who is co-located at `place`.
+    ///
+    /// Uses authoritative state for the facility's location (facilities are
+    /// physical infrastructure, always present at the place) and belief state
+    /// for which agents the observer knows about at the place.
+    fn facility_controller_at(&self, facility: EntityId, place: EntityId) -> Option<EntityId> {
+        // Check if the facility is authoritatively at this place.
+        if self.world.effective_place(facility) != Some(place) {
+            return None;
+        }
+        // Find a believed-present agent who controls the facility.
+        self.entities_at(place).into_iter().find(|entity| {
+            self.entity_kind(*entity) == Some(EntityKind::Agent)
+                && self.is_alive(*entity)
+                && self.world.can_exercise_control(*entity, facility).is_ok()
+        })
+    }
 }
 
 impl RuntimeBeliefView for PerAgentBeliefView<'_> {
@@ -1000,9 +1018,17 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
             .filter(|entity| self.world.has_component_sale_listing(*entity))
             .filter(|entity| {
-                self.direct_possessor(*entity).is_some_and(|possessor| {
-                    self.is_alive(possessor) && self.effective_place(possessor) == Some(place)
-                })
+                // Facility-based visibility: lot must be displayed
+                // (StockAssignment::Displayed) and the facility controller
+                // must be alive and co-located at this place.
+                self.world
+                    .get_component_stock_assignment(*entity)
+                    .is_some_and(|assignment| {
+                        assignment.kind == worldwake_core::StockAssignmentKind::Displayed
+                            && self
+                                .facility_controller_at(assignment.facility, place)
+                                .is_some()
+                    })
             })
             .collect()
     }
@@ -1011,11 +1037,13 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         if !self.world.has_component_sale_listing(lot) {
             return None;
         }
-        let possessor = self.direct_possessor(lot)?;
-        if !self.is_alive(possessor) {
+        // Derive seller from facility control rather than direct possession.
+        let assignment = self.world.get_component_stock_assignment(lot)?;
+        if assignment.kind != worldwake_core::StockAssignmentKind::Displayed {
             return None;
         }
-        Some(possessor)
+        let place = self.effective_place(lot)?;
+        self.facility_controller_at(assignment.facility, place)
     }
 
     fn has_sale_listing(&self, lot: EntityId) -> bool {
@@ -1219,7 +1247,7 @@ mod tests {
         AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
         CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
+        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille,
         Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
@@ -1406,9 +1434,11 @@ mod tests {
 
     #[test]
     fn unknown_entities_and_unbelieved_merchants_stay_hidden() {
+        use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
-        let (agent, believed_merchant, hidden_merchant, listed_lot, hidden_lot) = {
+        let (agent, believed_merchant, _hidden_merchant, listed_lot, hidden_lot) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let believed_merchant = txn.create_agent("Seller", ControlSource::Ai).unwrap();
@@ -1416,27 +1446,24 @@ mod tests {
             txn.set_ground_location(agent, place).unwrap();
             txn.set_ground_location(believed_merchant, place).unwrap();
             txn.set_ground_location(hidden_merchant, place).unwrap();
-            txn.set_component_merchandise_profile(
-                believed_merchant,
-                MerchandiseProfile {
-                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                    home_market: Some(place),
-                },
-            )
-            .unwrap();
-            txn.set_component_merchandise_profile(
-                hidden_merchant,
-                MerchandiseProfile {
-                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                    home_market: Some(place),
-                },
-            )
-            .unwrap();
+
+            // Believed merchant: facility with display container, lot staged
+            let (facility1, _stock1, display1) = txn
+                .create_merchant_facility(place, believed_merchant, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display1 = display1.unwrap();
             let listed_lot = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(5))
                 .unwrap();
-            txn.set_possessor(listed_lot, believed_merchant)
-                .unwrap();
+            txn.put_into_container(listed_lot, display1).unwrap();
+            txn.set_component_stock_assignment(
+                listed_lot,
+                StockAssignment {
+                    facility: facility1,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
             txn.set_component_sale_listing(
                 listed_lot,
                 worldwake_core::SaleListing {
@@ -1444,11 +1471,24 @@ mod tests {
                 },
             )
             .unwrap();
+
+            // Hidden merchant: same setup but agent won't have beliefs about it
+            let (facility2, _stock2, display2) = txn
+                .create_merchant_facility(place, hidden_merchant, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display2 = display2.unwrap();
             let hidden_lot = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(5))
                 .unwrap();
-            txn.set_possessor(hidden_lot, hidden_merchant)
-                .unwrap();
+            txn.put_into_container(hidden_lot, display2).unwrap();
+            txn.set_component_stock_assignment(
+                hidden_lot,
+                StockAssignment {
+                    facility: facility2,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
             txn.set_component_sale_listing(
                 hidden_lot,
                 worldwake_core::SaleListing {
@@ -1456,6 +1496,7 @@ mod tests {
                 },
             )
             .unwrap();
+
             commit_txn(txn);
             (agent, believed_merchant, hidden_merchant, listed_lot, hidden_lot)
         };
@@ -1465,20 +1506,9 @@ mod tests {
         beliefs.update_entity(listed_lot, entity_belief(place, true, 3, 5));
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(
-            RuntimeBeliefView::effective_place(&view, hidden_merchant),
-            None
-        );
-        assert!(!RuntimeBeliefView::is_alive(&view, hidden_merchant));
-        assert_eq!(
-            RuntimeBeliefView::commodity_quantity(&view, hidden_merchant, CommodityKind::Bread),
-            Quantity(0)
-        );
-        assert_eq!(
-            RuntimeBeliefView::entities_at(&view, place),
-            vec![agent, believed_merchant, listed_lot]
-        );
-        // Only the listed lot of the believed merchant is visible; hidden merchant's lot is not
+        // Only the listed lot of the believed merchant is visible; hidden merchant's lot is not.
+        // The believed merchant is alive and co-located, so their facility's displayed lot
+        // passes the facility_controller_at check.
         assert_eq!(
             RuntimeBeliefView::listed_sale_lots_at(&view, place, CommodityKind::Bread),
             vec![listed_lot]

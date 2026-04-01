@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
-    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SaleListing, Tick, VisibilitySpec,
+    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, Tick, VisibilitySpec,
     WorldTxn, WoundList,
 };
 use worldwake_sim::{
@@ -243,8 +243,9 @@ fn validate_trade_bundle_context(
             },
         ));
     }
-    // The seller must still possess the sale lot.
-    if txn.possessor_of(payload.sale_lot) != Some(counterparty) {
+    // The seller must control the sale lot (either via direct possession or
+    // via facility display container ownership).
+    if txn.can_exercise_control(counterparty, payload.sale_lot).is_err() {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::SaleLotNotPossessedBySeller {
                 sale_lot: payload.sale_lot,
@@ -616,11 +617,13 @@ fn transfer_trade_lot(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_possessor(lot_id, new_holder)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    // The buyer is not the seller — remove any SaleListing from the
-    // transferred lot.  Split-off portions never inherit SaleListing
-    // (fresh entities), but whole-lot transfers carry the original component.
+    // The buyer is not the seller — remove any SaleListing and
+    // StockAssignment from the transferred lot.
     if txn.get_component_sale_listing(lot_id).is_some() {
         let _ = txn.clear_component_sale_listing(lot_id);
+    }
+    if txn.get_component_stock_assignment(lot_id).is_some() {
+        let _ = txn.clear_component_stock_assignment(lot_id);
     }
     txn.append_transfer_provenance(lot_id, quantity)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -750,7 +753,8 @@ fn validate_staff_market_preconditions(
             "commodity {commodity:?} not in actor {actor} sale_kinds"
         )));
     }
-    // Must control at least one local lot of the commodity.
+    // Must have displayed stock at the place (either possessed or in a
+    // facility display container with SaleListing).
     let has_local_stock = txn
         .possessions_of(actor)
         .into_iter()
@@ -758,7 +762,8 @@ fn validate_staff_market_preconditions(
             txn.get_component_item_lot(entity)
                 .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
                 && txn.effective_place(entity) == Some(place)
-        });
+        })
+        || displayed_sale_lots_at(txn, place, commodity);
     if !has_local_stock {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::HolderLacksAccessibleCommodity {
@@ -772,23 +777,21 @@ fn validate_staff_market_preconditions(
 }
 
 /// Find all directly-possessed local lots of `commodity` at `place`.
-fn eligible_sale_lots(
+/// Check whether any lots with `SaleListing` and `StockAssignment::Displayed`
+/// exist at the given place for the given commodity.
+fn displayed_sale_lots_at(
     txn: &WorldTxn<'_>,
-    actor: EntityId,
     place: EntityId,
     commodity: CommodityKind,
-) -> Vec<EntityId> {
-    let mut lots: Vec<EntityId> = txn
-        .possessions_of(actor)
-        .into_iter()
-        .filter(|entity| {
-            txn.get_component_item_lot(*entity)
-                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
-                && txn.effective_place(*entity) == Some(place)
-        })
-        .collect();
-    lots.sort();
-    lots
+) -> bool {
+    txn.entities_effectively_at(place).into_iter().any(|entity| {
+        txn.get_component_item_lot(entity)
+            .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+            && txn.has_component_sale_listing(entity)
+            && txn
+                .get_component_stock_assignment(entity)
+                .is_some_and(|a| a.kind == worldwake_core::StockAssignmentKind::Displayed)
+    })
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -800,14 +803,9 @@ fn start_staff_market(
 ) -> Result<Option<ActionState>, ActionError> {
     let payload = staff_market_payload(def, instance)?;
     let commodity = payload.commodity;
-    let (place, _profile) = validate_staff_market_preconditions(txn, instance.actor, commodity)?;
-    let current_tick = txn.tick();
-    for lot in eligible_sale_lots(txn, instance.actor, place, commodity) {
-        if txn.get_component_sale_listing(lot).is_none() {
-            txn.set_component_sale_listing(lot, SaleListing { listed_at: current_tick })
-                .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        }
-    }
+    let (_place, _profile) = validate_staff_market_preconditions(txn, instance.actor, commodity)?;
+    // Presence-only: SaleListing is managed by stage_stock_for_sale/unstage_stock.
+    // This action represents the merchant being present at the market.
     Ok(Some(ActionState::Empty))
 }
 
@@ -829,20 +827,11 @@ fn commit_staff_market(
 ) -> Result<CommitOutcome, ActionError> {
     let payload = staff_market_payload(def, instance)?;
     let commodity = payload.commodity;
-    let place = txn.effective_place(instance.actor);
-    // Remove SaleListing from still-possessed local lots.
-    if let Some(place) = place {
-        let listed_lots: Vec<EntityId> = eligible_sale_lots(txn, instance.actor, place, commodity)
-            .into_iter()
-            .filter(|lot| txn.get_component_sale_listing(*lot).is_some())
-            .collect();
-        let had_listed = !listed_lots.is_empty();
-        for lot in &listed_lots {
-            let _ = txn.clear_component_sale_listing(*lot);
-        }
-        // If listed lots remain (none were traded away), record WantedToSellButNoBuyer
-        // and suppress immediate re-emission via BlockedIntentMemory.
-        if had_listed {
+    // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
+    // Record unproductive demand if displayed stock remains unsold.
+    if let Some(place) = txn.effective_place(instance.actor) {
+        let has_displayed_stock = displayed_sale_lots_at(txn, place, commodity);
+        if has_displayed_stock {
             record_unproductive_demand(txn, instance.actor, commodity, place);
             record_sell_blocked_intent(txn, instance.actor, commodity, place);
         }
@@ -852,21 +841,13 @@ fn commit_staff_market(
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_staff_market(
-    def: &ActionDef,
-    instance: &ActionInstance,
+    _def: &ActionDef,
+    _instance: &ActionInstance,
     _reason: &AbortReason,
     _rng: &mut DeterministicRng,
-    txn: &mut WorldTxn<'_>,
+    _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    let payload = staff_market_payload(def, instance)?;
-    let commodity = payload.commodity;
-    if let Some(place) = txn.effective_place(instance.actor) {
-        for lot in eligible_sale_lots(txn, instance.actor, place, commodity) {
-            if txn.get_component_sale_listing(lot).is_some() {
-                let _ = txn.clear_component_sale_listing(lot);
-            }
-        }
-    }
+    // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
     Ok(())
 }
 
@@ -1085,16 +1066,30 @@ mod tests {
                 }
                 txn.set_possessor(actor_offer, actor).unwrap();
                 txn.set_owner(actor_offer, actor).unwrap();
-                txn.set_possessor(counterparty_offer, counterparty).unwrap();
-                txn.set_owner(counterparty_offer, counterparty).unwrap();
-                // Mark the counterparty's lot as listed for sale.
-                txn.set_component_sale_listing(
-                    counterparty_offer,
-                    SaleListing {
-                        listed_at: Tick(2),
-                    },
-                )
-                .unwrap();
+                // Create facility for counterparty and stage the sale lot.
+                {
+                    use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+                    let (facility, _stock, display) = txn
+                        .create_merchant_facility(place, counterparty, LoadUnits(200), Some(LoadUnits(100)))
+                        .unwrap();
+                    let display = display.unwrap();
+                    txn.put_into_container(counterparty_offer, display).unwrap();
+                    txn.set_component_stock_assignment(
+                        counterparty_offer,
+                        StockAssignment {
+                            facility,
+                            kind: StockAssignmentKind::Displayed,
+                        },
+                    )
+                    .unwrap();
+                    txn.set_component_sale_listing(
+                        counterparty_offer,
+                        SaleListing {
+                            listed_at: Tick(2),
+                        },
+                    )
+                    .unwrap();
+                }
                 txn.set_component_trade_disposition_profile(
                     actor,
                     TradeDispositionProfile {
@@ -1260,6 +1255,19 @@ mod tests {
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
+
+        // Debug: check visibility
+        {
+            use worldwake_sim::RuntimeBeliefView as RBV;
+            let beliefs = test_belief_store(&harness.world, harness.actor);
+            let view = PerAgentBeliefView::new(harness.actor, &harness.world, &beliefs);
+            eprintln!("entities_at place: {:?}", RBV::entities_at(&view, harness.place));
+            eprintln!("counterparty_offer effective_place: {:?}", harness.world.effective_place(harness.counterparty_offer));
+            eprintln!("counterparty_offer has_sale_listing: {:?}", harness.world.has_component_sale_listing(harness.counterparty_offer));
+            eprintln!("counterparty_offer stock_assignment: {:?}", harness.world.get_component_stock_assignment(harness.counterparty_offer));
+            eprintln!("listed_sale_lots_at: {:?}", RBV::listed_sale_lots_at(&view, harness.place, CommodityKind::Bread));
+            eprintln!("seller_for_sale_lot: {:?}", RBV::seller_for_sale_lot(&view, harness.counterparty_offer));
+        }
 
         let affordances = affordances_for(
             &harness.world,
@@ -1531,9 +1539,13 @@ mod tests {
             harness.world.possessor_of(harness.actor_offer),
             Some(harness.actor)
         );
-        assert_eq!(
-            harness.world.possessor_of(harness.counterparty_offer),
-            Some(harness.counterparty)
+        // Counterparty's lot stays in its display container (not possessed directly).
+        assert!(
+            harness
+                .world
+                .can_exercise_control(harness.counterparty, harness.counterparty_offer)
+                .is_ok(),
+            "counterparty should still control the sale lot after rejected trade"
         );
     }
 
@@ -1878,7 +1890,7 @@ mod tests {
     }
 
     #[test]
-    fn trade_aborts_when_seller_loses_possession_of_sale_lot_before_commit() {
+    fn trade_aborts_when_seller_loses_control_of_sale_lot_before_commit() {
         let mut harness = TradeHarness::new(
             CommodityKind::Coin,
             Quantity(1),
@@ -1888,10 +1900,18 @@ mod tests {
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
         let (instance_id, mut active) = harness.start_with_active();
-        // Transfer possession away from the seller before commit.
+        // Remove the lot from the display container and clear its
+        // StockAssignment so the seller no longer controls it.
         {
             let mut txn = new_txn(&mut harness.world, 4);
-            txn.clear_possessor(harness.counterparty_offer).unwrap();
+            txn.remove_from_container(harness.counterparty_offer)
+                .unwrap();
+            txn.set_ground_location(harness.counterparty_offer, harness.place)
+                .unwrap();
+            txn.clear_component_stock_assignment(harness.counterparty_offer)
+                .unwrap();
+            // Clear ownership so the seller has no control path at all.
+            txn.clear_owner(harness.counterparty_offer).unwrap();
             commit_txn(txn);
         }
 
@@ -2030,6 +2050,8 @@ mod tests {
         }
 
         fn with_commodity(commodity: CommodityKind) -> Self {
+            use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+
             let mut world = World::new(build_prototype_world()).unwrap();
             let place = world.topology().place_ids().next().unwrap();
             let (actor, lot) = {
@@ -2042,9 +2064,27 @@ mod tests {
             {
                 let mut txn = new_txn(&mut world, 2);
                 txn.set_ground_location(actor, place).unwrap();
-                txn.set_ground_location(lot, place).unwrap();
-                txn.set_possessor(lot, actor).unwrap();
-                txn.set_owner(lot, actor).unwrap();
+                // Create facility with display container and stage the lot.
+                let (facility, _stock, display) = txn
+                    .create_merchant_facility(place, actor, LoadUnits(200), Some(LoadUnits(100)))
+                    .unwrap();
+                let display = display.unwrap();
+                txn.put_into_container(lot, display).unwrap();
+                txn.set_component_stock_assignment(
+                    lot,
+                    StockAssignment {
+                        facility,
+                        kind: StockAssignmentKind::Displayed,
+                    },
+                )
+                .unwrap();
+                txn.set_component_sale_listing(
+                    lot,
+                    worldwake_core::SaleListing {
+                        listed_at: worldwake_core::Tick(2),
+                    },
+                )
+                .unwrap();
                 txn.set_component_merchandise_profile(
                     actor,
                     MerchandiseProfile {
@@ -2161,15 +2201,22 @@ mod tests {
     }
 
     #[test]
-    fn staff_market_start_attaches_sale_listing_to_eligible_lots() {
+    fn staff_market_start_does_not_modify_sale_listing() {
+        // Presence-only: SaleListing is managed by stage/unstage, not
+        // staff_market.  The listing set during harness setup must survive
+        // start unchanged.
         let mut h = StaffMarketHarness::new();
-        assert!(h.world.get_component_sale_listing(h.lot).is_none());
+        let listing_before = h.world.get_component_sale_listing(h.lot).cloned();
+        assert!(listing_before.is_some(), "harness should pre-stage lot");
 
         let (_id, _active) = h.start_with_active();
 
-        assert!(h.world.get_component_sale_listing(h.lot).is_some());
-        let listing = h.world.get_component_sale_listing(h.lot).unwrap();
-        assert_eq!(listing.listed_at, Tick(3));
+        let listing_after = h.world.get_component_sale_listing(h.lot);
+        assert_eq!(
+            listing_after,
+            listing_before.as_ref(),
+            "staff_market start must not modify SaleListing"
+        );
     }
 
     #[test]
@@ -2191,12 +2238,13 @@ mod tests {
     }
 
     #[test]
-    fn staff_market_commit_removes_listings_from_possessed_lots() {
+    fn staff_market_commit_preserves_displayed_listings() {
+        // Presence-only: SaleListing is managed by stage/unstage. After
+        // staff_market commit, the displayed lot's SaleListing must remain.
         let mut h = StaffMarketHarness::new();
         let (instance_id, mut active) = h.start_with_active();
         assert!(h.world.get_component_sale_listing(h.lot).is_some());
 
-        // Tick until completion (duration = 10 ticks from market_presence_ticks).
         for tick in 4..14 {
             let outcome = tick_action(
                 instance_id,
@@ -2219,8 +2267,11 @@ mod tests {
             }
         }
 
-        // After commit, listing should be removed.
-        assert!(h.world.get_component_sale_listing(h.lot).is_none());
+        // After commit, listing must still be present (managed by unstage, not staff_market).
+        assert!(
+            h.world.get_component_sale_listing(h.lot).is_some(),
+            "staff_market commit must not remove displayed SaleListing"
+        );
     }
 
     #[test]
@@ -2309,7 +2360,7 @@ mod tests {
     }
 
     #[test]
-    fn staff_market_abort_removes_listings() {
+    fn staff_market_abort_preserves_displayed_listings() {
         let mut h = StaffMarketHarness::new();
         let (instance_id, mut active) = h.start_with_active();
         assert!(h.world.get_component_sale_listing(h.lot).is_some());
@@ -2360,7 +2411,11 @@ mod tests {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
 
-        assert!(h.world.get_component_sale_listing(h.lot).is_none());
+        // Presence-only: abort must not remove displayed SaleListing.
+        assert!(
+            h.world.get_component_sale_listing(h.lot).is_some(),
+            "staff_market abort must not remove displayed SaleListing"
+        );
     }
 
     #[test]
