@@ -10,14 +10,17 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, CommodityKind, ControlSource,
+    hash_event_log, hash_world, total_live_lot_quantity, AgentData, CommodityKind, ControlSource,
     DemandMemory, DemandObservation, DemandObservationReason, EventTag, GoalKind,
     HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
     PerceptionProfile, Quantity, SaleListing, Seed, StockAssignmentKind, Tick,
     TradeDispositionProfile, UtilityProfile,
 };
 use worldwake_ai::DecisionOutcome;
-use worldwake_sim::{ActionTraceKind, PerAgentBeliefView, RecipeRegistry, RuntimeBeliefView};
+use worldwake_sim::{
+    ActionRequestMode, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
+    RequestProvenance, RuntimeBeliefView,
+};
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -38,6 +41,46 @@ fn merchant_utility() -> UtilityProfile {
         enterprise_weight: pm(800),
         ..UtilityProfile::default()
     }
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn request_simple_action(
+    h: &mut GoldenHarness,
+    actor: worldwake_core::EntityId,
+    def_name: &str,
+    targets: Vec<worldwake_core::EntityId>,
+) {
+    let def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == def_name)
+        .map_or_else(
+            || panic!("full registries should include {def_name}"),
+            |def| def.id,
+        );
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id,
+            targets,
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
 }
 
 /// Seed a merchant at `place` with `MerchandiseProfile`, trade disposition,
@@ -722,6 +765,104 @@ fn deterministic_replay_preserves_listing_behavior() {
     let (w4, e4) = run_displayed_lot_retains_listing(Seed([65; 32]));
     assert_eq!(w3, w4, "staff_market world hash mismatch on replay");
     assert_eq!(e3, e4, "staff_market event log hash mismatch on replay");
+}
+
+fn run_unstage_round_trip_preserves_storage_contract(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
+    h.enable_action_tracing();
+
+    let (merchant, stock_lot) = seed_merchant(
+        &mut h,
+        "Merchant",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    let facility = h
+        .world
+        .get_component_stock_assignment(stock_lot)
+        .map(|assignment| assignment.facility)
+        .expect("displayed stock should carry a facility assignment");
+    let storage_policy = h
+        .world
+        .get_component_stock_storage_policy(facility)
+        .cloned()
+        .expect("merchant facility should expose stock storage policy");
+    let original_owner = h.world.owner_of(stock_lot);
+
+    set_control_source(&mut h, merchant, ControlSource::Human, 0);
+    request_simple_action(&mut h, merchant, "unstage_stock", vec![stock_lot]);
+
+    let mut committed = false;
+    for _ in 0..4 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        committed |= h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for_at(merchant, tick_before)
+            .iter()
+            .any(|event| {
+                event.action_name == "unstage_stock"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if committed {
+            break;
+        }
+    }
+
+    assert!(committed, "merchant should commit unstage_stock");
+    assert_eq!(
+        h.world.direct_container(stock_lot),
+        Some(storage_policy.stock_container),
+        "unstaged lot should return to the facility stock container"
+    );
+    assert_eq!(
+        h.world.owner_of(stock_lot),
+        original_owner,
+        "unstaging should preserve lot ownership"
+    );
+    assert!(
+        h.world.get_component_sale_listing(stock_lot).is_none(),
+        "unstaging should clear SaleListing"
+    );
+    let assignment = h
+        .world
+        .get_component_stock_assignment(stock_lot)
+        .expect("unstaged lot should retain a StockAssignment");
+    assert_eq!(
+        assignment.kind,
+        StockAssignmentKind::Stored,
+        "unstaged lot should return to Stored assignment"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 79b: Unstage Round Trip Preserves Storage Contract
+// Systems: Trade, AI
+// ActionDomains: Trade
+// Principles: P4, P24
+// Proves: displayed facility stock can be unstaged back into storage, clearing
+//         SaleListing while preserving ownership and facility assignment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unstage_round_trip_preserves_storage_contract() {
+    let _ = run_unstage_round_trip_preserves_storage_contract(Seed([66; 32]));
+}
+
+#[test]
+fn unstage_round_trip_preserves_storage_contract_replays_deterministically() {
+    let first = run_unstage_round_trip_preserves_storage_contract(Seed([67; 32]));
+    let second = run_unstage_round_trip_preserves_storage_contract(Seed([67; 32]));
+    assert_eq!(first, second, "unstage round-trip scenario should replay deterministically");
 }
 
 // ---------------------------------------------------------------------------

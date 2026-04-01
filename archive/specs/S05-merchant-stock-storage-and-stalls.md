@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Merchant Stock Storage and Stall Custody
 
@@ -366,3 +366,35 @@ Derived transient read-model:
 - [E15-rumor-witness-discovery.md](archive/specs/E15-rumor-witness-discovery.md) (implemented)
 - [E16-offices-succession-factions.md](archive/specs/E16-offices-succession-factions.md) (implemented)
 - [E17-crime-theft-justice.md](archive/specs/E17-crime-theft-justice.md) (implemented)
+
+## Outcome
+
+- Completed: 2026-04-01
+- What changed:
+  - introduced explicit facility stock custody through `StockStoragePolicy` and `StockAssignment`, with merchant facilities now separating carried stock, stored stock, and displayed sale stock
+  - added explicit stock lifecycle actions and planning support for `store_stock`, `stage_stock_for_sale`, `unstage_stock`, and `collect_display_stock`
+  - upgraded merchant restock and sell behavior so `MoveCargo` and `SellCommodity` operate on exact facility custody and displayed stock instead of the older direct-possession model
+  - aligned theft and audit semantics around the same concrete facility-stock model, including lawful controller checks, theft of eligible facility stock, and the expectation-based `EntityMissing -> InvestigateViolation -> SuspectedTheft` path
+  - completed the remaining golden lifecycle coverage for unstage round-trip, carrier delivery without seller-identity transfer, and refreshed the generated golden inventory/docs
+- Deviations from original plan:
+  - the work shipped as a sequence of tightly scoped tickets rather than one monolithic change set, with reassessment narrowing some slices to proof-only or golden-only work where the underlying architecture was already complete
+  - the original audit-hook wording was refined during implementation: no separate merchant-only audit subsystem was added because the generic expectation-mismatch and investigation pipeline already satisfied the intended architecture
+- Verification results:
+  - `cargo test -p worldwake-ai move_cargo -- --nocapture`
+  - `cargo test -p worldwake-ai cargo_search -- --nocapture`
+  - `cargo test -p worldwake-ai authoritative_partial_cargo_pickup_can_reach_goal_satisfaction -- --nocapture`
+  - `cargo test -p worldwake-systems stock_actions -- --nocapture`
+  - `cargo test -p worldwake-ai -- facility`
+  - `cargo test -p worldwake-ai goal_stability_across_cargo_materialization_continuity -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling`
+  - `cargo test -p worldwake-ai --test golden_trade`
+  - `cargo test -p worldwake-systems -- stock`
+  - `cargo test -p worldwake-systems -- steal`
+  - `cargo test -p worldwake-systems -- theft`
+  - `cargo test -p worldwake-systems -- perception`
+  - `cargo test -p worldwake-systems -- investigate`
+  - `cargo test -p worldwake-ai -- theft`
+  - `cargo test -p worldwake-ai -- investigate`
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `python3 scripts/golden_inventory.py --write --check-docs`

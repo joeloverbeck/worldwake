@@ -30,6 +30,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - referenced types, functions, modules, commands, and tests exist
    - described architecture still matches the live code
    - stated coverage gaps are real and classified correctly
+   - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
 4. Reassess against Worldwake's repo rules:
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
@@ -68,6 +69,8 @@ Separate:
 
 If the ticket's requested invariant exposes a production contradiction, correct the scope first instead of pretending it is a tests-only change.
 
+For golden tickets, remove duplicate proof from scope unless the new scenario proves a materially different contract from the existing coverage.
+
 ### 5. Implement with Worldwake discipline
 
 1. Keep edits minimal and targeted.
@@ -98,6 +101,8 @@ Typical order:
 3. broader workspace validation if the change crosses boundaries or the ticket requires it
 
 When the change touches more than one focused proof surface inside the same crate, run each focused selector needed to cover those boundaries rather than assuming one name filter is sufficient.
+
+If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 

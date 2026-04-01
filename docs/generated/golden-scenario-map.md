@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 105
+- Scenario blocks with explicit metadata: 107
 - Files contributing scenario metadata: 16
-- Tests associated with scenario blocks: 239
+- Tests associated with scenario blocks: 243
 
 ## Scenario Inventory
 
@@ -60,19 +60,20 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2488` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
 | `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3416` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
 | `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4450` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
-| `75` | staff_market Lists on Start, Unlists on Complete | `golden_merchant_selling.rs:143` | `staff_market_lists_on_start_unlists_on_complete` | `staff_market_lists_on_start_unlists_on_complete_replays_deterministically` |
-| `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:249` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
-| `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:366` | `unlisted_stock_not_sellable` | — |
-| `78` | Blocked Intent Dampens Relisting After Unproductive Cycle | `golden_merchant_selling.rs:441` | `blocked_intent_dampens_relisting_after_unproductive_cycle` | — |
-| `79` | Deterministic Replay Preserves Listing Behavior | `golden_merchant_selling.rs:532` | `deterministic_replay_preserves_listing_behavior` | — |
-| `80` | Buyer Discovers Listed Lots, Not Unlisted Stock | `golden_merchant_selling.rs:552` | `buyer_discovers_listed_lots_not_unlisted_stock` | — |
-| `81` | Merchant Emits SellCommodity at Home Market | `golden_merchant_selling.rs:622` | `merchant_emits_sell_commodity_at_home_market` | — |
-| `82` | Seller Departure Invalidates Listing | `golden_merchant_selling.rs:675` | `seller_departure_invalidates_listing` | — |
-| `83` | Dead Seller Invalidates Listing | `golden_merchant_selling.rs:732` | `dead_seller_invalidates_listing` | — |
-| `84` | Remote Merchant Travels to Home Market to Sell | `golden_merchant_selling.rs:789` | `move_cargo_then_sell_commodity_plan_shape` | — |
-| `85` | Demand Memory Raises Sell Ranking | `golden_merchant_selling.rs:886` | `demand_memory_raises_sell_ranking` | — |
-| `86` | Planning State Preserves Listing Determinism | `golden_merchant_selling.rs:986` | `planning_state_preserves_listing_determinism` | — |
-| `87` | Hungry Merchant Eats Own Listed Sale Stock | `golden_merchant_selling.rs:1003` | `hungry_merchant_eats_listed_stock` | `hungry_merchant_eats_listed_stock_replays_deterministically` |
+| `75` | Displayed Lot Retains SaleListing Through Presence Cycle | `golden_merchant_selling.rs:357` | `staff_market_retains_displayed_listing_through_presence_cycle` | `staff_market_retains_displayed_listing_replays_deterministically` |
+| `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:432` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
+| `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:544` | `unlisted_stock_not_sellable` | — |
+| `78` | Loose Home Stock Is Staged Before Sell Goal Settles | `golden_merchant_selling.rs:619` | `loose_home_stock_is_staged_before_sell_goal_settles` | — |
+| `79` | Deterministic Replay Preserves Listing Behavior | `golden_merchant_selling.rs:751` | `deterministic_replay_preserves_listing_behavior` | — |
+| `79b` | Unstage Round Trip Preserves Storage Contract | `golden_merchant_selling.rs:848` | `unstage_round_trip_preserves_storage_contract` | `unstage_round_trip_preserves_storage_contract_replays_deterministically` |
+| `80` | Buyer Discovers Listed Lots, Not Unlisted Stock | `golden_merchant_selling.rs:869` | `buyer_discovers_listed_lots_not_unlisted_stock` | — |
+| `81` | Merchant Emits SellCommodity at Home Market | `golden_merchant_selling.rs:934` | `merchant_emits_sell_commodity_at_home_facility` | — |
+| `82` | Seller Departure Invalidates Listing | `golden_merchant_selling.rs:1036` | `seller_departure_invalidates_listing` | — |
+| `83` | Dead Seller Invalidates Listing | `golden_merchant_selling.rs:1093` | `dead_seller_invalidates_listing` | — |
+| `84` | Remote Merchant Travels to Home Market to Sell | `golden_merchant_selling.rs:1165` | `move_cargo_then_sell_commodity_plan_shape` | — |
+| `85` | Demand Memory Raises Sell Ranking | `golden_merchant_selling.rs:1274` | `demand_memory_raises_sell_ranking` | — |
+| `86` | Planning State Preserves Listing Determinism | `golden_merchant_selling.rs:1346` | `planning_state_preserves_listing_determinism` | — |
+| `87` | Hungry Merchant Eats Own Listed Sale Stock | `golden_merchant_selling.rs:1363` | `hungry_merchant_eats_listed_stock` | `hungry_merchant_eats_listed_stock_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -108,9 +109,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:2024` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
 | `48` | Raid-Belief Economic Cascade | `golden_t22_bandit_camp_destruction.rs:2063` | `golden_raid_belief_economic_cascade` | `golden_raid_belief_economic_cascade_replays_deterministically` |
 | `49` | Wound-Dampened Raid Spiral | `golden_t22_bandit_camp_destruction.rs:2102` | `golden_wound_dampened_raid_spiral` | `golden_wound_dampened_raid_spiral_replays_deterministically` |
-| `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:914` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
-| `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:949` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
-| `74` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:984` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
+| `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:1208` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
+| `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:1243` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
+| `2f` | Carrier Delivers To Facility Without Becoming Seller | `golden_trade.rs:1278` | `golden_carrier_delivery_to_facility_preserves_seller_identity` | `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically` |
+| `74` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:1309` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
 | `58` | Travel Need Escalation | `golden_travel_physiology.rs:53` | `golden_travel_escalation` | — |
 | `59` | Critical Bladder Local Relief | `golden_travel_physiology.rs:199` | `golden_critical_bladder_local_relief` | — |
 | `60` | Agent Diversity in Travel Escalation | `golden_travel_physiology.rs:337` | `golden_agent_diversity` | — |
@@ -832,22 +834,22 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: guard attack -> camp destruction -> bandit flee -> regroup at rally -> establish new camp -> traveler arrives -> raid at rally -> witness observes -> witness tells merchant -> merchant reroutes via safe route -> downstream supply delay.
 
-### Scenario 75: staff_market Lists on Start, Unlists on Complete
+### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
-- Source: `golden_merchant_selling.rs:143`
+- Source: `golden_merchant_selling.rs:357`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
-- Principles: P1, P3, P8
-- Primary tests: `staff_market_lists_on_start_unlists_on_complete`
-- Replay tests: `staff_market_lists_on_start_unlists_on_complete_replays_deterministically`
-- All tests: `staff_market_lists_on_start_unlists_on_complete`, `staff_market_lists_on_start_unlists_on_complete_replays_deterministically`
+- Principles: P1, P3, P4
+- Primary tests: `staff_market_retains_displayed_listing_through_presence_cycle`
+- Replay tests: `staff_market_retains_displayed_listing_replays_deterministically`
+- All tests: `staff_market_retains_displayed_listing_through_presence_cycle`, `staff_market_retains_displayed_listing_replays_deterministically`
 
-**Proves**: staff_market attaches SaleListing on start and removes it on commit
+**Proves**: SaleListing on displayed lot persists across idle ticks when no trade or unstage occurs
 
 ### Scenario 76: Buyer Trades Against Listed Lot
 
-- Source: `golden_merchant_selling.rs:249`
+- Source: `golden_merchant_selling.rs:432`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Trade
@@ -860,7 +862,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `golden_merchant_selling.rs:366`
+- Source: `golden_merchant_selling.rs:544`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -871,22 +873,22 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Proves**: buyer cannot discover or trade unlisted merchant stock
 
-### Scenario 78: Blocked Intent Dampens Relisting After Unproductive Cycle
+### Scenario 78: Loose Home Stock Is Staged Before Sell Goal Settles
 
-- Source: `golden_merchant_selling.rs:441`
+- Source: `golden_merchant_selling.rs:619`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
-- Principles: P1, P8
-- Primary tests: `blocked_intent_dampens_relisting_after_unproductive_cycle`
+- Principles: P1, P4, P8
+- Primary tests: `loose_home_stock_is_staged_before_sell_goal_settles`
 - Replay tests: None
-- All tests: `blocked_intent_dampens_relisting_after_unproductive_cycle`
+- All tests: `loose_home_stock_is_staged_before_sell_goal_settles`
 
-**Proves**: NoBuyer blocked intent suppresses immediate SellCommodity re-emission
+**Proves**: loose home stock is stored and staged into a listed facility lot before SellCommodity settles; merchant does not enter an immediate futile staff_market cycle when no buyer is present
 
 ### Scenario 79: Deterministic Replay Preserves Listing Behavior
 
-- Source: `golden_merchant_selling.rs:532`
+- Source: `golden_merchant_selling.rs:751`
 - Systems: Trade, AI
 - Principles: P2
 - Primary tests: `deterministic_replay_preserves_listing_behavior`
@@ -895,9 +897,21 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Proves**: identical seeds produce identical world and event log hashes
 
+### Scenario 79b: Unstage Round Trip Preserves Storage Contract
+
+- Source: `golden_merchant_selling.rs:848`
+- Systems: Trade, AI
+- ActionDomains: Trade
+- Principles: P4, P24
+- Primary tests: `unstage_round_trip_preserves_storage_contract`
+- Replay tests: `unstage_round_trip_preserves_storage_contract_replays_deterministically`
+- All tests: `unstage_round_trip_preserves_storage_contract`, `unstage_round_trip_preserves_storage_contract_replays_deterministically`
+
+**Proves**: displayed facility stock can be unstaged back into storage, clearing SaleListing while preserving ownership and facility assignment
+
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `golden_merchant_selling.rs:552`
+- Source: `golden_merchant_selling.rs:869`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -910,20 +924,20 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 81: Merchant Emits SellCommodity at Home Market
 
-- Source: `golden_merchant_selling.rs:622`
+- Source: `golden_merchant_selling.rs:934`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
 - Principles: P1, P6
-- Primary tests: `merchant_emits_sell_commodity_at_home_market`
+- Primary tests: `merchant_emits_sell_commodity_at_home_facility`
 - Replay tests: None
-- All tests: `merchant_emits_sell_commodity_at_home_market`
+- All tests: `merchant_emits_sell_commodity_at_home_facility`
 
 **Proves**: SellCommodity candidate emitted via decision trace
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:675`
+- Source: `golden_merchant_selling.rs:1036`
 - Systems: Trade
 - Principles: P3, P7
 - Primary tests: `seller_departure_invalidates_listing`
@@ -934,7 +948,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:732`
+- Source: `golden_merchant_selling.rs:1093`
 - Systems: Trade
 - Principles: P3, P4
 - Primary tests: `dead_seller_invalidates_listing`
@@ -945,7 +959,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 84: Remote Merchant Travels to Home Market to Sell
 
-- Source: `golden_merchant_selling.rs:789`
+- Source: `golden_merchant_selling.rs:1165`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade, Travel
@@ -954,11 +968,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Replay tests: None
 - All tests: `move_cargo_then_sell_commodity_plan_shape`
 
-**Proves**: merchant at remote place plans Travel + StaffMarket to reach home_market
+**Proves**: merchant at remote place plans Travel + StaffMarket to reach home_facility
 
 ### Scenario 85: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:886`
+- Source: `golden_merchant_selling.rs:1274`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -970,7 +984,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 86: Planning State Preserves Listing Determinism
 
-- Source: `golden_merchant_selling.rs:986`
+- Source: `golden_merchant_selling.rs:1346`
 - Systems: Trade, AI
 - Principles: P2
 - Primary tests: `planning_state_preserves_listing_determinism`
@@ -981,7 +995,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 87: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:1003`
+- Source: `golden_merchant_selling.rs:1363`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)
@@ -1611,7 +1625,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2b: Buyer-Driven Trade Acquisition
 
-- Source: `golden_trade.rs:914`
+- Source: `golden_trade.rs:1208`
 - Systems: Needs, AI, Trade, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Needs
@@ -1628,7 +1642,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 
-- Source: `golden_trade.rs:949`
+- Source: `golden_trade.rs:1243`
 - Systems: Enterprise, Travel, Production, Transport, Conservation
 - GoalKinds: RestockCommodity, MoveCargo
 - ActionDomains: Production, Travel, Transport
@@ -1643,9 +1657,23 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: Demand memory -> enterprise restock signal -> multi-leg travel -> harvest/materialization -> cargo return to home market.
 
+### Scenario 2f: Carrier Delivers To Facility Without Becoming Seller
+
+- Source: `golden_trade.rs:1278`
+- Systems: Travel, Transport, Trade, Conservation
+- ActionDomains: Travel, Transport, Trade
+- Places: VillageSquare, GeneralStore
+- Primary tests: `golden_carrier_delivery_to_facility_preserves_seller_identity`
+- Replay tests: `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically`
+- All tests: `golden_carrier_delivery_to_facility_preserves_seller_identity`, `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically`
+
+**Setup**: faction-owned merchant facility at GeneralStore; merchant and carrier are both guild members. Carrier possesses faction-owned apples at VillageSquare, travels to GeneralStore, stores them in the facility, leaves, and the merchant stages the delivered stock.
+
+**Proves**: non-selling carrier delivery can place stock into facility custody without transferring seller identity to the carrier.
+
 ### Scenario 74: Local Trade Start Failure Recovers via Production Fallback
 
-- Source: `golden_trade.rs:984`
+- Source: `golden_trade.rs:1309`
 - Systems: AI, Trade, Production, Travel, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Production, Travel, Needs

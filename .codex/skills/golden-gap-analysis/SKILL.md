@@ -84,6 +84,7 @@ For each candidate scenario, verify it is not already covered by:
 1. existing scenarios in [docs/generated/golden-scenario-map.md](../../../docs/generated/golden-scenario-map.md)
 2. rejected scenarios in [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md)
 3. removed backlog items in [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md)
+4. relevant live `golden_*` suites when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract
 
 If a candidate overlaps an existing or rejected scenario in the same meaningful code path, reject it and explain why.
 

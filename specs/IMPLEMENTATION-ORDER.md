@@ -131,6 +131,9 @@ Extended exact combat goals (`EngageHostile`, `LootCorpse`) with belief-backed p
 ### S04: Merchant Selling Market Presence — COMPLETED
 Established proactive seller-side merchant behavior: `SaleListing` component on item lots, `staff_market` action for bounded market-presence cycles, concrete buyer discovery via `listed_sale_lots_at`/`seller_for_sale_lot` belief queries, `sale_lot` field in `TradeActionPayload` with commit-time commodity derivation, listing cleanup on seller departure/death/trade, `BlockingFact::NoBuyer` dampening for unproductive sell cycles, `StaffMarket` planner op with payload override and revalidation, nonzero baseline enterprise motive for merchants without demand memory, and 12 golden E2E tests (5 core + 7 remaining) covering listing lifecycle, buyer discovery, trade against listed lots, dampening, and deterministic replay. Archived spec: `archive/specs/S04-merchant-selling-market-presence.md`.
 
+### S05: Merchant Stock Storage & Stalls — COMPLETED
+Established explicit merchant facility custody for carried, stored, and displayed stock: `StockStoragePolicy` and `StockAssignment`, explicit stock-handling actions (`store_stock`, `stage_stock_for_sale`, `unstage_stock`, `collect_display_stock`), exact-facility `MoveCargo` and `SellCommodity` behavior, aligned theft/audit handling for facility stock, and final golden lifecycle coverage for unstage and carrier-delivery seller identity. Archived spec: `archive/specs/S05-merchant-stock-storage-and-stalls.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -168,8 +171,8 @@ S27 ✅ ──→ E17 ✅ (crime discovery now builds on the delivered expectati
 E17 ✅ ──→ E19 (guard crime response depends on the shipped theft/justice substrate)
 S02 ✅, E16 ──→ E18 ✅, E20 ✅
 S02 ✅, E16, E16b ✅, E16c ──→ E19
-E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
-S04 ✅ ──→ S05 (stock storage needs selling + ownership)
+E16c ✅ ──→ S05 ✅ (institutional stock ledgers now reuse the delivered record architecture)
+S04 ✅ ──→ S05 ✅ (stock storage shipped on top of selling + ownership)
 S04 ✅ ──→ S06 (opportunity valuation needs market presence)
 S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
@@ -415,7 +418,8 @@ S36 ✅ ──→ S40 ✅
 **Step 16** (parallel after E22):
 - **S04**: Merchant Selling Market Presence — ✅ COMPLETED
   - archived spec: `archive/specs/S04-merchant-selling-market-presence.md`
-- **S05**: Merchant Stock Storage & Stalls (needs S04 ✅, S01 ✅, E16c ✅)
+- **S05**: Merchant Stock Storage & Stalls — ✅ COMPLETED
+  - archived spec: `archive/specs/S05-merchant-stock-storage-and-stalls.md`
 - **S06**: Commodity Opportunity Valuation (needs S04, benefits from S10)
 - **S10**: Bilateral Trade Negotiation (all deps met — E11, E14 completed; can be scheduled earlier)
 - **S38**: Learned Route and Source Preferences (needs S35, S33)
@@ -429,7 +433,7 @@ S36 ✅ ──→ S40 ✅
 
 #### Final Acceptance
 - All Phase 4 gate criteria plus:
-- [ ] Merchants autonomously sell at markets with stock storage
+- [x] Merchants autonomously sell at markets with stock storage
 - [ ] Commodity opportunity valuation drives trade route decisions
 - [ ] Economy sustains 100+ tick soak without conservation violations
 
@@ -505,8 +509,8 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`E20-companion-behaviors.md`~~ | 4 | 14 | ✅ COMPLETED |
 | ~~`S40-remote-hostile-pursuit.md`~~ | 4 | 14.5 | ✅ COMPLETED |
 | ~~`E22-integration-soak-tests.md`~~ | 4 | 15 | ✅ COMPLETED |
-| `S04-merchant-selling-market-presence.md` | 4+ | 16 | E14 |
-| `S05-merchant-stock-storage-and-stalls.md` | 4+ | 16 | S04, S01, E16c |
+| ~~`S04-merchant-selling-market-presence.md`~~ | 4+ | 16 | ✅ COMPLETED |
+| ~~`S05-merchant-stock-storage-and-stalls.md`~~ | 4+ | 16 | ✅ COMPLETED |
 | `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
 | `S10-bilateral-trade-negotiation.md` | 4+ | 16 | E11, E14 (all met) |
 | ~~`S33-opportunity-scoped-goal-identity.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |

@@ -9,14 +9,15 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind,
     ControlSource, DemandMemory, DemandObservation, DemandObservationReason, DeprivationKind,
-    EventTag, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, SaleListing, Seed, Tick,
-    TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    EventTag, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, SaleListing,
+    Seed, StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
     ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry, RequestBindingKind,
-    RequestProvenance, RequestResolutionOutcome, TradeActionPayload,
+    RequestProvenance, RequestResolutionOutcome, RuntimeBeliefView, TradeActionPayload,
 };
 
 fn default_trade_disposition_profile() -> TradeDispositionProfile {
@@ -118,6 +119,38 @@ fn remembered_demand(
             reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
         }],
     }
+}
+
+fn request_simple_action(
+    h: &mut GoldenHarness,
+    actor: worldwake_core::EntityId,
+    def_name: &str,
+    targets: Vec<worldwake_core::EntityId>,
+) {
+    let def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == def_name)
+        .map_or_else(
+            || panic!("full registries should include {def_name}"),
+            |def| def.id,
+        );
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id,
+            targets,
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+}
+
+fn request_travel(h: &mut GoldenHarness, traveler: worldwake_core::EntityId, destination: worldwake_core::EntityId) {
+    request_simple_action(h, traveler, "travel", vec![destination]);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -312,6 +345,194 @@ fn run_buyer_driven_trade_scenario(
     }
     assert!(!h.agent_is_dead(buyer), "buyer must stay alive");
     assert!(!h.agent_is_dead(seller), "seller must stay alive");
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+fn run_carrier_delivery_to_facility_preserves_seller_identity(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
+    h.enable_action_tracing();
+
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let faction = seed_faction(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant Guild",
+        FactionPurpose::Trade,
+    );
+
+    let merchant = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let carrier = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Carrier",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let observer = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Observer",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+
+    add_faction_membership(&mut h.world, &mut h.event_log, merchant, faction);
+    add_faction_membership(&mut h.world, &mut h.event_log, carrier, faction);
+
+    let cargo_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        carrier,
+        VILLAGE_SQUARE,
+        CommodityKind::Apple,
+        Quantity(2),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    let (facility, stock_container, _display_container) = txn
+        .create_merchant_facility(general_store, merchant, LoadUnits(500), Some(LoadUnits(300)))
+        .unwrap();
+    txn.set_owner(facility, faction).unwrap();
+    txn.set_component_merchandise_profile(
+        merchant,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+            home_facility: Some(facility),
+        },
+    )
+    .unwrap();
+    txn.set_owner(cargo_lot, faction).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    set_control_source(&mut h, carrier, ControlSource::Human, 0);
+    set_control_source(&mut h, merchant, ControlSource::Human, 0);
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        carrier,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    request_travel(&mut h, carrier, general_store);
+    for _ in 0..40 {
+        if h.world.effective_place(carrier) == Some(general_store) && !h.agent_has_active_action(carrier) {
+            break;
+        }
+        h.step_once();
+    }
+    assert_eq!(
+        h.world.effective_place(carrier),
+        Some(general_store),
+        "carrier should arrive at the merchant facility place before delivery"
+    );
+
+    request_simple_action(&mut h, carrier, "store_stock", vec![cargo_lot]);
+    let mut store_committed = false;
+    for _ in 0..4 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        store_committed |= h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for_at(carrier, tick_before)
+            .iter()
+            .any(|event| {
+                event.action_name == "store_stock"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if store_committed {
+            break;
+        }
+    }
+    assert!(store_committed, "carrier should commit store_stock at the destination facility");
+    assert_eq!(
+        h.world.direct_container(cargo_lot),
+        Some(stock_container),
+        "delivered cargo should end in the facility stock container"
+    );
+    let stored_assignment = h
+        .world
+        .get_component_stock_assignment(cargo_lot)
+        .expect("stored cargo should gain a StockAssignment");
+    assert_eq!(stored_assignment.kind, StockAssignmentKind::Stored);
+    assert!(
+        h.world.get_component_sale_listing(cargo_lot).is_none(),
+        "stored cargo should not become sale-visible at delivery time"
+    );
+
+    request_travel(&mut h, carrier, VILLAGE_SQUARE);
+    for _ in 0..40 {
+        if h.world.effective_place(carrier) == Some(VILLAGE_SQUARE) && !h.agent_has_active_action(carrier) {
+            break;
+        }
+        h.step_once();
+    }
+    assert_eq!(
+        h.world.effective_place(carrier),
+        Some(VILLAGE_SQUARE),
+        "carrier should leave before seller identity is evaluated"
+    );
+
+    request_simple_action(&mut h, merchant, "stage_stock_for_sale", vec![cargo_lot]);
+    let mut stage_committed = false;
+    for _ in 0..4 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        stage_committed |= h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for_at(merchant, tick_before)
+            .iter()
+            .any(|event| {
+                event.action_name == "stage_stock_for_sale"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if stage_committed {
+            break;
+        }
+    }
+    assert!(stage_committed, "merchant should be able to stage the delivered stock for sale");
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        h.scheduler.current_tick(),
+        worldwake_core::PerceptionSource::Inference,
+    );
+    let observer_view = PerAgentBeliefView::from_world(observer, &h.world);
+    assert_eq!(
+        RuntimeBeliefView::seller_for_sale_lot(&observer_view, cargo_lot),
+        Some(merchant),
+        "once delivered stock is staged, the merchant should be the seller rather than the carrier"
+    );
+    assert_ne!(
+        RuntimeBeliefView::seller_for_sale_lot(&observer_view, cargo_lot),
+        Some(carrier),
+        "carrier delivery should not make the carrier the seller"
+    );
 
     (
         hash_world(&h.world).unwrap(),
@@ -1050,6 +1271,37 @@ fn golden_merchant_restock_return_stock_replays_deterministically() {
     assert_eq!(
         first, second,
         "merchant restock-return stock scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 2f: Carrier Delivers To Facility Without Becoming Seller
+// ---------------------------------------------------------------------------
+//
+// Systems: Travel, Transport, Trade, Conservation
+// ActionDomains: Travel, Transport, Trade
+// Places: VillageSquare, GeneralStore
+//
+// Setup: faction-owned merchant facility at GeneralStore; merchant and carrier
+//   are both guild members. Carrier possesses faction-owned apples at
+//   VillageSquare, travels to GeneralStore, stores them in the facility, leaves,
+//   and the merchant stages the delivered stock.
+//
+// Proves: non-selling carrier delivery can place stock into facility custody
+//   without transferring seller identity to the carrier.
+
+#[test]
+fn golden_carrier_delivery_to_facility_preserves_seller_identity() {
+    let _ = run_carrier_delivery_to_facility_preserves_seller_identity(Seed([18; 32]));
+}
+
+#[test]
+fn golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically() {
+    let first = run_carrier_delivery_to_facility_preserves_seller_identity(Seed([19; 32]));
+    let second = run_carrier_delivery_to_facility_preserves_seller_identity(Seed([19; 32]));
+    assert_eq!(
+        first, second,
+        "carrier delivery scenario should replay deterministically"
     );
 }
 
