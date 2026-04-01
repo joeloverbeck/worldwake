@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
-    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SaleListing, Tick, VisibilitySpec,
+    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, Tick, VisibilitySpec,
     WorldTxn, WoundList,
 };
 use worldwake_sim::{
@@ -792,25 +792,6 @@ fn displayed_sale_lots_at(
                 .get_component_stock_assignment(entity)
                 .is_some_and(|a| a.kind == worldwake_core::StockAssignmentKind::Displayed)
     })
-}
-
-fn eligible_sale_lots(
-    txn: &WorldTxn<'_>,
-    actor: EntityId,
-    place: EntityId,
-    commodity: CommodityKind,
-) -> Vec<EntityId> {
-    let mut lots: Vec<EntityId> = txn
-        .possessions_of(actor)
-        .into_iter()
-        .filter(|entity| {
-            txn.get_component_item_lot(*entity)
-                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
-                && txn.effective_place(*entity) == Some(place)
-        })
-        .collect();
-    lots.sort();
-    lots
 }
 
 #[allow(clippy::unnecessary_wraps)]

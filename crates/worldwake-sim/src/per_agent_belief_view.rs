@@ -1247,7 +1247,7 @@ mod tests {
         AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
         CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, MerchandiseProfile, OfficeData, PerceptionProfile, Permille,
+        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille,
         Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,

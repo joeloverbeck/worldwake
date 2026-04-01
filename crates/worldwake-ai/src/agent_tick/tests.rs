@@ -914,7 +914,7 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
         // Create facility for seller and stage the bread in display container.
         {
             use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
-            let (_facility, _stock, display) = txn
+            let (facility, _stock, display) = txn
                 .create_merchant_facility(origin, seller, LoadUnits(200), Some(LoadUnits(100)))
                 .unwrap();
             let display = display.unwrap();
@@ -922,7 +922,7 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
             txn.set_component_stock_assignment(
                 bread,
                 StockAssignment {
-                    facility: _facility,
+                    facility,
                     kind: StockAssignmentKind::Displayed,
                 },
             )
@@ -1020,7 +1020,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         // Create facility for seller and stage the bread in display container.
         {
             use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
-            let (_facility, _stock, display) = txn
+            let (facility, _stock, display) = txn
                 .create_merchant_facility(destination, seller, LoadUnits(200), Some(LoadUnits(100)))
                 .unwrap();
             let display = display.unwrap();
@@ -1028,7 +1028,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
             txn.set_component_stock_assignment(
                 bread,
                 StockAssignment {
-                    facility: _facility,
+                    facility,
                     kind: StockAssignmentKind::Displayed,
                 },
             )
