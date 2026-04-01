@@ -57,6 +57,7 @@ pub enum PlannerTransitionKind {
     PickUpGroundLot,
     StealGroundLot,
     PutDownGroundLot,
+    StoreStockIntoLocalFacility,
 }
 
 #[must_use]
@@ -159,7 +160,10 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             op_kind,
             true,
             false,
-            PlannerTransitionKind::GoalModelFallback,
+            match def.name.as_str() {
+                "store_stock" => PlannerTransitionKind::StoreStockIntoLocalFacility,
+                _ => PlannerTransitionKind::GoalModelFallback,
+            },
         ),
         PlannerOpKind::Patrol => base_semantics(
             op_kind,
@@ -285,6 +289,11 @@ pub fn apply_hypothetical_transition<'snapshot>(
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
             apply_put_down_transition(state, targets)
+        }
+        PlannerTransitionKind::StoreStockIntoLocalFacility => {
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
+            apply_store_stock_transition(state, targets)
         }
     }
 }
@@ -488,6 +497,34 @@ fn apply_steal_transition<'snapshot>(
     Some(HypotheticalTransition {
         targets: targets.to_vec(),
         state: state.move_lot_ref_to_holder(lot_ref, actor_ref, commodity, quantity),
+        expected_materializations: Vec::new(),
+    })
+}
+
+fn apply_store_stock_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let actor_place = state.effective_place_ref(actor_ref)?;
+    let stock_container = state
+        .controlled_stock_containers_at_place(actor_ref, actor_place)
+        .into_iter()
+        .next()?;
+    let lot_ref = targets.first().copied()?;
+    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
+        return None;
+    }
+    if state.effective_place_ref(lot_ref)? != actor_place {
+        return None;
+    }
+    if state.direct_possessor_ref(lot_ref) != Some(actor_ref) {
+        return None;
+    }
+
+    Some(HypotheticalTransition {
+        targets: vec![lot_ref],
+        state: state.set_container_ref(lot_ref, stock_container),
         expected_materializations: Vec::new(),
     })
 }

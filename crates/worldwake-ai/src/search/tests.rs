@@ -45,6 +45,7 @@ struct TestBeliefView {
     entities_at: BTreeMap<EntityId, Vec<EntityId>>,
     direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
     direct_possessors: BTreeMap<EntityId, EntityId>,
+    direct_containers: BTreeMap<EntityId, EntityId>,
     owners: BTreeMap<EntityId, EntityId>,
     controllable: BTreeSet<(EntityId, EntityId)>,
     adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
@@ -71,6 +72,7 @@ struct TestBeliefView {
     record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
     known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
     epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
+    stock_storage_policies: BTreeMap<EntityId, worldwake_core::StockStoragePolicy>,
 }
 
 impl Default for TestBeliefView {
@@ -83,6 +85,7 @@ impl Default for TestBeliefView {
             entities_at: BTreeMap::new(),
             direct_possessions: BTreeMap::new(),
             direct_possessors: BTreeMap::new(),
+            direct_containers: BTreeMap::new(),
             owners: BTreeMap::new(),
             controllable: BTreeSet::new(),
             adjacent: BTreeMap::new(),
@@ -108,6 +111,7 @@ impl Default for TestBeliefView {
             record_data: BTreeMap::new(),
             known_entity_beliefs: BTreeMap::new(),
             epistemic_profiles: BTreeMap::new(),
+            stock_storage_policies: BTreeMap::new(),
         }
     }
 }
@@ -200,8 +204,8 @@ impl RuntimeBeliefView for TestBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
         self.consumable_profiles.get(&entity).copied()
     }
-    fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-        None
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        self.direct_containers.get(&entity).copied()
     }
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
         self.direct_possessors.get(&entity).copied()
@@ -211,6 +215,9 @@ impl RuntimeBeliefView for TestBeliefView {
     }
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
+    }
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+        self.stock_storage_policies.get(&facility).cloned()
     }
     fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
         None
@@ -2019,6 +2026,116 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
     );
     assert!(!plan.steps[0].expected_materializations.is_empty());
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+}
+
+#[test]
+fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let destination = entity(11);
+    let facility = entity(12);
+    let stock_container = entity(13);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, origin, destination, facility, stock_container, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
+    view.kinds.insert(stock_container, EntityKind::Container);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(facility, destination);
+    view.effective_places.insert(stock_container, destination);
+    view.effective_places.insert(bread, origin);
+    view.entities_at.insert(origin, vec![actor, bread]);
+    view.entities_at
+        .insert(destination, vec![facility, stock_container]);
+    view.adjacent
+        .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(destination, vec![(origin, NonZeroU32::new(2).unwrap())]);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(2));
+    view.controllable.extend([
+        (actor, bread),
+        (actor, facility),
+        (actor, stock_container),
+    ]);
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(2));
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.merchandise_profiles.insert(
+        actor,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_market: Some(destination),
+        },
+    );
+    view.stock_storage_policies.insert(
+        facility,
+        worldwake_core::StockStoragePolicy {
+            stock_container,
+            display_container: None,
+        },
+    );
+    view.demand_memory.insert(
+        actor,
+        vec![DemandObservation {
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(2),
+            place: destination,
+            tick: Tick(1),
+            counterparty: None,
+            reason: worldwake_core::DemandObservationReason::WantedToBuyButNoSeller,
+        }],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        }),
+        evidence_entities: BTreeSet::from([bread]),
+        evidence_places: BTreeSet::from([origin, destination]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert_eq!(plan.steps.len(), 3);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+    assert_eq!(plan.steps[2].op_kind, PlannerOpKind::StockManagement);
+    assert_eq!(
+        registry.get(plan.steps[2].def_id).map(|def| def.name.as_str()),
+        Some("store_stock")
+    );
 }
 
 #[allow(clippy::too_many_lines)]

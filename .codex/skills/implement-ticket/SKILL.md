@@ -24,7 +24,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
 ### 2. Reassess assumptions before coding
 
 1. Verify the ticket against the current codebase, not against stale architectural memory.
-2. Check the `Deps` field. Confirm each listed dependency is actually present on the current branch.
+2. Check the `Deps` field. Confirm each listed dependency is actually present on the current branch, whether as active planning material or as an archived completed prerequisite.
 3. Validate the ticket's concrete claims:
    - referenced files exist
    - referenced types, functions, modules, commands, and tests exist
@@ -51,6 +51,8 @@ Apply the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) when the correct direc
 - 1 recommendation
 
 Do not silently skip deliverables. Do not "fix" the problem by weakening the ticket without user confirmation.
+
+When the user confirms a direction that changes the ticket's exact architecture boundary, affected files, or proof surface, update the relevant ticket sections before coding so the implementation and eventual archive remain faithful to the chosen plan.
 
 ### 4. Extract the implementation scope
 
@@ -93,6 +95,8 @@ Typical order:
 1. focused test covering the changed behavior
 2. crate-level tests for the affected crate
 3. broader workspace validation if the change crosses boundaries or the ticket requires it
+
+When the change touches more than one focused proof surface inside the same crate, run each focused selector needed to cover those boundaries rather than assuming one name filter is sufficient.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 

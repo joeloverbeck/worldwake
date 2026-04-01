@@ -103,7 +103,11 @@ const RESTOCK_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
-const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::MoveCargo];
+const MOVE_CARGO_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
+];
 const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
 const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];

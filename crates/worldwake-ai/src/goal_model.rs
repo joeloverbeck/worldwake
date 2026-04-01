@@ -2340,6 +2340,125 @@ mod tests {
         .is_satisfied(&state));
     }
 
+    #[test]
+    fn move_cargo_facility_destination_requires_facility_custody_not_carried_stock() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let facility = entity_id(3, 0);
+        let stock_container = entity_id(4, 0);
+        let bread = entity_id(5, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, facility, stock_container, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(stock_container, EntityKind::Container);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(facility, destination);
+        view.effective_places.insert(stock_container, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at
+            .insert(destination, vec![actor, facility, stock_container, bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.extend([(actor, facility), (actor, stock_container), (actor, bread)]);
+        view.stock_storage_policies.insert(
+            facility,
+            worldwake_core::StockStoragePolicy {
+                stock_container,
+                display_container: None,
+            },
+        );
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn move_cargo_facility_destination_accepts_stock_in_container() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let facility = entity_id(3, 0);
+        let stock_container = entity_id(4, 0);
+        let bread = entity_id(5, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, facility, stock_container, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(stock_container, EntityKind::Container);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(facility, destination);
+        view.effective_places.insert(stock_container, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at
+            .insert(destination, vec![actor, facility, stock_container, bread]);
+        view.direct_containers.insert(bread, stock_container);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.extend([(actor, facility), (actor, stock_container), (actor, bread)]);
+        view.stock_storage_policies.insert(
+            facility,
+            worldwake_core::StockStoragePolicy {
+                stock_container,
+                display_container: None,
+            },
+        );
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination,
+        }
+        .is_satisfied(&state));
+    }
+
     struct TestBeliefView {
         current_tick: Tick,
         alive: BTreeSet<EntityId>,
@@ -2348,6 +2467,7 @@ mod tests {
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
+        direct_containers: BTreeMap<EntityId, EntityId>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
@@ -2383,6 +2503,7 @@ mod tests {
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
+        stock_storage_policies: BTreeMap<EntityId, worldwake_core::StockStoragePolicy>,
     }
 
     impl Default for TestBeliefView {
@@ -2395,6 +2516,7 @@ mod tests {
                 entities_at: BTreeMap::new(),
                 direct_possessions: BTreeMap::new(),
                 direct_possessors: BTreeMap::new(),
+                direct_containers: BTreeMap::new(),
                 adjacent: BTreeMap::new(),
                 lot_commodities: BTreeMap::new(),
                 consumable_profiles: BTreeMap::new(),
@@ -2428,6 +2550,7 @@ mod tests {
                 faction_rally_point_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data_map: BTreeMap::new(),
+                stock_storage_policies: BTreeMap::new(),
             }
         }
     }
@@ -2512,11 +2635,19 @@ mod tests {
         }
         fn local_controlled_lots_for(
             &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
+            let mut entities = self.entities_at(place);
+            entities.extend(self.direct_possessions(actor));
+            entities.sort();
+            entities.dedup();
+            entities
+                .into_iter()
+                .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+                .filter(|entity| self.can_control(actor, *entity))
+                .collect()
         }
 
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
@@ -2530,8 +2661,8 @@ mod tests {
             self.consumable_profiles.get(&entity).copied()
         }
 
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
         }
 
         fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
@@ -2544,6 +2675,10 @@ mod tests {
 
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
             self.workstation_tags.get(&entity).copied()
+        }
+
+        fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+            self.stock_storage_policies.get(&facility).cloned()
         }
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {

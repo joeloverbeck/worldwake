@@ -528,6 +528,17 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn stock_storage_policy_snapshot(
+        &self,
+        entity: EntityId,
+    ) -> Option<worldwake_core::StockStoragePolicy> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.stock_storage_policy.clone())
+    }
+
+    #[must_use]
     pub fn move_entity_ref(mut self, entity: PlanningEntityRef, destination: EntityId) -> Self {
         self.entity_place_overrides
             .insert(entity, Some(destination));
@@ -920,6 +931,28 @@ impl<'snapshot> PlanningState<'snapshot> {
         entities
     }
 
+    #[must_use]
+    pub fn controlled_stock_containers_at_place(
+        &self,
+        agent: PlanningEntityRef,
+        place: EntityId,
+    ) -> Vec<PlanningEntityRef> {
+        let mut containers = self
+            .snapshot
+            .entities
+            .iter()
+            .filter_map(|(facility, snapshot)| {
+                let policy = snapshot.stock_storage_policy.as_ref()?;
+                (snapshot.effective_place == Some(place)
+                    && self.can_control_ref(agent, PlanningEntityRef::Authoritative(*facility)))
+                .then_some(PlanningEntityRef::Authoritative(policy.stock_container))
+            })
+            .collect::<Vec<_>>();
+        containers.sort();
+        containers.dedup();
+        containers
+    }
+
     fn all_entity_refs(&self) -> Vec<PlanningEntityRef> {
         let mut refs = self
             .snapshot
@@ -1233,6 +1266,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&entity)
             .and_then(|snapshot| snapshot.workstation_tag)
+    }
+
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+        self.stock_storage_policy_snapshot(facility)
     }
 
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {

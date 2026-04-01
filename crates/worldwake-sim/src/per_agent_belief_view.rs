@@ -12,8 +12,9 @@ use worldwake_core::{
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    ResourceSource, SocialObservation, StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+    World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -594,6 +595,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
     fn has_production_job(&self, entity: EntityId) -> bool {
         self.world.has_component_production_job(entity)
+    }
+
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        self.knows_entity(facility)
+            .then(|| self.world.get_component_stock_storage_policy(facility).cloned())
+            .flatten()
     }
 
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {

@@ -60,7 +60,7 @@ pub fn register_stock_actions(
             name: "store_stock".to_string(),
             domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
-            targets: vec![TargetSpec::EntityAtActorPlace {
+            targets: vec![TargetSpec::EntityDirectlyPossessedByActor {
                 kind: EntityKind::ItemLot,
             }],
             preconditions: vec![

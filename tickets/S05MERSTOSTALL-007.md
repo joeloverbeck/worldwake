@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — AI candidate generation, planner ops, ranking
-**Deps**: S05MERSTOSTALL-005, S05MERSTOSTALL-006
+**Deps**: S05MERSTOSTALL-005, S05MERSTOSTALL-006, S05MERSTOSTALL-011
 
 ## Problem
 
@@ -14,10 +14,11 @@ AI agents need to plan the full store→stage→sell flow for facility-based mer
 
 1. Sale visibility evolution (005) is complete — `listed_sale_lots_at` queries display containers, `authorized_seller_for_sale_lot` derives from facility control.
 2. MoveCargo evolution (006) is complete — facility restock targets stock containers.
-3. `SellCommodity` candidate generation exists — check how it currently identifies sellable lots and whether it assumes direct possession.
-4. `StaffMarket` planner op exists — check current implementation and whether it needs evolution or replacement for facility model.
-5. `BlockingFact` variants exist for plan failure handling — check `blocked_intent.rs` for existing variants and where storage/staging failures should be added.
-6. Affordance generation for stock actions (store, stage, collect, unstage) does not yet exist — must be added to `affordance_query.rs`.
+3. Facility identity is still place-level, not explicit per facility — see S05MERSTOSTALL-011. This ticket should build on the exact facility-targeting contract rather than extending the current "any controlled facility at the place" behavior.
+4. `SellCommodity` candidate generation exists — check how it currently identifies sellable lots and whether it assumes direct possession.
+5. `StaffMarket` planner op exists — check current implementation and whether it needs evolution or replacement for facility model.
+6. `BlockingFact` variants exist for plan failure handling — check `blocked_intent.rs` for existing variants and where storage/staging failures should be added.
+7. Affordance generation for stock actions (store, stage, collect, unstage) does not yet exist — must be added to `affordance_query.rs`.
 
 ## Architecture Check
 

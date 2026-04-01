@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{CommodityKind, EntityId, Permille, Quantity};
 use worldwake_sim::GoalBeliefView;
 
@@ -127,14 +127,77 @@ pub(crate) fn restock_gap_at_destination(
         return None;
     }
 
-    let current_stock_at_destination = view
-        .controlled_commodity_quantity_at_place(agent, destination, commodity)
-        .0;
+    let current_stock_at_destination = facility_custody_quantity_at_destination(
+        view,
+        agent,
+        destination,
+        commodity,
+    )
+    .unwrap_or_else(|| view.controlled_commodity_quantity_at_place(agent, destination, commodity))
+    .0;
     if current_stock_at_destination < observed_quantity {
         Some(Quantity(observed_quantity - current_stock_at_destination))
     } else {
         None
     }
+}
+
+fn facility_custody_quantity_at_destination(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    destination: EntityId,
+    commodity: CommodityKind,
+) -> Option<Quantity> {
+    let containers = controlled_facility_custody_containers(view, agent, destination);
+    if containers.is_empty() {
+        return None;
+    }
+
+    Some(
+        view.local_controlled_lots_for(agent, destination, commodity)
+            .into_iter()
+            .filter(|lot| lot_is_inside_any_container(view, *lot, &containers))
+            .fold(Quantity(0), |total, lot| {
+                let quantity = view.commodity_quantity(lot, commodity);
+                Quantity(
+                    total
+                        .0
+                        .checked_add(quantity.0)
+                        .expect("facility custody quantity overflowed"),
+                )
+            }),
+    )
+}
+
+fn controlled_facility_custody_containers(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    destination: EntityId,
+) -> BTreeSet<EntityId> {
+    view.entities_at(destination)
+        .into_iter()
+        .filter_map(|entity| {
+            let policy = view.stock_storage_policy(entity)?;
+            view.can_control(agent, entity).then_some(policy)
+        })
+        .flat_map(|policy| [Some(policy.stock_container), policy.display_container])
+        .flatten()
+        .collect()
+}
+
+fn lot_is_inside_any_container(
+    view: &dyn GoalBeliefView,
+    lot: EntityId,
+    containers: &BTreeSet<EntityId>,
+) -> bool {
+    let mut current = view.direct_container(lot);
+    while let Some(container) = current {
+        if containers.contains(&container) {
+            return true;
+        }
+        current = view.direct_container(container);
+    }
+    false
 }
 
 fn permille_ratio(numerator: u32, denominator: u32) -> Permille {

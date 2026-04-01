@@ -22,22 +22,25 @@ This skill must not modify production code or tests. It is a post-implementation
 ### 1. Resolve the target ticket
 
 1. Use the provided ticket name if one was supplied.
-2. Otherwise, search active tickets for the most recently touched candidate and use that ticket.
-3. Confirm the implementation state for that ticket is present locally, whether committed or not.
-4. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all reads, writes, searches, and archival actions.
-5. If the target ticket cannot be identified confidently, stop and ask for clarification.
+2. If the just-finished ticket was already archived in the current session, use that archived ticket directly.
+3. Otherwise, search active tickets for the most recently touched candidate and use that ticket.
+4. Confirm the implementation state for that ticket is present locally, whether committed or not.
+5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all reads, writes, searches, and archival actions.
+6. If the target ticket cannot be identified confidently, stop and ask for clarification.
 
 ### 2. Check archival readiness
 
-1. Read the active ticket and confirm its current status.
+1. Read the target ticket at its current path and confirm its current status.
 2. Confirm the ticket's `Outcome` section and verification notes accurately describe the implemented work and the verification already performed.
 3. Fix factual, unambiguous ticket handoff issues directly:
    - missing or incomplete `Outcome`
    - inaccurate verification notes
    - archival mechanics required by [docs/archival-workflow.md](../../../docs/archival-workflow.md)
-4. Do not revise the completed ticket's problem statement, scope, or acceptance criteria except where archival mechanics require factual completion notes.
-5. If archival readiness is ambiguous, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) before proceeding.
-6. If the ticket is ready and still active, archive it.
+4. If the ticket is still active, apply the archival checks above before moving it to the archive.
+5. If the ticket is already archived, validate the archived handoff content rather than reopening or moving it again.
+6. Do not revise the completed ticket's problem statement, scope, or acceptance criteria except where archival mechanics require factual completion notes.
+7. If archival readiness is ambiguous, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) before proceeding.
+8. If the ticket is ready and still active, archive it.
 
 ### 3. Establish the review surface
 
@@ -99,6 +102,8 @@ When a concern is already covered by an active ticket in [tickets/](../../../tic
 - if the existing ticket should be expanded or clarified to capture the concern accurately, update that ticket factually
 
 Prefer small, distinct tickets split by architectural concern.
+
+When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually if needed.
 
 If ticket splitting or dependency structure is genuinely unclear, use the 1-3-1 rule before creating or editing tickets.
 
