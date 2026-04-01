@@ -70,6 +70,8 @@ The highest-value golden tests are those that demonstrate **emergent behavior ac
 - Information flows through perception, rumor, or discovery to trigger downstream decisions
 - The scenario would fail if any participating system were removed (true emergence, not coincidence)
 
+**Candidate emission verification**: Before proposing a scenario that depends on a specific `GoalKind` being generated, grep `candidate_generation.rs` for that goal kind and verify there are no suppression filters (e.g., `sale_kinds` exclusions, `already_satisfied` gates, `evaluate_suppression` checks) that would prevent emission. A scenario that assumes a goal kind is available but the candidate generation silently filters it will fail at runtime with 0 candidates and no diagnostic output.
+
 ### Step 4: Mandatory Deduplication
 
 Before proposing any scenario, verify it is NOT already covered by:

@@ -30,6 +30,7 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
    - Module structures: does the code organization match what the ticket assumes?
    - Dependencies: are imported modules/packages available?
    - Golden test coverage and harness setup: do existing tests cover the areas being changed?
+   - If `/reassess-spec` and `/spec-to-tickets` were run on the parent spec in the current session and all findings were resolved, the codebase validation may be abbreviated to a spot-check of key references rather than a full re-validation.
 7. **Build a discrepancy list**: anything the ticket states that doesn't match reality
 
 ### Phase 3: Correct the Ticket (if needed)
