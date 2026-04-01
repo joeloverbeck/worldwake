@@ -25,7 +25,7 @@ use crate::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
-    trade::{DemandMemory, MerchandiseProfile, SaleListing, SubstitutePreferences, TradeDispositionProfile},
+    trade::{DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy, SubstitutePreferences, TradeDispositionProfile},
     utility_profile::UtilityProfile,
     violation::{ViolationDispositionProfile, ViolationMemory},
     wounds::WoundList,
