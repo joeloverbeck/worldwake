@@ -1,6 +1,6 @@
 # S10BILTRANEG-002: Reservation price derivation functions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-systems` (new pure functions in trade_actions.rs)
@@ -127,3 +127,21 @@ Counts how many other sellers at `place` (excluding `actor` and `excluded_counte
 
 1. `cargo test -p worldwake-systems -- reservation` — targeted reservation tests
 2. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+- Completed: 2026-04-02
+- What changed:
+  - added `buyer_reservation_price`, `seller_reservation_price`, and `count_local_alternatives` in `crates/worldwake-systems/src/trade_actions.rs`
+  - grounded buyer-side reservation in existing consumable relief and treatment capacity, with coin caps and local-alternative damping
+  - grounded seller-side reservation in existing need pressure, remembered demand observations, and stock scarcity
+  - added focused unit coverage for hunger monotonicity, coin caps, alternative-count damping, scarcity, demand pressure, minimum floor behavior, and real belief-view local seller counting
+- Deviations from original plan:
+  - the helper formulas were implemented as pure scaffolding but are not yet wired into affordance generation or lifecycle logic; they remain intentionally unused until downstream S10 tickets consume them
+  - because this ticket lands scaffolding before runtime integration, the new helpers were marked to avoid dead-code failures under the repo's CI clippy profile
+- Verification results:
+  - `cargo test -p worldwake-systems reservation -- --nocapture`
+  - `cargo test -p worldwake-systems count_local_alternatives -- --nocapture`
+  - `cargo test -p worldwake-systems`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

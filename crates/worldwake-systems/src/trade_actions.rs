@@ -382,6 +382,130 @@ fn local_trade_alternatives(
     alternatives
 }
 
+#[allow(dead_code)]
+pub(crate) fn count_local_alternatives(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    excluded_counterparty: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> u32 {
+    local_trade_alternatives(view, actor, excluded_counterparty, place)
+        .into_iter()
+        .filter(|(_, kind, quantity)| *kind == commodity && *quantity > Quantity(0))
+        .count() as u32
+}
+
+#[allow(dead_code)]
+pub(crate) fn buyer_reservation_price(
+    needs: Option<&worldwake_core::HomeostaticNeeds>,
+    wounds: Option<&WoundList>,
+    commodity: CommodityKind,
+    current_coin: Quantity,
+    local_alternatives: u32,
+) -> Quantity {
+    if current_coin == Quantity(0) {
+        return Quantity(0);
+    }
+
+    let need_pressure = commodity_need_pressure(needs, wounds, commodity);
+    if need_pressure == 0 {
+        return Quantity(1).min(current_coin);
+    }
+
+    let scarcity_adjusted = need_pressure.div_ceil(local_alternatives.saturating_add(1));
+    Quantity(scarcity_adjusted.max(1)).min(current_coin)
+}
+
+#[allow(dead_code)]
+pub(crate) fn seller_reservation_price(
+    needs: Option<&worldwake_core::HomeostaticNeeds>,
+    commodity: CommodityKind,
+    current_stock: Quantity,
+    demand_memory: Option<&DemandMemory>,
+) -> Quantity {
+    let stock_units = current_stock.0.max(1);
+    let self_need_pressure = commodity_need_pressure(needs, None, commodity);
+    let demand_pressure = remembered_demand_pressure(demand_memory, commodity);
+    let scarcity_floor = 1_u32.div_ceil(stock_units);
+    let scarcity_need = self_need_pressure.div_ceil(stock_units);
+    let scarcity_demand = demand_pressure.div_ceil(stock_units);
+
+    Quantity(
+        scarcity_floor
+            .saturating_add(scarcity_need)
+            .saturating_add(scarcity_demand)
+            .max(1),
+    )
+}
+
+#[allow(dead_code)]
+fn commodity_need_pressure(
+    needs: Option<&worldwake_core::HomeostaticNeeds>,
+    wounds: Option<&WoundList>,
+    commodity: CommodityKind,
+) -> u32 {
+    let Some(needs) = needs else {
+        return treatment_pressure(wounds, commodity);
+    };
+
+    let consumable_pressure = commodity
+        .spec()
+        .consumable_profile
+        .map_or(0, |profile| {
+            let hunger_units = units_to_cover_pressure(
+                u32::from(needs.hunger.value()),
+                u32::from(profile.hunger_relief_per_unit.value()),
+            );
+            let thirst_units = units_to_cover_pressure(
+                u32::from(needs.thirst.value()),
+                u32::from(profile.thirst_relief_per_unit.value()),
+            );
+            hunger_units.max(thirst_units)
+        });
+
+    consumable_pressure.max(treatment_pressure(wounds, commodity))
+}
+
+#[allow(dead_code)]
+fn treatment_pressure(wounds: Option<&WoundList>, commodity: CommodityKind) -> u32 {
+    let Some(profile) = commodity.spec().treatment_profile else {
+        return 0;
+    };
+    let Some(wounds) = wounds else {
+        return 0;
+    };
+    let total_wound_load = wounds.wound_load();
+    if total_wound_load == 0 {
+        return 0;
+    }
+
+    let per_unit_treatment = u32::from(profile.severity_reduction_per_tick.value())
+        .saturating_mul(profile.treatment_ticks_per_unit.get());
+    units_to_cover_pressure(total_wound_load, per_unit_treatment)
+}
+
+#[allow(dead_code)]
+fn remembered_demand_pressure(demand_memory: Option<&DemandMemory>, commodity: CommodityKind) -> u32 {
+    demand_memory
+        .map_or(0, |memory| {
+            memory
+                .observations
+                .iter()
+                .filter(|obs| obs.commodity == commodity)
+                .map(|obs| obs.quantity.0)
+                .sum()
+        })
+}
+
+#[allow(dead_code)]
+fn units_to_cover_pressure(pressure: u32, relief_per_unit: u32) -> u32 {
+    if pressure == 0 || relief_per_unit == 0 {
+        return 0;
+    }
+    pressure.div_ceil(relief_per_unit)
+}
+
 fn wounds_for(view: &dyn RuntimeBeliefView, actor: EntityId) -> Option<WoundList> {
     let wounds = view.wounds(actor);
     (!wounds.is_empty()).then_some(WoundList { wounds })
@@ -931,10 +1055,11 @@ fn record_sell_blocked_intent(
 #[cfg(test)]
 mod tests {
     use super::{
-        register_trade_action, select_substitute_trade_candidate, SubstituteTradeCandidate,
+        buyer_reservation_price, count_local_alternatives, register_trade_action,
+        select_substitute_trade_candidate, seller_reservation_price, SubstituteTradeCandidate,
     };
     use crate::trade_actions::local_alternatives;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
@@ -1037,6 +1162,228 @@ mod tests {
         let beliefs = test_belief_store(world, actor);
         let view = PerAgentBeliefView::new(actor, world, &beliefs);
         get_affordances(&view, actor, defs, handlers)
+    }
+
+    #[test]
+    fn buyer_reservation_price_returns_higher_value_for_higher_hunger() {
+        let low = buyer_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(150), pm(0), pm(0), pm(0), pm(0))),
+            None,
+            CommodityKind::Apple,
+            Quantity(10),
+            0,
+        );
+        let high = buyer_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0))),
+            None,
+            CommodityKind::Apple,
+            Quantity(10),
+            0,
+        );
+
+        assert!(high > low);
+    }
+
+    #[test]
+    fn buyer_reservation_price_never_exceeds_current_coin() {
+        let reservation = buyer_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(1000), pm(0), pm(0), pm(0), pm(0))),
+            None,
+            CommodityKind::Apple,
+            Quantity(2),
+            0,
+        );
+
+        assert!(reservation <= Quantity(2));
+    }
+
+    #[test]
+    fn buyer_reservation_price_returns_lower_values_with_more_alternatives() {
+        let scarce = buyer_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0))),
+            None,
+            CommodityKind::Apple,
+            Quantity(10),
+            0,
+        );
+        let common = buyer_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0))),
+            None,
+            CommodityKind::Apple,
+            Quantity(10),
+            3,
+        );
+
+        assert!(scarce > common);
+    }
+
+    #[test]
+    fn buyer_reservation_price_returns_minimum_when_no_needs_or_wounds() {
+        let reservation = buyer_reservation_price(
+            Some(&HomeostaticNeeds::new_sated()),
+            None,
+            CommodityKind::Apple,
+            Quantity(10),
+            0,
+        );
+
+        assert_eq!(reservation, Quantity(1));
+    }
+
+    #[test]
+    fn seller_reservation_price_returns_higher_value_with_fewer_stock_units() {
+        let demand = DemandMemory {
+            observations: vec![
+                DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(1),
+                    place: entity(90),
+                    tick: Tick(1),
+                    counterparty: Some(entity(91)),
+                    reason: DemandObservationReason::WantedToBuyButNoSeller,
+                },
+                DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(1),
+                    place: entity(90),
+                    tick: Tick(2),
+                    counterparty: Some(entity(92)),
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                },
+            ],
+        };
+        let scarce = seller_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0))),
+            CommodityKind::Apple,
+            Quantity(1),
+            Some(&demand),
+        );
+        let abundant = seller_reservation_price(
+            Some(&HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0))),
+            CommodityKind::Apple,
+            Quantity(4),
+            Some(&demand),
+        );
+
+        assert!(scarce > abundant);
+    }
+
+    #[test]
+    fn seller_reservation_price_returns_higher_value_with_more_demand_observations() {
+        let none = seller_reservation_price(
+            None,
+            CommodityKind::Apple,
+            Quantity(2),
+            None,
+        );
+        let remembered = seller_reservation_price(
+            None,
+            CommodityKind::Apple,
+            Quantity(2),
+            Some(&DemandMemory {
+                observations: vec![
+                    DemandObservation {
+                        commodity: CommodityKind::Apple,
+                        quantity: Quantity(1),
+                        place: entity(90),
+                        tick: Tick(1),
+                        counterparty: Some(entity(91)),
+                        reason: DemandObservationReason::WantedToBuyButNoSeller,
+                    },
+                    DemandObservation {
+                        commodity: CommodityKind::Apple,
+                        quantity: Quantity(2),
+                        place: entity(90),
+                        tick: Tick(2),
+                        counterparty: Some(entity(92)),
+                        reason: DemandObservationReason::WantedToBuyButTooExpensive,
+                    },
+                ],
+            }),
+        );
+
+        assert!(remembered > none);
+    }
+
+    #[test]
+    fn seller_reservation_price_returns_at_least_one() {
+        let reservation = seller_reservation_price(None, CommodityKind::Apple, Quantity(0), None);
+
+        assert!(reservation >= Quantity(1));
+    }
+
+    #[test]
+    fn count_local_alternatives_counts_other_sellers_for_matching_commodity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, excluded, seller_a, seller_b) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let excluded = txn.create_agent("Excluded", ControlSource::Ai).unwrap();
+            let seller_a = txn.create_agent("Seller A", ControlSource::Ai).unwrap();
+            let seller_b = txn.create_agent("Seller B", ControlSource::Ai).unwrap();
+            let actor_apple = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            let excluded_apple = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
+            let orchard_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(2)).unwrap();
+            let grocer_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(3)).unwrap();
+            let baker_stock = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+
+            for entity in [
+                actor,
+                excluded,
+                seller_a,
+                seller_b,
+                actor_apple,
+                excluded_apple,
+                orchard_stock,
+                grocer_stock,
+                baker_stock,
+            ] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+
+            for (holder, lot) in [
+                (actor, actor_apple),
+                (excluded, excluded_apple),
+                (seller_a, orchard_stock),
+                (seller_b, grocer_stock),
+                (seller_b, baker_stock),
+            ] {
+                txn.set_owner(lot, holder).unwrap();
+                txn.set_possessor(lot, holder).unwrap();
+            }
+
+            txn.set_component_merchandise_profile(
+                seller_a,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+                    home_facility: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_merchandise_profile(
+                seller_b,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Apple, CommodityKind::Bread]),
+                    home_facility: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, excluded, seller_a, seller_b)
+        };
+
+        let beliefs = test_belief_store(&world, actor);
+        let view = PerAgentBeliefView::new(actor, &world, &beliefs);
+
+        let apple_count =
+            count_local_alternatives(&view, actor, excluded, place, CommodityKind::Apple);
+        let bread_count =
+            count_local_alternatives(&view, actor, excluded, place, CommodityKind::Bread);
+
+        assert_eq!(apple_count, 2);
+        assert_eq!(bread_count, 1);
+        assert_ne!(seller_a, seller_b);
     }
 
     struct TradeHarness {
