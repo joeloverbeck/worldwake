@@ -7,7 +7,8 @@ use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
     CommodityPurpose, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
     FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
-    Seed, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, UtilityProfile,
+    Seed, StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick,
+    TradeCategory, TradeDispositionProfile, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -58,6 +59,22 @@ pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
         concession_rate: Permille::new(125).unwrap(),
         demand_memory_retention_ticks: 240,
         market_presence_ticks: NonZeroU32::new(30).unwrap(),
+    }
+}
+
+/// Returns a representative stock storage policy fixture for facility tests.
+pub fn sample_stock_storage_policy() -> StockStoragePolicy {
+    StockStoragePolicy {
+        stock_container: entity_id(8, 1),
+        display_container: Some(entity_id(8, 2)),
+    }
+}
+
+/// Returns a representative stock assignment fixture for item lot tests.
+pub fn sample_stock_assignment() -> StockAssignment {
+    StockAssignment {
+        facility: entity_id(7, 3),
+        kind: StockAssignmentKind::Stored,
     }
 }
 

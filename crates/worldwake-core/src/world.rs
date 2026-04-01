@@ -11,7 +11,8 @@ use crate::{
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
-    RelationTables, ResourceSource, SaleListing, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    RelationTables, ResourceSource, SaleListing, StockAssignment, StockStoragePolicy,
+    SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
 };

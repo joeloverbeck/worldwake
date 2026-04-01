@@ -1304,6 +1304,56 @@ macro_rules! with_component_schema_entries {
                 clear_component_sale_listing,
                 txn_simple_set
             }
+            {
+                stock_storage_policies,
+                StockStoragePolicy,
+                insert_stock_storage_policy,
+                get_stock_storage_policy,
+                get_stock_storage_policy_mut,
+                remove_stock_storage_policy,
+                has_stock_storage_policy,
+                iter_stock_storage_policies,
+                insert_component_stock_storage_policy,
+                get_component_stock_storage_policy,
+                get_component_stock_storage_policy_mut,
+                remove_component_stock_storage_policy,
+                has_component_stock_storage_policy,
+                entities_with_stock_storage_policy,
+                query_stock_storage_policy,
+                count_with_stock_storage_policy,
+                "StockStoragePolicy",
+                |kind| kind == EntityKind::Facility,
+                StockStoragePolicy,
+                crate::StockStoragePolicy,
+                set_component_stock_storage_policy,
+                clear_component_stock_storage_policy,
+                txn_simple_set
+            }
+            {
+                stock_assignments,
+                StockAssignment,
+                insert_stock_assignment,
+                get_stock_assignment,
+                get_stock_assignment_mut,
+                remove_stock_assignment,
+                has_stock_assignment,
+                iter_stock_assignments,
+                insert_component_stock_assignment,
+                get_component_stock_assignment,
+                get_component_stock_assignment_mut,
+                remove_component_stock_assignment,
+                has_component_stock_assignment,
+                entities_with_stock_assignment,
+                query_stock_assignment,
+                count_with_stock_assignment,
+                "StockAssignment",
+                |kind| kind == EntityKind::ItemLot,
+                StockAssignment,
+                crate::StockAssignment,
+                set_component_stock_assignment,
+                clear_component_stock_assignment,
+                txn_simple_set
+            }
         }
     };
 }

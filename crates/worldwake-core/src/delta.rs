@@ -10,8 +10,9 @@ use crate::{
     JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
     OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PursuitProfile,
     PerceptionProfile, Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity,
-    RecordData, ReservationRecord, ResourceSource, SaleListing, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
+    RecordData, ReservationRecord, ResourceSource, SaleListing, StockAssignment,
+    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UniqueItem, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -252,7 +253,8 @@ mod tests {
         PatrolRoute, PerceptionProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
         QueuedFacilityIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, SaleListing, TellProfile, TheftDispositionProfile, Tick, TickRange,
+        ReservationRecord, ResourceSource, SaleListing, StockAssignment, StockAssignmentKind,
+        StockStoragePolicy, TellProfile, TheftDispositionProfile, Tick, TickRange,
         TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile, ViolationMemory,
         WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
@@ -569,6 +571,14 @@ mod tests {
             ComponentValue::SaleListing(SaleListing {
                 listed_at: Tick(10),
             }),
+            ComponentValue::StockStoragePolicy(StockStoragePolicy {
+                stock_container: crate::test_utils::entity_id(100, 1),
+                display_container: Some(crate::test_utils::entity_id(101, 1)),
+            }),
+            ComponentValue::StockAssignment(StockAssignment {
+                facility: crate::test_utils::entity_id(102, 1),
+                kind: StockAssignmentKind::Stored,
+            }),
         ]
     }
 
@@ -701,6 +711,8 @@ mod tests {
                 ComponentKind::UniqueItem,
                 ComponentKind::Container,
                 ComponentKind::SaleListing,
+                ComponentKind::StockStoragePolicy,
+                ComponentKind::StockAssignment,
             ]
         );
     }
@@ -786,7 +798,9 @@ mod tests {
         let removed = ComponentDelta::Removed {
             entity: entity(4),
             component_kind: ComponentKind::SaleListing,
-            before: component_samples().pop().unwrap(),
+            before: ComponentValue::SaleListing(SaleListing {
+                listed_at: Tick(10),
+            }),
         };
 
         assert!(matches!(

@@ -26,6 +26,39 @@ pub struct SaleListing {
 
 impl Component for SaleListing {}
 
+/// Records which containers a facility uses for merchant stock storage and
+/// sale display.  Belongs on `EntityKind::Facility` entities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StockStoragePolicy {
+    /// Long-lived storage container for local market/shop inventory.
+    pub stock_container: EntityId,
+    /// Optional seller-facing display container for buyer-visible sale stock.
+    pub display_container: Option<EntityId>,
+}
+
+impl Component for StockStoragePolicy {}
+
+/// Whether a lot is ordinary storage stock or active sale stock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum StockAssignmentKind {
+    /// Local stock counted for inventory/audit but not automatically sale-visible.
+    Stored,
+    /// Local stock staged for active sale visibility.
+    Displayed,
+}
+
+/// Records a lot's assignment to a facility's stock or display container.
+/// Belongs on `EntityKind::ItemLot` entities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StockAssignment {
+    /// The facility this lot is assigned to.
+    pub facility: EntityId,
+    /// Whether the lot is stored or displayed.
+    pub kind: StockAssignmentKind,
+}
+
+impl Component for StockAssignment {}
+
 /// Local concrete memory of missed demand and sale opportunities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DemandMemory {
@@ -78,11 +111,13 @@ pub enum DemandObservationReason {
 mod tests {
     use super::{
         DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, SaleListing,
-        SubstitutePreferences, TradeDispositionProfile,
+        StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences,
+        TradeDispositionProfile,
     };
     use crate::{
         test_utils::{
-            sample_demand_observation, sample_merchandise_profile, sample_substitute_preferences,
+            sample_demand_observation, sample_merchandise_profile, sample_stock_assignment,
+            sample_stock_storage_policy, sample_substitute_preferences,
             sample_trade_disposition_profile,
         },
         traits::Component,
@@ -211,5 +246,69 @@ mod tests {
         let roundtrip: TradeDispositionProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn stock_storage_policy_component_bounds() {
+        assert_component_bounds::<StockStoragePolicy>();
+        assert_value_bounds::<StockStoragePolicy>();
+    }
+
+    #[test]
+    fn stock_storage_policy_roundtrips_through_bincode() {
+        let policy = sample_stock_storage_policy();
+
+        let bytes = bincode::serialize(&policy).unwrap();
+        let roundtrip: StockStoragePolicy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, policy);
+    }
+
+    #[test]
+    fn stock_storage_policy_without_display_roundtrips() {
+        let policy = StockStoragePolicy {
+            stock_container: crate::test_utils::entity_id(5, 1),
+            display_container: None,
+        };
+
+        let bytes = bincode::serialize(&policy).unwrap();
+        let roundtrip: StockStoragePolicy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, policy);
+        assert!(roundtrip.display_container.is_none());
+    }
+
+    #[test]
+    fn stock_assignment_component_bounds() {
+        assert_component_bounds::<StockAssignment>();
+    }
+
+    #[test]
+    fn stock_assignment_kind_value_bounds() {
+        assert_copy_value_bounds::<StockAssignmentKind>();
+    }
+
+    #[test]
+    fn stock_assignment_roundtrips_through_bincode() {
+        let assignment = sample_stock_assignment();
+
+        let bytes = bincode::serialize(&assignment).unwrap();
+        let roundtrip: StockAssignment = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, assignment);
+    }
+
+    #[test]
+    fn stock_assignment_displayed_variant_roundtrips() {
+        let assignment = StockAssignment {
+            facility: crate::test_utils::entity_id(3, 1),
+            kind: StockAssignmentKind::Displayed,
+        };
+
+        let bytes = bincode::serialize(&assignment).unwrap();
+        let roundtrip: StockAssignment = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, assignment);
+        assert_eq!(roundtrip.kind, StockAssignmentKind::Displayed);
     }
 }
