@@ -24,10 +24,13 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 **S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
 
+**S47: Hungry Merchant Eats Own Listed Sale Stock** (2 tests: main + replay) — Merchant with critical hunger autonomously consumes their own listed bread, demonstrating survival-over-enterprise priority ordering where the survival action directly consumes the trade asset. Proves cross-system emergence: Needs + Trade (S04) + AI ranking. See `specs/S47-golden-gaps-S04.md`.
+
 ### Recommended Implementation Order
 
-1. S46 patrol-driven crime discovery chain (1 scenario + replay)
-2. S02c multi-role emergent supply chain
+1. S47 hungry merchant eats listed stock (1 scenario + replay)
+2. S46 patrol-driven crime discovery chain (1 scenario + replay)
+3. S02c multi-role emergent supply chain
 
 ---
 
@@ -41,7 +44,7 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 3. **Journey abandonment (vs suspension)** — `AbandonsCommitment` classification is already unit-tested in `decision_runtime.rs`. High setup complexity (must engineer a scenario where the original destination becomes permanently unreachable or irrelevant mid-journey) for limited code path difference from Scenario 3c's suspension/reactivation path.
 
-4. **SellCommodity** — `GoalKind::SellCommodity` variant exists but `candidate_generation.rs` lacks sell-specific emission logic. Not testable as a golden scenario without first implementing new system code to generate sell candidates.
+4. ~~**SellCommodity**~~ — (removed 2026-04-01: S04 implemented full merchant selling market presence. `SellCommodity` candidate generation, `StaffMarket` planner op, and `SaleListing` lifecycle are now golden-tested in `golden_merchant_selling.rs` with 12 scenarios.)
 
 5. **Self-treatment through ordinary `heal`** — (2026-03-14: rejected. 2026-03-18: implemented.) S07 unified care model made self-treatment lawful via `TreatWounds { patient: self }`. Now golden-tested in Scenario 2c (`golden_self_care_with_medicine`, `golden_self_care_acquires_ground_medicine`).
 
@@ -78,6 +81,8 @@ Items removed from the golden backlog with rationale (prevents duplicate coverag
 - **P-NEW-8 Blocked Facility Use Avoidance in Planner** (removed 2026-03-13) — Already proven by Scenario 9b.
 
 - **P15 Put-Down Action** (removed 2026-03-13) — Stale premise; current AI cargo architecture treats destination-local controlled stock as sufficient for `MoveCargo`.
+
+- **SellCommodity base coverage** (removed 2026-04-01) — S04 implemented full merchant selling market presence. 12 golden scenarios in `golden_merchant_selling.rs` cover listing lifecycle, buyer discovery, trade against listed lots, dampening, remote travel-to-sell, demand memory ranking, and deterministic replay. The original rejection (#4) was based on missing emission logic that no longer applies.
 
 - **P16 BuryCorpse Goal** (removed 2026-03-13) — Implemented as Scenario 8b.
 

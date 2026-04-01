@@ -59,6 +59,7 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
 ### Phase 6: Archive
 
 15. **Archive the ticket** per `docs/archival-workflow.md`:
+    - If the ticket file does not exist in the worktree (e.g., it was created on main after the branch point), copy it from main before archiving.
     - Mark status as `✅ COMPLETED`
     - Add an `## Outcome` section (completion date, what changed, deviations, verification results)
     - Move to `archive/tickets/`

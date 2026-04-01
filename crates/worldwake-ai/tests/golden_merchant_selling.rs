@@ -140,7 +140,12 @@ fn seed_buyer(
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: staff_market lists on start, unlists on complete
+// Scenario 75: staff_market Lists on Start, Unlists on Complete
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P3, P8
+// Proves: staff_market attaches SaleListing on start and removes it on commit
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
@@ -241,7 +246,12 @@ fn staff_market_lists_on_start_unlists_on_complete_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: buyer trades against listed lot
+// Scenario 76: Buyer Trades Against Listed Lot
+// Systems: Trade, AI, Needs
+// GoalKinds: AcquireCommodity, SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P3, P4
+// Proves: buyer discovers and trades against concrete listed lot with conservation
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
@@ -353,7 +363,12 @@ fn buyer_trades_against_listed_lot_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: unlisted stock not sellable
+// Scenario 77: Unlisted Stock Not Sellable
+// Systems: Trade, AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: Trade
+// Principles: P1, P3, P7
+// Proves: buyer cannot discover or trade unlisted merchant stock
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -423,7 +438,12 @@ fn unlisted_stock_not_sellable() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 8: blocked intent dampens relisting
+// Scenario 78: Blocked Intent Dampens Relisting After Unproductive Cycle
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P8
+// Proves: NoBuyer blocked intent suppresses immediate SellCommodity re-emission
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -509,7 +529,10 @@ fn blocked_intent_dampens_relisting_after_unproductive_cycle() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 12: deterministic replay (uses test 4 scenario)
+// Scenario 79: Deterministic Replay Preserves Listing Behavior
+// Systems: Trade, AI
+// Principles: P2
+// Proves: identical seeds produce identical world and event log hashes
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -526,7 +549,12 @@ fn deterministic_replay_preserves_listing_behavior() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: buyer discovers listed lots, not unlisted stock
+// Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
+// Systems: Trade, AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: Trade
+// Principles: P3, P7
+// Proves: buyer evidence references only listed lots, not unlisted merchant stock
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -591,7 +619,12 @@ fn buyer_discovers_listed_lots_not_unlisted_stock() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: merchant emits SellCommodity at home market
+// Scenario 81: Merchant Emits SellCommodity at Home Market
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P6
+// Proves: SellCommodity candidate emitted via decision trace
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -639,7 +672,10 @@ fn merchant_emits_sell_commodity_at_home_market() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: seller departure invalidates listing
+// Scenario 82: Seller Departure Invalidates Listing
+// Systems: Trade
+// Principles: P3, P7
+// Proves: SaleListing pruned within one tick of seller leaving the market
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -693,7 +729,10 @@ fn seller_departure_invalidates_listing() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 7: dead seller invalidates listing
+// Scenario 83: Dead Seller Invalidates Listing
+// Systems: Trade
+// Principles: P3, P4
+// Proves: SaleListing pruned within one tick of seller death
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -747,7 +786,12 @@ fn dead_seller_invalidates_listing() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 9: move cargo then sell commodity (plan shape)
+// Scenario 84: Remote Merchant Travels to Home Market to Sell
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade, Travel
+// Principles: P1, P6
+// Proves: merchant at remote place plans Travel + StaffMarket to reach home_market
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -839,7 +883,11 @@ fn move_cargo_then_sell_commodity_plan_shape() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 10: demand memory raises sell ranking
+// Scenario 85: Demand Memory Raises Sell Ranking
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// Principles: P1, P3, P20
+// Proves: demand memory boosts SellCommodity motive above baseline without overpowering self-care
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -935,7 +983,10 @@ fn demand_memory_raises_sell_ranking() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 11: planning state preserves listing determinism
+// Scenario 86: Planning State Preserves Listing Determinism
+// Systems: Trade, AI
+// Principles: P2
+// Proves: identical seeds produce identical plan search results for merchant scenarios
 // ---------------------------------------------------------------------------
 
 #[test]

@@ -31,7 +31,7 @@ If this script fails, **stop and report the error**. Do not analyze stale genera
 
 Read ALL of the following files completely:
 
-1. **Completed spec**: Find `specs/*{arg}*.md` (e.g., for `E19`, find `specs/E19-guard-patrol.md`). If multiple matches, list them and ask the user to disambiguate.
+1. **Completed spec**: Find `specs/*{arg}*.md` or `archive/specs/*{arg}*.md`. If the spec was archived after implementation, use the archived version. If multiple matches, list them and ask the user to disambiguate.
 2. **Coverage dashboard**: `docs/golden-e2e-coverage.md` — pay special attention to:
    - "Evaluated and Rejected Scenarios" section
    - "Removed Backlog Items" section
@@ -122,7 +122,8 @@ The spec should also include:
 1. **Report findings**: List proposed scenarios with one-line summaries
 2. **Report spec location**: Where the spec was written
 3. **Update coverage dashboard**: If scenarios were proposed, add them to the "Pending Backlog Summary" section of `docs/golden-e2e-coverage.md` with a brief description and cross-reference to the new spec
-4. **If no gaps found**: Report the analysis was thorough and coverage is complete for this spec
+4. **Add missing scenario headers**: If existing golden tests for the spec lack `// Scenario` metadata headers, add them so the inventory script can track coverage. Assign sequential scenario IDs that don't collide with existing IDs.
+5. **If no gaps found**: Report the analysis was thorough and coverage is complete for this spec
 
 ## Important Rules
 
