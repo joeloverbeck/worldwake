@@ -236,6 +236,7 @@ mod tests {
                     negotiation_round_ticks: nz(1),
                     initial_offer_bias: pm(500),
                     concession_rate: pm(100),
+                    rejection_escalation_rate: pm(200),
                     demand_memory_retention_ticks: retention_ticks,
                     market_presence_ticks: nz(30),
                 },

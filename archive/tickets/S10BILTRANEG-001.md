@@ -1,6 +1,6 @@
 # S10BILTRANEG-001: Core type additions for bilateral trade negotiation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-core` (TradeRole, DemandObservationReason variant, TradeDispositionProfile field), `worldwake-sim` (ActionState variant)
@@ -18,7 +18,7 @@ The bilateral trade negotiation protocol (S10) requires several new types and ty
 4. `ActionState` at `crates/worldwake-sim/src/action_state.rs:7-26` derives `Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize`. Has 4 variants: `Empty`, `Heal`, `Investigate`, `Travel`. All fields in all variants are `Copy`. The new `Trade` variant must maintain this constraint.
 5. `Quantity(pub u32)` at `crates/worldwake-core/src/numerics.rs` is `Copy`. `Option<Quantity>` is `Copy`. `u32` is `Copy`. All proposed `Trade` variant fields satisfy the `Copy` constraint.
 6. The existing bincode roundtrip test at `action_state.rs:58-93` covers all current variants and must be extended for `Trade`.
-7. `golden_supply_chain.rs:41-49` uses `default_trade_disposition()` which will need `rejection_escalation_rate` added. This is test-only and handled in ticket 006.
+7. `TradeDispositionProfile { ... }` construction sites are broader than originally listed. Current grep shows live construction in `worldwake-core`, `worldwake-sim`, `worldwake-systems`, and many `worldwake-ai` tests/helpers, including `golden_supply_chain.rs`, `golden_trade.rs`, `golden_merchant_selling.rs`, `golden_integration.rs`, `golden_harness/soak_world.rs`, `golden_production.rs`, `golden_determinism.rs`, `golden_t22_bandit_camp_destruction.rs`, `golden_ai_decisions.rs`, and `planner_conformance.rs`. This ticket must update all of them because the new field is authoritative type scaffolding, not later behavioral work.
 
 ## Architecture Check
 
@@ -29,7 +29,7 @@ The bilateral trade negotiation protocol (S10) requires several new types and ty
 
 1. `TradeRole` satisfies required trait bounds -> focused unit test (trait assertion)
 2. `ActionState::Trade` roundtrips through bincode -> focused unit test (serialization)
-3. `TradeDispositionProfile` construction sites compile with new field -> compiler (all callers updated)
+3. `TradeDispositionProfile` construction sites compile with new field -> compiler plus focused crate tests at the changed type-definition boundaries
 4. Single-layer ticket (type additions only, no runtime behavior change).
 
 ## What to Change
@@ -64,7 +64,8 @@ pub enum DemandObservationReason {
 
 Add the field to the struct. Update every construction site in the codebase (grep for `TradeDispositionProfile {` to find all). This includes:
 - `crates/worldwake-ai/tests/golden_supply_chain.rs` — `default_trade_disposition()` and `enterprise_trade_disposition()`
-- Any other test or production construction sites found via grep.
+- `crates/worldwake-ai/tests/golden_trade.rs` — current trade disposition helpers used by the live merchant/trade goldens
+- any other production or test construction site found via grep across `worldwake-core`, `worldwake-sim`, `worldwake-systems`, and `worldwake-ai`
 
 Use a sensible default value in test helpers: `pm(200)` (20% of reservation per rejection — the value the spec recommends).
 
@@ -91,7 +92,8 @@ Import `TradeRole` and `Quantity` from `worldwake_core`. Extend the bincode roun
 - `crates/worldwake-core/src/lib.rs` (modify — export `TradeRole`)
 - `crates/worldwake-sim/src/action_state.rs` (modify — add `Trade` variant, extend roundtrip test)
 - `crates/worldwake-ai/tests/golden_supply_chain.rs` (modify — add `rejection_escalation_rate` to disposition helpers)
-- Any other `TradeDispositionProfile` construction sites found via grep (modify)
+- `crates/worldwake-core/src/test_utils.rs` (modify — representative disposition fixture gains the new field)
+- any other `TradeDispositionProfile` construction sites found via grep in `worldwake-core`, `worldwake-sim`, `worldwake-systems`, and `worldwake-ai` (modify)
 
 ## Out of Scope
 
@@ -107,8 +109,9 @@ Import `TradeRole` and `Quantity` from `worldwake_core`. Extend the bincode roun
 
 1. `TradeRole` satisfies `Copy + Clone + Eq + Ord + Hash + Debug + Serialize + DeserializeOwned` (trait assertion test)
 2. `ActionState::Trade` bincode roundtrip produces identical output
-3. All existing golden tests pass: `cargo test -p worldwake-ai`
-4. Full suite: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
+3. Updated construction sites compile cleanly across touched crates
+4. All existing golden tests pass: `cargo test -p worldwake-ai`
+5. Full suite: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -121,9 +124,30 @@ Import `TradeRole` and `Quantity` from `worldwake_core`. Extend the bincode roun
 
 1. `crates/worldwake-sim/src/action_state.rs` (in `mod tests`) — extend `action_state_bincode_roundtrip_covers_every_variant` with `ActionState::Trade` variant
 2. `crates/worldwake-core/src/trade.rs` (new test) — trait assertion for `TradeRole`
+3. touched crate compile/test surfaces for the new `TradeDispositionProfile` field, including current `worldwake-ai` golden helpers and updated core/systems fixtures
 
 ### Commands
 
 1. `cargo test -p worldwake-sim -- action_state` — targeted ActionState tests
 2. `cargo test -p worldwake-core -- trade` — targeted trade type tests
-3. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+3. `cargo test -p worldwake-ai` — current golden/helper compile surface for trade dispositions
+4. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+- Completed: 2026-04-02
+- What changed:
+  - added `TradeRole`, `DemandObservationReason::TradeAgreed`, and `TradeDispositionProfile.rejection_escalation_rate` in `crates/worldwake-core/src/trade.rs`, and exported `TradeRole` from `crates/worldwake-core/src/lib.rs`
+  - added `ActionState::Trade` plus roundtrip coverage in `crates/worldwake-sim/src/action_state.rs`
+  - updated all live `TradeDispositionProfile` construction sites found during reassessment across `worldwake-core`, `worldwake-sim`, `worldwake-systems`, `worldwake-ai` tests/helpers, CLI scenario types, and the bundled `scenarios/default.ron`
+  - fixed enum-expansion fallout by updating the exhaustive `ActionState` handling in `crates/worldwake-systems/src/travel_actions.rs`
+- Deviations from original plan:
+  - the ticket stayed type-scaffolding only, but the actual blast radius was wider than the initial file list because serialized fixtures and bundled scenario data also had to adopt the new `TradeDispositionProfile` shape
+  - no additional runtime negotiation behavior was added in this ticket; the implementation remained limited to shared type surfaces and compile/serialization fallout
+- Verification results:
+  - `cargo test -p worldwake-core -- trade --nocapture`
+  - `cargo test -p worldwake-sim -- action_state --nocapture`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-cli --test integration`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

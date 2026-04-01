@@ -5637,6 +5637,7 @@ mod tests {
                     negotiation_round_ticks: NonZeroU32::new(4).unwrap(),
                     initial_offer_bias: Permille::new(500).unwrap(),
                     concession_rate: Permille::new(100).unwrap(),
+                    rejection_escalation_rate: Permille::new(200).unwrap(),
                     demand_memory_retention_ticks: 60,
                     market_presence_ticks: NonZeroU32::new(30).unwrap(),
                 },

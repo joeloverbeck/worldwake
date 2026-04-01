@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{CommodityKind, EntityId, Tick, TravelEdgeId, ViolationId};
+use worldwake_core::{CommodityKind, EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId};
 
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,
@@ -23,13 +23,20 @@ pub enum ActionState {
         departure_tick: Tick,
         arrival_tick: Tick,
     },
+    Trade {
+        round: u32,
+        initiator_role: TradeRole,
+        initiator_last_offer: Option<Quantity>,
+        responder_last_offer: Option<Quantity>,
+        agreed_price: Option<Quantity>,
+    },
 }
 
 #[cfg(test)]
 mod tests {
     use super::ActionState;
     use serde::{de::DeserializeOwned, Serialize};
-    use worldwake_core::{EntityId, Tick, TravelEdgeId, ViolationId};
+    use worldwake_core::{EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId};
 
     fn assert_traits<
         T: Copy
@@ -85,6 +92,13 @@ mod tests {
                 },
                 departure_tick: Tick(7),
                 arrival_tick: Tick(10),
+            },
+            ActionState::Trade {
+                round: 2,
+                initiator_role: TradeRole::Buyer,
+                initiator_last_offer: Some(Quantity(3)),
+                responder_last_offer: Some(Quantity(5)),
+                agreed_price: Some(Quantity(4)),
             },
         ] {
             let bytes = bincode::serialize(&state).unwrap();

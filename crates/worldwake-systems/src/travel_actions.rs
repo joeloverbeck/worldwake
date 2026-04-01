@@ -67,7 +67,12 @@ fn travel_state(
             departure_tick,
             arrival_tick,
         }) => Ok((edge_id, origin, destination, departure_tick, arrival_tick)),
-        Some(ActionState::Empty | ActionState::Heal { .. } | ActionState::Investigate { .. })
+        Some(
+            ActionState::Empty
+            | ActionState::Heal { .. }
+            | ActionState::Investigate { .. }
+            | ActionState::Trade { .. },
+        )
         | None => Err(ActionError::InternalError(format!(
             "travel action instance {} is missing travel state",
             instance.instance_id

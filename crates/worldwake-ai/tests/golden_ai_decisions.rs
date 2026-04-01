@@ -2069,6 +2069,7 @@ fn golden_utility_weight_diversity_in_need_selection() {
                 negotiation_round_ticks: nz(4),
                 initial_offer_bias: pm(500),
                 concession_rate: pm(100),
+                rejection_escalation_rate: pm(200),
                 demand_memory_retention_ticks: 240,
                 market_presence_ticks: nz(30),
             },

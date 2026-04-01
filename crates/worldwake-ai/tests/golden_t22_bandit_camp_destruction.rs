@@ -247,6 +247,7 @@ fn enterprise_trade_disposition_profile() -> TradeDispositionProfile {
         negotiation_round_ticks: nz(4),
         initial_offer_bias: pm(500),
         concession_rate: pm(100),
+        rejection_escalation_rate: pm(200),
         demand_memory_retention_ticks: 240,
         market_presence_ticks: nz(30),
     }

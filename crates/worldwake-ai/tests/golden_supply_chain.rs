@@ -43,6 +43,7 @@ fn default_trade_disposition() -> TradeDispositionProfile {
         negotiation_round_ticks: nz(4),
         initial_offer_bias: pm(500),
         concession_rate: pm(100),
+        rejection_escalation_rate: pm(200),
         demand_memory_retention_ticks: 48,
         market_presence_ticks: nz(30),
     }
@@ -1619,4 +1620,3 @@ fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
         hash_event_log(&h.event_log).unwrap(),
     )
 }
-
