@@ -110,71 +110,9 @@ All new spec drafts must:
 
 These rules exist to prevent specs from drifting into magic numbers, float-based scoring, and missing foundation analysis that would need correction before implementation.
 
-## Debugging AI Decisions with Decision Traces
+## Debugging
 
-When debugging AI-related test failures or investigating agent behavior, use the **decision trace system** before resorting to ad-hoc `eprintln` instrumentation. The trace system records structured per-agent per-tick decision data covering the full pipeline: candidate generation, ranking, plan search, selection, and execution outcome.
-
-**Quick start in golden tests:**
-
-```rust
-// Enable before stepping:
-h.driver.enable_tracing();
-
-// Run ticks, then query:
-let sink = h.driver.trace_sink().unwrap();
-let trace = sink.trace_at(agent, Tick(5)).unwrap();
-
-// Dump human-readable summary to stderr:
-sink.dump_agent(agent, &h.defs);
-```
-
-**Key queries:**
-- `sink.traces_for(agent)` — all traces for one agent
-- `sink.trace_at(agent, tick)` — single tick lookup
-- `trace.outcome.summary()` — one-line human-readable string
-- `DecisionOutcome::Planning(p)` — inspect `p.candidates`, `p.planning.attempts`, `p.selection`
-
-**When to reach for traces:**
-- "Why did/didn't agent X do Y?" → check `candidates.generated` and `planning.attempts`
-- "Why did the agent switch goals?" → check `InterruptTrace` on `ActiveAction` outcomes
-- "Why did plan search fail?" → check `PlanSearchOutcome` variants (`BudgetExhausted`, `FrontierExhausted`, `Unsupported`)
-
-Decision traces are the first stop for AI reasoning, not the only stop. If the trace shows the selected outcome but does not expose the concrete world facts keeping that branch alive, drop to the shared lower-layer state/query tests before adding ad-hoc instrumentation. If that missing provenance is architecturally important rather than just inconvenient for one test, write a follow-up traceability ticket instead of papering over it locally.
-
-Tracing is opt-in and zero-cost when disabled. Do not leave `enable_tracing()` in committed test code unless the test explicitly asserts on trace data.
-
-## Debugging Action Execution with Action Traces
-
-For action lifecycle questions ("Did the action run?", "When did it complete?", "Why was it aborted?"), use the action execution trace system in `worldwake-sim`.
-
-**Quick start in golden tests:**
-
-```rust
-// Enable before stepping:
-h.enable_action_tracing();
-
-// Run ticks, then query:
-let sink = h.action_trace_sink().unwrap();
-let agent_events = sink.events_for(agent);
-let tick_events = sink.events_at(Tick(5));
-let agent_tick_events = sink.events_for_at(agent, Tick(5));
-
-// Dump human-readable summary to stderr:
-sink.dump_agent(agent);
-```
-
-Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Committed, Aborted, StartFailed).
-
-**When to use which trace:**
-- "Why did the agent choose this action?" -> decision trace
-- "Did the chosen action actually start or commit?" -> action trace
-- "How long did the action take?" -> action trace
-- "Why was the action aborted?" -> action trace
-
-**Important**: Some actions (e.g., loot, eat) complete within a single tick. They are invisible to inter-tick `agent_active_action_name()` observation. Use action traces or state-delta checks for these. Multi-tick actions such as harvest, travel, and craft remain visible between ticks.
-
-When in doubt, enable action tracing and inspect `events_for_at(agent, tick)` to see exactly what happened during that tick.
-For same-tick cross-agent ordering, `events_at()` / `events_for_at()` tell you which events occurred in the tick, but the ordering contract is the explicit `ActionTraceEvent.sequence_in_tick` key. Do not rewrite that contract as "later tick" unless strict tick separation is the intended engine rule.
+For debugging AI decisions or action execution, see `docs/debugging-traces.md` (decision traces, action traces, tick alignment, observation strategy).
 
 ## Delivery Planning
 
@@ -197,8 +135,6 @@ Avoid introducing a third-party ECS crate.
 
 ## Key References
 
-- Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
-- Archived design doc: `archive/reports/2026-03-09-worldwake-epic-breakdown-design.md`
 - Active specs: `specs/`
 - Archived completed specs: `archive/specs/`
 - Archival workflow: `docs/archival-workflow.md`

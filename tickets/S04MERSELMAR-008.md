@@ -10,16 +10,16 @@
 
 Buyer-side `AcquireCommodity` candidate generation currently discovers sellers through `agents_selling_at` (now replaced by ticket 004). The candidate generation, evidence assembly, and trade affordance/payload must be migrated to use listed sale lots. Additionally, `TradeActionPayload` must gain a `sale_lot` field so trades operate against concrete listed lots rather than abstract commodity buckets.
 
-## Assumption Reassessment (2026-03-31)
+## Assumption Reassessment (2026-04-01)
 
-1. `TradeActionPayload` at `crates/worldwake-sim/src/action_payload.rs:266-272` currently has: `counterparty`, `offered_commodity`, `offered_quantity`, `requested_commodity`, `requested_quantity`. No `sale_lot` field. Confirmed.
-2. Trade affordance generation in `crates/worldwake-sim/src/affordance_query.rs` uses `agents_selling_at` (now being replaced). The affordance must be updated to enumerate listed sale lots.
-3. Candidate generation for `AcquireCommodity` in `crates/worldwake-ai/src/candidate_generation.rs` inspects sellers at place for evidence. After ticket 004, it must use `listed_sale_lots_at` + `seller_for_sale_lot`.
+1. `TradeActionPayload` at `crates/worldwake-sim/src/action_payload.rs:275-281` currently has: `counterparty`, `offered_commodity`, `offered_quantity`, `requested_commodity`, `requested_quantity`. No `sale_lot` field. Confirmed.
+2. Trade affordance generation in `crates/worldwake-systems/src/trade_actions.rs:80` (`enumerate_trade_payloads`) iterates `MerchandiseProfile.sale_kinds` and checks `commodity_quantity`. Must be updated to enumerate listed sale lots via `listed_sale_lots_at`.
+3. ~~Candidate generation already migrated~~: `candidate_generation.rs:3252-3253` already uses `listed_sale_lots_at` + `seller_for_sale_lot`. No work needed here.
 4. The spec (Section 10) adds `sale_lot: EntityId` to `TradeActionPayload` and derives `requested_commodity` from `ItemLot.commodity` at commit time instead of storing it in the payload.
 5. Trade action handler in `crates/worldwake-systems/src/trade_actions.rs` currently reads `requested_commodity` from the payload. It must be updated to derive it from the `sale_lot`.
-6. Search transition for `Trade` op in `crates/worldwake-ai/src/search/transition.rs` assembles trade payloads. Must be updated to include `sale_lot`.
+6. Trade payload assembly for plan search happens in `crates/worldwake-ai/src/goal_model.rs:519` (`payload_override_for_op`). Must be updated to include `sale_lot`. (`search/transition.rs` and `search/candidates.rs` have no trade payload logic.)
 7. `PayloadEntityRole` entries for `Trade` payload must include `sale_lot`.
-8. No adjacent contradictions found.
+8. Additional construction sites requiring update: `failure_handling.rs` (reads `payload.requested_commodity`), `golden_trade.rs`, `planner_conformance.rs`, `production_actions.rs`, `input_event.rs`, `action_semantics.rs`, `action_instance.rs`.
 
 ## Architecture Check
 
@@ -64,22 +64,30 @@ pub struct TradeActionPayload {
 
 ### 2. Update all `TradeActionPayload` construction sites
 
-- `crates/worldwake-sim/src/affordance_query.rs` — trade affordance assembly
-- `crates/worldwake-ai/src/search/transition.rs` — plan search trade payload
-- `crates/worldwake-ai/src/search/candidates.rs` — if trade candidates are assembled here
-- `crates/worldwake-systems/src/trade_actions.rs` — handler reads and test construction
+Production code:
+- `crates/worldwake-systems/src/trade_actions.rs` — `enumerate_trade_payloads` (affordance assembly) + handler reads
+- `crates/worldwake-ai/src/goal_model.rs:519` — `payload_override_for_op` (plan search payload)
+- `crates/worldwake-ai/src/failure_handling.rs` — reads `payload.requested_commodity`
 - `crates/worldwake-sim/src/action_payload.rs` — test `sample_trade_payload()`
 
-### 3. Update `AcquireCommodity` candidate generation
+Test-only construction sites (must also update):
+- `crates/worldwake-systems/src/trade_actions.rs` — many test `TradeActionPayload` literals
+- `crates/worldwake-systems/src/production_actions.rs:1130,1772` — test payloads
+- `crates/worldwake-sim/src/affordance_query.rs:1374,1415` — test payloads
+- `crates/worldwake-sim/src/input_event.rs:111` — test payload
+- `crates/worldwake-sim/src/action_semantics.rs:1035` — test payload
+- `crates/worldwake-sim/src/action_instance.rs:36` — test payload
+- `crates/worldwake-ai/tests/golden_trade.rs:529,631` — golden test payloads
+- `crates/worldwake-ai/tests/planner_conformance.rs:1060` — test payload
+- `crates/worldwake-ai/src/planner_ops.rs:711` — test helper payload
 
-In `candidate_generation.rs`, when generating `AcquireCommodity` candidates for the "trade with seller" path:
-- Use `listed_sale_lots_at(place, commodity)` to find available lots
-- Use `seller_for_sale_lot(lot)` to identify the counterparty
-- Include sale lot entity and seller entity in evidence
+### 3. ~~Update `AcquireCommodity` candidate generation~~ (ALREADY DONE)
 
-### 4. Update trade affordance enumeration in `affordance_query.rs`
+`candidate_generation.rs:3252-3253` already uses `listed_sale_lots_at` + `seller_for_sale_lot`. No work needed.
 
-When enumerating trade affordances for an agent:
+### 4. Update trade affordance enumeration in `trade_actions.rs`
+
+`enumerate_trade_payloads` (line 80) currently iterates `MerchandiseProfile.sale_kinds`. Must be updated to:
 - Use `listed_sale_lots_at` to find available listed lots at the agent's place
 - For each listed lot + seller pair, generate a trade affordance with `sale_lot` in the payload
 
@@ -93,13 +101,21 @@ In `trade_actions.rs`, the commit handler should derive `requested_commodity` fr
 
 ## Files to Touch
 
+Production code:
 - `crates/worldwake-sim/src/action_payload.rs` (modify — add `sale_lot`, remove `requested_commodity`)
-- `crates/worldwake-sim/src/affordance_query.rs` (modify — trade affordance uses listed lots)
-- `crates/worldwake-ai/src/candidate_generation.rs` (modify — AcquireCommodity evidence uses listed lots)
-- `crates/worldwake-ai/src/search/transition.rs` (modify — trade transition assembles sale_lot payload)
-- `crates/worldwake-ai/src/search/candidates.rs` (modify — if trade candidate expansion here)
-- `crates/worldwake-systems/src/trade_actions.rs` (modify — handler derives requested_commodity from lot)
-- `crates/worldwake-sim/src/start_gate.rs` (modify — if payload entity validation updated)
+- `crates/worldwake-systems/src/trade_actions.rs` (modify — `enumerate_trade_payloads` uses listed lots, handler derives `requested_commodity` from lot)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — `payload_override_for_op` assembles sale_lot payload)
+- `crates/worldwake-ai/src/failure_handling.rs` (modify — derive `requested_commodity` from sale_lot)
+
+Test-only files (update construction sites):
+- `crates/worldwake-sim/src/affordance_query.rs` (test payloads)
+- `crates/worldwake-sim/src/input_event.rs` (test payload)
+- `crates/worldwake-sim/src/action_semantics.rs` (test payload)
+- `crates/worldwake-sim/src/action_instance.rs` (test payload)
+- `crates/worldwake-systems/src/production_actions.rs` (test payloads)
+- `crates/worldwake-ai/tests/golden_trade.rs` (golden test payloads)
+- `crates/worldwake-ai/tests/planner_conformance.rs` (test payload)
+- `crates/worldwake-ai/src/planner_ops.rs` (test helper payload)
 
 ## Out of Scope
 

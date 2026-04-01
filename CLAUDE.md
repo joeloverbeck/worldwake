@@ -52,138 +52,7 @@ worldwake-cli     → Human control interface (deps: all)
 
 Custom ECS (no external crate) with deterministic `BTreeMap`-based typed component storage. The world is a place graph with travel times, not continuous space.
 
-### worldwake-core modules
-
-The foundation crate contains all authoritative types and the ECS world boundary:
-
-| Module | Purpose |
-|--------|---------|
-| `ids` | `EntityId` (slot+generation), `Tick`, `EventId`, `Seed`, `TravelEdgeId` |
-| `entity` | `EntityKind` enum (Agent, Place, ItemLot, UniqueItem, Container, …), `EntityMeta` |
-| `allocator` | Generational slot allocator with archive/purge lifecycle |
-| `component_tables` | Macro-generated typed storage for all component types |
-| `component_schema` | Declarative component registration (which kinds accept which components) |
-| `blocked_intent` | `BlockedIntentMemory`, `BlockedIntent` — agent memory of temporarily blocked goals with expiration |
-| `combat` | `CombatProfile` — per-agent combat parameters (wound capacity, skills, attack/guard, bleed rates) |
-| `components` | Domain components: `AgentData`, `Name` |
-| `control` | `ControlSource` enum (Human, Ai, None) |
-| `drives` | `ThresholdBand` — urgency thresholds (low, medium, high, critical) shared by physiology and AI |
-| `topology` | `Place`, `PlaceTag`, `TravelEdge`, `Route`, `Topology`, Dijkstra pathfinding, `build_prototype_world` |
-| `trade` | `MerchandiseProfile`, `DemandMemory`, `TradeDispositionProfile` — merchant sales intent and demand observation |
-| `items` | `CommodityKind`, `ItemLot`, `UniqueItem`, `UniqueItemKind`, `Container`, `LotOperation`, `ProvenanceEntry`, `TradeCategory` |
-| `load` | Weight/load accounting: per-unit loads, container capacity checks |
-| `needs` | `HomeostaticNeeds` — per-agent metabolic state (hunger, thirst, fatigue, bladder, dirtiness) |
-| `conservation` | `total_live_lot_quantity`, `total_authoritative_commodity_quantity`, `verify_live_lot_conservation`, `verify_authoritative_conservation` — explicit lot-only vs authoritative material accounting |
-| `numerics` | Newtype wrappers: `Quantity`, `LoadUnits`, `Permille` |
-| `production` | `WorkstationTag` — workstation types (Forge, Loom, Mill, ChoppingBlock, WashBasin, OrchardRow, FieldPlot) |
-| `traits` | `Component` and `RelationRecord` trait definitions |
-| `utility_profile` | `UtilityProfile` — per-agent utility weights for AI decision making across needs and enterprise |
-| `relations` | `RelationTables`, placement/ownership/reservation/social APIs, `ArchiveDependency` |
-| `event_log` | Append-only `EventLog` — authoritative causal record |
-| `event_record` | `PendingEvent` → committed `EventRecord` flow |
-| `event_tag` | `EventTag` — event classification |
-| `goal` | `GoalKind`, `CommodityPurpose` — goal identity types (consume, acquire, sleep, heal, produce, etc.) |
-| `cause` | `CauseRef` — links events to prior causes in the log |
-| `witness` | `WitnessData`, `VisibilitySpec` — who observed an event |
-| `delta` | `ComponentDelta`, `RelationDelta`, `ReservationDelta` — immutable change records |
-| `world_txn` | `WorldTxn` — mutation journal with staged atomic commit |
-| `canonical` | `canonical_bytes()`, `hash_world()`, `hash_event_log()`, `StateHash` — deterministic hashing |
-| `verification` | `verify_live_lot_conservation()`, `verify_authoritative_conservation()`, `verify_completeness()` — invariant enforcement |
-| `visibility` | Event visibility and witness tracking |
-| `world` | `World` struct — authoritative boundary over allocator, component tables, topology, and relations |
-| `wounds` | `WoundId`, `BodyPart`, `DeprivationKind` — wound tracking schema for deprivation and combat consequences |
-| `error` | `WorldError` enum |
-| `test_utils` | Shared test helpers |
-
-### worldwake-sim modules
-
-The simulation crate contains the action framework, scheduler, tick loop, and replay/persistence:
-
-| Module | Purpose |
-|--------|---------|
-| `action_def` | `ActionDef` — declarative action type definitions |
-| `action_def_registry` | Registry of all available action definitions |
-| `action_domain` | `ActionDomain` — enum categorizing actions by domain (Generic, Needs, Production, Trade, Travel, Transport, Combat, Care, Loot) |
-| `action_duration` | `ActionDuration` — resolved runtime duration for active actions (always finite) with tick advancement |
-| `action_instance` | `ActionInstance`, `ActionInstanceId` — specific running action |
-| `action_state` | `ActionState` — action lifecycle state machine |
-| `action_status` | `ActionStatus` — outcome tracking |
-| `action_handler` | Action execution handler trait |
-| `action_handler_registry` | Registry mapping action defs to handlers |
-| `action_payload` | `ActionPayload` — enum holding domain-specific data for actions (Harvest, Craft, Trade, Combat, Loot) |
-| `action_semantics` | `Constraint`, `Precondition`, `DurationExpr` — action preconditions and costs |
-| `action_execution` | `start_action()` — initiate actions with precondition/cost checks |
-| `action_ids` | Action-specific ID types |
-| `action_termination` | Action completion and interruption handling |
-| `action_validation` | Authoritative action legality checks against `World` / `WorldTxn` |
-| `scheduler` | `Scheduler` — manages tick loop, active actions, system execution order |
-| `tick_step` | `step_tick()` — execute one full tick (drain inputs → progress actions → run systems) |
-| `tick_action` | `tick_action()` — progress individual action state per tick |
-| `start_gate` | Action start precondition validation |
-| `interrupt_abort` | Action interruption and abort handling |
-| `replan_needed` | Signals for agent replanning |
-| `simulation_state` | `SimulationState` — root state: world + event log + scheduler + replay + rng |
-| `controller_state` | `ControllerState` — tracks human vs AI control per agent |
-| `input_event` | `InputEvent`, `InputKind` — player/AI input (RequestAction, CancelAction, SwitchControl) |
-| `input_queue` | `InputQueue` — deterministic input ordering by `(tick, sequence_no)` |
-| `deterministic_rng` | `DeterministicRng` — ChaCha8 wrapper for seeded randomness |
-| `belief_view` | `BeliefView` trait — agent belief interface |
-| `omniscient_belief_view` | `OmniscientBeliefView` — omniscient stand-in until E14 |
-| `autonomous_controller` | `AutonomousController` trait — interface for AI/autonomous systems to claim and control agents |
-| `affordance` | `Affordance` — available actions for an agent |
-| `affordance_query` | `get_affordances()` — query available actions |
-| `recipe_def` | `RecipeDefinition` — data-driven production recipe with inputs, outputs, workstation requirements, and body cost |
-| `recipe_registry` | `RecipeRegistry` — deterministic registry of all production recipes, indexed by workstation tag |
-| `replay_state` | `ReplayState`, `ReplayCheckpoint` — record initial state, seed, inputs, per-tick hashes |
-| `replay_execution` | `replay_and_verify()` — deterministic replay validation |
-| `save_load` | `save()` / `load()` — serializable world snapshots (bincode format) |
-| `system_manifest` | `SystemManifest` — declares which systems run each tick |
-| `system_dispatch` | `SystemDispatch` — routes tick execution to registered systems |
-| `tick_input_producer` | `TickInputContext` — context struct passed to input producers for autonomous AI tick integration |
-| `trade_valuation` | `TradeAcceptance`, `TradeRejectionReason` — trade decision enums with valuation snapshot utilities |
-| `action_trace` | `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` — opt-in action lifecycle recording for debugging |
-
-### worldwake-systems modules
-
-The systems crate contains domain simulation systems (needs, production, trade, combat) and their action handlers:
-
-| Module | Purpose |
-|--------|---------|
-| `combat` | `run_combat_system()` + handlers for combat and loot actions — resolves weapon attacks, wounds, and looting |
-| `inventory` | `controlled_entity_ids()`, `controlled_entity_load()`, `consume_one_unit()` — load/capacity tracking and possession hierarchy helpers |
-| `needs` | `needs_system()` — processes homeostatic needs (hunger, thirst, sleep) and applies deprivation wounds each tick |
-| `needs_actions` | `eat`, `drink`, `sleep` action definitions + handlers with `ConsumableEffect` — agents satisfy needs through action framework |
-| `production` | `resource_regeneration_system()` — regenerates commodities at resource sources (`ResourceSource` component) each tick |
-| `production_actions` | Harvest + craft action definitions + handlers — agents gather raw resources and craft items via `RecipeRegistry` |
-| `trade` | `trade_system_tick()` — ages trade demand memories, applies forgotten commodity preferences over time |
-| `trade_actions` | Trade action definition + handler — negotiates and executes two-agent trades with valuation |
-| `transport_actions` | Pick-up + put-down action handlers — agents move items between containers/direct possession |
-| `travel_actions` | Travel action definition + handler — agents move between places via `TravelEdge` edges |
-
-### worldwake-ai modules
-
-The AI crate contains the decision architecture: pressure-based goal ranking, GOAP-style plan search, and per-tick agent control:
-
-| Module | Purpose |
-|--------|---------|
-| `agent_tick` | `AgentTickDriver` — manages per-agent decision runtime and semantics caching for tick-driven AI execution |
-| `budget` | `PlanningBudget` — tunable planning constraints (candidates, depth, expansions, beam width, margins, blocking periods) |
-| `candidate_generation` | Goal candidate enumeration — derives goal candidates from agent beliefs (needs, pressure, enterprise signals) |
-| `decision_trace` | `DecisionTraceSink`, `AgentDecisionTrace`, `DecisionOutcome` — opt-in structured trace of per-agent per-tick decisions; `dump_agent()` for interactive debugging, `summary()` for one-line outcome strings |
-| `decision_runtime` | `AgentDecisionRuntime` — per-agent persistent state (current goal/plan/step, dirty flags, last observations) |
-| `enterprise` | Merchant enterprise logic — restock gap, opportunity signals for trading/commerce planning |
-| `failure_handling` | `PlanFailureContext`, `handle_plan_failure()` — analyzes plan breakdowns, updates blocked memory with barriers |
-| `goal_model` | `GoalKindTag`, `GoalKindPlannerExt` — goal-to-planner-op mapping (ConsumeCommodity, AcquireCommodity, etc.) |
-| `goal_switching` | `GoalSwitchKind`, `compare_goal_switch()` — priority-based goal interruption logic with margin thresholds |
-| `interrupts` | `InterruptDecision`, `InterruptTrigger`, `evaluate_interrupt()` — determines when running action should be interrupted for replan |
-| `plan_revalidation` | `revalidate_next_step()` — checks if planned step remains executable against current affordances |
-| `plan_selection` | `select_best_plan()` — chooses best plan from candidates by priority/motive with goal-switching logic |
-| `planner_ops` | `PlannerOpKind`, `PlannerOpSemantics` — declarative action-type semantics (barriers, mid-plan viability, goal relevance) |
-| `planning_snapshot` | `SnapshotEntity` — immutable read-only belief state snapshot for planning (positions, inventory, wounds, profiles) |
-| `planning_state` | `PlanningState` — mutable planning simulation state (overrides, shadows, removed entities for hypothetical execution) |
-| `pressure` | Pressure derivation — pain/danger permille calculations from wounds and active threats |
-| `ranking` | `RankedGoal`, `rank_candidates()` — scores goals by priority class and motive value |
-| `search` | `SearchNode`, `search_plan()` — GOAP-style best-first search for multi-step action plans toward goals |
+See `docs/module-reference.md` for per-module type listings.
 
 ## Critical Invariants
 
@@ -199,181 +68,37 @@ These are non-negotiable design rules enforced by tests:
 - **Unique location** — every entity exists in exactly one place
 - **No backward compatibility layers** — when a design changes, update or remove the old path instead of adding shims, redirects, or deprecated wrappers
 
-## Tick System Execution Order
-
-Systems run in this order each tick (defined in `system_manifest.rs`):
-
-```
-Needs → Production → Trade → Combat → FacilityQueue → Politics → Perception
-```
-
-The ordering is load-bearing. Key constraint: **Politics runs before Perception** so that institutional state changes (`OfficeController`, contested state, vacancy) are visible to co-located observers in the same tick via `force_control_claims_for_event()`. Without this, Perception cannot project institutional beliefs from political events (violates Principle 7).
-
-## Force-Control Lifecycle
-
-Force claims do not immediately transfer control. The lifecycle has distinct phases:
-
-```
-press_force_claim → hostility + ContestsOffice → (vacancy required) → succession processes → controller → holder
-```
-
-- `press_force_claim` creates `ContestsOffice` relation and `hostile_to(challenger, incumbent)` if an `office_holder` exists.
-- The succession system (`evaluate_office_succession`) returns `OccupiedNoAction` while a living holder exists — force claims are NOT processed until the office vacates.
-- After vacancy, the succession system evaluates pending force claims and establishes a controller.
-- After uncontested hold for `succession_period_ticks`, the controller is installed as `office_holder`.
-
-Golden tests that need both hostility (requires incumbent) AND controller establishment (requires vacancy) must include an explicit vacancy step between them.
-
 ## Authoritative-to-AI Impact Rule
 
-Any change to authoritative validation (action preconditions, `validate_*` functions, `can_exercise_control`) must trace the full agent decision cycle before claiming completion:
+Any change to authoritative validation (action preconditions, `validate_*` functions, `can_exercise_control`) must trace the full agent decision cycle before claiming completion. See `docs/debugging-traces.md` for trace tooling. The checklist:
 
-1. **Affordance generation**: Does `get_affordances` still produce correct candidates? (affordance_query.rs)
-2. **Candidate generation**: Does `generate_candidates` emit the right goal kinds? (candidate_generation.rs)
-3. **Search**: Does `search_plan` find valid plans? Check terminal ordering and barrier logic. (search.rs)
-4. **Execution**: Does `BestEffort` action start handle the new validation gracefully? (tick_step.rs)
-5. **Failure recovery**: Does `handle_plan_failure` replan correctly after the new check rejects? (agent_tick.rs)
-6. **Golden tests**: Do ALL golden tests pass? (`cargo test -p worldwake-ai`)
+1. `get_affordances` still produces correct candidates (affordance_query.rs)
+2. `generate_candidates` emits the right goal kinds (candidate_generation.rs)
+3. `search_plan` finds valid plans — check terminal ordering and barrier logic (search.rs)
+4. `BestEffort` action start handles the new validation gracefully (tick_step.rs)
+5. `handle_plan_failure` replans correctly after the new check rejects (agent_tick.rs)
+6. ALL golden tests pass (`cargo test -p worldwake-ai`)
 
 Golden production tests require `PerceptionProfile` on agents that need to observe post-production output. Tests without perception profiles will silently fail to observe newly created entities.
 
-## Debugging AI Decisions with Decision Traces
+## Debugging
 
-When debugging golden tests or AI behavior ("Why did this agent do X?" / "Why didn't this agent do Y?"), use the **decision trace system** instead of ad-hoc `eprintln` instrumentation. Traces record the full decision pipeline per-agent per-tick: candidate generation, ranking, plan search, selection, and execution outcome.
+For debugging AI decisions or action execution, see `docs/debugging-traces.md` (decision traces, action traces, tick alignment, observation strategy).
 
-### How to use in golden tests
-
-```rust
-// 1. Enable tracing on the driver before stepping.
-h.driver.enable_tracing();
-
-// 2. Run ticks as normal.
-for _ in 0..20 { h.step_once(); }
-
-// 3. Query traces.
-let sink = h.driver.trace_sink().unwrap();
-
-// Per-agent per-tick lookup:
-let trace = sink.trace_at(agent, Tick(5)).unwrap();
-
-// All traces for one agent:
-let agent_traces = sink.traces_for(agent);
-
-// Check what candidates were generated:
-if let DecisionOutcome::Planning(ref p) = trace.outcome {
-    eprintln!("candidates: {:?}", p.candidates.ranked);
-    eprintln!("plan search: {:?}", p.planning.attempts);
-}
-
-// Human-readable dump to stderr:
-sink.dump_agent(agent, &h.defs);
-
-// One-line summary per outcome:
-eprintln!("{}", trace.outcome.summary());
-```
-
-**Tick alignment**: `step_once()` processes tick N (the value of `scheduler.current_tick()` before stepping) and increments to N+1. Decision traces are keyed to tick N. To query the trace for a just-processed tick, capture `let processed_tick = h.scheduler.current_tick()` *before* calling `h.step_once()`, then use `sink.trace_at(agent, processed_tick)`. Using `scheduler.current_tick()` *after* `step_once()` queries tick N+1, which has no trace yet.
-
-### When to use traces
-
-- **Test failure diagnosis**: Before adding `eprintln` to pipeline code, enable tracing and query the sink.
-- **"Why did/didn't the agent X?"**: Check `candidates.generated`, `planning.attempts`, `selection.selected`.
-- **Goal switching issues**: Check `InterruptTrace` on `ActiveAction` outcomes.
-- **Plan search failures**: Check `PlanSearchOutcome::BudgetExhausted` / `FrontierExhausted` / `Unsupported`.
-
-Tracing is opt-in and zero-cost when disabled. Existing tests without `enable_tracing()` are unaffected.
-
-## Debugging Action Execution with Action Traces
-
-When debugging action lifecycle issues (e.g., "Did this action start?", "When did it complete?", "Why was it aborted?"), use the **action execution trace system** in `worldwake-sim`. This complements the AI decision trace (which covers *why* an agent chose an action) by covering *what happened when the action ran*.
-
-### How to use in golden tests
-
-```rust
-// 1. Enable tracing on the harness before stepping.
-h.enable_action_tracing();
-
-// 2. Run ticks as normal.
-for _ in 0..20 { h.step_once(); }
-
-// 3. Query traces.
-let sink = h.action_trace_sink().unwrap();
-
-// Per-agent lookup:
-let agent_events = sink.events_for(agent);
-
-// Per-tick lookup:
-let tick_events = sink.events_at(Tick(5));
-
-// Combined:
-let agent_tick_events = sink.events_for_at(agent, Tick(5));
-
-// Last completed action for an agent:
-let last = sink.last_committed(agent);
-
-// Human-readable dump to stderr:
-sink.dump_agent(agent);
-
-// One-line summary per event:
-for event in sink.events() {
-    eprintln!("{}", event.summary());
-}
-```
-
-**Tick alignment**: The same rule applies as for decision traces — action trace events are keyed to the tick being processed (N), not the post-step tick (N+1). See the decision trace tick alignment note above.
-
-### When to use action traces vs decision traces
-
-| Question | Use |
-|----------|-----|
-| "Why did the agent choose to loot?" | Decision trace (`h.driver.enable_tracing()`) |
-| "Did the loot action actually execute?" | Action trace (`h.enable_action_tracing()`) |
-| "How long did the action take?" | Action trace — compare Started tick vs Committed tick |
-| "Why was the action aborted?" | Action trace — check `ActionTraceKind::Aborted { reason }` |
-| "What items were created?" | Action trace — check `CommitOutcome::materializations` |
-| "Why wasn't the controller installed as holder?" | Politics trace — check `ForceInstallationDeferred { reason }` |
-
-### Golden test observation strategy
-
-- **1-tick actions** (e.g., loot, eat): Complete within a single `step_once()` call. Use **state-delta observation** (check item ownership changes between ticks) or action traces. Do NOT rely on `agent_active_action_name()` — the action won't be visible between ticks.
-- **Multi-tick actions** (e.g., harvest, travel, craft): Visible as active between ticks. Use `agent_active_action_name()` or action traces.
-- **When in doubt**: Enable action tracing and check `events_for_at(agent, tick)` to see exactly what happened.
-
-Key types: `ActionTraceSink`, `ActionTraceEvent`, `ActionTraceKind` (Started, Committed, Aborted, StartFailed). For same-tick cross-agent ordering, the contract is the explicit `ActionTraceEvent.sequence_in_tick` key — do not rewrite that contract as "later tick" unless strict tick separation is the intended engine rule.
-
-Action tracing is opt-in and zero-cost when disabled. Do not leave `enable_action_tracing()` in committed test code unless the test explicitly asserts on trace data.
+System tick ordering and force-control lifecycle documented in `docs/system-execution-reference.md`.
 
 ## Spec Drafting Rules
 
 All new spec drafts MUST:
 1. Use `Permille` for any [0,1] or [0,1000] range values — never `f32` or `f64`
-2. Include FND-01 Section H analyses (information-path, feedback loops, dampeners, stored vs derived)
+2. Include FND-01 Section H analyses — see `docs/spec-drafting-rules.md` for full requirements
 3. Use profile-driven parameters (per-agent structs) instead of hardcoded numeric constants
 4. Include SystemFn Integration and Component Registration sections
 5. Document cross-system interactions via Principle 12 (state-mediated, never direct calls)
 
-These rules prevent the recurring pattern of specs written with magic numbers, floats, and missing foundation analyses that then require correction before implementation.
-
-## Future System Spec Requirements (FND-01 Section H)
-
-Every future system spec (E09+) MUST include the following analysis sections:
-
-1. **Information-path analysis**: How does each piece of information reach the agents who act on it? Trace the path from source event through perception, witnesses, reports, and belief updates. If information arrives at an agent without a traceable multi-hop path, the design violates Principle 7 (Locality).
-2. **Positive-feedback analysis**: Identify every amplifying loop (A increases B, B increases A) in the system. If no loops exist, state so explicitly.
-3. **Concrete dampeners**: For each positive-feedback loop, specify the physical world mechanism that limits amplification. Numerical clamps (e.g., `min(value, cap)`) are NOT acceptable dampeners — the dampener must be a physical world process (Principle 8).
-4. **Stored state vs. derived read-model list**: Explicitly enumerate what is authoritative stored state (components, relations) and what is a transient derived computation. No derived value may be stored as authoritative state (Principle 3).
-
-See `specs/FND-01-phase1-foundations-alignment.md` Section H and `docs/FOUNDATIONS.md` Principles 3, 7, 8 for rationale.
-
 ## Implementation Plan
 
-22 epics across 4 phases with strict gates. Specs live in `specs/`. Dependency graph and phase gates are in `specs/IMPLEMENTATION-ORDER.md`. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
-
-**Completed epics (Phase 1 — World Legality)**: E01 (project scaffold), E02 (world topology), E03 (entity store), E04 (items & containers), E05 (relations & ownership), E06 (event log & causality), E07 (action framework), E08 (time, scheduler, replay & save/load). Phase 1 established the core and sim crates with the ECS, topology graph, item/container model, conservation invariants, relation system, append-only event log with causal linking, transactional world mutations, canonical state hashing, the action framework with preconditions, the tick-driven scheduler, deterministic replay, and save/load persistence.
-
-**Completed epics (Phase 2 — Emergent Economy)**: E09 (needs & metabolism), E10 (production & transport), E11 (trade & economy), E12 (combat & health), E13 (decision architecture). Phase 2 established the systems and ai crates with homeostatic needs and deprivation wounds, resource regeneration and recipe-based crafting, merchant trade with valuation, combat with wound tracking, and a pressure-based GOAP decision architecture with goal ranking, plan search, failure handling, and per-tick autonomous agent control.
-
-**Phase gates are blocking** — do not start a new phase until all gate tests for the previous phase pass.
+Specs live in `specs/`. Dependency graph and phase gates are in `specs/IMPLEMENTATION-ORDER.md`. Completed specs and tickets are archived under `archive/specs/` and `archive/tickets/`.
 
 ## External Dependencies
 
@@ -381,9 +106,8 @@ Minimal: `serde`, `bincode`, `rand_chacha`, `blake3` (canonical state hashing). 
 
 ## Key References
 
-- Brainstorming spec: `brainstorming/emergent-prototype-spec.md`
-- Archived design doc: `archive/reports/2026-03-09-worldwake-epic-breakdown-design.md`
-- Active specs: `specs/` (currently includes S-series specs plus E16b–E22 epic specs; `archive/specs/` contains archived or completed specs, including E01–E13)
+- Active specs: `specs/`
+- Archived completed specs: `archive/specs/`
 
 ## Commit Conventions
 
@@ -415,22 +139,6 @@ When using Serena MCP for semantic code operations (symbol navigation, project m
 ```
 mcp__plugin_serena_serena__activate_project with project: "ludoforge-llm"
 ```
-
-Serena provides:
-- Symbol-level code navigation and refactoring
-- Project memory for cross-session context
-- Semantic search across the codebase
-- LSP-powered code understanding
-
-## Sub-Agent Web Research Permissions
-
-Sub-agents spawned via the `Task` tool **cannot prompt for interactive permission**. Any tool they need must be pre-approved in `.claude/settings.local.json` under `permissions.allow`. Without this, web search tools are silently auto-denied and sub-agents fall back to training knowledge only.
-
-**Required allow-list entries for web research**:
-- `WebSearch` and `WebFetch` — built-in fallback search tools
-- `mcp__tavily__tavily_search`, `mcp__tavily__tavily_extract`, `mcp__tavily__tavily_crawl`, `mcp__tavily__tavily_map`, `mcp__tavily__tavily_research` — Tavily MCP tools
-
-**Tavily API key**: Configured in `~/.claude.json` under `mcpServers.tavily.env.TAVILY_API_KEY`. Development keys (`tvly-dev-*`) have usage limits — upgrade at [app.tavily.com](https://app.tavily.com) if you hit HTTP 432 errors ("usage limit exceeded").
 
 ## Archiving Tickets and Specs
 
