@@ -65,6 +65,7 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
     - Add an `## Outcome` section (completion date, what changed, deviations, verification results)
     - Move to `archive/tickets/`
     - If the ticket is only partially complete (user-approved scope reduction), mark status as `✅ COMPLETED (partial)` with a note about what was deferred. Create a follow-up ticket for the remaining work before archiving.
+    - **Before returning to main from a worktree**, run `git status` on main to check for uncommitted changes. Skills like `/spec-to-tickets`, `/reassess-spec`, and `/skill-audit` may have left uncommitted work on main before the worktree was created. Use `git pull` to sync — never `git reset --hard` — or commit/stash local changes first.
 
 ## Rules
 
