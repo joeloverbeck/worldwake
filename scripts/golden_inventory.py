@@ -21,14 +21,14 @@ DOCS_TO_VALIDATE = (
     ROOT / "docs" / "golden-e2e-testing.md",
 )
 
-SOURCE_TEST_RE = re.compile(r"(?m)^fn (golden_[a-z0-9_]+)\s*\(")
+SOURCE_TEST_RE = re.compile(r"(?m)^fn ([a-z][a-z0-9_]*)\s*\(")
 SCENARIO_HEADER_RE = re.compile(
     r"^// Scenario (?P<identifier>[A-Za-z0-9_-]+)(?::| —) (?P<title>.+)$"
 )
 DOC_TEST_REF_RE = re.compile(r"`(golden_[a-z0-9_]+)`")
 RUNNING_GOLDEN_BINARY_RE = re.compile(r"^\s*Running tests/(golden_[^ ]+\.rs) ")
 RUNNING_ANY_BINARY_RE = re.compile(r"^\s*Running ")
-LISTED_TEST_RE = re.compile(r"^(golden_[a-z0-9_]+): test$", re.MULTILINE)
+LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_]+): test$")
 REPLAY_TEST_RE = re.compile(
     r"_(?:replays_deterministically|deterministic_replay)$"
 )
@@ -74,8 +74,27 @@ class ScenarioEntry:
 def parse_source_inventory(tests_dir: pathlib.Path) -> OrderedDict[str, list[str]]:
     inventory: OrderedDict[str, list[str]] = OrderedDict()
     for path in sorted(tests_dir.glob("golden_*.rs")):
-        inventory[path.name] = SOURCE_TEST_RE.findall(path.read_text())
+        inventory[path.name] = _extract_test_functions(path)
     return inventory
+
+
+def _extract_test_functions(path: pathlib.Path) -> list[str]:
+    """Extract function names that are preceded by a #[test] attribute."""
+    tests: list[str] = []
+    seen_test_attr = False
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if stripped == "#[test]":
+            seen_test_attr = True
+            continue
+        if stripped.startswith("#["):
+            continue
+        m = SOURCE_TEST_RE.match(line)
+        if m:
+            if seen_test_attr:
+                tests.append(m.group(1))
+            seen_test_attr = False
+    return tests
 
 
 def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
@@ -110,16 +129,24 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
             current_metadata = {}
             current_key = None
 
+        seen_test_attr = False
         for line_number, raw_line in enumerate(path.read_text().splitlines(), start=1):
+            stripped = raw_line.strip()
+
             header_match = SCENARIO_HEADER_RE.match(raw_line)
             if header_match:
                 finish_current()
                 current_identifier = header_match.group("identifier")
                 current_title = header_match.group("title").strip()
                 current_line_number = line_number
+                seen_test_attr = False
                 continue
 
             if current_identifier is None:
+                if stripped == "#[test]":
+                    seen_test_attr = True
+                elif raw_line.startswith("fn "):
+                    seen_test_attr = False
                 continue
 
             # Try structured metadata key.
@@ -149,11 +176,23 @@ def parse_source_scenarios(tests_dir: pathlib.Path) -> list[ScenarioEntry]:
                 current_key = None
                 continue
 
-            # Test function.
+            # Track #[test] attribute — may be separated from fn by
+            # other attributes like #[allow(...)].
+            if stripped == "#[test]":
+                seen_test_attr = True
+                continue
+
+            # Other attributes (e.g. #[allow(...)]) — preserve seen_test_attr.
+            if stripped.startswith("#["):
+                continue
+
+            # Test function — only collect if preceded by #[test].
             test_match = SOURCE_TEST_RE.match(raw_line)
             if test_match:
                 current_key = None
-                current_tests.append(test_match.group(1))
+                if seen_test_attr:
+                    current_tests.append(test_match.group(1))
+                seen_test_attr = False
 
         finish_current()
 
@@ -252,7 +291,7 @@ def validate_scenarios(
         if not scenario.tests:
             errors.append(
                 f"{scenario.file_name}:{scenario.line_number}: "
-                f"Scenario {scenario.identifier} has no `golden_*` tests"
+                f"Scenario {scenario.identifier} has no test functions"
             )
             continue
 
@@ -332,7 +371,7 @@ def render_scenario_markdown(scenarios: list[ScenarioEntry]) -> str:
         "",
         f"- Scenario blocks with explicit metadata: {len(scenarios)}",
         f"- Files contributing scenario metadata: {contributing_files}",
-        f"- `golden_*` tests associated with scenario blocks: {total_tests}",
+        f"- Tests associated with scenario blocks: {total_tests}",
         "",
         "## Scenario Inventory",
         "",

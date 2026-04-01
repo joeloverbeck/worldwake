@@ -13,10 +13,10 @@ Scenarios without annotations are not reflected here.
 | (none direct) | 7g |
 | Accuse | 28, 38, 41, 43 |
 | AcquireCommodity | 20, 31, 32 |
-| AcquireCommodity(SelfConsume) | 1, 1b, 1c, 22, 27, 2b, 2e, 3, 3f, 4, 47, 5, 58, 6, 60, 61, 8d, S02, S21-005 |
+| AcquireCommodity(SelfConsume) | 1, 1b, 1c, 22, 2b, 2e, 3, 3f, 4, 47, 5, 58, 6, 60, 61, 74, 8d, S02, S21-005 |
 | BuryCorpse | 8b, S03b |
-| ClaimOffice | 11, 11b, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 21, 31, 32, 33, 33, 34, 44 |
-| ConsumeOwnedCommodity | 1, 17, 1c, 2, 20, 27, 2b, 2e, 3, 30, 31, 32, 3f, 4, 49, 53, 6, 6b, 7, 8c, S02, S02b, S03b, S03c |
+| ClaimOffice | 11, 11b, 12, 13, 14, 15, 16, 17, 18, 19, 21, 31, 32, 33, 34, 44, 71, 72, 73 |
+| ConsumeOwnedCommodity | 1, 17, 1c, 2, 20, 2b, 2e, 3, 30, 31, 32, 3f, 4, 49, 53, 6, 6b, 7, 74, 8c, S02, S02b, S03b, S03c |
 | ConsumeOwnedCommodity (NOT StealItem) | 42 |
 | Craft | 31, 32 |
 | EngageHostile | 21, 27, 45, 50, 70, 7c, 7f |
@@ -33,7 +33,7 @@ Scenarios without annotations are not reflected here.
 | RegroupWithFaction | 22, 50 |
 | Relieve | 59, 61, 62, 63, 64, 65, 66, 67 |
 | RestockCommodity | 20, 2d, 31, 32, 48, 50, S02, S02b |
-| ShareBelief | 21, 28, 2e, 31, 32, 38, 40, 41, 43, 46, 48, 50 |
+| ShareBelief | 28, 2e, 31, 32, 38, 40, 41, 43, 46, 48, 50, 72 |
 | Sleep | 2 |
 | StealItem | 28, 31, 32, 33, 37, 38, 41, 43 |
 | SupportCandidateForOffice | 12, 13, 14, 21, 33 |
@@ -52,21 +52,21 @@ Scenarios without annotations are not reflected here.
 | Corpse | 47, 8, 8b, 8c, S03a, S03b, S03c |
 | Epistemic | 28 |
 | Epistemic (≥ 5 required) | 33 |
-| Generic | 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 33, 34, 35, 36, 37, 40, 46, 50, 52, 53, 54, 55, 56, 57 |
+| Generic | 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 34, 35, 36, 37, 40, 46, 50, 52, 53, 54, 55, 56, 57, 71, 72, 73 |
 | Generic (≥ 4 required) | 28 |
-| Needs | 1, 17, 1b, 1c, 2, 20, 27, 2b, 2e, 3, 30, 31, 32, 3f, 4, 42, 49, 53, 58, 59, 6, 61, 62, 63, 64, 65, 66, 67, 6b, 7, 8c, 8d, S02, S02b, S03b, S03c, S21-005 |
+| Needs | 1, 17, 1b, 1c, 2, 20, 2b, 2e, 3, 30, 31, 32, 3f, 4, 42, 49, 53, 58, 59, 6, 61, 62, 63, 64, 65, 66, 67, 6b, 7, 74, 8c, 8d, S02, S02b, S03b, S03c, S21-005 |
 | Needs (≥ 4 required) | 21 |
-| Production | 1, 1b, 22, 27, 2d, 3, 31, 32, 3b, 3f, 4, 47, 48, 5, 50, 58, 6, 60, 61, 6b, S02, S02b, S21-005 |
-| Social | 21, 21, 28, 2e, 31, 32, 33, 38, 39, 40, 41, 43, 44, 45, 46, 48, 50 |
-| Trade | 20, 27, 2b, 31, 32 |
+| Production | 1, 1b, 22, 2d, 3, 31, 32, 3b, 3f, 4, 47, 48, 5, 50, 58, 6, 60, 61, 6b, 74, S02, S02b, S21-005 |
+| Social | 21, 28, 2e, 31, 32, 33, 38, 39, 40, 41, 43, 44, 45, 46, 48, 50, 72 |
+| Trade | 20, 2b, 31, 32, 74 |
 | Transport | 1c, 28, 2c-self-acquire, 2d, 31, 32, 33, 37, 38, 3f, 4, 41, 43, 6b |
-| Travel | 1, 15, 16, 1b, 20, 21, 22, 27, 2d, 2e, 3, 31, 32, 33, 33, 37, 38, 3b, 3f, 41, 43, 47, 48, 49, 50, 52, 55, 57, 58, 6, 60, 61, 68, 69, 70, 8d, S02, S02b, S21-005 |
+| Travel | 1, 15, 16, 1b, 20, 21, 22, 2d, 2e, 3, 31, 32, 33, 37, 38, 3b, 3f, 41, 43, 47, 48, 49, 50, 52, 55, 57, 58, 6, 60, 61, 68, 69, 70, 73, 74, 8d, S02, S02b, S21-005 |
 
 ## Systems Exercised
 
 | System | Scenarios |
 |--------|-----------|
-| AI | 1, 11, 11b, 12, 13, 14, 15, 16, 17, 18, 19, 1b, 1c, 2, 21, 22, 27, 27, 28, 2b, 2c-invalidation, 2c-report, 2c-self, 2c-self-acquire, 2e, 30, 33, 33, 34, 35, 36, 37, 38, 39, 3b, 3f, 4, 40, 41, 42, 43, 44, 45, 47, 48, 49, 5, 50, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 6b, 7, 70, 7c, 7f, 8b, 8c, 8d, S02, S02b, S03a, S03b, S03c, S21-005 |
+| AI | 1, 11, 11b, 12, 13, 14, 15, 16, 17, 18, 19, 1b, 1c, 2, 21, 22, 27, 28, 2b, 2c-invalidation, 2c-report, 2c-self, 2c-self-acquire, 2e, 30, 33, 34, 35, 36, 37, 38, 39, 3b, 3f, 4, 40, 41, 42, 43, 44, 45, 47, 48, 49, 5, 50, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 6b, 7, 70, 73, 74, 7c, 7f, 8b, 8c, 8d, S02, S02b, S03a, S03b, S03c, S21-005 |
 | Action Trace | 39 |
 | All | 6 |
 | Belief Store (remote belief with contested flag) | 46 |
@@ -74,15 +74,15 @@ Scenarios without annotations are not reflected here.
 | Bribe | 13 |
 | Care | 2c-invalidation, 2c-report, 2c-self, 2c-self-acquire, 44 |
 | Combat | 20, 21, 22, 27, 2c-invalidation, 2c-self, 2c-self-acquire, 30, 31, 32, 33, 45, 47, 48, 49, 50, 68, 70, 7c, 7f, 7g, 8, 8d |
-| Conservation | 13, 27, 2b, 2d, 3, 3f, 47, 7c, 7f, 8, 8b, 8c, 8d, S02, S03a, S03c |
-| ConsultRecord | 33, 34 |
+| Conservation | 13, 2b, 2d, 3, 3f, 47, 74, 7c, 7f, 8, 8b, 8c, 8d, S02, S03a, S03c |
+| ConsultRecord | 34, 73 |
 | Conversation memory | 2e |
 | Corpse | 8, 8b, 8c, S03a, S03b, S03c |
 | Enterprise | 2d, 48, 50, S02, S02b |
 | Factions | 18, 3f |
 | Force-Control State Machine (contested state detection) | 46 |
-| Force-claim actions | 19, 20 |
-| Force-control succession | 19, 20, 21 |
+| Force-claim actions | 19, 71 |
+| Force-control succession | 19, 71, 72 |
 | Generic Actions | 35, 36, 37, 40 |
 | Institutional Belief Projection (ForceControl belief with `contested: true`) | 46 |
 | Institutional beliefs | 54 |
@@ -94,20 +94,20 @@ Scenarios without annotations are not reflected here.
 | Ownership | 3f |
 | Patrol | 21, 33, 52, 53, 54, 57 |
 | Patrol adaptation | 55, 56 |
-| Perception | 16, 21, 22, 28, 2c-report, 2e, 31, 32, 33, 35, 36, 37, 38, 3b, 40, 41, 42, 43, 48, 50, 57, 65, 66, 68, 69, 70 |
+| Perception | 16, 22, 28, 2c-report, 2e, 31, 32, 33, 35, 36, 37, 38, 3b, 40, 41, 42, 43, 48, 50, 57, 65, 66, 68, 69, 70, 72 |
 | Perception (witness observes contested political event) | 46 |
-| Political actions | 11, 11b, 12, 15, 16, 17, 18, 33, 34 |
+| Political actions | 11, 11b, 12, 15, 16, 17, 18, 34, 73 |
 | Politics | 31, 32, 44, 45 |
 | PressForceClaim (two claimants) | 46 |
-| Production | 1, 1b, 1c, 20, 22, 27, 2d, 3, 31, 32, 3b, 3f, 4, 5, 50, 58, 60, 61, 6b, S02, S02b, S03b, S21-005 |
+| Production | 1, 1b, 1c, 20, 22, 2d, 3, 31, 32, 3b, 3f, 4, 5, 50, 58, 60, 61, 6b, 74, S02, S02b, S03b, S21-005 |
 | Social | 31, 32 |
 | Social Tell | 28, 38, 40, 41, 43, 46, 48, 50 |
-| Succession | 11, 11b, 12, 13, 14, 15, 16, 17, 18, 21, 33, 33, 34, 44 |
-| Tell | 21, 2e |
+| Succession | 11, 11b, 12, 13, 14, 15, 16, 17, 18, 21, 33, 34, 44, 73 |
+| Tell | 2e, 72 |
 | Threaten | 14 |
-| Trade | 20, 21, 27, 2b, 31, 32, S02 |
+| Trade | 20, 21, 2b, 31, 32, 74, S02 |
 | Transport | 28, 2c-self-acquire, 2d, 33, 37, 38, 4, 41, 43, 6b |
-| Travel | 1, 15, 16, 1c, 20, 21, 22, 27, 2d, 2e, 3, 31, 32, 33, 33, 3b, 3f, 46, 48, 50, 52, 55, 57, 58, 60, 61, 68, 69, 70, 8d, S02, S02b, S21-005 |
+| Travel | 1, 15, 16, 1c, 20, 21, 22, 2d, 2e, 3, 31, 32, 33, 3b, 3f, 46, 48, 50, 52, 55, 57, 58, 60, 61, 68, 69, 70, 73, 74, 8d, S02, S02b, S21-005 |
 | Wounds | 49 |
 | action tracing | 46 |
 | deterministic replay | 46 |
@@ -121,17 +121,17 @@ Scenarios without annotations are not reflected here.
 | BanditForest | 21 |
 | BanditRoad | 20, 22 |
 | CommonHouse | 37, 43, 64, 67 |
-| EastFieldTrail | 33, 58, 59, 60, 61 |
+| EastFieldTrail | 58, 59, 60, 61, 73 |
 | Farm | 20, 21, 33 |
 | ForestPath | 15, 63, 65, 66, 67, 8d |
 | GateRoad | 21 |
-| GeneralStore | 1, 1c, 21, 2d, 3, 37, 39, 41, 42, 43, 55, 56, 57, S02 |
+| GeneralStore | 1, 1c, 2d, 3, 37, 39, 41, 42, 43, 55, 56, 57, 72, S02 |
 | GuardPost | 21, 33, 52, 53 |
 | GuardPost (4-place topology) | 28 |
 | HomeMarket | 22 |
 | Market | 20, 21, 28, 33 |
 | NorthCrossroads | 15 |
-| OrchardFarm | 13, 14, 1b, 27, 2c-report, 2d, 2e, 33, 35, 36, 3b, 3f, 4, 46, 5, 58, 6, 60, 61, S02, S02b |
+| OrchardFarm | 13, 14, 1b, 2c-report, 2d, 2e, 35, 36, 3b, 3f, 4, 46, 5, 58, 6, 60, 61, 73, 74, S02, S02b |
 | OrchardFarm (7-tick multi-leg route) | S21-005 |
 | PLACE_A (Hideout) | 68, 69, 70 |
 | PLACE_B (Crossroads) | 68, 69, 70 |
@@ -140,7 +140,7 @@ Scenarios without annotations are not reflected here.
 | RallyGlen | 22 |
 | RemoteOrchard (5-place topology) | 20 |
 | Road | 33 |
-| RulersHall | 21, 33, 33, 38, 39, 41, 43 |
+| RulersHall | 21, 33, 38, 39, 41, 43, 73 |
 | S47BanditCamp | 47 |
 | S47RoadJunction | 47 |
 | S47SafeVillage | 47 |
@@ -153,7 +153,7 @@ Scenarios without annotations are not reflected here.
 | S49RoadJunction | 49 |
 | SafeFarm | 22 |
 | SafeRoute | 20 |
-| SouthGate | 33, 55, 56, 58, 60, 61 |
+| SouthGate | 55, 56, 58, 60, 61, 73 |
 | Storehouse | 28 |
 | T22RDownstream | 50 |
 | T22RFarm | 50 |
@@ -172,7 +172,7 @@ Scenarios without annotations are not reflected here.
 | T30Road | 31, 32 |
 | T30RulersHall | 31, 32 |
 | Tavern | 28 |
-| VillageSquare | 1, 11, 11b, 12, 13, 14, 15, 16, 17, 18, 19, 1b, 1c, 2, 20, 21, 27, 2b, 2c-invalidation, 2c-report, 2c-self, 2c-self-acquire, 2e, 3, 30, 33, 34, 35, 36, 37, 38, 3b, 3f, 40, 41, 42, 43, 44, 45, 46, 52, 54, 55, 56, 57, 58, 6, 60, 61, 6b, 7, 7c, 7f, 7g, 8, 8b, 8c, S02, S02b, S03a, S03b, S03c, S21-005 |
+| VillageSquare | 1, 11, 11b, 12, 13, 14, 15, 16, 17, 18, 19, 1b, 1c, 2, 2b, 2c-invalidation, 2c-report, 2c-self, 2c-self-acquire, 2e, 3, 30, 34, 35, 36, 37, 38, 3b, 3f, 40, 41, 42, 43, 44, 45, 46, 52, 54, 55, 56, 57, 58, 6, 60, 61, 6b, 7, 71, 72, 73, 74, 7c, 7f, 7g, 8, 8b, 8c, S02, S02b, S03a, S03b, S03c, S21-005 |
 
 ## Foundation Principles Tested
 
@@ -180,10 +180,10 @@ Scenarios without annotations are not reflected here.
 |-----------|-----------|
 | (faction institutional delegation) | 3f |
 | 1 | 13, 14, 15, 22, 28, 38, 40, 41, 42, 43, 45, 46, 47, 49, 50, 57, 62, 63, 64, 68, 69, 70 |
-| 10 | 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 21, 27, 28, 31, 33, 42 |
+| 10 | 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 27, 28, 31, 33, 42, 72 |
 | 11 | 33 |
-| 12 | 1c, 20, 21, 22, 31, 32, 33, 33, 34, 37, 39, 3b, 40, 48, 50 |
-| 13 | 16, 21, 38, 43, 46 |
+| 12 | 1c, 20, 21, 22, 31, 32, 33, 34, 37, 39, 3b, 40, 48, 50, 73 |
+| 13 | 16, 38, 43, 46, 72 |
 | 14 | 20, 21, 28, 31, 33, 48, 50, 54, 56, 57, 68, 69, 70 |
 | 15 | 35, 36, 37, 40 |
 | 16 | 28, 38, 43 |
@@ -194,15 +194,15 @@ Scenarios without annotations are not reflected here.
 | 21 | 38, 41, 52, 53, 68, 69, 70 |
 | 22 | 41, 58, 60, 61 |
 | 23 | 38, 41 |
-| 24 | 17, 18, 19, 20, 21, 33, 34, 39, 41, 42, 43, 44, 45, 47, 55 |
+| 24 | 17, 18, 19, 34, 39, 41, 42, 43, 44, 45, 47, 55, 71, 72, 73 |
 | 25 | 1b, 1c, 22, 50 |
 | 26 | 31, 58, 59, 60, 61, 64, 65, 67 |
 | 27 | 39, 3b |
-| 3 | 19, 1b, 20, 31, 32, 37, 39, 44, 46, 48, 49, 50, 65, 66, 67, 68, 69, 70 |
+| 3 | 19, 1b, 31, 32, 37, 39, 44, 46, 48, 49, 50, 65, 66, 67, 68, 69, 70, 71 |
 | 4 | 20, 21, 22, 27, 31, 32, 33, 47 |
 | 6 | 31, 32, S02 |
-| 7 | 15, 16, 20, 21, 21, 22, 28, 2c-report, 2c-self, 2e, 31, 33, 33, 35, 36, 37, 38, 3b, 40, 41, 43, 46, 47, 48, 50, 54, 55, 56, 57, 65, 66, 68, 69, 70 |
-| 8 | 15, 19, 20, 31, 33, 33, 34, 49, 52, 53, 58, 59, 60, 61, 62, 63, 64, 67 |
+| 7 | 15, 16, 20, 21, 22, 28, 2c-report, 2c-self, 2e, 31, 33, 35, 36, 37, 38, 3b, 40, 41, 43, 46, 47, 48, 50, 54, 55, 56, 57, 65, 66, 68, 69, 70, 72, 73 |
+| 8 | 15, 19, 31, 33, 34, 49, 52, 53, 58, 59, 60, 61, 62, 63, 64, 67, 71, 73 |
 | 9 | 27, 35, 36, 45 |
 | Agent Symmetry | 7f |
 | Append-Only Event Log | 8 |

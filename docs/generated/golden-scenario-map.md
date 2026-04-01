@@ -10,7 +10,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 - Scenario blocks with explicit metadata: 92
 - Files contributing scenario metadata: 15
-- `golden_*` tests associated with scenario blocks: 203
+- Tests associated with scenario blocks: 223
 
 ## Scenario Inventory
 
@@ -39,7 +39,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `S03b` | Bury Suppressed Under Stress | `golden_combat.rs:2086` | `golden_bury_suppressed_under_stress` | `golden_bury_suppressed_under_stress_replays_deterministically` |
 | `S03c` | Suppression Then Binding Combined | `golden_combat.rs:2261` | `golden_suppression_then_binding_combined`<br>`golden_action_trace_records_loot_lifecycle` | `golden_suppression_then_binding_combined_replays_deterministically` |
 | `6` | Deterministic Replay Fidelity | `golden_determinism.rs:138` | `golden_deterministic_replay_fidelity`<br>`golden_save_load_round_trip_under_ai` | — |
-| `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:201` | `golden_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
+| `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:201` | `golden_world_runs_without_observers`<br>`bench_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
 | `S21-005` | Save/Load Preserves Promoted Commitments | `golden_determinism.rs:555` | `golden_save_load_preserves_promoted_commitments` | `golden_save_load_preserves_promoted_commitments_replays_deterministically` |
 | `S22-007` | Save/load verification for IntentionFrame and | `golden_determinism.rs:770` | `golden_save_load_preserves_suspended_intention_frame`<br>`golden_save_load_preserves_intention_disposition_profile`<br>`golden_save_load_preserves_frame_assumptions` | — |
 | `44` | Wounded Politician Enterprise vs Care Priority | `golden_emergent.rs:505` | `golden_wounded_politician_pain_first`<br>`golden_wounded_politician_enterprise_first`<br>`golden_care_weight_divergence_under_observation`<br>`golden_care_travel_to_remote_patient`<br>`golden_loot_corpse_self_care_chain` | `golden_wounded_politician_replays_deterministically`<br>`golden_care_weight_divergence_replays_deterministically`<br>`golden_care_travel_to_remote_patient_replays_deterministically`<br>`golden_loot_corpse_self_care_chain_replays_deterministically` |
@@ -54,26 +54,26 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6385` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
 | `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6634` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
 | `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7193` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
-| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:88` | — | — |
-| `27` | Controlled Agent Death | `golden_integration.rs:1006` | — | — |
-| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1272` | — | — |
-| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2488` | — | — |
-| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3416` | — | — |
-| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4450` | — | — |
+| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:88` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
+| `27` | Controlled Agent Death | `golden_integration.rs:1006` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
+| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1272` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
+| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2488` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
+| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3416` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
+| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4450` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
-| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:391` | `golden_bribe_support_coalition` | — |
+| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:391` | `golden_bribe_support_coalition`<br>`bench_branchy_office_coalition` | — |
 | `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:632` | `golden_threaten_with_courage_diversity` | — |
 | `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:927` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
 | `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1040` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
-| `33` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1256` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
+| `73` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1256` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
 | `34` | Knowledge Asymmetry Race | `golden_offices.rs:1554` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
 | `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1918` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
 | `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2120` | `golden_faction_eligibility_filters_office_claim` | — |
 | `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2281` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
-| `20` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2665` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
-| `21` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2930` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
+| `71` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2665` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
+| `72` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2930` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
 | `52` | Patrol Cycle Wraps Route | `golden_patrol.rs:302` | `golden_patrol_cycle_wraps_route` | `golden_patrol_cycle_wraps_route_replays_deterministically` |
 | `53` | Patrol Interruption Preserves Waypoint Until Resume | `golden_patrol.rs:333` | `golden_patrol_interruption_preserves_waypoint_until_resume` | — |
 | `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:471` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
@@ -88,8 +88,8 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `68` | Bandit witnesses traveler leave, pursues, attacks | `golden_pursuit.rs:339` | `golden_bandit_witnesses_and_pursues` | `golden_bandit_witnesses_and_pursues_replays_deterministically` |
 | `69` | Bandit pursues stale target, arrival failure | `golden_pursuit.rs:480` | `golden_stale_pursuit_arrival_failure` | `golden_stale_pursuit_arrival_failure_replays_deterministically` |
 | `70` | Combat → flee → re-pursue | `golden_pursuit.rs:624` | `golden_combat_flee_re_pursue` | `golden_combat_flee_re_pursue_replays_deterministically` |
-| `31` | Stress with Frequent Disruptions | `golden_resilience.rs:23` | — | — |
-| `32` | Long Replay Consistency | `golden_resilience.rs:291` | — | — |
+| `31` | Stress with Frequent Disruptions | `golden_resilience.rs:23` | `t31_stress_disruptions` | — |
+| `32` | Long Replay Consistency | `golden_resilience.rs:291` | `t32_replay_consistency` | — |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
 | `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:1980` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
 | `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:2024` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
@@ -97,7 +97,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `49` | Wound-Dampened Raid Spiral | `golden_t22_bandit_camp_destruction.rs:2102` | `golden_wound_dampened_raid_spiral` | `golden_wound_dampened_raid_spiral_replays_deterministically` |
 | `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:914` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
 | `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:949` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
-| `27` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:984` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
+| `74` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:984` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
 | `58` | Travel Need Escalation | `golden_travel_physiology.rs:53` | `golden_travel_escalation` | — |
 | `59` | Critical Bladder Local Relief | `golden_travel_physiology.rs:199` | `golden_critical_bladder_local_relief` | — |
 | `60` | Agent Diversity in Travel Escalation | `golden_travel_physiology.rs:337` | `golden_agent_diversity` | — |
@@ -525,9 +525,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Needs, Production, Travel
 - Places: VillageSquare, OrchardFarm, GeneralStore
 - Principles: 6
-- Primary tests: `golden_world_runs_without_observers`
+- Primary tests: `golden_world_runs_without_observers`, `bench_world_runs_without_observers`
 - Replay tests: `golden_world_runs_without_observers_replays_deterministically`
-- All tests: `golden_world_runs_without_observers`, `golden_world_runs_without_observers_replays_deterministically`
+- All tests: `golden_world_runs_without_observers`, `golden_world_runs_without_observers_replays_deterministically`, `bench_world_runs_without_observers`
 
 **Setup**: Four agents across three places for 200 ticks under full AI loop. Farmer (hungry, orchard), Merchant (enterprise-focused, MerchandiseProfile), Villager (hungry+thirsty, bread+water), Wanderer (thirsty+fatigued).
 
@@ -719,9 +719,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
 - Places: Market, Farm, BanditRoad, SafeRoute, RemoteOrchard (5-place topology)
 - Principles: 4, 7, 10, 12, 14
-- Primary tests: None
+- Primary tests: `t20_apple_stockout_seed_1`, `t20_apple_stockout_seed_2`, `t24_player_replacement_seed_1`, `t24_player_replacement_seed_2`
 - Replay tests: None
-- All tests: 
+- All tests: `t20_apple_stockout_seed_1`, `t20_apple_stockout_seed_2`, `t24_player_replacement_seed_1`, `t24_player_replacement_seed_2`
 
 **Setup**: Market: Merchant with MerchandiseProfile selling Apples (10 stock). Consumer with high hunger (pm(600)) and coins. Farm: OrchardRow workstation + ResourceSource(Apple, capacity 20). BanditRoad: 2 bandits with BanditCamp. Routes: Market↔BanditRoad↔Farm (short, 3+3=6 ticks) Market↔SafeRoute↔Farm (long, 5+5=10 ticks) RemoteOrchard: connected to Farm (topology richness).
 
@@ -737,9 +737,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Combat
 - Places: Alpha (custom 1-place world)
 - Principles: 4, 9, 10
-- Primary tests: None
+- Primary tests: `t27_controlled_agent_death_seed_1`, `t27_controlled_agent_death_seed_2`
 - Replay tests: None
-- All tests: 
+- All tests: `t27_controlled_agent_death_seed_1`, `t27_controlled_agent_death_seed_2`
 
 **Setup**: Minimal 1-place world. Agent A is Human with low wound_capacity (pm(200)). Attacker is Ai with high unarmed_wound_severity (pm(400)) and fast attacks (2-tick). Attacker is hostile to Agent A, ensuring EngageHostile. Both are sated to prevent needs-driven distractions.
 
@@ -755,9 +755,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Transport, Epistemic, Social, Generic (≥ 4 required)
 - Places: Market, Storehouse, Tavern, GuardPost (4-place topology)
 - Principles: 1, 7, 10, 14, 16
-- Primary tests: None
+- Primary tests: `t28_pursuit_information_boundary_seed_1`, `t28_pursuit_information_boundary_seed_2`, `t29_wrongful_accusation_seed_1`, `t29_wrongful_accusation_seed_2`
 - Replay tests: None
-- All tests: 
+- All tests: `t28_pursuit_information_boundary_seed_1`, `t28_pursuit_information_boundary_seed_2`, `t29_wrongful_accusation_seed_1`, `t29_wrongful_accusation_seed_2`
 
 **Setup**: Storehouse: Owner with owned Apple lots. Thief. Bystander. Market: Witness (relocates to GuardPost after observation). Tavern: empty (topology richness). GuardPost: Justice authority with JusticeDispositionProfile.
 
@@ -773,9 +773,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
 - Places: RulersHall, Market, GateRoad, BanditForest, GuardPost, Farm
 - Principles: 4, 7, 10, 12, 14
-- Primary tests: None
+- Primary tests: `t21_ruler_death_patrol_gap_seed_1`, `t21_ruler_death_patrol_gap_seed_2`
 - Replay tests: None
-- All tests: 
+- All tests: `t21_ruler_death_patrol_gap_seed_1`, `t21_ruler_death_patrol_gap_seed_2`
 
 **Setup**: 6-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 claimants with faction membership and enterprise_weight compete for the vacant office. 3 guards with PatrolRoute covering GateRoad abandon patrol when political goals outrank patrol_motive_weight during vacancy. 2 bandits at BanditForest with BanditCamp. Merchant at Market with goods.
 
@@ -791,9 +791,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
 - Places: RulersHall, Market, Road, Farm, GuardPost
 - Principles: 4, 7, 8, 10, 11, 12, 14
-- Primary tests: None
+- Primary tests: `t33_vacancy_crime_recovery_seed_1`, `t33_vacancy_crime_recovery_seed_2`
 - Replay tests: None
-- All tests: 
+- All tests: `t33_vacancy_crime_recovery_seed_1`, `t33_vacancy_crime_recovery_seed_2`
 
 **Setup**: 5-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 guards with PatrolRoute covering Market and Road abandon patrol when political goals outrank patrol_motive_weight during vacancy. 1 thief at Road with high witness_risk_penalty (pm(900)) is fully deterred by any guard presence. Merchant at Market with owned goods on the ground.
 
@@ -809,9 +809,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Combat, Generic, Travel, Social, Production
 - Places: T22ROldCamp, T22RRallyGlen, T22RMarket, T22RSafeRoute, T22RFarm, T22RDownstream
 - Principles: 1, 3, 7, 12, 14, 17, 25
-- Primary tests: None
+- Primary tests: `t22_camp_reconstitution_seed_1`, `t22_camp_reconstitution_seed_2`
 - Replay tests: None
-- All tests: 
+- All tests: `t22_camp_reconstitution_seed_1`, `t22_camp_reconstitution_seed_2`
 
 **Setup**: Six-place topology with two routes between Market and Farm: a short route through RallyGlen (4 ticks) and a safe route through SafeRoute (8 ticks). Bandits occupy OldCamp with rally doctrine pointing to RallyGlen. Guards at OldCamp will attack. Merchant at Market sells apples with a restock demand observation. Farm has apple source. A traveler with apples and a witness wait at Market.
 
@@ -877,9 +877,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Generic
 - Places: VillageSquare, OrchardFarm
 - Principles: 1, 10
-- Primary tests: `golden_bribe_support_coalition`
+- Primary tests: `golden_bribe_support_coalition`, `bench_branchy_office_coalition`
 - Replay tests: None
-- All tests: `golden_bribe_support_coalition`
+- All tests: `golden_bribe_support_coalition`, `bench_branchy_office_coalition`
 
 **Setup**: A with enterprise_weight=pm(900) holds 5 bread. B at jurisdiction, no loyalty. C (competitor) at OrchardFarm with pre-declared self-support. Wider beam_width=16 for branchy adjacency graph.
 
@@ -941,7 +941,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: No office belief -> no political candidate generation -> explicit reported belief update -> ClaimOffice candidate -> travel to jurisdiction -> DeclareSupport -> succession resolution.
 
-### Scenario 33: Remote Record Travel + Consultation + Political Action
+### Scenario 73: Remote Record Travel + Consultation + Political Action
 
 - Source: `golden_offices.rs:1256`
 - Systems: AI, Travel, ConsultRecord, Succession, Political actions
@@ -1031,7 +1031,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: Believed vacant Force-law office -> ClaimOffice candidate -> press_force_claim execution -> controller establishment -> uncontested hold delay -> office installation.
 
-### Scenario 20: Contested Force Claim Resolves Only After Yield
+### Scenario 71: Contested Force Claim Resolves Only After Yield
 
 - Source: `golden_offices.rs:2665`
 - Systems: Force-claim actions, Force-control succession
@@ -1049,7 +1049,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: Two press_force_claim commits -> contested state -> one yield -> sole controller established -> delayed installation.
 
-### Scenario 21: Force Control Knowledge Stays Local Until Tell
+### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
 - Source: `golden_offices.rs:2930`
 - Systems: Force-control succession, Tell, Perception
@@ -1314,9 +1314,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport
 - Places: T30Hub, T30Market, T30Farm, T30Forge, T30Barracks, T30RulersHall, T30Forest, T30BanditCamp, T30Road, T30Orchard
 - Principles: 3, 4, 6, 7, 8, 10, 12, 14, 26
-- Primary tests: None
+- Primary tests: `t31_stress_disruptions`
 - Replay tests: None
-- All tests: 
+- All tests: `t31_stress_disruptions`
 
 **Setup**: Reuses T30's 10-place topology and 20-agent population. Every 100 ticks, one random disruption is injected via WorldTxn: kill an agent, destroy an item lot, remove a workstation tag, or teleport an agent. Disruption type is selected deterministically from DeterministicRng for reproducibility. Runs 2880 ticks (2 in-game days) with 28 disruptions total.
 
@@ -1332,9 +1332,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 - ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport
 - Places: T30Hub, T30Market, T30Farm, T30Forge, T30Barracks, T30RulersHall, T30Forest, T30BanditCamp, T30Road, T30Orchard
 - Principles: 3, 4, 6, 12
-- Primary tests: None
+- Primary tests: `t32_replay_consistency`
 - Replay tests: None
-- All tests: 
+- All tests: `t32_replay_consistency`
 
 **Setup**: Reuses T30's 10-place topology and 20-agent population. A continuous 1440-tick run records (hash_world, hash_event_log) at every 100-tick checkpoint. A split run saves at tick 720, loads the snapshot, and continues for another 720 ticks, recording the same checkpoints.
 
@@ -1466,7 +1466,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: Demand memory -> enterprise restock signal -> multi-leg travel -> harvest/materialization -> cargo return to home market.
 
-### Scenario 27: Local Trade Start Failure Recovers via Production Fallback
+### Scenario 74: Local Trade Start Failure Recovers via Production Fallback
 
 - Source: `golden_trade.rs:984`
 - Systems: AI, Trade, Production, Travel, Conservation

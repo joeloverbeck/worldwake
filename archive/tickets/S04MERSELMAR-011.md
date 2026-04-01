@@ -1,6 +1,6 @@
 # S04MERSELMAR-011: Golden integration tests for merchant selling market presence
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED (partial — 5 of 12 scenarios; remaining 7 deferred to follow-up)
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None — test-only ticket
@@ -112,3 +112,18 @@ Update `docs/generated/golden-scenario-map.md` and `docs/generated/golden-e2e-in
 1. `cargo test -p worldwake-ai -- golden_merchant_selling`
 2. `cargo clippy --workspace && cargo test --workspace`
 3. `python3 scripts/golden_inventory.py --write --check-docs`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - Created `crates/worldwake-ai/tests/golden_merchant_selling.rs` with 5 core golden tests + 2 replay companions
+  - Tests: staff_market lists/unlists, buyer trades listed lot, unlisted stock invisible, blocked intent dampens relisting, deterministic replay
+  - Fixed planner search gate: removed `SellCommodity` from `unsupported_goal` in `search/candidates.rs`
+  - Added `StaffMarket` payload override in `goal_model.rs:build_payload_override`
+  - Added `payload_override_is_valid` for `staff_market` handler registration
+  - Updated golden inventory via `golden_inventory.py`
+- **Deviations from original plan**:
+  - Only 5 of 12 scenarios implemented (per user-approved option 2 to avoid context degradation). Remaining 7: seller departure, dead seller, move cargo chain, demand ranking, planning state determinism, buyer discovery evidence, replay variant.
+  - Discovered and fixed a planner infrastructure gap: `SellCommodity` was hardcoded as `unsupported_goal` in search, and `staff_market` lacked a payload override validator. Both were required for the AI to autonomously plan and execute `SellCommodity` → `StaffMarket`.
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` all tests pass
