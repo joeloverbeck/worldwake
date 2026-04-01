@@ -981,7 +981,7 @@ fn golden_merchant_restock_return_stock_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 27: Local Trade Start Failure Recovers via Production Fallback
+// Scenario 74: Local Trade Start Failure Recovers via Production Fallback
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Trade, Production, Travel, Conservation
