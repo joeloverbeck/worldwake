@@ -1521,7 +1521,7 @@ fn run_observed_harvest_competition_scenario(
             observer,
             MerchandiseProfile {
                 sale_kinds: std::collections::BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(VILLAGE_SQUARE),
+                home_facility: Some(VILLAGE_SQUARE),
             },
         )
         .unwrap();

@@ -1029,7 +1029,7 @@ fn conformance_trade_exact_acquisition() {
             seller,
             worldwake_core::MerchandiseProfile {
                 sale_kinds: std::collections::BTreeSet::from([CommodityKind::Bread]),
-                home_market: None,
+                home_facility: None,
             },
         )
         .unwrap();

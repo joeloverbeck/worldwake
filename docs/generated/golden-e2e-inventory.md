@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 18
 - Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 254
+- Total `golden_*` tests: 258
 
 ## Per-File Inventory
 
@@ -19,7 +19,7 @@ Do not hand-edit it.
 | `golden_determinism.rs` | 10 |
 | `golden_emergent.rs` | 47 |
 | `golden_integration.rs` | 16 |
-| `golden_merchant_selling.rs` | 16 |
+| `golden_merchant_selling.rs` | 18 |
 | `golden_offices.rs` | 22 |
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
@@ -29,7 +29,7 @@ Do not hand-edit it.
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 0 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
-| `golden_trade.rs` | 7 |
+| `golden_trade.rs` | 9 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_ai_decisions.rs`
@@ -186,15 +186,17 @@ Do not hand-edit it.
 
 ### `golden_merchant_selling.rs`
 
-- `staff_market_lists_on_start_unlists_on_complete`
-- `staff_market_lists_on_start_unlists_on_complete_replays_deterministically`
+- `staff_market_retains_displayed_listing_through_presence_cycle`
+- `staff_market_retains_displayed_listing_replays_deterministically`
 - `buyer_trades_against_listed_lot`
 - `buyer_trades_against_listed_lot_replays_deterministically`
 - `unlisted_stock_not_sellable`
-- `blocked_intent_dampens_relisting_after_unproductive_cycle`
+- `loose_home_stock_is_staged_before_sell_goal_settles`
 - `deterministic_replay_preserves_listing_behavior`
+- `unstage_round_trip_preserves_storage_contract`
+- `unstage_round_trip_preserves_storage_contract_replays_deterministically`
 - `buyer_discovers_listed_lots_not_unlisted_stock`
-- `merchant_emits_sell_commodity_at_home_market`
+- `merchant_emits_sell_commodity_at_home_facility`
 - `seller_departure_invalidates_listing`
 - `dead_seller_invalidates_listing`
 - `move_cargo_then_sell_commodity_plan_shape`
@@ -323,6 +325,8 @@ Do not hand-edit it.
 - `golden_buyer_driven_trade_acquisition_replays_deterministically`
 - `golden_merchant_restock_return_stock`
 - `golden_merchant_restock_return_stock_replays_deterministically`
+- `golden_carrier_delivery_to_facility_preserves_seller_identity`
+- `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically`
 - `golden_local_trade_start_failure_recovers_via_production_fallback`
 - `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically`
 

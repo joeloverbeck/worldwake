@@ -2059,7 +2059,7 @@ fn golden_utility_weight_diversity_in_need_selection() {
             enterprise_driven,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(VILLAGE_SQUARE),
+                home_facility: Some(VILLAGE_SQUARE),
             },
         )
         .unwrap();

@@ -727,8 +727,9 @@ fn staff_market_payload<'a>(
     })
 }
 
-/// Validate that actor is at `home_market`, has `MerchandiseProfile` with the
-/// payload commodity in `sale_kinds`, and controls local stock.
+/// Validate that actor is at the place of their bound home facility, has
+/// `MerchandiseProfile` with the payload commodity in `sale_kinds`, and has
+/// accessible local stock for that exact facility.
 fn validate_staff_market_preconditions(
     txn: &WorldTxn<'_>,
     actor: EntityId,
@@ -743,27 +744,22 @@ fn validate_staff_market_preconditions(
         .ok_or_else(|| {
             ActionError::InternalError(format!("actor {actor} lacks MerchandiseProfile"))
         })?;
-    if profile.home_market != Some(place) {
+    let home_facility = profile.home_facility.ok_or(ActionError::AbortRequested(
+        ActionAbortRequestReason::ActorNotPlaced { actor },
+    ))?;
+    if txn.effective_place(home_facility) != Some(place) {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::ActorNotPlaced { actor },
         ));
     }
+    txn.can_exercise_control(actor, home_facility)
+        .map_err(|err| ActionError::PreconditionFailed(err.to_string()))?;
     if !profile.sale_kinds.contains(&commodity) {
         return Err(ActionError::InternalError(format!(
             "commodity {commodity:?} not in actor {actor} sale_kinds"
         )));
     }
-    // Must have displayed stock at the place (either possessed or in a
-    // facility display container with SaleListing).
-    let has_local_stock = txn
-        .possessions_of(actor)
-        .into_iter()
-        .any(|entity| {
-            txn.get_component_item_lot(entity)
-                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
-                && txn.effective_place(entity) == Some(place)
-        })
-        || displayed_sale_lots_at(txn, place, commodity);
+    let has_local_stock = staff_market_has_sellable_stock(txn, actor, home_facility, commodity);
     if !has_local_stock {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::HolderLacksAccessibleCommodity {
@@ -776,21 +772,42 @@ fn validate_staff_market_preconditions(
     Ok((place, profile))
 }
 
-/// Find all directly-possessed local lots of `commodity` at `place`.
-/// Check whether any lots with `SaleListing` and `StockAssignment::Displayed`
-/// exist at the given place for the given commodity.
-fn displayed_sale_lots_at(
+fn staff_market_has_sellable_stock(
     txn: &WorldTxn<'_>,
-    place: EntityId,
+    actor: EntityId,
+    home_facility: EntityId,
     commodity: CommodityKind,
 ) -> bool {
+    let Some(place) = txn.effective_place(actor) else {
+        return false;
+    };
+    txn.possessions_of(actor).into_iter().any(|entity| {
+        txn.get_component_item_lot(entity)
+            .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+            && txn.effective_place(entity) == Some(place)
+    }) || displayed_sale_lots_at_facility(txn, home_facility, commodity)
+}
+
+/// Check whether any lots with `SaleListing` and `StockAssignment::Displayed`
+/// exist for the given facility and commodity.
+fn displayed_sale_lots_at_facility(
+    txn: &WorldTxn<'_>,
+    facility: EntityId,
+    commodity: CommodityKind,
+) -> bool {
+    let Some(place) = txn.effective_place(facility) else {
+        return false;
+    };
     txn.entities_effectively_at(place).into_iter().any(|entity| {
         txn.get_component_item_lot(entity)
             .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
             && txn.has_component_sale_listing(entity)
             && txn
                 .get_component_stock_assignment(entity)
-                .is_some_and(|a| a.kind == worldwake_core::StockAssignmentKind::Displayed)
+                .is_some_and(|a| {
+                    a.kind == worldwake_core::StockAssignmentKind::Displayed
+                        && a.facility == facility
+                })
     })
 }
 
@@ -829,11 +846,14 @@ fn commit_staff_market(
     let commodity = payload.commodity;
     // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
     // Record unproductive demand if displayed stock remains unsold.
-    if let Some(place) = txn.effective_place(instance.actor) {
-        let has_displayed_stock = displayed_sale_lots_at(txn, place, commodity);
-        if has_displayed_stock {
-            record_unproductive_demand(txn, instance.actor, commodity, place);
-            record_sell_blocked_intent(txn, instance.actor, commodity, place);
+    if let Some(profile) = txn.get_component_merchandise_profile(instance.actor) {
+        if let Some(home_facility) = profile.home_facility {
+            if let Some(place) = txn.effective_place(home_facility) {
+                if staff_market_has_sellable_stock(txn, instance.actor, home_facility, commodity) {
+                    record_unproductive_demand(txn, instance.actor, commodity, place);
+                    record_sell_blocked_intent(txn, instance.actor, commodity, place);
+                }
+            }
         }
     }
     Ok(CommitOutcome::empty())
@@ -1067,6 +1087,7 @@ mod tests {
                 txn.set_possessor(actor_offer, actor).unwrap();
                 txn.set_owner(actor_offer, actor).unwrap();
                 // Create facility for counterparty and stage the sale lot.
+                let facility = {
                 {
                     use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
                     let (facility, _stock, display) = txn
@@ -1089,7 +1110,9 @@ mod tests {
                         },
                     )
                     .unwrap();
+                    facility
                 }
+                };
                 txn.set_component_trade_disposition_profile(
                     actor,
                     TradeDispositionProfile {
@@ -1120,7 +1143,7 @@ mod tests {
                     counterparty,
                     MerchandiseProfile {
                         sale_kinds: [requested_commodity].into_iter().collect(),
-                        home_market: Some(place),
+                        home_facility: Some(facility),
                     },
                 )
                 .unwrap();
@@ -2089,7 +2112,7 @@ mod tests {
                     actor,
                     MerchandiseProfile {
                         sale_kinds: [commodity].into_iter().collect(),
-                        home_market: Some(place),
+                        home_facility: Some(facility),
                     },
                 )
                 .unwrap();
@@ -2419,7 +2442,7 @@ mod tests {
     }
 
     #[test]
-    fn staff_market_fails_if_actor_not_at_home_market() {
+    fn staff_market_fails_if_actor_not_at_home_facility() {
         let mut h = StaffMarketHarness::new();
         // Move actor to a different place.
         let other_place = h

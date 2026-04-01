@@ -5,7 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
-use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
+use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -57,6 +57,10 @@ pub enum PlannerTransitionKind {
     PickUpGroundLot,
     StealGroundLot,
     PutDownGroundLot,
+    StoreStockIntoLocalFacility,
+    StageStoredStockForSale,
+    CollectFacilityStockToPossession,
+    UnstageDisplayedStock,
 }
 
 #[must_use]
@@ -159,7 +163,13 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             op_kind,
             true,
             false,
-            PlannerTransitionKind::GoalModelFallback,
+            match def.name.as_str() {
+                "store_stock" => PlannerTransitionKind::StoreStockIntoLocalFacility,
+                "stage_stock_for_sale" => PlannerTransitionKind::StageStoredStockForSale,
+                "collect_display_stock" => PlannerTransitionKind::CollectFacilityStockToPossession,
+                "unstage_stock" => PlannerTransitionKind::UnstageDisplayedStock,
+                _ => PlannerTransitionKind::GoalModelFallback,
+            },
         ),
         PlannerOpKind::Patrol => base_semantics(
             op_kind,
@@ -285,6 +295,26 @@ pub fn apply_hypothetical_transition<'snapshot>(
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
             apply_put_down_transition(state, targets)
+        }
+        PlannerTransitionKind::StoreStockIntoLocalFacility => {
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
+            apply_store_stock_transition(state, targets)
+        }
+        PlannerTransitionKind::StageStoredStockForSale => {
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
+            apply_stage_stock_transition(state, targets)
+        }
+        PlannerTransitionKind::CollectFacilityStockToPossession => {
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
+            apply_collect_stock_transition(state, targets)
+        }
+        PlannerTransitionKind::UnstageDisplayedStock => {
+            let state =
+                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
+            apply_unstage_stock_transition(state, targets)
         }
     }
 }
@@ -490,6 +520,223 @@ fn apply_steal_transition<'snapshot>(
         state: state.move_lot_ref_to_holder(lot_ref, actor_ref, commodity, quantity),
         expected_materializations: Vec::new(),
     })
+}
+
+fn apply_store_stock_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let actor_place = state.effective_place_ref(actor_ref)?;
+    let stock_container = state
+        .merchandise_profile(state.snapshot().actor())
+        .and_then(|profile| profile.home_facility)
+        .filter(|facility| state.effective_place(*facility) == Some(actor_place))
+        .and_then(|facility| {
+            state
+                .can_control(state.snapshot().actor(), facility)
+                .then(|| state.stock_storage_policy(facility))
+                .flatten()
+        })
+        .map(|policy| PlanningEntityRef::Authoritative(policy.stock_container))
+        .or_else(|| {
+            state
+                .controlled_stock_containers_at_place(actor_ref, actor_place)
+                .into_iter()
+                .next()
+        })?;
+    let lot_ref = targets.first().copied()?;
+    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
+        return None;
+    }
+    if state.effective_place_ref(lot_ref)? != actor_place {
+        return None;
+    }
+    if state.direct_possessor_ref(lot_ref) != Some(actor_ref) {
+        return None;
+    }
+
+    Some(HypotheticalTransition {
+        targets: vec![lot_ref],
+        state: state.set_container_ref(lot_ref, stock_container),
+        expected_materializations: Vec::new(),
+    })
+}
+
+fn apply_stage_stock_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let actor_place = state.effective_place_ref(actor_ref)?;
+    let lot_ref = targets.first().copied()?;
+    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
+        return None;
+    }
+    if state.effective_place_ref(lot_ref)? != actor_place {
+        return None;
+    }
+    if state.direct_possessor_ref(lot_ref).is_some() {
+        return None;
+    }
+    let stored_in = state.direct_container_ref(lot_ref)?;
+    let (facility, display_container) =
+        controlled_facility_for_stock_container(&state, actor_ref, actor_place, stored_in)?;
+    let seller = facility_controller_for_transition(&state, actor_ref, facility)?;
+
+    Some(HypotheticalTransition {
+        targets: vec![lot_ref],
+        state: state
+            .set_container_ref(lot_ref, display_container)
+            .set_sale_listing_ref(lot_ref, Some(seller)),
+        expected_materializations: Vec::new(),
+    })
+}
+
+fn apply_collect_stock_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let actor_place = state.effective_place_ref(actor_ref)?;
+    let lot_ref = targets.first().copied()?;
+    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
+        return None;
+    }
+    if state.effective_place_ref(lot_ref)? != actor_place {
+        return None;
+    }
+    if state.direct_possessor_ref(lot_ref).is_some() {
+        return None;
+    }
+    let container = state.direct_container_ref(lot_ref)?;
+    let _ = controlled_facility_for_any_storage_container(&state, actor_ref, actor_place, container)?;
+
+    Some(HypotheticalTransition {
+        targets: vec![lot_ref],
+        state: state
+            .set_possessor_ref(lot_ref, actor_ref)
+            .clear_sale_listing_ref(lot_ref),
+        expected_materializations: Vec::new(),
+    })
+}
+
+fn apply_unstage_stock_transition<'snapshot>(
+    state: PlanningState<'snapshot>,
+    targets: &[PlanningEntityRef],
+) -> Option<HypotheticalTransition<'snapshot>> {
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let actor_place = state.effective_place_ref(actor_ref)?;
+    let lot_ref = targets.first().copied()?;
+    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
+        return None;
+    }
+    if state.effective_place_ref(lot_ref)? != actor_place {
+        return None;
+    }
+    if state.direct_possessor_ref(lot_ref).is_some() {
+        return None;
+    }
+    let displayed_in = state.direct_container_ref(lot_ref)?;
+    let (_facility, stock_container) =
+        controlled_facility_for_display_container(&state, actor_ref, actor_place, displayed_in)?;
+
+    Some(HypotheticalTransition {
+        targets: vec![lot_ref],
+        state: state
+            .set_container_ref(lot_ref, stock_container)
+            .clear_sale_listing_ref(lot_ref),
+        expected_materializations: Vec::new(),
+    })
+}
+
+fn controlled_facility_for_stock_container(
+    state: &PlanningState<'_>,
+    actor_ref: PlanningEntityRef,
+    place: EntityId,
+    container: PlanningEntityRef,
+) -> Option<(EntityId, PlanningEntityRef)> {
+    let container = authoritative_container(container)?;
+    state
+        .snapshot()
+        .entities
+        .iter()
+        .find_map(|(facility, snapshot)| {
+            let policy = snapshot.stock_storage_policy.as_ref()?;
+            (snapshot.effective_place == Some(place)
+                && policy.stock_container == container
+                && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
+            .then_some((
+                *facility,
+                PlanningEntityRef::Authoritative(policy.display_container?),
+            ))
+        })
+}
+
+fn controlled_facility_for_display_container(
+    state: &PlanningState<'_>,
+    actor_ref: PlanningEntityRef,
+    place: EntityId,
+    container: PlanningEntityRef,
+) -> Option<(EntityId, PlanningEntityRef)> {
+    let container = authoritative_container(container)?;
+    state
+        .snapshot()
+        .entities
+        .iter()
+        .find_map(|(facility, snapshot)| {
+            let policy = snapshot.stock_storage_policy.as_ref()?;
+            (snapshot.effective_place == Some(place)
+                && policy.display_container == Some(container)
+                && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
+            .then_some((
+                *facility,
+                PlanningEntityRef::Authoritative(policy.stock_container),
+            ))
+        })
+}
+
+fn controlled_facility_for_any_storage_container(
+    state: &PlanningState<'_>,
+    actor_ref: PlanningEntityRef,
+    place: EntityId,
+    container: PlanningEntityRef,
+) -> Option<EntityId> {
+    let container = authoritative_container(container)?;
+    state
+        .snapshot()
+        .entities
+        .iter()
+        .find_map(|(facility, snapshot)| {
+            let policy = snapshot.stock_storage_policy.as_ref()?;
+            (snapshot.effective_place == Some(place)
+                && (policy.stock_container == container
+                    || policy.display_container == Some(container))
+                && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
+            .then_some(*facility)
+        })
+}
+
+fn authoritative_container(container: PlanningEntityRef) -> Option<EntityId> {
+    match container {
+        PlanningEntityRef::Authoritative(entity) => Some(entity),
+        PlanningEntityRef::Hypothetical(_) => None,
+    }
+}
+
+fn facility_controller_for_transition(
+    state: &PlanningState<'_>,
+    actor_ref: PlanningEntityRef,
+    facility: EntityId,
+) -> Option<EntityId> {
+    match actor_ref {
+        PlanningEntityRef::Authoritative(actor)
+            if state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(facility)) =>
+        {
+            Some(actor)
+        }
+        PlanningEntityRef::Authoritative(_) | PlanningEntityRef::Hypothetical(_) => None,
+    }
 }
 
 fn apply_put_down_transition<'snapshot>(

@@ -65,30 +65,35 @@ fn is_listing_valid(world: &World, lot: EntityId) -> bool {
     if !world.is_alive(lot) {
         return false;
     }
-    // Lot must have a direct possessor.
-    let Some(possessor) = world.possessor_of(lot) else {
-        return false;
-    };
-    // Possessor must be alive.
-    if !world.is_alive(possessor) {
-        return false;
-    }
-    // Possessor must be at the same effective place as the lot.
-    let lot_place = world.effective_place(lot);
-    let possessor_place = world.effective_place(possessor);
-    if lot_place != possessor_place || lot_place.is_none() {
-        return false;
-    }
     // Lot must have an ItemLot component to determine commodity.
     let Some(item_lot) = world.get_component_item_lot(lot) else {
         return false;
     };
     let commodity = item_lot.commodity;
-    // Possessor must have a MerchandiseProfile with the commodity in sale_kinds.
-    let Some(profile) = world.get_component_merchandise_profile(possessor) else {
+    let Some(lot_place) = world.effective_place(lot) else {
         return false;
     };
-    profile.sale_kinds.contains(&commodity)
+
+    if let Some(possessor) = world.possessor_of(lot) {
+        if !world.is_alive(possessor) || world.effective_place(possessor) != Some(lot_place) {
+            return false;
+        }
+        return world
+            .get_component_merchandise_profile(possessor)
+            .is_some_and(|profile| profile.sale_kinds.contains(&commodity));
+    }
+
+    world
+        .get_component_stock_assignment(lot)
+        .filter(|assignment| assignment.kind == worldwake_core::StockAssignmentKind::Displayed)
+        .is_some_and(|assignment| {
+            world.entities_effectively_at(lot_place).into_iter().any(|entity| {
+                world
+                    .get_component_merchandise_profile(entity)
+                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+                    && world.can_exercise_control(entity, assignment.facility).is_ok()
+            })
+        })
 }
 
 fn prune_invalid_listings(world: &mut World, event_log: &mut EventLog, tick: Tick) {
@@ -244,7 +249,7 @@ mod tests {
     fn sale_profile(kinds: &[CommodityKind]) -> MerchandiseProfile {
         MerchandiseProfile {
             sale_kinds: kinds.iter().copied().collect::<BTreeSet<_>>(),
-            home_market: None,
+            home_facility: None,
         }
     }
 

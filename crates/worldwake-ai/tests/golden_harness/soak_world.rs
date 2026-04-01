@@ -351,7 +351,7 @@ pub fn build_t30_world(
                 sale_kinds: [CommodityKind::Apple, CommodityKind::Bread]
                     .into_iter()
                     .collect(),
-                home_market: Some(PLACE_T30_MARKET),
+                home_facility: Some(PLACE_T30_MARKET),
             },
         )
         .unwrap();

@@ -5617,7 +5617,7 @@ mod tests {
                 id,
                 MerchandiseProfile {
                     sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                    home_market: None,
+                    home_facility: None,
                 },
             )
             .unwrap_err();

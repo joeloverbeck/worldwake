@@ -4,7 +4,7 @@ use crate::{
         PrerequisiteGuidanceTrace,
     },
     derive_danger_pressure,
-    enterprise::restock_gap_at_destination,
+    enterprise::{merchant_home_place, restock_gap_at_destination},
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
     GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget,
@@ -977,13 +977,11 @@ impl GoalKindPlannerExt for GoalKind {
                 None => false,
             },
             GoalKind::SellCommodity { commodity } => {
-                let profile = state.merchandise_profile(actor);
-                let home_market = profile.as_ref().and_then(|p| p.home_market);
-                let at_market =
-                    home_market.is_some() && state.effective_place(actor) == home_market;
+                let home_place = merchant_home_place(state, actor, None);
+                let at_market = home_place.is_some() && state.effective_place(actor) == home_place;
                 at_market
                     && !state
-                        .listed_sale_lots_at(home_market.unwrap(), *commodity)
+                        .listed_sale_lots_at(home_place.unwrap(), *commodity)
                         .is_empty()
             }
             GoalKind::ProduceCommodity { .. }
@@ -1066,7 +1064,8 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::SellCommodity { .. } => state
                 .merchandise_profile(actor)
-                .and_then(|p| p.home_market)
+                .and_then(|p| p.home_facility)
+                .and_then(|facility| state.effective_place(facility))
                 .into_iter()
                 .collect(),
             GoalKind::RestockCommodity { commodity } => {
@@ -1076,7 +1075,11 @@ impl GoalKindPlannerExt for GoalKind {
                     places_with_resource_source(state, *commodity)
                 }
             }
-            GoalKind::MoveCargo { destination, .. } => vec![*destination],
+            GoalKind::MoveCargo { destination, .. } => state
+                .effective_place(*destination)
+                .or(Some(*destination))
+                .into_iter()
+                .collect(),
             GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
                 state.effective_place(*corpse).into_iter().collect()
             }
@@ -2340,6 +2343,125 @@ mod tests {
         .is_satisfied(&state));
     }
 
+    #[test]
+    fn move_cargo_facility_destination_requires_facility_custody_not_carried_stock() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let facility = entity_id(3, 0);
+        let stock_container = entity_id(4, 0);
+        let bread = entity_id(5, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, facility, stock_container, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(stock_container, EntityKind::Container);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(facility, destination);
+        view.effective_places.insert(stock_container, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at
+            .insert(destination, vec![actor, facility, stock_container, bread]);
+        view.direct_possessions.insert(actor, vec![bread]);
+        view.direct_possessors.insert(bread, actor);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.extend([(actor, facility), (actor, stock_container), (actor, bread)]);
+        view.stock_storage_policies.insert(
+            facility,
+            worldwake_core::StockStoragePolicy {
+                stock_container,
+                display_container: None,
+            },
+        );
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination: facility,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn move_cargo_facility_destination_accepts_stock_in_container() {
+        let actor = entity_id(1, 0);
+        let destination = entity_id(2, 0);
+        let facility = entity_id(3, 0);
+        let stock_container = entity_id(4, 0);
+        let bread = entity_id(5, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, facility, stock_container, bread]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(stock_container, EntityKind::Container);
+        view.kinds.insert(bread, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(facility, destination);
+        view.effective_places.insert(stock_container, destination);
+        view.effective_places.insert(bread, destination);
+        view.entities_at
+            .insert(destination, vec![actor, facility, stock_container, bread]);
+        view.direct_containers.insert(bread, stock_container);
+        view.lot_commodities.insert(bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.extend([(actor, facility), (actor, stock_container), (actor, bread)]);
+        view.stock_storage_policies.insert(
+            facility,
+            worldwake_core::StockStoragePolicy {
+                stock_container,
+                display_container: None,
+            },
+        );
+        view.demand_memory.insert(
+            actor,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: destination,
+                tick: Tick(1),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButNoSeller,
+            }],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread]),
+            &BTreeSet::from([destination]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination: facility,
+        }
+        .is_satisfied(&state));
+    }
+
     struct TestBeliefView {
         current_tick: Tick,
         alive: BTreeSet<EntityId>,
@@ -2348,6 +2470,7 @@ mod tests {
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
+        direct_containers: BTreeMap<EntityId, EntityId>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         consumable_profiles: BTreeMap<EntityId, CommodityConsumableProfile>,
@@ -2383,6 +2506,7 @@ mod tests {
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         office_data_map: BTreeMap<EntityId, OfficeData>,
+        stock_storage_policies: BTreeMap<EntityId, worldwake_core::StockStoragePolicy>,
     }
 
     impl Default for TestBeliefView {
@@ -2395,6 +2519,7 @@ mod tests {
                 entities_at: BTreeMap::new(),
                 direct_possessions: BTreeMap::new(),
                 direct_possessors: BTreeMap::new(),
+                direct_containers: BTreeMap::new(),
                 adjacent: BTreeMap::new(),
                 lot_commodities: BTreeMap::new(),
                 consumable_profiles: BTreeMap::new(),
@@ -2428,6 +2553,7 @@ mod tests {
                 faction_rally_point_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data_map: BTreeMap::new(),
+                stock_storage_policies: BTreeMap::new(),
             }
         }
     }
@@ -2512,11 +2638,19 @@ mod tests {
         }
         fn local_controlled_lots_for(
             &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
+            let mut entities = self.entities_at(place);
+            entities.extend(self.direct_possessions(actor));
+            entities.sort();
+            entities.dedup();
+            entities
+                .into_iter()
+                .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+                .filter(|entity| self.can_control(actor, *entity))
+                .collect()
         }
 
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
@@ -2530,8 +2664,8 @@ mod tests {
             self.consumable_profiles.get(&entity).copied()
         }
 
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
         }
 
         fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
@@ -2544,6 +2678,10 @@ mod tests {
 
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
             self.workstation_tags.get(&entity).copied()
+        }
+
+        fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+            self.stock_storage_policies.get(&facility).cloned()
         }
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
@@ -2874,7 +3012,7 @@ mod tests {
             seller,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: None,
+                home_facility: None,
             },
         );
         let seller_lot = entity(30);
@@ -4741,7 +4879,7 @@ mod tests {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(place_c),
+                home_facility: Some(place_c),
             },
         );
         view.trade_profiles
@@ -5011,7 +5149,7 @@ mod tests {
             seller,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Medicine]),
-                home_market: None,
+                home_facility: None,
             },
         );
         view.resource_sources.insert(
@@ -7308,19 +7446,26 @@ mod tests {
     }
 
     #[test]
-    fn sell_commodity_satisfied_when_at_home_market_with_listed_lot() {
+    fn sell_commodity_satisfied_when_at_home_facility_with_listed_lot() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
-        let bread_lot = entity_id(3, 0);
+        let facility = entity_id(3, 0);
+        let display_container = entity_id(5, 0);
+        let bread_lot = entity_id(4, 0);
         let mut view = TestBeliefView::default();
-        view.alive.extend([actor, bread_lot]);
+        view.alive
+            .extend([actor, facility, display_container, bread_lot]);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(display_container, EntityKind::Container);
         view.kinds.insert(bread_lot, EntityKind::ItemLot);
         view.effective_places.insert(actor, market);
+        view.effective_places.insert(facility, market);
+        view.effective_places.insert(display_container, market);
         view.effective_places.insert(bread_lot, market);
-        view.entities_at.insert(market, vec![actor, bread_lot]);
-        view.direct_possessions.insert(actor, vec![bread_lot]);
-        view.direct_possessors.insert(bread_lot, actor);
+        view.entities_at
+            .insert(market, vec![actor, facility, display_container, bread_lot]);
+        view.direct_containers.insert(bread_lot, display_container);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
         view.commodity_quantities
             .insert((bread_lot, CommodityKind::Bread), Quantity(3));
@@ -7328,7 +7473,14 @@ mod tests {
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
+            },
+        );
+        view.stock_storage_policies.insert(
+            facility,
+            worldwake_core::StockStoragePolicy {
+                stock_container: entity_id(6, 0),
+                display_container: Some(display_container),
             },
         );
         view.listed_lots
@@ -7351,19 +7503,23 @@ mod tests {
     }
 
     #[test]
-    fn sell_commodity_not_satisfied_when_not_at_home_market() {
+    fn sell_commodity_not_satisfied_when_not_at_home_facility() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
+        let facility = entity_id(3, 0);
         let other = entity_id(4, 0);
         let mut view = TestBeliefView::default();
         view.alive.insert(actor);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(actor, other);
+        view.effective_places.insert(facility, market);
+        view.entities_at.insert(market, vec![facility]);
         view.merchandise_profiles.insert(
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 
@@ -7386,15 +7542,19 @@ mod tests {
     fn sell_commodity_not_satisfied_when_no_listed_lot() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
+        let facility = entity_id(3, 0);
         let mut view = TestBeliefView::default();
         view.alive.insert(actor);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(actor, market);
+        view.effective_places.insert(facility, market);
+        view.entities_at.insert(market, vec![actor, facility]);
         view.merchandise_profiles.insert(
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 
@@ -7414,18 +7574,22 @@ mod tests {
     }
 
     #[test]
-    fn sell_commodity_relevant_places_returns_home_market() {
+    fn sell_commodity_relevant_places_returns_home_facility_place() {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
+        let facility = entity_id(3, 0);
         let mut view = TestBeliefView::default();
         view.alive.insert(actor);
         view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(actor, market);
+        view.effective_places.insert(facility, market);
+        view.entities_at.insert(market, vec![actor, facility]);
         view.merchandise_profiles.insert(
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(market),
+                home_facility: Some(facility),
             },
         );
 

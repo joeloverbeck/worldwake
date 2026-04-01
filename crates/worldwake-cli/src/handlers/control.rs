@@ -380,7 +380,7 @@ mod tests {
                     utility_profile: None,
                     merchandise_profile: Some(MerchandiseProfileDef {
                         sale_kinds: vec![CommodityKind::Grain],
-                        home_market: None,
+                        home_facility: None,
                     }),
                     trade_disposition: None,
                 },

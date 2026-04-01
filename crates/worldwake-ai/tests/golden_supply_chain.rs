@@ -129,7 +129,7 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
             producer,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(ORCHARD_FARM),
+                home_facility: Some(ORCHARD_FARM),
             },
         )
         .unwrap();
@@ -187,7 +187,7 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(general_store),
+                home_facility: Some(general_store),
             },
         )
         .unwrap();
@@ -383,7 +383,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(general_store),
+                home_facility: Some(general_store),
             },
         )
         .unwrap();
@@ -432,7 +432,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
 
     let mut merchant_visited_orchard = false;
     let mut merchant_acquired_firewood = false;
-    let mut bread_restocked_at_home_market = false;
+    let mut bread_restocked_at_home_facility = false;
 
     for _ in 0..200 {
         h.step_once();
@@ -447,7 +447,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         merchant_visited_orchard |= h.world.effective_place(merchant) == Some(ORCHARD_FARM);
         merchant_acquired_firewood |=
             h.agent_commodity_qty(merchant, CommodityKind::Firewood) > Quantity(0);
-        bread_restocked_at_home_market |= h
+        bread_restocked_at_home_facility |= h
             .world
             .entities_effectively_at(general_store)
             .into_iter()
@@ -483,7 +483,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
 
         if merchant_visited_orchard
             && merchant_acquired_firewood
-            && bread_restocked_at_home_market
+            && bread_restocked_at_home_facility
             && craft_committed
         {
             break;
@@ -628,7 +628,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         "merchant should acquire firewood before crafting bread"
     );
     assert!(
-        bread_restocked_at_home_market,
+        bread_restocked_at_home_facility,
         "craft-restock scenario should leave bread stock at the home market; final_place={:?}, merchant_bread={:?}, live_bread={}, events={merchant_events:?}",
         h.world.effective_place(merchant),
         h.agent_commodity_qty(merchant, CommodityKind::Bread),
@@ -671,7 +671,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
 
 #[allow(clippy::too_many_lines)]
 fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, StateHash) {
-    let home_market = prototype_place_entity(PrototypePlace::EastFieldTrail);
+    let home_facility = prototype_place_entity(PrototypePlace::EastFieldTrail);
     let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
     let mut h = GoldenHarness::with_recipes(seed, build_craft_restock_recipe_registry());
     h.driver = AgentTickDriver::new(PlanningBudget {
@@ -721,7 +721,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
     place_workstation(
         &mut h.world,
         &mut h.event_log,
-        home_market,
+        home_facility,
         WorkstationTag::Mill,
         ProductionOutputOwner::Actor,
     );
@@ -730,7 +730,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         &mut h.world,
         &mut h.event_log,
         "Merchant",
-        home_market,
+        home_facility,
         HomeostaticNeeds::default(),
         MetabolismProfile {
             hunger_rate: pm(0),
@@ -765,7 +765,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(home_market),
+                home_facility: Some(home_facility),
             },
         )
         .unwrap();
@@ -777,7 +777,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
                 observations: vec![DemandObservation {
                     commodity: CommodityKind::Bread,
                     quantity: Quantity(1),
-                    place: home_market,
+                    place: home_facility,
                     tick: Tick(0),
                     counterparty: None,
                     reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
@@ -854,7 +854,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
     let mut visited_bandit = false;
     let mut acquired_firewood = false;
     let mut craft_committed = false;
-    let mut bread_restocked_at_home_market = false;
+    let mut bread_restocked_at_home_facility = false;
 
     for _ in 0..280 {
         h.step_once();
@@ -869,9 +869,9 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         visited_orchard |= h.world.effective_place(merchant) == Some(ORCHARD_FARM);
         visited_bandit |= h.world.effective_place(merchant) == Some(bandit_camp);
         acquired_firewood |= h.agent_commodity_qty(merchant, CommodityKind::Firewood) > Quantity(0);
-        bread_restocked_at_home_market |= h
+        bread_restocked_at_home_facility |= h
             .world
-            .entities_effectively_at(home_market)
+            .entities_effectively_at(home_facility)
             .into_iter()
             .any(|entity| {
                 h.world
@@ -898,7 +898,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
             && visited_bandit
             && acquired_firewood
             && craft_committed
-            && bread_restocked_at_home_market
+            && bread_restocked_at_home_facility
         {
             break;
         }
@@ -1104,7 +1104,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         "merchant should acquire fallback firewood before crafting bread"
     );
     assert!(
-        bread_restocked_at_home_market,
+        bread_restocked_at_home_facility,
         "merchant should restock bread at the home market after recovering from the stale source"
     );
     assert!(
@@ -1147,7 +1147,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
 
 #[allow(clippy::too_many_lines)]
 fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash) {
-    let home_market = prototype_place_entity(PrototypePlace::VillageSquare);
+    let home_facility = prototype_place_entity(PrototypePlace::VillageSquare);
     let believed_stale_place = prototype_place_entity(PrototypePlace::BanditCamp);
     let mut h = GoldenHarness::new(seed);
     h.driver = AgentTickDriver::new(PlanningBudget {
@@ -1175,7 +1175,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         &mut h.world,
         &mut h.event_log,
         "Merchant",
-        home_market,
+        home_facility,
         HomeostaticNeeds::default(),
         MetabolismProfile {
             hunger_rate: pm(0),
@@ -1195,7 +1195,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         &mut h.world,
         &mut h.event_log,
         "Scout",
-        home_market,
+        home_facility,
         HomeostaticNeeds::default(),
         MetabolismProfile::default(),
         UtilityProfile {
@@ -1225,7 +1225,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(home_market),
+                home_facility: Some(home_facility),
             },
         )
         .unwrap();
@@ -1237,7 +1237,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
                 observations: vec![DemandObservation {
                     commodity: CommodityKind::Apple,
                     quantity: Quantity(2),
-                    place: home_market,
+                    place: home_facility,
                     tick: Tick(0),
                     counterparty: None,
                     reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
@@ -1538,7 +1538,7 @@ fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
             merchant,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(general_store),
+                home_facility: Some(general_store),
             },
         )
         .unwrap();

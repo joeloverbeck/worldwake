@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{CommodityKind, EntityId, Permille, Quantity};
 use worldwake_sim::GoalBeliefView;
 
@@ -17,6 +17,24 @@ impl EnterpriseSignals {
     }
 }
 
+pub(crate) fn merchant_home_facility(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+) -> Option<EntityId> {
+    view.merchandise_profile(agent)
+        .and_then(|profile| profile.home_facility)
+}
+
+pub(crate) fn merchant_home_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    fallback_place: Option<EntityId>,
+) -> Option<EntityId> {
+    merchant_home_facility(view, agent)
+        .and_then(|facility| view.effective_place(facility))
+        .or(fallback_place)
+}
+
 pub(crate) fn analyze_candidate_enterprise(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -25,7 +43,7 @@ pub(crate) fn analyze_candidate_enterprise(
     let Some(profile) = view.merchandise_profile(agent) else {
         return EnterpriseSignals::default();
     };
-    let Some(market) = profile.home_market.or(fallback_place) else {
+    let Some(market) = merchant_home_place(view, agent, fallback_place) else {
         return EnterpriseSignals::default();
     };
 
@@ -45,10 +63,7 @@ pub(crate) fn opportunity_signal(
     fallback_place: Option<EntityId>,
     commodity: CommodityKind,
 ) -> Permille {
-    let market = view
-        .merchandise_profile(agent)
-        .and_then(|profile| profile.home_market.or(fallback_place));
-    let Some(market) = market else {
+    let Some(market) = merchant_home_place(view, agent, fallback_place) else {
         return Permille::new_unchecked(0);
     };
 
@@ -122,19 +137,90 @@ pub(crate) fn restock_gap_at_destination(
     destination: EntityId,
     commodity: CommodityKind,
 ) -> Option<Quantity> {
-    let observed_quantity = relevant_demand_quantity(view, agent, destination, commodity);
+    let destination_place = view.effective_place(destination).unwrap_or(destination);
+    let observed_quantity = relevant_demand_quantity(view, agent, destination_place, commodity);
     if observed_quantity == 0 {
         return None;
     }
 
-    let current_stock_at_destination = view
-        .controlled_commodity_quantity_at_place(agent, destination, commodity)
+    let current_stock_at_destination = exact_destination_facility(view, agent, destination)
+        .and_then(|facility| facility_custody_quantity_for_facility(view, facility, commodity))
+        .unwrap_or_else(|| {
+            view.controlled_commodity_quantity_at_place(agent, destination_place, commodity)
+        })
         .0;
     if current_stock_at_destination < observed_quantity {
         Some(Quantity(observed_quantity - current_stock_at_destination))
     } else {
         None
     }
+}
+
+fn exact_destination_facility(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    destination: EntityId,
+)-> Option<EntityId> {
+    if view.stock_storage_policy(destination).is_some() && view.can_control(agent, destination) {
+        return Some(destination);
+    }
+
+    merchant_home_facility(view, agent)
+        .filter(|facility| view.effective_place(*facility) == Some(destination))
+        .filter(|facility| view.can_control(agent, *facility))
+}
+
+fn facility_custody_quantity_for_facility(
+    view: &dyn GoalBeliefView,
+    facility: EntityId,
+    commodity: CommodityKind,
+) -> Option<Quantity> {
+    let containers = facility_custody_containers_for_facility(view, facility)?;
+
+    Some(
+        view.entities_at(view.effective_place(facility)?)
+            .into_iter()
+            .filter(|lot| view.item_lot_commodity(*lot) == Some(commodity))
+            .filter(|lot| lot_is_inside_any_container(view, *lot, &containers))
+            .fold(Quantity(0), |total, lot| {
+                let quantity = view.commodity_quantity(lot, commodity);
+                Quantity(
+                    total
+                        .0
+                        .checked_add(quantity.0)
+                        .expect("facility custody quantity overflowed"),
+                )
+            }),
+    )
+}
+
+fn facility_custody_containers_for_facility(
+    view: &dyn GoalBeliefView,
+    facility: EntityId,
+) -> Option<BTreeSet<EntityId>> {
+    let policy = view.stock_storage_policy(facility)?;
+
+    Some(
+        [Some(policy.stock_container), policy.display_container]
+            .into_iter()
+            .flatten()
+            .collect(),
+    )
+}
+
+fn lot_is_inside_any_container(
+    view: &dyn GoalBeliefView,
+    lot: EntityId,
+    containers: &BTreeSet<EntityId>,
+) -> bool {
+    let mut current = view.direct_container(lot);
+    while let Some(container) = current {
+        if containers.contains(&container) {
+            return true;
+        }
+        current = view.direct_container(container);
+    }
+    false
 }
 
 fn permille_ratio(numerator: u32, denominator: u32) -> Permille {

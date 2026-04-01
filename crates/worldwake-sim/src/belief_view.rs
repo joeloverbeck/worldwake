@@ -9,10 +9,10 @@ use worldwake_core::{
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, PlaceTagSet, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation,
-    ResourceSource, SocialObservation, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    PlaceTag, PlaceTagSet, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    RecordedViolation, ResourceSource, SocialObservation, StockStoragePolicy, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -126,6 +126,10 @@ pub trait GoalBeliefView {
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        let _ = facility;
+        None
+    }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
@@ -410,6 +414,10 @@ pub trait RuntimeBeliefView {
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        let _ = facility;
+        None
+    }
     fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
         let _ = entity;
         false
@@ -920,6 +928,13 @@ macro_rules! impl_goal_belief_view {
                 entity: worldwake_core::EntityId,
             ) -> bool {
                 $crate::RuntimeBeliefView::can_control(self, actor, entity)
+            }
+
+            fn stock_storage_policy(
+                &self,
+                facility: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::StockStoragePolicy> {
+                $crate::RuntimeBeliefView::stock_storage_policy(self, facility)
             }
 
             fn carry_capacity(

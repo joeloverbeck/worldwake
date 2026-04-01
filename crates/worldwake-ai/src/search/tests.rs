@@ -45,6 +45,7 @@ struct TestBeliefView {
     entities_at: BTreeMap<EntityId, Vec<EntityId>>,
     direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
     direct_possessors: BTreeMap<EntityId, EntityId>,
+    direct_containers: BTreeMap<EntityId, EntityId>,
     owners: BTreeMap<EntityId, EntityId>,
     controllable: BTreeSet<(EntityId, EntityId)>,
     adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
@@ -71,6 +72,7 @@ struct TestBeliefView {
     record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
     known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
     epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
+    stock_storage_policies: BTreeMap<EntityId, worldwake_core::StockStoragePolicy>,
 }
 
 impl Default for TestBeliefView {
@@ -83,6 +85,7 @@ impl Default for TestBeliefView {
             entities_at: BTreeMap::new(),
             direct_possessions: BTreeMap::new(),
             direct_possessors: BTreeMap::new(),
+            direct_containers: BTreeMap::new(),
             owners: BTreeMap::new(),
             controllable: BTreeSet::new(),
             adjacent: BTreeMap::new(),
@@ -108,6 +111,7 @@ impl Default for TestBeliefView {
             record_data: BTreeMap::new(),
             known_entity_beliefs: BTreeMap::new(),
             epistemic_profiles: BTreeMap::new(),
+            stock_storage_policies: BTreeMap::new(),
         }
     }
 }
@@ -200,8 +204,8 @@ impl RuntimeBeliefView for TestBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
         self.consumable_profiles.get(&entity).copied()
     }
-    fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-        None
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        self.direct_containers.get(&entity).copied()
     }
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
         self.direct_possessors.get(&entity).copied()
@@ -211,6 +215,9 @@ impl RuntimeBeliefView for TestBeliefView {
     }
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
+    }
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+        self.stock_storage_policies.get(&facility).cloned()
     }
     fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
         None
@@ -948,7 +955,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(market),
+            home_facility: Some(market),
         },
     );
     view.commodity_quantities
@@ -1033,7 +1040,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(town),
+            home_facility: Some(town),
         },
     );
     view.commodity_quantities
@@ -1121,7 +1128,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Firewood]),
-            home_market: Some(town),
+            home_facility: Some(town),
         },
     );
     view.commodity_quantities
@@ -1597,7 +1604,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(market),
+            home_facility: Some(market),
         },
     );
     view.commodity_quantities
@@ -1839,15 +1846,18 @@ fn cargo_search_finds_pickup_then_travel_plan() {
     let destination = entity(11);
     let bread = entity(20);
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, origin, destination, bread]);
+    let facility = entity(12);
+    view.alive.extend([actor, origin, destination, facility, bread]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
     view.kinds.insert(bread, EntityKind::ItemLot);
     view.effective_places.insert(actor, origin);
+    view.effective_places.insert(facility, destination);
     view.effective_places.insert(bread, origin);
     view.entities_at.insert(origin, vec![actor, bread]);
-    view.entities_at.insert(destination, Vec::new());
+    view.entities_at.insert(destination, vec![facility]);
     view.adjacent
         .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
     view.adjacent
@@ -1864,7 +1874,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
         actor,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(destination),
+            home_facility: Some(facility),
         },
     );
     view.demand_memory.insert(
@@ -1884,7 +1894,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
-            destination,
+            destination: facility,
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([origin, destination]),
@@ -1931,15 +1941,18 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
     let destination = entity(11);
     let bread = entity(20);
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, origin, destination, bread]);
+    let facility = entity(12);
+    view.alive.extend([actor, origin, destination, facility, bread]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
     view.kinds.insert(bread, EntityKind::ItemLot);
     view.effective_places.insert(actor, origin);
+    view.effective_places.insert(facility, destination);
     view.effective_places.insert(bread, origin);
     view.entities_at.insert(origin, vec![actor, bread]);
-    view.entities_at.insert(destination, Vec::new());
+    view.entities_at.insert(destination, vec![facility]);
     view.adjacent
         .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
     view.adjacent
@@ -1956,7 +1969,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
         actor,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(destination),
+            home_facility: Some(facility),
         },
     );
     view.demand_memory.insert(
@@ -1976,7 +1989,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
-            destination,
+            destination: facility,
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([origin, destination]),
@@ -2019,6 +2032,214 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
     );
     assert!(!plan.steps[0].expected_materializations.is_empty());
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+}
+
+#[test]
+fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let destination = entity(11);
+    let facility = entity(12);
+    let stock_container = entity(13);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, origin, destination, facility, stock_container, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
+    view.kinds.insert(stock_container, EntityKind::Container);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(facility, destination);
+    view.effective_places.insert(stock_container, destination);
+    view.effective_places.insert(bread, origin);
+    view.entities_at.insert(origin, vec![actor, bread]);
+    view.entities_at
+        .insert(destination, vec![facility, stock_container]);
+    view.adjacent
+        .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(destination, vec![(origin, NonZeroU32::new(2).unwrap())]);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(2));
+    view.controllable.extend([
+        (actor, bread),
+        (actor, facility),
+        (actor, stock_container),
+    ]);
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(2));
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.merchandise_profiles.insert(
+        actor,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(facility),
+        },
+    );
+    view.stock_storage_policies.insert(
+        facility,
+        worldwake_core::StockStoragePolicy {
+            stock_container,
+            display_container: None,
+        },
+    );
+    view.demand_memory.insert(
+        actor,
+        vec![DemandObservation {
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(2),
+            place: destination,
+            tick: Tick(1),
+            counterparty: None,
+            reason: worldwake_core::DemandObservationReason::WantedToBuyButNoSeller,
+        }],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination: facility,
+        }),
+        evidence_entities: BTreeSet::from([bread]),
+        evidence_places: BTreeSet::from([origin, destination]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert_eq!(plan.steps.len(), 3);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
+    assert_eq!(plan.steps[2].op_kind, PlannerOpKind::StockManagement);
+    assert_eq!(
+        registry.get(plan.steps[2].def_id).map(|def| def.name.as_str()),
+        Some("store_stock")
+    );
+}
+
+#[test]
+fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
+    let actor = entity(1);
+    let market = entity(10);
+    let facility = entity(11);
+    let stock_container = entity(12);
+    let display_container = entity(13);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([
+        actor,
+        market,
+        facility,
+        stock_container,
+        display_container,
+        bread,
+    ]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
+    view.kinds.insert(stock_container, EntityKind::Container);
+    view.kinds.insert(display_container, EntityKind::Container);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(facility, market);
+    view.effective_places.insert(stock_container, market);
+    view.effective_places.insert(display_container, market);
+    view.effective_places.insert(bread, market);
+    view.entities_at.insert(
+        market,
+        vec![actor, facility, stock_container, display_container, bread],
+    );
+    view.direct_containers.insert(bread, stock_container);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(3));
+    view.controllable.extend([
+        (actor, facility),
+        (actor, stock_container),
+        (actor, display_container),
+        (actor, bread),
+    ]);
+    view.merchandise_profiles.insert(
+        actor,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(facility),
+        },
+    );
+    view.stock_storage_policies.insert(
+        facility,
+        worldwake_core::StockStoragePolicy {
+            stock_container,
+            display_container: Some(display_container),
+        },
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(market),
+        key: GoalKey::from(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        evidence_entities: BTreeSet::from([bread, facility]),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::StockManagement);
+    assert_eq!(
+        registry.get(plan.steps[0].def_id).map(|def| def.name.as_str()),
+        Some("stage_stock_for_sale")
+    );
 }
 
 #[allow(clippy::too_many_lines)]
@@ -2088,7 +2309,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_market: Some(destination),
+                home_facility: Some(destination),
             },
         )
         .unwrap();
@@ -2815,7 +3036,7 @@ fn build_restock_threat_fixture(with_combat_belief: bool) -> RestockThreatFixtur
             actor,
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-                home_market: Some(market),
+                home_facility: Some(market),
             },
         )
         .unwrap();
@@ -5431,7 +5652,7 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(town),
+            home_facility: Some(town),
         },
     );
     view.trade_profiles
@@ -5530,7 +5751,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(town),
+            home_facility: Some(town),
         },
     );
     view.trade_profiles
@@ -5626,7 +5847,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: Some(town),
+            home_facility: Some(town),
         },
     );
     view.trade_profiles
@@ -6680,7 +6901,7 @@ fn search_trace_records_duration_dependency_when_root_candidate_duration_estimat
         seller,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-            home_market: None,
+            home_facility: None,
         },
     );
     view.commodity_quantities

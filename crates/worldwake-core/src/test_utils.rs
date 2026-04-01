@@ -47,7 +47,7 @@ pub fn sample_demand_memory() -> DemandMemory {
 pub fn sample_merchandise_profile() -> MerchandiseProfile {
     MerchandiseProfile {
         sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Water]),
-        home_market: Some(entity_id(7, 2)),
+        home_facility: Some(entity_id(7, 2)),
     }
 }
 

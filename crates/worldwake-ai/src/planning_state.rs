@@ -47,6 +47,8 @@ pub struct PlanningState<'snapshot> {
     commodity_quantity_overrides: SharedMap<(PlanningEntityRef, CommodityKind), Quantity>,
     reservation_shadows: SharedMap<EntityId, Vec<TickRange>>,
     removed_entities: SharedSet<PlanningEntityRef>,
+    sale_listing_overrides: SharedMap<PlanningEntityRef, bool>,
+    sale_seller_overrides: SharedMap<PlanningEntityRef, Option<EntityId>>,
     needs_overrides: SharedMap<EntityId, HomeostaticNeeds>,
     pain_overrides: SharedMap<EntityId, Permille>,
     support_declaration_overrides: SharedMap<(EntityId, EntityId), Option<EntityId>>,
@@ -74,6 +76,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             commodity_quantity_overrides: SharedMap::new(),
             reservation_shadows: SharedMap::new(),
             removed_entities: SharedSet::new(),
+            sale_listing_overrides: SharedMap::new(),
+            sale_seller_overrides: SharedMap::new(),
             needs_overrides: SharedMap::new(),
             pain_overrides: SharedMap::new(),
             support_declaration_overrides: SharedMap::new(),
@@ -528,6 +532,17 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub fn stock_storage_policy_snapshot(
+        &self,
+        entity: EntityId,
+    ) -> Option<worldwake_core::StockStoragePolicy> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.stock_storage_policy.clone())
+    }
+
+    #[must_use]
     pub fn move_entity_ref(mut self, entity: PlanningEntityRef, destination: EntityId) -> Self {
         self.entity_place_overrides
             .insert(entity, Some(destination));
@@ -577,6 +592,26 @@ impl<'snapshot> PlanningState<'snapshot> {
         self.entity_place_overrides.insert(entity, None);
         self.direct_container_overrides.insert(entity, None);
         self.direct_possessor_overrides.insert(entity, None);
+        self.sale_listing_overrides.insert(entity, false);
+        self.sale_seller_overrides.insert(entity, None);
+        self
+    }
+
+    #[must_use]
+    pub fn set_sale_listing_ref(
+        mut self,
+        entity: PlanningEntityRef,
+        seller: Option<EntityId>,
+    ) -> Self {
+        self.sale_listing_overrides.insert(entity, seller.is_some());
+        self.sale_seller_overrides.insert(entity, seller);
+        self
+    }
+
+    #[must_use]
+    pub fn clear_sale_listing_ref(mut self, entity: PlanningEntityRef) -> Self {
+        self.sale_listing_overrides.insert(entity, false);
+        self.sale_seller_overrides.insert(entity, None);
         self
     }
 
@@ -920,6 +955,28 @@ impl<'snapshot> PlanningState<'snapshot> {
         entities
     }
 
+    #[must_use]
+    pub fn controlled_stock_containers_at_place(
+        &self,
+        agent: PlanningEntityRef,
+        place: EntityId,
+    ) -> Vec<PlanningEntityRef> {
+        let mut containers = self
+            .snapshot
+            .entities
+            .iter()
+            .filter_map(|(facility, snapshot)| {
+                let policy = snapshot.stock_storage_policy.as_ref()?;
+                (snapshot.effective_place == Some(place)
+                    && self.can_control_ref(agent, PlanningEntityRef::Authoritative(*facility)))
+                .then_some(PlanningEntityRef::Authoritative(policy.stock_container))
+            })
+            .collect::<Vec<_>>();
+        containers.sort();
+        containers.dedup();
+        containers
+    }
+
     fn all_entity_refs(&self) -> Vec<PlanningEntityRef> {
         let mut refs = self
             .snapshot
@@ -937,7 +994,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         refs
     }
 
-    fn can_control_ref(&self, actor: PlanningEntityRef, entity: PlanningEntityRef) -> bool {
+    pub(crate) fn can_control_ref(&self, actor: PlanningEntityRef, entity: PlanningEntityRef) -> bool {
         if self.removed_entities.contains(&actor) || self.removed_entities.contains(&entity) {
             return false;
         }
@@ -1233,6 +1290,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&entity)
             .and_then(|snapshot| snapshot.workstation_tag)
+    }
+
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+        self.stock_storage_policy_snapshot(facility)
     }
 
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
@@ -1693,8 +1754,8 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
             .filter(|entity| self.has_sale_listing(*entity))
             .filter(|entity| {
-                self.direct_possessor(*entity).is_some_and(|possessor| {
-                    self.is_alive(possessor) && self.effective_place(possessor) == Some(place)
+                self.seller_for_sale_lot(*entity).is_some_and(|seller| {
+                    self.is_alive(seller) && self.effective_place(seller) == Some(place)
                 })
             })
             .collect::<Vec<_>>();
@@ -1707,18 +1768,28 @@ impl RuntimeBeliefView for PlanningState<'_> {
         if !self.has_sale_listing(lot) {
             return None;
         }
-        let possessor = self.direct_possessor(lot)?;
-        if !self.is_alive(possessor) {
-            return None;
-        }
-        Some(possessor)
+        self.sale_seller_overrides
+            .get(&PlanningEntityRef::Authoritative(lot))
+            .copied()
+            .flatten()
+            .or_else(|| {
+                self.snapshot
+                    .entities
+                    .get(&lot)
+                    .and_then(|snapshot| snapshot.seller_for_sale_lot)
+            })
     }
 
     fn has_sale_listing(&self, lot: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&lot)
-            .is_some_and(|snapshot| snapshot.has_sale_listing)
+        self.sale_listing_overrides
+            .get(&PlanningEntityRef::Authoritative(lot))
+            .copied()
+            .unwrap_or_else(|| {
+                self.snapshot
+                    .entities
+                    .get(&lot)
+                    .is_some_and(|snapshot| snapshot.has_sale_listing)
+            })
     }
 
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {

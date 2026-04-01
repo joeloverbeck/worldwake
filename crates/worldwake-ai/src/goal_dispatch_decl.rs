@@ -93,6 +93,7 @@ const PRODUCE_OPS: &[PlannerOpKind] = &[
 const SELL_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
     PlannerOpKind::StaffMarket,
 ];
 const RESTOCK_OPS: &[PlannerOpKind] = &[
@@ -103,7 +104,11 @@ const RESTOCK_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
-const MOVE_CARGO_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::MoveCargo];
+const MOVE_CARGO_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
+];
 const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
 const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
@@ -779,6 +784,10 @@ mod tests {
         assert!(
             decl.relevant_ops.contains(&PlannerOpKind::MoveCargo),
             "SELL_OPS must contain MoveCargo"
+        );
+        assert!(
+            decl.relevant_ops.contains(&PlannerOpKind::StockManagement),
+            "SELL_OPS must contain StockManagement"
         );
     }
 }

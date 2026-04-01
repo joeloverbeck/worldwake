@@ -1213,7 +1213,7 @@ mod tests {
                 seller,
                 MerchandiseProfile {
                     sale_kinds: [CommodityKind::Bread].into_iter().collect(),
-                    home_market: Some(market),
+                    home_facility: Some(market),
                 },
             )
             .unwrap();

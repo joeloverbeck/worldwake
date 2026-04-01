@@ -4122,7 +4122,7 @@ mod tests {
             .unwrap();
         let before: MerchandiseProfile = sample_merchandise_profile();
         let mut after = before.clone();
-        after.home_market = Some(entity(5));
+        after.home_facility = Some(entity(5));
         world
             .insert_component_merchandise_profile(agent, before.clone())
             .unwrap();

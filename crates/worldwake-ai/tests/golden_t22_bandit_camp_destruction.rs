@@ -902,7 +902,7 @@ fn seed_s48_scenario(h: &mut GoldenHarness) -> S48Ids {
         merchant,
         MerchandiseProfile {
             sale_kinds: BTreeSet::from([CommodityKind::Apple]),
-            home_market: Some(S48_MARKET),
+            home_facility: Some(S48_MARKET),
         },
     )
     .unwrap();
