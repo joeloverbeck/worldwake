@@ -1034,9 +1034,9 @@ mod tests {
                     &[],
                     &ActionPayload::Trade(TradeActionPayload {
                         counterparty: ENTITY_B,
+                        sale_lot: EntityId { slot: 50, generation: 0 },
                         offered_commodity: CommodityKind::Bread,
                         offered_quantity: Quantity(1),
-                        requested_commodity: CommodityKind::Water,
                         requested_quantity: Quantity(1),
                     }),
                 )

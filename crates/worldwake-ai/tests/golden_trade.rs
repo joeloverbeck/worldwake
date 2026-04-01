@@ -470,7 +470,7 @@ fn run_local_trade_start_failure_production_fallback_scenario(
         "scenario warmup should leave the loser occupied with lawful self-care"
     );
 
-    give_commodity(
+    let seller_bread_lot = give_commodity(
         &mut h.world,
         &mut h.event_log,
         seller,
@@ -504,6 +504,13 @@ fn run_local_trade_start_failure_production_fallback_scenario(
         },
     )
     .unwrap();
+    txn.set_component_sale_listing(
+        seller_bread_lot,
+        SaleListing {
+            listed_at: Tick(1),
+        },
+    )
+    .unwrap();
     txn.set_component_trade_disposition_profile(seller, default_trade_disposition_profile())
         .unwrap();
     txn.set_component_trade_disposition_profile(winner, instant_trade_disposition_profile())
@@ -528,9 +535,9 @@ fn run_local_trade_start_failure_production_fallback_scenario(
                 targets: vec![seller],
                 payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                     counterparty: seller,
+                    sale_lot: seller_bread_lot,
                     offered_commodity: CommodityKind::Coin,
                     offered_quantity: Quantity(1),
-                    requested_commodity: CommodityKind::Bread,
                     requested_quantity: Quantity(1),
                 })),
                 mode: ActionRequestMode::BestEffort,
@@ -630,9 +637,9 @@ fn run_local_trade_start_failure_production_fallback_scenario(
             targets: vec![seller],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: seller,
+                sale_lot: seller_bread_lot,
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(1),
-                requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
             })),
             mode: ActionRequestMode::BestEffort,

@@ -1,6 +1,6 @@
 # S04MERSELMAR-008: `AcquireCommodity` listed-lot evidence and `TradeActionPayload` migration
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — buyer-side evidence generation, trade payload struct change, affordance assembly
@@ -158,3 +158,21 @@ Test-only files (update construction sites):
 2. `cargo test -p worldwake-ai -- candidate_generation`
 3. `cargo test -p worldwake-systems -- trade_action`
 4. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - `TradeActionPayload` gained `sale_lot: EntityId`, lost `requested_commodity: CommodityKind`
+  - `PayloadEntityRole::SaleLot` variant added
+  - `enumerate_trade_payloads` now discovers concrete listed lots via `listed_sale_lots_at` instead of iterating `MerchandiseProfile.sale_kinds`
+  - Trade handler validation and commit derive `requested_commodity` from `sale_lot` entity at runtime
+  - `goal_model.rs` `payload_override_for_op` selects a concrete listed lot for the counterparty
+  - `failure_handling.rs` derives commodity from sale lot via belief view
+  - Fixed pre-existing clippy `cast_sign_loss` in `soak_world.rs`
+- **Deviations from original plan**:
+  - Deliverable 3 (AcquireCommodity candidate generation) was already done by S04MERSELMAR-004; skipped
+  - `search/transition.rs` and `search/candidates.rs` had no trade payload logic; removed from scope
+  - Trade affordance update was in `trade_actions.rs` (`enumerate_trade_payloads`), not `affordance_query.rs`
+  - Most test construction sites were already updated by prior ticket work
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` all 1,606 tests pass

@@ -89,36 +89,55 @@ fn enumerate_trade_payloads(
     let Some(place) = view.effective_place(actor) else {
         return Vec::new();
     };
-    let Some(profile) = view.merchandise_profile(counterparty) else {
+    if view.merchandise_profile(counterparty).is_none() {
         return Vec::new();
-    };
+    }
     if view.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
         return Vec::new();
     }
 
-    let mut payloads = profile
-        .sale_kinds
-        .iter()
-        .copied()
-        .filter_map(|requested_commodity| {
-            (view.commodity_quantity(counterparty, requested_commodity) > Quantity(0)).then_some(
-                TradeActionPayload {
-                    counterparty,
-                    offered_commodity: CommodityKind::Coin,
-                    offered_quantity: Quantity(1),
-                    requested_commodity,
-                    requested_quantity: Quantity(1),
-                },
-            )
-        })
-        .filter(|payload| {
-            trade_bundle_is_mutually_accepted(view, actor, counterparty, place, payload)
-        })
-        .map(ActionPayload::Trade)
-        .collect::<Vec<_>>();
+    // Discover concrete listed sale lots at this place for each commodity the
+    // counterparty is selling.  We iterate sale_kinds to know which commodities
+    // to look for, then find listed lots for each.
+    let profile = view.merchandise_profile(counterparty).unwrap();
+    let mut payloads: Vec<ActionPayload> = Vec::new();
+    for commodity in &profile.sale_kinds {
+        for lot in view.listed_sale_lots_at(place, *commodity) {
+            if view.seller_for_sale_lot(lot) != Some(counterparty) {
+                continue;
+            }
+            let payload = TradeActionPayload {
+                counterparty,
+                sale_lot: lot,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            };
+            if trade_bundle_is_mutually_accepted(
+                view, actor, counterparty, place, *commodity, &payload,
+            ) {
+                payloads.push(ActionPayload::Trade(payload));
+            }
+        }
+    }
     payloads.sort();
     payloads.dedup();
     payloads
+}
+
+/// Derives the requested commodity from the sale lot's item lot component.
+/// The sale lot is the authoritative source; `requested_commodity` is never
+/// stored in the payload.
+fn sale_lot_commodity(txn: &WorldTxn<'_>, sale_lot: EntityId) -> Result<CommodityKind, ActionError> {
+    txn.get_component_item_lot(sale_lot)
+        .map(|lot| lot.commodity)
+        .ok_or_else(|| {
+            ActionError::AbortRequested(ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::SaleLot,
+                expected: sale_lot,
+                actual: sale_lot,
+            })
+        })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -213,6 +232,7 @@ fn validate_trade_bundle_context(
     payload: &TradeActionPayload,
 ) -> Result<(EntityId, EntityId), ActionError> {
     let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
+    let requested_commodity = sale_lot_commodity(txn, payload.sale_lot)?;
     ensure_accessible_quantity(
         txn,
         instance.actor,
@@ -222,10 +242,17 @@ fn validate_trade_bundle_context(
     ensure_accessible_quantity(
         txn,
         counterparty,
-        payload.requested_commodity,
+        requested_commodity,
         payload.requested_quantity,
     )?;
-    ensure_bundle_accepted(txn, instance.actor, counterparty, payload, place)?;
+    ensure_bundle_accepted(
+        txn,
+        instance.actor,
+        counterparty,
+        requested_commodity,
+        payload,
+        place,
+    )?;
     Ok((counterparty, place))
 }
 
@@ -233,6 +260,7 @@ fn ensure_bundle_accepted(
     txn: &WorldTxn<'_>,
     actor: EntityId,
     counterparty: EntityId,
+    requested_commodity: CommodityKind,
     payload: &TradeActionPayload,
     place: EntityId,
 ) -> Result<(), ActionError> {
@@ -242,7 +270,7 @@ fn ensure_bundle_accepted(
         counterparty,
         place,
         [(payload.offered_commodity, payload.offered_quantity)],
-        [(payload.requested_commodity, payload.requested_quantity)],
+        [(requested_commodity, payload.requested_quantity)],
     );
     if actor_acceptance != TradeAcceptance::Accept {
         return Err(ActionError::AbortRequested(
@@ -258,7 +286,7 @@ fn ensure_bundle_accepted(
         counterparty,
         actor,
         place,
-        [(payload.requested_commodity, payload.requested_quantity)],
+        [(requested_commodity, payload.requested_quantity)],
         [(payload.offered_commodity, payload.offered_quantity)],
     );
     if counterparty_acceptance != TradeAcceptance::Accept {
@@ -278,6 +306,7 @@ fn trade_bundle_is_mutually_accepted(
     actor: EntityId,
     counterparty: EntityId,
     place: EntityId,
+    requested_commodity: CommodityKind,
     payload: &TradeActionPayload,
 ) -> bool {
     evaluate_trade_bundle(
@@ -287,7 +316,7 @@ fn trade_bundle_is_mutually_accepted(
         wounds_for(view, actor).as_ref(),
         view.commodity_quantity(actor, CommodityKind::Coin),
         &[(payload.offered_commodity, payload.offered_quantity)],
-        &[(payload.requested_commodity, payload.requested_quantity)],
+        &[(requested_commodity, payload.requested_quantity)],
         &local_trade_alternatives(view, actor, counterparty, place),
         demand_memory_for(view, actor).as_ref(),
     ) == TradeAcceptance::Accept
@@ -297,7 +326,7 @@ fn trade_bundle_is_mutually_accepted(
             view.homeostatic_needs(counterparty).as_ref(),
             wounds_for(view, counterparty).as_ref(),
             view.commodity_quantity(counterparty, CommodityKind::Coin),
-            &[(payload.requested_commodity, payload.requested_quantity)],
+            &[(requested_commodity, payload.requested_quantity)],
             &[(payload.offered_commodity, payload.offered_quantity)],
             &local_trade_alternatives(view, counterparty, actor, place),
             demand_memory_for(view, counterparty).as_ref(),
@@ -428,6 +457,7 @@ fn execute_trade_transfers(
     payload: &TradeActionPayload,
     place: EntityId,
 ) -> Result<(), ActionError> {
+    let requested_commodity = sale_lot_commodity(txn, payload.sale_lot)?;
     let offered_lots = resolve_trade_lots(
         txn,
         actor,
@@ -438,7 +468,7 @@ fn execute_trade_transfers(
     let requested_lots = resolve_trade_lots(
         txn,
         counterparty,
-        payload.requested_commodity,
+        requested_commodity,
         payload.requested_quantity,
         place,
     )?;
@@ -455,7 +485,7 @@ fn execute_trade_transfers(
         &requested_lots,
         actor,
         place,
-        payload.requested_commodity,
+        requested_commodity,
     )
 }
 
@@ -846,7 +876,7 @@ mod tests {
         get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
         ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng,
-        PerAgentBeliefView, TickOutcome, TradeAcceptance, TradeActionPayload,
+        PayloadEntityRole, PerAgentBeliefView, TickOutcome, TradeAcceptance, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -954,7 +984,10 @@ mod tests {
 
     impl TradeHarness {
         fn new(
-            payload: &TradeActionPayload,
+            offered_commodity: CommodityKind,
+            offered_quantity: Quantity,
+            requested_commodity: CommodityKind,
+            requested_quantity: Quantity,
             actor_ticks: u32,
             actor_needs: HomeostaticNeeds,
         ) -> Self {
@@ -965,17 +998,13 @@ mod tests {
                 let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
                 let counterparty = txn.create_agent("Bram", ControlSource::Ai).unwrap();
                 let actor_offer = txn
-                    .create_item_lot(payload.offered_commodity, payload.offered_quantity)
+                    .create_item_lot(offered_commodity, offered_quantity)
                     .unwrap();
                 let counterparty_offer = txn
-                    .create_item_lot(payload.requested_commodity, payload.requested_quantity)
+                    .create_item_lot(requested_commodity, requested_quantity)
                     .unwrap();
                 commit_txn(txn);
                 (actor, counterparty, actor_offer, counterparty_offer)
-            };
-            let payload = TradeActionPayload {
-                counterparty,
-                ..payload.clone()
             };
             {
                 let mut txn = new_txn(&mut world, 2);
@@ -986,6 +1015,14 @@ mod tests {
                 txn.set_owner(actor_offer, actor).unwrap();
                 txn.set_possessor(counterparty_offer, counterparty).unwrap();
                 txn.set_owner(counterparty_offer, counterparty).unwrap();
+                // Mark the counterparty's lot as listed for sale.
+                txn.set_component_sale_listing(
+                    counterparty_offer,
+                    SaleListing {
+                        listed_at: Tick(2),
+                    },
+                )
+                .unwrap();
                 txn.set_component_trade_disposition_profile(
                     actor,
                     TradeDispositionProfile {
@@ -1015,13 +1052,21 @@ mod tests {
                 txn.set_component_merchandise_profile(
                     counterparty,
                     MerchandiseProfile {
-                        sale_kinds: [payload.requested_commodity].into_iter().collect(),
+                        sale_kinds: [requested_commodity].into_iter().collect(),
                         home_market: Some(place),
                     },
                 )
                 .unwrap();
                 commit_txn(txn);
             }
+
+            let payload = TradeActionPayload {
+                counterparty,
+                sale_lot: counterparty_offer,
+                offered_commodity,
+                offered_quantity,
+                requested_quantity,
+            };
 
             let mut defs = ActionDefRegistry::new();
             let mut handlers = ActionHandlerRegistry::new();
@@ -1115,15 +1160,11 @@ mod tests {
 
     #[test]
     fn trade_action_duration_resolves_from_actor_profile() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1139,15 +1180,11 @@ mod tests {
 
     #[test]
     fn trade_affordance_enumerates_concrete_bundle_payloads_from_handler() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1169,15 +1206,11 @@ mod tests {
 
     #[test]
     fn successful_trade_transfers_goods_and_coin_with_trade_tags_and_provenance() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1242,15 +1275,11 @@ mod tests {
 
     #[test]
     fn trade_start_rejects_when_counterparty_lacks_requested_commodity() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1262,10 +1291,10 @@ mod tests {
 
         assert_eq!(
             err,
-            ActionError::AbortRequested(ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-                holder: harness.counterparty,
-                commodity: CommodityKind::Bread,
-                quantity: Quantity(1),
+            ActionError::AbortRequested(ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::SaleLot,
+                expected: harness.counterparty_offer,
+                actual: harness.counterparty_offer,
             })
         );
         assert!(
@@ -1279,15 +1308,11 @@ mod tests {
 
     #[test]
     fn partial_lot_trade_splits_and_preserves_conservation() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(2),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(2),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(2),
+            CommodityKind::Bread,
+            Quantity(2),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1305,6 +1330,7 @@ mod tests {
             txn.set_owner(replacement, harness.counterparty).unwrap();
             commit_txn(txn);
             harness.counterparty_offer = replacement;
+            harness.payload.sale_lot = replacement;
         }
         let (instance_id, mut active) = harness.start_with_active();
         let outcome = tick_action(
@@ -1330,15 +1356,11 @@ mod tests {
 
     #[test]
     fn trade_aborts_when_counterparty_leaves_before_commit() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1374,15 +1396,11 @@ mod tests {
 
     #[test]
     fn trade_aborts_when_counterparty_loses_requested_commodity_before_commit() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1413,14 +1431,14 @@ mod tests {
 
     #[test]
     fn trade_start_rejects_when_bundle_is_rejected() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
-        let mut harness = TradeHarness::new(&payload, 1, HomeostaticNeeds::new_sated());
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new_sated(),
+        );
         let error = harness.start_result().unwrap_err();
 
         assert!(matches!(
@@ -1442,14 +1460,14 @@ mod tests {
 
     #[test]
     fn local_alternatives_exclude_focal_and_counterparty() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
-        let mut harness = TradeHarness::new(&payload, 1, HomeostaticNeeds::new_sated());
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new_sated(),
+        );
         let bystander = {
             let mut txn = new_txn(&mut harness.world, 3);
             let bystander = txn.create_agent("Cato", ControlSource::Ai).unwrap();
@@ -1477,15 +1495,11 @@ mod tests {
 
     #[test]
     fn substitute_selection_chooses_first_acceptable_preference_in_order() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1545,15 +1559,11 @@ mod tests {
 
     #[test]
     fn substitute_selection_skips_unavailable_earlier_preference() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1612,15 +1622,11 @@ mod tests {
 
     #[test]
     fn substitute_selection_returns_none_without_preferences() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1642,15 +1648,11 @@ mod tests {
 
     #[test]
     fn substitute_selection_ignores_non_colocated_sellers() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
         let mut harness = TradeHarness::new(
-            &payload,
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
@@ -1691,14 +1693,14 @@ mod tests {
 
     #[test]
     fn substitute_selection_skips_valuation_rejected_candidate_for_later_acceptable_one() {
-        let payload = TradeActionPayload {
-            counterparty: entity(2),
-            offered_commodity: CommodityKind::Coin,
-            offered_quantity: Quantity(1),
-            requested_commodity: CommodityKind::Bread,
-            requested_quantity: Quantity(1),
-        };
-        let mut harness = TradeHarness::new(&payload, 1, HomeostaticNeeds::new_sated());
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new_sated(),
+        );
         let grain_seller = {
             let mut txn = new_txn(&mut harness.world, 3);
             txn.set_component_substitute_preferences(

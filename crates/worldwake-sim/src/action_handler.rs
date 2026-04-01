@@ -322,6 +322,7 @@ pub enum ActionAbortRequestReason {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum PayloadEntityRole {
     Counterparty,
+    SaleLot,
     Target,
 }
 

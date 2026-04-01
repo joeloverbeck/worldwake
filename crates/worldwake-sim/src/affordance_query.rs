@@ -1373,9 +1373,9 @@ mod tests {
                     }
                     vec![ActionPayload::Trade(TradeActionPayload {
                         counterparty,
+                        sale_lot: EntityId { slot: 50, generation: 0 },
                         offered_commodity: CommodityKind::Coin,
                         offered_quantity: Quantity(1),
-                        requested_commodity: CommodityKind::Bread,
                         requested_quantity: Quantity(1),
                     })]
                 }),
@@ -1414,9 +1414,9 @@ mod tests {
             affordances[0].payload_override,
             Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: seller,
+                sale_lot: EntityId { slot: 50, generation: 0 },
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(1),
-                requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
             }))
         );
