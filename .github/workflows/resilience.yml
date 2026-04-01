@@ -1,4 +1,4 @@
-name: Soak Tests
+name: Resilience Tests
 
 on:
   push:
@@ -8,9 +8,9 @@ on:
   pull_request:
 
 jobs:
-  soak:
+  resilience:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -22,5 +22,5 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Run soak tests
-        run: cargo test -p worldwake-ai --features soak --test golden_soak
+      - name: Run resilience tests
+        run: cargo test -p worldwake-ai --features soak --test golden_resilience

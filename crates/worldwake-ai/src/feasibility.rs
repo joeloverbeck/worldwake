@@ -148,7 +148,24 @@ fn goal_specific_feasibility(
             if !has_commodity {
                 return Some(FeasibilityHint::Unlikely);
             }
-            check_evidence_places_local(view, agent, goal)
+            let Some(profile) = view.merchandise_profile(agent) else {
+                return Some(FeasibilityHint::Unlikely);
+            };
+            let Some(home_market) = profile.home_market else {
+                return Some(FeasibilityHint::Unlikely);
+            };
+            let agent_place = view.effective_place(agent);
+            if agent_place == Some(home_market) {
+                return Some(FeasibilityHint::Likely);
+            }
+            // Check if home_market is reachable (adjacent).
+            if let Some(place) = agent_place {
+                let adjacent = view.adjacent_places_with_travel_ticks(place);
+                if adjacent.iter().any(|(p, _)| *p == home_market) {
+                    return Some(FeasibilityHint::Likely);
+                }
+            }
+            None
         }
         (FeasibilityStrategy::CargoDestinationCheck, GoalKind::MoveCargo { commodity, .. }) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
@@ -267,6 +284,8 @@ mod tests {
         dead: Vec<EntityId>,
         /// Adjacent places from agent's current place.
         adjacent: Vec<(EntityId, NonZeroU32)>,
+        /// Merchandise profile for the agent.
+        merchandise: Option<MerchandiseProfile>,
     }
 
     impl GoalBeliefView for MockView {
@@ -431,7 +450,7 @@ mod tests {
         }
 
         fn merchandise_profile(&self, _entity: EntityId) -> Option<MerchandiseProfile> {
-            None
+            self.merchandise.clone()
         }
 
         fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
@@ -839,19 +858,20 @@ mod tests {
     // ── Test 19: SellCommodity with stock and local evidence → Likely ──
 
     #[test]
-    fn test_sell_commodity_with_stock_and_local_evidence_likely() {
+    fn test_sell_commodity_with_stock_and_at_home_market_likely() {
         let place = entity(10);
         let view = MockView {
             agent_place: Some(place),
             commodities: vec![(CommodityKind::Bread, Quantity(5))],
+            merchandise: Some(MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(place),
+            }),
             ..Default::default()
         };
-        let goal = ranked_goal_with_evidence_places(
-            GoalKind::SellCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            &[place],
-        );
+        let goal = ranked_goal(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        });
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
@@ -1055,5 +1075,96 @@ mod tests {
         assert!(FeasibilityHint::Likely < FeasibilityHint::Uncertain);
         assert!(FeasibilityHint::Uncertain < FeasibilityHint::Unlikely);
         assert!(FeasibilityHint::Likely < FeasibilityHint::Unlikely);
+    }
+
+    // ── SellCheck feasibility ──
+
+    #[test]
+    fn sell_check_likely_when_has_commodity_and_at_home_market() {
+        let market = entity(10);
+        let view = MockView {
+            agent_place: Some(market),
+            commodities: vec![(CommodityKind::Bread, Quantity(3))],
+            merchandise: Some(MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            }),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let blocked = empty_blocked_memory();
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Likely
+        );
+    }
+
+    #[test]
+    fn sell_check_likely_when_has_commodity_and_home_market_adjacent() {
+        let current = entity(9);
+        let market = entity(10);
+        let view = MockView {
+            agent_place: Some(current),
+            commodities: vec![(CommodityKind::Bread, Quantity(3))],
+            adjacent: vec![(market, NonZeroU32::new(2).unwrap())],
+            merchandise: Some(MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            }),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let blocked = empty_blocked_memory();
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Likely
+        );
+    }
+
+    #[test]
+    fn sell_check_unlikely_when_no_commodity() {
+        let market = entity(10);
+        let view = MockView {
+            agent_place: Some(market),
+            merchandise: Some(MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            }),
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let blocked = empty_blocked_memory();
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Unlikely
+        );
+    }
+
+    #[test]
+    fn sell_check_unlikely_when_no_merchandise_profile() {
+        let market = entity(10);
+        let view = MockView {
+            agent_place: Some(market),
+            commodities: vec![(CommodityKind::Bread, Quantity(3))],
+            ..Default::default()
+        };
+        let goal = ranked_goal(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let blocked = empty_blocked_memory();
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Unlikely
+        );
     }
 }

@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 mod timeline;
+pub mod soak_world;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;

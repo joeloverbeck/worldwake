@@ -964,10 +964,19 @@ impl GoalKindPlannerExt for GoalKind {
                 ),
                 None => false,
             },
+            GoalKind::SellCommodity { commodity } => {
+                let profile = state.merchandise_profile(actor);
+                let home_market = profile.as_ref().and_then(|p| p.home_market);
+                let at_market =
+                    home_market.is_some() && state.effective_place(actor) == home_market;
+                at_market
+                    && !state
+                        .listed_sale_lots_at(home_market.unwrap(), *commodity)
+                        .is_empty()
+            }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
-            | GoalKind::SellCommodity { .. }
             | GoalKind::InvestigateViolation { .. }
             | GoalKind::Patrol { .. }
             | GoalKind::Accuse { .. }
@@ -1043,7 +1052,11 @@ impl GoalKindPlannerExt for GoalKind {
                     None => Vec::new(),
                 }
             }
-            GoalKind::SellCommodity { commodity } => demand_memory_places(state, actor, *commodity),
+            GoalKind::SellCommodity { .. } => state
+                .merchandise_profile(actor)
+                .and_then(|p| p.home_market)
+                .into_iter()
+                .collect(),
             GoalKind::RestockCommodity { commodity } => {
                 if state.commodity_quantity(actor, *commodity) > Quantity(0) {
                     demand_memory_places(state, actor, *commodity)
@@ -7279,5 +7292,168 @@ mod tests {
             !goal.is_progress_barrier(&step),
             "SellCommodity + Travel should NOT be a ProgressBarrier"
         );
+    }
+
+    #[test]
+    fn sell_commodity_satisfied_when_at_home_market_with_listed_lot() {
+        let actor = entity_id(1, 0);
+        let market = entity_id(2, 0);
+        let bread_lot = entity_id(3, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, bread_lot]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, market);
+        view.effective_places.insert(bread_lot, market);
+        view.entities_at.insert(market, vec![actor, bread_lot]);
+        view.direct_possessions.insert(actor, vec![bread_lot]);
+        view.direct_possessors.insert(bread_lot, actor);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(3));
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+        view.listed_lots
+            .insert((market, CommodityKind::Bread), vec![bread_lot]);
+        view.lot_sellers.insert(bread_lot, actor);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bread_lot]),
+            &BTreeSet::from([market]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn sell_commodity_not_satisfied_when_not_at_home_market() {
+        let actor = entity_id(1, 0);
+        let market = entity_id(2, 0);
+        let other = entity_id(4, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, other);
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([market, other]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn sell_commodity_not_satisfied_when_no_listed_lot() {
+        let actor = entity_id(1, 0);
+        let market = entity_id(2, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, market);
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([market]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }
+        .is_satisfied(&state));
+    }
+
+    #[test]
+    fn sell_commodity_relevant_places_returns_home_market() {
+        let actor = entity_id(1, 0);
+        let market = entity_id(2, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, market);
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_market: Some(market),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([market]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        let places = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }
+        .goal_relevant_places(&state, &RecipeRegistry::new());
+        assert_eq!(places, vec![market]);
+    }
+
+    #[test]
+    fn sell_commodity_relevant_places_empty_without_profile() {
+        let actor = entity_id(1, 0);
+        let market = entity_id(2, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, market);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([market]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        let places = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }
+        .goal_relevant_places(&state, &RecipeRegistry::new());
+        assert!(places.is_empty());
     }
 }
