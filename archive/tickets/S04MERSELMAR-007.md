@@ -1,6 +1,6 @@
 # S04MERSELMAR-007: `SellCommodity` candidate generation, satisfaction, feasibility, and relevant places
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI decision pipeline wiring for SellCommodity goal
@@ -141,3 +141,14 @@ Verify that the dispatch declaration in `goal_dispatch_decl.rs` correctly wires 
 2. `cargo test -p worldwake-ai -- goal_model`
 3. `cargo test -p worldwake-ai -- feasibility`
 4. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - `candidate_generation.rs`: Added `emit_sell_goals()` wired into `emit_enterprise_candidates()`. Emits `SellCommodity` when merchant is at `home_market`, has local controlled stock, and no lot is already listed.
+  - `goal_model.rs`: `goal_relevant_places` returns `[home_market]` from `MerchandiseProfile` instead of `demand_memory_places`. `is_satisfied` checks at-market + listed lot instead of hard `false`.
+  - `feasibility.rs`: `SellCheck` checks commodity quantity + `home_market` reachability (at or adjacent) instead of `check_evidence_places_local`.
+  - `goal_dispatch_decl.rs`: No changes needed — already correctly wired.
+- **Deviations**: `MerchandiseProfile.home_market` is `Option<EntityId>`, not `EntityId` as ticket assumed. All code handles the `Option` correctly.
+- **Verification**: `cargo clippy --workspace -- -D warnings` clean; `cargo test --workspace` all pass (0 failures). 13 focused sell_commodity tests pass.

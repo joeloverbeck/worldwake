@@ -1,6 +1,6 @@
 # S04MERSELMAR-006: `PlannerOpKind::StaffMarket` and `SELL_OPS` update
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new planner op kind, updated goal dispatch ops list, search transition semantics
@@ -121,3 +121,16 @@ Add `StaffMarket` to planner conformance test coverage in `crates/worldwake-ai/t
 1. `cargo test -p worldwake-ai -- planner_ops`
 2. `cargo test -p worldwake-ai -- planner_conformance`
 3. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - `SELL_OPS` updated from `[Travel, Trade, MoveCargo]` to `[Travel, MoveCargo, StaffMarket]` in `goal_dispatch_decl.rs`
+  - Added `SellCommodity + StaffMarket` progress barrier in `goal_model.rs` `is_progress_barrier()`
+  - 5 new unit tests: classification, semantics, SELL_OPS assertion, progress barrier (positive + negative)
+- **Deviations**:
+  - Items 1-2 (variant, classification, semantics) were already implemented by S04MERSELMAR-005. This ticket only needed the SELL_OPS update, progress barrier, and tests.
+  - Item 4 (search transition in `transition.rs`) required no changes — `StaffMarket` uses `GoalModelFallback` transition, matching the pattern of other terminal ops (Tell, Patrol, Investigate).
+  - Conformance test in `planner_conformance.rs` deferred to ticket 007 — conformance requires full candidate generation + handler integration setup.
+- **Verification**: `cargo clippy --workspace -- -D warnings` clean, `cargo test --workspace` all pass (0 failures)

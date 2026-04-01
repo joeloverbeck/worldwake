@@ -92,8 +92,8 @@ const PRODUCE_OPS: &[PlannerOpKind] = &[
 ];
 const SELL_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
-    PlannerOpKind::Trade,
     PlannerOpKind::MoveCargo,
+    PlannerOpKind::StaffMarket,
 ];
 const RESTOCK_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
@@ -758,6 +758,27 @@ mod tests {
             GoalDispatchKey::BuryCorpse
                 .declaration()
                 .feasibility_strategy
+        );
+    }
+
+    #[test]
+    fn sell_ops_contains_staff_market_not_trade() {
+        let decl = GoalDispatchKey::SellCommodity.declaration();
+        assert!(
+            decl.relevant_ops.contains(&PlannerOpKind::StaffMarket),
+            "SELL_OPS must contain StaffMarket"
+        );
+        assert!(
+            !decl.relevant_ops.contains(&PlannerOpKind::Trade),
+            "SELL_OPS must NOT contain Trade — seller goals plan through StaffMarket, not buyer-initiated Trade"
+        );
+        assert!(
+            decl.relevant_ops.contains(&PlannerOpKind::Travel),
+            "SELL_OPS must contain Travel"
+        );
+        assert!(
+            decl.relevant_ops.contains(&PlannerOpKind::MoveCargo),
+            "SELL_OPS must contain MoveCargo"
         );
     }
 }
