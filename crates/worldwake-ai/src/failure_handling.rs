@@ -109,7 +109,7 @@ fn derive_blocking_fact(
                 return BlockingFact::NoKnownPath;
             }
         }
-        PlannerOpKind::Trade | PlannerOpKind::StaffMarket => {
+        PlannerOpKind::Trade | PlannerOpKind::StaffMarket | PlannerOpKind::StockManagement => {
             if let Some(fact) =
                 classify_trade_failure(view, agent, goal_key, step, execution_failure)
             {
@@ -376,6 +376,7 @@ fn classify_input_failure(
         | PlannerOpKind::Relieve
         | PlannerOpKind::Trade
         | PlannerOpKind::StaffMarket
+        | PlannerOpKind::StockManagement
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
@@ -415,6 +416,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
     match step.op_kind {
         PlannerOpKind::Trade
         | PlannerOpKind::StaffMarket
+        | PlannerOpKind::StockManagement
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
@@ -669,7 +671,7 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
 
 fn related_entity(step: &PlannedStep) -> Option<EntityId> {
     match step.op_kind {
-        PlannerOpKind::Trade | PlannerOpKind::StaffMarket => step
+        PlannerOpKind::Trade | PlannerOpKind::StaffMarket | PlannerOpKind::StockManagement => step
             .payload_override
             .as_ref()
             .and_then(ActionPayload::as_trade)
@@ -748,6 +750,7 @@ fn related_place(
         PlannerOpKind::Travel => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Trade
         | PlannerOpKind::StaffMarket
+        | PlannerOpKind::StockManagement
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest

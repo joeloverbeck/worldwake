@@ -798,6 +798,7 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::Trade
             | PlannerOpKind::StaffMarket
+            | PlannerOpKind::StockManagement
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::Attack
@@ -1172,6 +1173,7 @@ impl GoalKindPlannerExt for GoalKind {
             PlannerOpKind::Travel
             | PlannerOpKind::Trade
             | PlannerOpKind::StaffMarket
+            | PlannerOpKind::StockManagement
             | PlannerOpKind::EstablishCamp
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft

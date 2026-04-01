@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, StockAssignment,
+    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, SaleListing, StockAssignment,
     StockAssignmentKind, StockStoragePolicy, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
@@ -36,8 +36,23 @@ pub fn register_stock_actions(
         abort_stock,
     ));
 
+    let stage_handler = handlers.register(ActionHandler::new(
+        start_stage_stock_for_sale,
+        tick_stock,
+        commit_stage_stock_for_sale,
+        abort_stock,
+    ));
+    let unstage_handler = handlers.register(ActionHandler::new(
+        start_unstage_stock,
+        tick_stock,
+        commit_unstage_stock,
+        abort_stock,
+    ));
+
     let store_id = ActionDefId(defs.len() as u32);
     let collect_id = ActionDefId(store_id.0 + 1);
+    let stage_id = ActionDefId(collect_id.0 + 1);
+    let unstage_id = ActionDefId(stage_id.0 + 1);
 
     vec![
         defs.register(ActionDef {
@@ -103,6 +118,72 @@ pub fn register_stock_actions(
             ]),
             payload: ActionPayload::None,
             handler: collect_handler,
+        }),
+        defs.register(ActionDef {
+            id: stage_id,
+            name: "stage_stock_for_sale".to_string(),
+            domain: worldwake_core::ActionDomain::Trade,
+            actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::ItemLot,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::InterruptibleWithPenalty,
+            commit_conditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([
+                EventTag::Trade,
+                EventTag::Transfer,
+                EventTag::WorldMutation,
+            ]),
+            payload: ActionPayload::None,
+            handler: stage_handler,
+        }),
+        defs.register(ActionDef {
+            id: unstage_id,
+            name: "unstage_stock".to_string(),
+            domain: worldwake_core::ActionDomain::Trade,
+            actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::ItemLot,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::InterruptibleWithPenalty,
+            commit_conditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([
+                EventTag::Trade,
+                EventTag::Transfer,
+                EventTag::WorldMutation,
+            ]),
+            payload: ActionPayload::None,
+            handler: unstage_handler,
         }),
     ]
 }
@@ -235,6 +316,124 @@ fn commit_collect_display_stock(
     // Clear stock assignment.
     txn.clear_component_stock_assignment(lot)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(CommitOutcome::empty())
+}
+
+// ---------------------------------------------------------------------------
+// stage_stock_for_sale handlers
+// ---------------------------------------------------------------------------
+
+fn start_stage_stock_for_sale(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    // Lot must be stored (not displayed, not possessed).
+    match txn.get_component_stock_assignment(lot) {
+        Some(assignment) if assignment.kind == StockAssignmentKind::Stored => {}
+        _ => {
+            return Err(ActionError::PreconditionFailed(
+                "target lot must have StockAssignment::Stored to stage for sale".to_string(),
+            ));
+        }
+    }
+    // Facility must have a display container.
+    let (_facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+    if policy.display_container.is_none() {
+        return Err(ActionError::PreconditionFailed(
+            "facility has no display container for staging".to_string(),
+        ));
+    }
+    Ok(None)
+}
+
+fn commit_stage_stock_for_sale(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    let (facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+    let display_container = policy.display_container.ok_or_else(|| {
+        ActionError::PreconditionFailed(
+            "facility has no display container for staging".to_string(),
+        )
+    })?;
+
+    // Move lot from stock container to display container.
+    txn.remove_from_container(lot)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.put_into_container(lot, display_container)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // Update assignment to Displayed.
+    txn.set_component_stock_assignment(
+        lot,
+        StockAssignment {
+            facility,
+            kind: StockAssignmentKind::Displayed,
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // Add SaleListing.
+    txn.set_component_sale_listing(lot, SaleListing { listed_at: txn.tick() })
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_target(lot);
+    Ok(CommitOutcome::empty())
+}
+
+// ---------------------------------------------------------------------------
+// unstage_stock handlers
+// ---------------------------------------------------------------------------
+
+fn start_unstage_stock(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    // Lot must be displayed.
+    match txn.get_component_stock_assignment(lot) {
+        Some(assignment) if assignment.kind == StockAssignmentKind::Displayed => {}
+        _ => {
+            return Err(ActionError::PreconditionFailed(
+                "target lot must have StockAssignment::Displayed to unstage".to_string(),
+            ));
+        }
+    }
+    let _ = resolve_controlled_facility(txn, instance.actor)?;
+    Ok(None)
+}
+
+fn commit_unstage_stock(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    let (facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+
+    // Move lot from display container back to stock container.
+    txn.remove_from_container(lot)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.put_into_container(lot, policy.stock_container)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // Update assignment to Stored.
+    txn.set_component_stock_assignment(
+        lot,
+        StockAssignment {
+            facility,
+            kind: StockAssignmentKind::Stored,
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // Clear SaleListing.
+    let _ = txn.clear_component_sale_listing(lot);
+    txn.add_target(lot);
     Ok(CommitOutcome::empty())
 }
 
@@ -559,6 +758,240 @@ mod tests {
             h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
             original_qty,
             "quantity should not change during collect"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Staging harness (facility WITH display container)
+    // -----------------------------------------------------------------------
+
+    struct DisplayTestHarness {
+        world: World,
+        event_log: EventLog,
+        #[allow(dead_code)]
+        place: EntityId,
+        agent: EntityId,
+        facility: EntityId,
+        stock_container: EntityId,
+        display_container: EntityId,
+        bread_lot: EntityId,
+    }
+
+    fn setup_display_harness() -> DisplayTestHarness {
+        let place = entity(100);
+        let topo = test_topology();
+        let mut world = World::new(topo).unwrap();
+        let mut log = EventLog::new();
+
+        let (agent, facility, stock_container, display_container, bread_lot) = {
+            let mut txn = new_txn(&mut world, &mut log);
+            let agent = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+
+            let (facility, stock_container, display) = txn
+                .create_merchant_facility(place, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display_container = display.unwrap();
+            txn.set_owner(facility, agent).unwrap();
+
+            let bread_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(5))
+                .unwrap();
+            txn.set_ground_location(bread_lot, place).unwrap();
+            txn.set_possessor(bread_lot, agent).unwrap();
+
+            txn.commit(&mut log);
+            (agent, facility, stock_container, display_container, bread_lot)
+        };
+
+        DisplayTestHarness {
+            world,
+            event_log: log,
+            place,
+            agent,
+            facility,
+            stock_container,
+            display_container,
+            bread_lot,
+        }
+    }
+
+    /// Store the bread lot into the facility (prerequisite for staging tests).
+    fn store_lot(h: &mut DisplayTestHarness) {
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+        let mut txn = new_txn(&mut h.world, &mut h.event_log);
+        let instance = make_instance(h.agent, h.bread_lot);
+        commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+        txn.commit(&mut h.event_log);
+    }
+
+    // -----------------------------------------------------------------------
+    // stage_stock_for_sale
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn stage_stock_moves_lot_to_display_and_adds_listing() {
+        let mut h = setup_display_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        store_lot(&mut h);
+
+        // Stage.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_stage_stock_for_sale(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Lot is in display container.
+        assert_eq!(
+            h.world.direct_container(h.bread_lot),
+            Some(h.display_container),
+            "staged lot should be in display container"
+        );
+        // Assignment is Displayed.
+        let assignment = h
+            .world
+            .get_component_stock_assignment(h.bread_lot)
+            .expect("staged lot should have StockAssignment");
+        assert_eq!(assignment.facility, h.facility);
+        assert_eq!(assignment.kind, StockAssignmentKind::Displayed);
+        // SaleListing present.
+        assert!(
+            h.world.get_component_sale_listing(h.bread_lot).is_some(),
+            "staged lot should have SaleListing"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // unstage_stock
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn unstage_stock_reverses_staging() {
+        let mut h = setup_display_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        store_lot(&mut h);
+
+        // Stage.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_stage_stock_for_sale(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Unstage.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_unstage_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Lot is back in stock container.
+        assert_eq!(
+            h.world.direct_container(h.bread_lot),
+            Some(h.stock_container),
+            "unstaged lot should be back in stock container"
+        );
+        // Assignment is Stored.
+        let assignment = h
+            .world
+            .get_component_stock_assignment(h.bread_lot)
+            .expect("unstaged lot should have StockAssignment");
+        assert_eq!(assignment.kind, StockAssignmentKind::Stored);
+        // SaleListing cleared.
+        assert!(
+            h.world.get_component_sale_listing(h.bread_lot).is_none(),
+            "unstaged lot should have no SaleListing"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // No display container
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn stage_stock_fails_without_display_container() {
+        // Use the original harness which has NO display container.
+        let mut h = setup_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        // Store lot first.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Attempt to stage — should fail.
+        let mut txn = new_txn(&mut h.world, &mut h.event_log);
+        let mut instance = make_instance(h.agent, h.bread_lot);
+        let result = start_stage_stock_for_sale(&def, &mut instance, &mut rng, &mut txn);
+
+        assert!(
+            result.is_err(),
+            "staging should fail when facility has no display container"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Full round-trip conservation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn full_round_trip_store_stage_unstage_collect_preserves_quantity() {
+        let mut h = setup_display_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        let original_qty = h
+            .world
+            .get_component_item_lot(h.bread_lot)
+            .unwrap()
+            .quantity;
+
+        // Store.
+        store_lot(&mut h);
+        // Stage.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_stage_stock_for_sale(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+        // Unstage.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_unstage_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+        // Collect.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_collect_display_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Lot is back in possession, quantity preserved.
+        assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
+        assert!(h.world.direct_container(h.bread_lot).is_none());
+        assert!(h.world.get_component_stock_assignment(h.bread_lot).is_none());
+        assert!(h.world.get_component_sale_listing(h.bread_lot).is_none());
+        assert_eq!(
+            h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
+            original_qty,
+            "quantity should be preserved through full round-trip"
         );
     }
 }
