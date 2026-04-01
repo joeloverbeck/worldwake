@@ -1253,7 +1253,7 @@ fn golden_information_locality_for_political_facts_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 33: Remote Record Travel + Consultation + Political Action
+// Scenario 73: Remote Record Travel + Consultation + Political Action
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Travel, ConsultRecord, Succession, Political actions
@@ -2662,7 +2662,7 @@ fn golden_force_claim_ai_installation_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 20: Contested Force Claim Resolves Only After Yield
+// Scenario 71: Contested Force Claim Resolves Only After Yield
 // ---------------------------------------------------------------------------
 //
 // Systems: Force-claim actions, Force-control succession
@@ -2927,7 +2927,7 @@ fn golden_contested_force_claim_resolves_after_yield_replays_deterministically()
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 21: Force Control Knowledge Stays Local Until Tell
+// Scenario 72: Force Control Knowledge Stays Local Until Tell
 // ---------------------------------------------------------------------------
 //
 // Systems: Force-control succession, Tell, Perception

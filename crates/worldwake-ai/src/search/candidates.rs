@@ -610,8 +610,8 @@ pub(super) fn search_candidate_from_planner(
     }
 }
 
-pub(super) fn unsupported_goal(goal: &GoalKind) -> bool {
-    matches!(goal, GoalKind::SellCommodity { .. })
+pub(super) fn unsupported_goal(_goal: &GoalKind) -> bool {
+    false
 }
 
 /// Returns `Some((place, blocking_fact))` if the candidate is blocked by a

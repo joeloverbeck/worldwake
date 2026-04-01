@@ -10,14 +10,14 @@
 
 `SellCommodity` must be rankable relative to other goals. Remembered local demand should boost the sell-goal motive without overpowering critical self-care. Repeated unproductive market-presence cycles must be dampened through the existing `BlockedIntentMemory` system rather than a merchant-specific cooldown table.
 
-## Assumption Reassessment (2026-03-31)
+## Assumption Reassessment (2026-04-01)
 
-1. `DemandMemory` entries contain `DemandObservation { place, commodity, reason, tick }`. `DemandObservationReason::WantedToSellButNoBuyer` exists at `crates/worldwake-core/src/trade.rs:61`. Confirmed.
-2. Goal ranking in `crates/worldwake-ai/src/ranking.rs` uses `RankedGoal` with priority class and motive value. Enterprise goals like `RestockCommodity` already have ranking logic. Confirmed.
-3. `BlockedIntentMemory` in `crates/worldwake-core/src/blocked_intent.rs` stores `BlockedIntent { goal, place, expires_at, barrier }`. This is used by the planner to suppress recently-failed goals. Confirmed.
-4. `handle_plan_failure` in `crates/worldwake-ai/src/failure_handling.rs` creates `BlockedIntent` entries when plans fail. The `staff_market` commit handler (ticket 003) records `WantedToSellButNoBuyer` on unproductive cycles.
-5. `SellCommodity` candidate generation (ticket 007) emits candidates. This ticket adds the ranking signal.
-6. The spec (Section 13) says demand memory boosts ranking of `SellCommodity` and `RestockCommodity`, and helps valuation. Ranking boost is this ticket's scope.
+1. `DemandMemory` entries contain `DemandObservation { place, commodity, reason, tick }`. `DemandObservationReason::WantedToSellButNoBuyer` exists at `crates/worldwake-core/src/trade.rs:74`. Confirmed.
+2. ~~Goal ranking already wired~~: `SellCommodity` uses `enterprise_score` → `opportunity_signal` → `market_signal_for_place` → `relevant_demand_quantity`, which queries demand memory. Ranking boost is already implemented.
+3. `BlockedIntentMemory` in `crates/worldwake-core/src/blocked_intent.rs` stores `BlockedIntent`. Generic `filter_blocked_candidates` (candidate_generation.rs:260) already suppresses any goal kind with a matching blocker — no SellCommodity-specific code needed.
+4. `handle_plan_failure` creates `BlockedIntent` entries when plans fail, but `commit_staff_market` commits successfully — `handle_plan_failure` never fires for unproductive cycles. **This is the actual gap**: no `BlockedIntent` is created after a successful-but-unproductive market presence.
+5. `SellCommodity` candidate generation (ticket 007) emits candidates. Already on main.
+6. Enterprise class enforcement already correct: `SellCommodity` returns `GoalPriorityClass::Medium` (ranking.rs:343), survival goals use `High`/`Critical` which always wins.
 7. No adjacent contradictions found.
 
 ## Architecture Check
@@ -37,13 +37,9 @@
 
 ## What to Change
 
-### 1. Add demand memory ranking boost for `SellCommodity` in `ranking.rs`
+### 1. ~~Add demand memory ranking boost for `SellCommodity`~~ (ALREADY DONE)
 
-When scoring `SellCommodity { commodity }` motive:
-- Query `demand_memory` for the agent
-- Count recent observations matching the commodity at `home_market` (or any place)
-- Use observation count/recency to compute a motive boost
-- The boost adds to the enterprise-class motive value, not to the priority class
+`SellCommodity` already uses `enterprise_score` → `opportunity_signal` → `relevant_demand_quantity` which queries demand memory. No work needed.
 
 ### 2. Wire `BlockedIntentMemory` for `SellCommodity` failed cycles
 
@@ -55,13 +51,13 @@ This can be done either:
 
 The cleaner approach is for `commit_staff_market` to signal an "unproductive completion" that the AI layer interprets. The `WantedToSellButNoBuyer` demand observation is the signal. The agent tick driver or candidate generation can check for recent `WantedToSellButNoBuyer` at `home_market` and suppress re-emission for a blocking period.
 
-### 3. Suppress `SellCommodity` re-emission after unproductive cycle
+### 3. ~~Suppress `SellCommodity` re-emission after unproductive cycle~~ (ALREADY DONE)
 
-In candidate generation (from ticket 007), check `BlockedIntentMemory` for `SellCommodity { commodity }` at `home_market`. If blocked, do not emit the candidate. This follows the same suppression pattern used for all other goals.
+Generic `filter_blocked_candidates` (candidate_generation.rs:260) already suppresses any goal kind with a matching blocker. No SellCommodity-specific code needed.
 
-### 4. Ensure enterprise ranking does not overpower self-care
+### 4. ~~Ensure enterprise ranking does not overpower self-care~~ (ALREADY DONE)
 
-Verify that `SellCommodity` uses the enterprise priority class (not survival/safety). The motive boost from demand memory should be bounded so it cannot exceed the enterprise class ceiling.
+`SellCommodity` returns `GoalPriorityClass::Medium` (ranking.rs:343). Survival goals use `High`/`Critical` which always wins. No work needed.
 
 ## Files to Touch
 

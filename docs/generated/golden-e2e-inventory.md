@@ -5,27 +5,31 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 14
-- Files contributing `golden_*` tests: 14
-- Total `golden_*` tests: 220
+- Golden test files: 18
+- Files contributing `golden_*` tests: 17
+- Total `golden_*` tests: 245
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
 | `golden_ai_decisions.rs` | 18 |
-| `golden_care.rs` | 16 |
+| `golden_care.rs` | 18 |
 | `golden_combat.rs` | 25 |
-| `golden_determinism.rs` | 9 |
+| `golden_determinism.rs` | 10 |
 | `golden_emergent.rs` | 47 |
-| `golden_offices.rs` | 21 |
+| `golden_integration.rs` | 16 |
+| `golden_merchant_selling.rs` | 7 |
+| `golden_offices.rs` | 22 |
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
 | `golden_pursuit.rs` | 6 |
+| `golden_resilience.rs` | 2 |
+| `golden_soak.rs` | 1 |
 | `golden_social.rs` | 14 |
-| `golden_supply_chain.rs` | 6 |
+| `golden_supply_chain.rs` | 0 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
-| `golden_trade.rs` | 6 |
+| `golden_trade.rs` | 7 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_ai_decisions.rs`
@@ -51,6 +55,8 @@ Do not hand-edit it.
 
 ### `golden_care.rs`
 
+- `remote_treat_wounds_snapshot_supports_pick_up_transition_at_orchard`
+- `remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topology`
 - `golden_healing_wounded_agent`
 - `golden_healing_wounded_agent_replays_deterministically`
 - `golden_healer_acquires_ground_medicine_for_patient`
@@ -102,6 +108,7 @@ Do not hand-edit it.
 - `golden_save_load_round_trip_under_ai`
 - `golden_world_runs_without_observers`
 - `golden_world_runs_without_observers_replays_deterministically`
+- `bench_world_runs_without_observers`
 - `golden_save_load_preserves_promoted_commitments`
 - `golden_save_load_preserves_promoted_commitments_replays_deterministically`
 - `golden_save_load_preserves_suspended_intention_frame`
@@ -158,12 +165,42 @@ Do not hand-edit it.
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 
+### `golden_integration.rs`
+
+- `t20_apple_stockout_seed_1`
+- `t20_apple_stockout_seed_2`
+- `t24_player_replacement_seed_1`
+- `t24_player_replacement_seed_2`
+- `t27_controlled_agent_death_seed_1`
+- `t27_controlled_agent_death_seed_2`
+- `t28_pursuit_information_boundary_seed_1`
+- `t28_pursuit_information_boundary_seed_2`
+- `t29_wrongful_accusation_seed_1`
+- `t29_wrongful_accusation_seed_2`
+- `t21_ruler_death_patrol_gap_seed_1`
+- `t21_ruler_death_patrol_gap_seed_2`
+- `t33_vacancy_crime_recovery_seed_1`
+- `t33_vacancy_crime_recovery_seed_2`
+- `t22_camp_reconstitution_seed_1`
+- `t22_camp_reconstitution_seed_2`
+
+### `golden_merchant_selling.rs`
+
+- `staff_market_lists_on_start_unlists_on_complete`
+- `staff_market_lists_on_start_unlists_on_complete_replays_deterministically`
+- `buyer_trades_against_listed_lot`
+- `buyer_trades_against_listed_lot_replays_deterministically`
+- `unlisted_stock_not_sellable`
+- `blocked_intent_dampens_relisting_after_unproductive_cycle`
+- `deterministic_replay_preserves_listing_behavior`
+
 ### `golden_offices.rs`
 
 - `golden_simple_office_claim_via_declare_support`
 - `golden_simple_office_claim_deterministic_replay`
 - `golden_competing_claims_with_loyal_supporter`
 - `golden_bribe_support_coalition`
+- `bench_branchy_office_coalition`
 - `golden_threaten_with_courage_diversity`
 - `golden_travel_to_distant_jurisdiction_for_claim`
 - `golden_information_locality_for_political_facts`
@@ -229,6 +266,15 @@ Do not hand-edit it.
 - `golden_combat_flee_re_pursue`
 - `golden_combat_flee_re_pursue_replays_deterministically`
 
+### `golden_resilience.rs`
+
+- `t31_stress_disruptions`
+- `t32_replay_consistency`
+
+### `golden_soak.rs`
+
+- `t30_seven_day_soak`
+
 ### `golden_social.rs`
 
 - `golden_agent_autonomously_tells_colocated_peer`
@@ -248,12 +294,7 @@ Do not hand-edit it.
 
 ### `golden_supply_chain.rs`
 
-- `golden_merchant_restocks_via_prerequisite_aware_craft`
-- `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`
-- `golden_stale_prerequisite_belief_discovery_replan`
-- `golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`
-- `golden_stale_prerequisite_ask_witness_chain`
-- `golden_stale_prerequisite_ask_witness_chain_replays_deterministically`
+- No `golden_*` tests
 
 ### `golden_t22_bandit_camp_destruction.rs`
 
@@ -268,6 +309,7 @@ Do not hand-edit it.
 
 ### `golden_trade.rs`
 
+- `merchant_route_knowledge_alone_does_not_unlock_remote_restock`
 - `golden_buyer_driven_trade_acquisition`
 - `golden_buyer_driven_trade_acquisition_replays_deterministically`
 - `golden_merchant_restock_return_stock`

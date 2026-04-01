@@ -17,33 +17,50 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
 ### Phase 1: Read and Understand
 
 1. **Read the ticket file(s)** matching the provided glob path
-2. **Extract all references** from the ticket: file paths, function names, type names, module references, class names
-3. **Read the project's CLAUDE.md** if not already loaded, to understand project conventions
+2. **Read any additional references** provided in the arguments (spec files, design docs, etc.)
+3. **Extract all references** from the ticket: file paths, function names, type names, module references, class names
+4. **Read the project's CLAUDE.md** if not already loaded, to understand project conventions
 
 ### Phase 2: Reassess Assumptions
 
-4. **Grep/Glob for every referenced artifact** in the ticket:
+5. **Check dependency tickets**: If the ticket has a `Deps` field, verify each dependency's changes are present on the current branch (grep for key artifacts those tickets introduced). If dependencies are missing, stop and report.
+6. **Grep/Glob for every referenced artifact** in the ticket:
    - File paths: do they exist? Are they at the stated location?
    - Functions/types/classes: do they exist? Are their signatures as described?
    - Module structures: does the code organization match what the ticket assumes?
    - Dependencies: are imported modules/packages available?
-5. **Build a discrepancy list**: anything the ticket states that doesn't match reality
+   - Golden test coverage and harness setup: do existing tests cover the areas being changed?
+7. **Build a discrepancy list**: anything the ticket states that doesn't match reality
 
 ### Phase 3: Correct the Ticket (if needed)
 
-6. If discrepancies were found:
+8. If discrepancies were found:
    - **Present each discrepancy** to the user with what the ticket says vs. what the codebase actually has
    - **Propose corrections** to the ticket text
    - **Wait for user approval** before modifying the ticket file
    - **Edit the ticket file** with approved corrections
-7. If no discrepancies: confirm the ticket is accurate and proceed
+9. If no discrepancies: confirm the ticket is accurate and proceed
 
-### Phase 4: Implement
+### Phase 4: Extract Deliverables
 
-8. **Invoke the `superpowers:executing-plans` skill** to implement the corrected ticket
-   - The ticket serves as the implementation plan
-   - Follow all project conventions (worktree discipline, immutability, TDD, etc.)
-   - Run lint, typecheck, and tests before claiming completion (per Pre-Completion Verification rule)
+10. **Extract deliverables** from the ticket's "What to Change" and "Acceptance Criteria" sections into a numbered task list
+11. **Present the task list** to the user for confirmation before starting implementation
+
+### Phase 5: Implement
+
+12. **Create a feature branch**. If the project uses worktrees (check CLAUDE.md), set one up before implementation.
+13. **Execute in batches** of ~3 tasks:
+    - Mark each task as `in_progress` before starting, `completed` when done
+    - After each batch, report what was implemented and verification output
+    - Wait for feedback before continuing to the next batch
+14. **Run lint, typecheck, and tests** before claiming completion (per Pre-Completion Verification rule)
+
+### Phase 6: Archive
+
+15. **Archive the ticket** per `docs/archival-workflow.md`:
+    - Mark status as `✅ COMPLETED`
+    - Add an `## Outcome` section (completion date, what changed, deviations, verification results)
+    - Move to `archive/tickets/`
 
 ## Rules
 
