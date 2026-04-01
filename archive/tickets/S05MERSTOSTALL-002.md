@@ -1,6 +1,6 @@
 # S05MERSTOSTALL-002: Add stock container facility creation helpers
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new entity creation helpers in worldwake-core
@@ -87,3 +87,21 @@ Ensure the helper is accessible from `worldwake-core` public API. Update `compon
 1. `cargo test -p worldwake-core -- facility`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome (2026-04-01)
+
+### What changed
+
+1. Added `create_merchant_facility` method on `WorldTxn` in `world_txn.rs` — creates Facility + stock Container + optional display Container at a place, attaches `StockStoragePolicy`, returns `(facility, stock_container, Option<display_container>)`
+2. Added `LoadUnits` and `StockStoragePolicy` imports to `world_txn.rs`
+3. Added 4 focused tests: valid policy with display, no-display variant, all entities at same place, correct container capacities
+
+### Deviations
+
+- No new `ContainerCapacity` type needed — `Container.capacity: LoadUnits` (in `items.rs`) already handles container capacity. `CarryCapacity` is for agents only. This was an investigation item in the ticket, now resolved.
+- Helper placed on `WorldTxn` rather than `World` directly, following the established pattern for event-recording entity creation.
+
+### Verification
+
+- `cargo test -p worldwake-core`: 890 passed, 0 failed (886 baseline + 4 new)
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean
