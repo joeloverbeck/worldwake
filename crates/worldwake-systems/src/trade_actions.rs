@@ -1087,6 +1087,7 @@ mod tests {
                 txn.set_possessor(actor_offer, actor).unwrap();
                 txn.set_owner(actor_offer, actor).unwrap();
                 // Create facility for counterparty and stage the sale lot.
+                let facility = {
                 {
                     use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
                     let (facility, _stock, display) = txn
@@ -1109,7 +1110,9 @@ mod tests {
                         },
                     )
                     .unwrap();
+                    facility
                 }
+                };
                 txn.set_component_trade_disposition_profile(
                     actor,
                     TradeDispositionProfile {
@@ -1140,7 +1143,7 @@ mod tests {
                     counterparty,
                     MerchandiseProfile {
                         sale_kinds: [requested_commodity].into_iter().collect(),
-                        home_facility: Some(place),
+                        home_facility: Some(facility),
                     },
                 )
                 .unwrap();
@@ -2109,7 +2112,7 @@ mod tests {
                     actor,
                     MerchandiseProfile {
                         sale_kinds: [commodity].into_iter().collect(),
-                        home_facility: Some(place),
+                        home_facility: Some(facility),
                     },
                 )
                 .unwrap();
