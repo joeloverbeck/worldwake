@@ -172,16 +172,22 @@ fn classify_trade_failure(
     execution_failure: Option<ExecutionFailure<'_>>,
 ) -> Option<BlockingFact> {
     let payload = step.payload_override.as_ref()?.as_trade()?;
-    let commodity = goal_key.commodity.unwrap_or(payload.requested_commodity);
+    let sale_lot_commodity = view.item_lot_commodity(payload.sale_lot);
+    let commodity = goal_key
+        .commodity
+        .or(sale_lot_commodity)
+        .unwrap_or(CommodityKind::Coin);
     let place = view.effective_place(agent)?;
 
-    if let Some(fact) = classify_trade_execution_failure(agent, payload, execution_failure) {
+    if let Some(fact) =
+        classify_trade_execution_failure(agent, sale_lot_commodity, payload, execution_failure)
+    {
         return Some(fact);
     }
 
-    if view.commodity_quantity(payload.counterparty, payload.requested_commodity)
-        < payload.requested_quantity
-    {
+    if sale_lot_commodity.is_some_and(|c| {
+        view.commodity_quantity(payload.counterparty, c) < payload.requested_quantity
+    }) {
         return Some(BlockingFact::SellerOutOfStock);
     }
 
@@ -210,27 +216,29 @@ fn classify_trade_failure(
 
 fn classify_trade_execution_failure(
     agent: EntityId,
+    sale_lot_commodity: Option<CommodityKind>,
     payload: &worldwake_sim::TradeActionPayload,
     execution_failure: Option<ExecutionFailure<'_>>,
 ) -> Option<BlockingFact> {
     match execution_failure? {
         ExecutionFailure::Start(failure) => {
-            classify_trade_start_failure_reason(agent, payload, &failure.reason)
+            classify_trade_start_failure_reason(agent, sale_lot_commodity, payload, &failure.reason)
         }
         ExecutionFailure::Replan(signal) => {
-            classify_trade_abort_reason(agent, payload, &signal.reason)
+            classify_trade_abort_reason(agent, sale_lot_commodity, payload, &signal.reason)
         }
     }
 }
 
 fn classify_trade_start_failure_reason(
     agent: EntityId,
+    sale_lot_commodity: Option<CommodityKind>,
     payload: &worldwake_sim::TradeActionPayload,
     reason: &ActionStartFailureReason,
 ) -> Option<BlockingFact> {
     match reason {
         ActionStartFailureReason::AbortRequested(reason) => {
-            classify_trade_handler_abort_reason(agent, payload, reason)
+            classify_trade_handler_abort_reason(agent, sale_lot_commodity, payload, reason)
         }
         _ => None,
     }
@@ -238,6 +246,7 @@ fn classify_trade_start_failure_reason(
 
 fn classify_trade_abort_reason(
     agent: EntityId,
+    sale_lot_commodity: Option<CommodityKind>,
     payload: &worldwake_sim::TradeActionPayload,
     reason: &AbortReason,
 ) -> Option<BlockingFact> {
@@ -245,20 +254,23 @@ fn classify_trade_abort_reason(
         AbortReason::ExternalAbort {
             kind: ExternalAbortReason::HandlerRequested { reason },
             ..
-        } => classify_trade_handler_abort_reason(agent, payload, reason),
+        } => classify_trade_handler_abort_reason(agent, sale_lot_commodity, payload, reason),
         _ => None,
     }
 }
 
 fn classify_trade_handler_abort_reason(
     agent: EntityId,
+    sale_lot_commodity: Option<CommodityKind>,
     payload: &worldwake_sim::TradeActionPayload,
     reason: &ActionAbortRequestReason,
 ) -> Option<BlockingFact> {
     match reason {
         ActionAbortRequestReason::HolderLacksAccessibleCommodity {
             holder, commodity, ..
-        } if *holder == payload.counterparty && *commodity == payload.requested_commodity => {
+        } if *holder == payload.counterparty
+            && sale_lot_commodity.is_some_and(|c| *commodity == c) =>
+        {
             Some(BlockingFact::SellerOutOfStock)
         }
         ActionAbortRequestReason::HolderLacksAccessibleCommodity {
@@ -835,6 +847,7 @@ mod tests {
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         lot_sellers: BTreeMap<EntityId, EntityId>,
+        lot_commodities: BTreeMap<EntityId, CommodityKind>,
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -896,8 +909,8 @@ mod tests {
         ) -> Vec<EntityId> {
             Vec::new()
         }
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
-            None
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
         }
         fn item_lot_consumable_profile(
             &self,
@@ -1082,6 +1095,11 @@ mod tests {
         }
     }
 
+    const TRADE_SALE_LOT: EntityId = EntityId {
+        slot: 50,
+        generation: 1,
+    };
+
     fn trade_goal() -> GoalKey {
         GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -1095,9 +1113,9 @@ mod tests {
             targets: vec![PlanningEntityRef::Authoritative(counterparty)],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty,
+                sale_lot: TRADE_SALE_LOT,
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(1),
-                requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
             })),
             op_kind: PlannerOpKind::Trade,
@@ -1105,6 +1123,13 @@ mod tests {
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
         }
+    }
+
+    /// Registers the dummy sale lot commodity in a test belief view so that
+    /// `item_lot_commodity(TRADE_SALE_LOT)` returns `Some(CommodityKind::Bread)`.
+    fn register_trade_sale_lot(view: &mut TestBeliefView) {
+        view.lot_commodities
+            .insert(TRADE_SALE_LOT, CommodityKind::Bread);
     }
 
     fn travel_step(place: EntityId) -> PlannedStep {
@@ -1227,10 +1252,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        let sale_lot = entity(50);
+        register_trade_sale_lot(&mut view);
         view.listed_lots
-            .insert((place, CommodityKind::Bread), vec![sale_lot]);
-        view.lot_sellers.insert(sale_lot, seller);
+            .insert((place, CommodityKind::Bread), vec![TRADE_SALE_LOT]);
+        view.lot_sellers.insert(TRADE_SALE_LOT, seller);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         let mut runtime = runtime_with_plan(goal, step.clone());
@@ -1277,10 +1302,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        let sale_lot = entity(50);
+        register_trade_sale_lot(&mut view);
         view.listed_lots
-            .insert((place, CommodityKind::Bread), vec![sale_lot]);
-        view.lot_sellers.insert(sale_lot, seller);
+            .insert((place, CommodityKind::Bread), vec![TRADE_SALE_LOT]);
+        view.lot_sellers.insert(TRADE_SALE_LOT, seller);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
 
@@ -1445,10 +1470,10 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
-        let sale_lot = entity(50);
+        register_trade_sale_lot(&mut view);
         view.listed_lots
-            .insert((place, CommodityKind::Bread), vec![sale_lot]);
-        view.lot_sellers.insert(sale_lot, seller);
+            .insert((place, CommodityKind::Bread), vec![TRADE_SALE_LOT]);
+        view.lot_sellers.insert(TRADE_SALE_LOT, seller);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         view.commodity_quantities
@@ -1543,6 +1568,7 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(seller, EntityKind::Agent);
         view.effective_places.insert(agent, place);
+        register_trade_sale_lot(&mut view);
         view.commodity_quantities
             .insert((agent, CommodityKind::Coin), Quantity(1));
         view.commodity_quantities

@@ -503,13 +503,14 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(actor_place) = state.effective_place(actor) else {
                     return Err(GoalPayloadOverrideError::MissingActorPlace);
                 };
-                let counterparty_is_selling = state
+                // Find a concrete listed sale lot owned by the counterparty.
+                let sale_lot = state
                     .listed_sale_lots_at(actor_place, requested_commodity)
                     .into_iter()
-                    .any(|lot| state.seller_for_sale_lot(lot) == Some(counterparty));
-                if !counterparty_is_selling {
+                    .find(|lot| state.seller_for_sale_lot(*lot) == Some(counterparty));
+                let Some(sale_lot) = sale_lot else {
                     return Err(GoalPayloadOverrideError::SellerUnavailable);
-                }
+                };
                 if state.commodity_quantity(counterparty, requested_commodity) == Quantity(0) {
                     return Err(GoalPayloadOverrideError::SellerOutOfStock);
                 }
@@ -518,9 +519,9 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 Ok(Some(ActionPayload::Trade(TradeActionPayload {
                     counterparty,
+                    sale_lot,
                     offered_commodity: CommodityKind::Coin,
                     offered_quantity: Quantity(1),
-                    requested_commodity,
                     requested_quantity: Quantity(1),
                 })))
             }
@@ -2926,9 +2927,9 @@ mod tests {
             payload,
             Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: seller,
+                sale_lot: entity(30),
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(1),
-                requested_commodity: CommodityKind::Bread,
                 requested_quantity: Quantity(1),
             }))
         );

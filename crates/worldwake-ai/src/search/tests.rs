@@ -912,20 +912,31 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
     let town = entity(10);
     let market = entity(11);
     let seller = entity(2);
+    let seller_lot = entity(100);
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town, market]);
+    view.alive.extend([actor, seller, town, market, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
     view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, market);
+    view.effective_places.insert(seller_lot, market);
     view.entities_at.insert(town, vec![actor]);
-    view.entities_at.insert(market, vec![seller]);
+    view.entities_at.insert(market, vec![seller, seller_lot]);
     view.adjacent
         .insert(town, vec![(market, NonZeroU32::new(4).unwrap())]);
     view.adjacent
         .insert(market, vec![(town, NonZeroU32::new(4).unwrap())]);
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
     view.needs.insert(
         actor,
         HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -992,14 +1003,25 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
     let actor = entity(1);
     let seller = entity(2);
     let town = entity(10);
+    let seller_lot = entity(100);
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town]);
+    view.alive.extend([actor, seller, town, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
-    view.entities_at.insert(town, vec![actor, seller]);
+    view.effective_places.insert(seller_lot, town);
+    view.entities_at.insert(town, vec![actor, seller, seller_lot]);
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
     view.needs.insert(
         actor,
         HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
@@ -5481,15 +5503,27 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
     let actor = entity(1);
     let seller = entity(2);
     let town = entity(10);
+    let seller_lot = entity(100);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town]);
+    view.alive.extend([actor, seller, town, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
-    view.entities_at.insert(town, vec![actor, seller]);
+    view.effective_places.insert(seller_lot, town);
+    view.entities_at
+        .insert(town, vec![actor, seller, seller_lot]);
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
     view.commodity_quantities
         .insert((actor, CommodityKind::Coin), Quantity(3));
     view.merchandise_profiles.insert(
@@ -5559,17 +5593,29 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
     let seller = entity(2);
     let town = entity(10);
     let market = entity(11);
+    let seller_lot = entity(100);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town, market]);
+    view.alive.extend([actor, seller, town, market, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
     view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
-    view.entities_at.insert(town, vec![actor, seller]);
+    view.effective_places.insert(seller_lot, town);
+    view.entities_at
+        .insert(town, vec![actor, seller, seller_lot]);
     view.entities_at.insert(market, vec![]);
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
     view.adjacent
         .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
     view.adjacent
@@ -6605,14 +6651,26 @@ fn search_trace_records_duration_dependency_when_root_candidate_duration_estimat
     let actor = entity(1);
     let town = entity(10);
     let seller = entity(20);
+    let seller_lot = entity(100);
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, town, seller]);
+    view.alive.extend([actor, town, seller, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
     view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
-    view.entities_at.insert(town, vec![actor, seller]);
+    view.effective_places.insert(seller_lot, town);
+    view.entities_at
+        .insert(town, vec![actor, seller, seller_lot]);
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
     view.needs.insert(
         actor,
         HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
