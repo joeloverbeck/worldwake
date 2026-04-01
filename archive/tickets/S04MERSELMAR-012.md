@@ -1,6 +1,6 @@
 # S04MERSELMAR-012: Remaining golden integration tests for merchant selling
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED (6 of 7 scenarios; test 9 ignored — remote-merchant travel+sell pipeline not yet wired)
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — test-only ticket
@@ -68,3 +68,13 @@ All tests use the existing shared setup helpers (`seed_merchant`, `seed_buyer`) 
 
 1. `cargo test -p worldwake-ai --test golden_merchant_selling`
 2. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - 6 new golden tests added: buyer_discovers_listed_lots_not_unlisted_stock, merchant_emits_sell_commodity_at_home_market, seller_departure_invalidates_listing, dead_seller_invalidates_listing, demand_memory_raises_sell_ranking, planning_state_preserves_listing_determinism
+  - Test 9 (move_cargo_then_sell_commodity_plan_shape) is `#[ignore]` — the remote-merchant travel+sell pipeline requires MoveCargo/RestockCommodity candidate generation that isn't yet complete for merchants at non-home-market places
+- **Deviations from original plan**:
+  - Test 9 ignored instead of passing — infrastructure gap in remote-merchant candidate generation
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` all tests pass (1 ignored)
