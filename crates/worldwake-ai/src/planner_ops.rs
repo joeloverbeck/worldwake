@@ -39,6 +39,7 @@ pub enum PlannerOpKind {
     Investigate,
     AskWitness,
     StaffMarket,
+    StockManagement,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -97,6 +98,14 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Transport, "pick_up" | "put_down" | "steal") => {
             Some(PlannerOpKind::MoveCargo)
         }
+        (
+            ActionDomain::Transport,
+            "store_stock" | "collect_display_stock",
+        )
+        | (
+            ActionDomain::Trade,
+            "stage_stock_for_sale" | "unstage_stock",
+        ) => Some(PlannerOpKind::StockManagement),
         (ActionDomain::Care, "heal") => Some(PlannerOpKind::Heal),
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
@@ -145,7 +154,8 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Heal
-        | PlannerOpKind::StaffMarket => base_semantics(
+        | PlannerOpKind::StaffMarket
+        | PlannerOpKind::StockManagement => base_semantics(
             op_kind,
             true,
             false,
@@ -1360,6 +1370,10 @@ mod tests {
             ("threaten", PlannerOpKind::Threaten),
             ("declare_support", PlannerOpKind::DeclareSupport),
             ("ask_witness", PlannerOpKind::AskWitness),
+            ("store_stock", PlannerOpKind::StockManagement),
+            ("collect_display_stock", PlannerOpKind::StockManagement),
+            ("stage_stock_for_sale", PlannerOpKind::StockManagement),
+            ("unstage_stock", PlannerOpKind::StockManagement),
         ];
         let expected_transitions = [
             ("tell", PlannerTransitionKind::GoalModelFallback),

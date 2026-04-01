@@ -440,7 +440,8 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::YieldForceClaim
         | crate::PlannerOpKind::Investigate
         | crate::PlannerOpKind::AskWitness
-        | crate::PlannerOpKind::StaffMarket => {}
+        | crate::PlannerOpKind::StaffMarket
+        | crate::PlannerOpKind::StockManagement => {}
     }
 }
 
