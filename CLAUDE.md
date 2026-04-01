@@ -77,7 +77,8 @@ Any change to authoritative validation (action preconditions, `validate_*` funct
 3. `search_plan` finds valid plans — check terminal ordering and barrier logic (search.rs)
 4. `BestEffort` action start handles the new validation gracefully (tick_step.rs)
 5. `handle_plan_failure` replans correctly after the new check rejects (agent_tick.rs)
-6. ALL golden tests pass (`cargo test -p worldwake-ai`)
+6. **Payload revalidation**: If the action uses planner-synthesized payloads (not affordance-derived), does the handler have `with_payload_override_validator` registered? `plan_revalidation.rs` calls `requested_affordance_matches` which delegates to the handler's validator for untargeted actions with synthesized payloads. Without it, the step silently fails revalidation.
+7. ALL golden tests pass (`cargo test -p worldwake-ai`)
 
 Golden production tests require `PerceptionProfile` on agents that need to observe post-production output. Tests without perception profiles will silently fail to observe newly created entities.
 

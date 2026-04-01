@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 14
-- Files contributing `golden_*` tests: 14
-- Total `golden_*` tests: 220
+- Golden test files: 17
+- Files contributing `golden_*` tests: 13
+- Total `golden_*` tests: 214
 
 ## Per-File Inventory
 
@@ -18,12 +18,15 @@ Do not hand-edit it.
 | `golden_combat.rs` | 25 |
 | `golden_determinism.rs` | 9 |
 | `golden_emergent.rs` | 47 |
+| `golden_integration.rs` | 0 |
 | `golden_offices.rs` | 21 |
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
 | `golden_pursuit.rs` | 6 |
+| `golden_resilience.rs` | 0 |
+| `golden_soak.rs` | 0 |
 | `golden_social.rs` | 14 |
-| `golden_supply_chain.rs` | 6 |
+| `golden_supply_chain.rs` | 0 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 6 |
 | `golden_travel_physiology.rs` | 12 |
@@ -158,6 +161,10 @@ Do not hand-edit it.
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 
+### `golden_integration.rs`
+
+- No `golden_*` tests
+
 ### `golden_offices.rs`
 
 - `golden_simple_office_claim_via_declare_support`
@@ -229,6 +236,14 @@ Do not hand-edit it.
 - `golden_combat_flee_re_pursue`
 - `golden_combat_flee_re_pursue_replays_deterministically`
 
+### `golden_resilience.rs`
+
+- No `golden_*` tests
+
+### `golden_soak.rs`
+
+- No `golden_*` tests
+
 ### `golden_social.rs`
 
 - `golden_agent_autonomously_tells_colocated_peer`
@@ -248,12 +263,7 @@ Do not hand-edit it.
 
 ### `golden_supply_chain.rs`
 
-- `golden_merchant_restocks_via_prerequisite_aware_craft`
-- `golden_merchant_restocks_via_prerequisite_aware_craft_replays_deterministically`
-- `golden_stale_prerequisite_belief_discovery_replan`
-- `golden_stale_prerequisite_belief_discovery_replan_replays_deterministically`
-- `golden_stale_prerequisite_ask_witness_chain`
-- `golden_stale_prerequisite_ask_witness_chain_replays_deterministically`
+- No `golden_*` tests
 
 ### `golden_t22_bandit_camp_destruction.rs`
 
