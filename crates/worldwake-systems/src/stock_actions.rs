@@ -1,0 +1,564 @@
+//! Actions for moving goods between direct possession and facility stock
+//! containers.  See S05 (Merchant Stock Storage and Stall Custody).
+
+use std::collections::BTreeSet;
+use std::num::NonZeroU32;
+use worldwake_core::{
+    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, StockAssignment,
+    StockAssignmentKind, StockStoragePolicy, VisibilitySpec, WorldTxn,
+};
+use worldwake_sim::{
+    AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
+    ActionInstance, ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+};
+
+use crate::inventory::move_entity_to_direct_possession;
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+pub fn register_stock_actions(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> Vec<ActionDefId> {
+    let store_handler = handlers.register(ActionHandler::new(
+        start_store_stock,
+        tick_stock,
+        commit_store_stock,
+        abort_stock,
+    ));
+    let collect_handler = handlers.register(ActionHandler::new(
+        start_collect_display_stock,
+        tick_stock,
+        commit_collect_display_stock,
+        abort_stock,
+    ));
+
+    let store_id = ActionDefId(defs.len() as u32);
+    let collect_id = ActionDefId(store_id.0 + 1);
+
+    vec![
+        defs.register(ActionDef {
+            id: store_id,
+            name: "store_stock".to_string(),
+            domain: worldwake_core::ActionDomain::Transport,
+            actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::ItemLot,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::InterruptibleWithPenalty,
+            commit_conditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([
+                EventTag::Transfer,
+                EventTag::WorldMutation,
+            ]),
+            payload: ActionPayload::None,
+            handler: store_handler,
+        }),
+        defs.register(ActionDef {
+            id: collect_id,
+            name: "collect_display_stock".to_string(),
+            domain: worldwake_core::ActionDomain::Transport,
+            actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::ItemLot,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::InterruptibleWithPenalty,
+            commit_conditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::from([
+                EventTag::Transfer,
+                EventTag::WorldMutation,
+            ]),
+            payload: ActionPayload::None,
+            handler: collect_handler,
+        }),
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn require_item_lot_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
+    instance
+        .targets
+        .first()
+        .copied()
+        .ok_or(ActionError::PreconditionFailed(
+            "store/collect action requires an item lot target".to_string(),
+        ))
+}
+
+/// Resolve the facility at the actor's place that has a `StockStoragePolicy`
+/// and that the actor can control.
+fn resolve_controlled_facility(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+) -> Result<(EntityId, StockStoragePolicy), ActionError> {
+    let place = txn
+        .effective_place(actor)
+        .ok_or(ActionError::PreconditionFailed("actor has no effective place".to_string()))?;
+
+    // Find any Facility at the actor's place with a StockStoragePolicy that
+    // the actor can control.
+    for (entity, policy) in txn.query_stock_storage_policy() {
+        if txn.effective_place(entity) != Some(place) {
+            continue;
+        }
+        if txn.can_exercise_control(actor, entity).is_ok() {
+            return Ok((entity, policy.clone()));
+        }
+    }
+
+    Err(ActionError::PreconditionFailed(
+        "no controlled facility with StockStoragePolicy at actor's place".to_string(),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// store_stock handlers
+// ---------------------------------------------------------------------------
+
+fn start_store_stock(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    // Actor must possess the lot.
+    if txn.possessor_of(lot) != Some(instance.actor) {
+        return Err(ActionError::PreconditionFailed(
+            "actor does not possess the target lot".to_string(),
+        ));
+    }
+    // Actor must control a local facility with StockStoragePolicy.
+    let _ = resolve_controlled_facility(txn, instance.actor)?;
+    Ok(None)
+}
+
+fn commit_store_stock(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    let (facility, policy) = resolve_controlled_facility(txn, instance.actor)?;
+
+    // Clear possession.
+    txn.clear_possessor(lot)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // Put lot into stock container.
+    txn.put_into_container(lot, policy.stock_container)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    // Set stock assignment.
+    txn.set_component_stock_assignment(
+        lot,
+        StockAssignment {
+            facility,
+            kind: StockAssignmentKind::Stored,
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_target(lot);
+    Ok(CommitOutcome::empty())
+}
+
+// ---------------------------------------------------------------------------
+// collect_display_stock handlers
+// ---------------------------------------------------------------------------
+
+fn start_collect_display_stock(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    // Lot must be in a facility container (has StockAssignment).
+    if txn.get_component_stock_assignment(lot).is_none() {
+        return Err(ActionError::PreconditionFailed(
+            "target lot has no StockAssignment (not in facility storage)".to_string(),
+        ));
+    }
+    // Actor must control the facility.
+    let _ = resolve_controlled_facility(txn, instance.actor)?;
+    Ok(None)
+}
+
+fn commit_collect_display_stock(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let lot = require_item_lot_target(instance)?;
+    let place = txn
+        .effective_place(instance.actor)
+        .ok_or(ActionError::PreconditionFailed("actor has no effective place".to_string()))?;
+
+    // Move lot out of container into direct possession.
+    move_entity_to_direct_possession(txn, lot, instance.actor, place)?;
+    // Clear stock assignment.
+    txn.clear_component_stock_assignment(lot)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(CommitOutcome::empty())
+}
+
+// ---------------------------------------------------------------------------
+// Shared no-op tick and abort
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_stock(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_stock(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _reason: &AbortReason,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use worldwake_core::{
+        CommodityKind, ControlSource, EventLog, LoadUnits, Place, Quantity,
+        StockAssignmentKind, Tick, Topology, World,
+    };
+    use worldwake_sim::{
+        ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
+    };
+    use std::collections::BTreeSet;
+
+    fn test_topology() -> Topology {
+        let mut topo = Topology::new();
+        topo.add_place(
+            entity(100),
+            Place {
+                name: "Market".to_string(),
+                capacity: None,
+                tags: BTreeSet::new(),
+            },
+        )
+        .unwrap();
+        topo
+    }
+
+    fn entity(n: u64) -> EntityId {
+        worldwake_core::test_utils::entity_id(n as u32, 1)
+    }
+
+    struct StockTestHarness {
+        world: World,
+        event_log: EventLog,
+        place: EntityId,
+        agent: EntityId,
+        facility: EntityId,
+        stock_container: EntityId,
+        bread_lot: EntityId,
+    }
+
+    fn setup_harness() -> StockTestHarness {
+        let place = entity(100);
+        let topo = test_topology();
+        let mut world = World::new(topo).unwrap();
+        let mut log = EventLog::new();
+
+        let (agent, facility, stock_container, bread_lot) = {
+            let mut txn = new_txn(&mut world, &mut log);
+            let agent = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+
+            let (facility, stock_container, _display) = txn
+                .create_merchant_facility(place, LoadUnits(200), None)
+                .unwrap();
+            // Agent owns the facility.
+            txn.set_owner(facility, agent).unwrap();
+
+            let bread_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(5))
+                .unwrap();
+            txn.set_ground_location(bread_lot, place).unwrap();
+            txn.set_possessor(bread_lot, agent).unwrap();
+
+            txn.commit(&mut log);
+            (agent, facility, stock_container, bread_lot)
+        };
+
+        StockTestHarness {
+            world,
+            event_log: log,
+            place,
+            agent,
+            facility,
+            stock_container,
+            bread_lot,
+        }
+    }
+
+    fn new_txn<'w>(world: &'w mut World, _log: &mut EventLog) -> WorldTxn<'w> {
+        use worldwake_core::{CauseRef, WitnessData};
+        WorldTxn::new(
+            world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn make_instance(actor: EntityId, target: EntityId) -> ActionInstance {
+        ActionInstance {
+            instance_id: ActionInstanceId(0),
+            def_id: ActionDefId(999),
+            payload: ActionPayload::None,
+            actor,
+            targets: vec![target],
+            start_tick: Tick(0),
+            remaining_duration: ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: vec![],
+            local_state: None,
+            body_cost_override: None,
+        }
+    }
+
+    fn dummy_def() -> ActionDef {
+        ActionDef {
+            id: ActionDefId(999),
+            name: "test".to_string(),
+            domain: worldwake_core::ActionDomain::Transport,
+            actor_constraints: vec![],
+            targets: vec![],
+            preconditions: vec![],
+            reservation_requirements: vec![],
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerRegistry::new()
+                .register(ActionHandler::new(
+                    start_store_stock,
+                    tick_stock,
+                    commit_store_stock,
+                    abort_stock,
+                )),
+        }
+    }
+
+    fn dummy_rng() -> DeterministicRng {
+        DeterministicRng::new(worldwake_core::Seed([0; 32]))
+    }
+
+    // -----------------------------------------------------------------------
+    // store_stock
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn store_stock_moves_lot_into_stock_container() {
+        let mut h = setup_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        // Pre: lot is possessed by agent.
+        assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
+
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Post: lot is in stock container, not possessed.
+        assert_eq!(h.world.possessor_of(h.bread_lot), None);
+        assert_eq!(
+            h.world.direct_container(h.bread_lot),
+            Some(h.stock_container)
+        );
+    }
+
+    #[test]
+    fn store_stock_sets_stock_assignment() {
+        let mut h = setup_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        let assignment = h
+            .world
+            .get_component_stock_assignment(h.bread_lot)
+            .expect("lot should have StockAssignment after store");
+        assert_eq!(assignment.facility, h.facility);
+        assert_eq!(assignment.kind, StockAssignmentKind::Stored);
+    }
+
+    // -----------------------------------------------------------------------
+    // collect_display_stock
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn collect_display_stock_moves_lot_to_possession() {
+        let mut h = setup_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        // First store the lot.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Now collect it.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_collect_display_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        // Post: lot is possessed by agent, not in container, no assignment.
+        assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
+        assert!(h.world.direct_container(h.bread_lot).is_none());
+        assert!(h.world.get_component_stock_assignment(h.bread_lot).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Authorization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn store_stock_rejects_non_controller() {
+        let mut h = setup_harness();
+        let mut rng = dummy_rng();
+
+        // Create a stranger who does not own/control the facility.
+        let stranger = {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let stranger = txn.create_agent("Stranger", ControlSource::Ai).unwrap();
+            txn.set_ground_location(stranger, h.place).unwrap();
+            // Give bread lot to stranger.
+            txn.clear_possessor(h.bread_lot).unwrap();
+            txn.set_possessor(h.bread_lot, stranger).unwrap();
+            txn.commit(&mut h.event_log);
+            stranger
+        };
+
+        let def = dummy_def();
+        let mut txn = new_txn(&mut h.world, &mut h.event_log);
+        let mut instance = make_instance(stranger, h.bread_lot);
+        let result = start_store_stock(&def, &mut instance, &mut rng, &mut txn);
+
+        assert!(
+            result.is_err(),
+            "non-controller should be rejected from store_stock"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Conservation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn store_and_collect_preserves_lot_quantity() {
+        let mut h = setup_harness();
+        let def = dummy_def();
+        let mut rng = dummy_rng();
+
+        let original_qty = h
+            .world
+            .get_component_item_lot(h.bread_lot)
+            .unwrap()
+            .quantity;
+
+        // Store.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        assert_eq!(
+            h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
+            original_qty,
+            "quantity should not change during store"
+        );
+
+        // Collect.
+        {
+            let mut txn = new_txn(&mut h.world, &mut h.event_log);
+            let instance = make_instance(h.agent, h.bread_lot);
+            commit_collect_display_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            txn.commit(&mut h.event_log);
+        }
+
+        assert_eq!(
+            h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
+            original_qty,
+            "quantity should not change during collect"
+        );
+    }
+}
