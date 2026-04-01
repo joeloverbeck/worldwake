@@ -1,9 +1,9 @@
 use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
-    EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LotOperation,
-    Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId, Tick, TickRange,
-    UniqueItemKind, World, WorldError,
+    EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
+    LotOperation, Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
+    StockStoragePolicy, Tick, TickRange, UniqueItemKind, World, WorldError,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
@@ -356,6 +356,53 @@ impl<'w> WorldTxn<'w> {
         let entity = self.staged_world.create_container(container, self.tick)?;
         self.record_created_entity(entity, EntityKind::Container);
         Ok(entity)
+    }
+
+    /// Create a merchant facility at `place` with a stock container and an
+    /// optional display container, returning `(facility, stock_container,
+    /// display_container)`.
+    ///
+    /// Both containers are placed at the same location as the facility and
+    /// a [`StockStoragePolicy`] is attached to the facility referencing them.
+    pub fn create_merchant_facility(
+        &mut self,
+        place: EntityId,
+        stock_capacity: LoadUnits,
+        display_capacity: Option<LoadUnits>,
+    ) -> Result<(EntityId, EntityId, Option<EntityId>), WorldError> {
+        let facility = self.create_entity(EntityKind::Facility);
+        self.set_ground_location(facility, place)?;
+
+        let stock_container = self.create_container(Container {
+            capacity: stock_capacity,
+            allowed_commodities: None,
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })?;
+        self.set_ground_location(stock_container, place)?;
+
+        let display_container = if let Some(cap) = display_capacity {
+            let dc = self.create_container(Container {
+                capacity: cap,
+                allowed_commodities: None,
+                allows_unique_items: false,
+                allows_nested_containers: false,
+            })?;
+            self.set_ground_location(dc, place)?;
+            Some(dc)
+        } else {
+            None
+        };
+
+        self.set_component_stock_storage_policy(
+            facility,
+            StockStoragePolicy {
+                stock_container,
+                display_container,
+            },
+        )?;
+
+        Ok((facility, stock_container, display_container))
     }
 
     pub fn archive_entity(&mut self, entity: EntityId) -> Result<(), WorldError> {
@@ -5597,5 +5644,106 @@ mod tests {
         // Lot must be unpossessed after commit (custody separate from ownership)
         assert_eq!(world.possessor_of(lot), None);
         assert_eq!(world.owner_of(lot), Some(owner));
+    }
+
+    // -----------------------------------------------------------------------
+    // Merchant facility creation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn create_merchant_facility_with_display_produces_valid_policy() {
+        let topo = test_topology();
+        let place = entity(5);
+        let mut world = World::new(topo).unwrap();
+        let mut log = EventLog::new();
+
+        let (facility, stock, display) = {
+            let mut txn = new_txn(&mut world);
+            let result = txn
+                .create_merchant_facility(place, LoadUnits(100), Some(LoadUnits(50)))
+                .unwrap();
+            txn.commit(&mut log);
+            result
+        };
+
+        let policy = world
+            .get_component_stock_storage_policy(facility)
+            .expect("facility should have StockStoragePolicy");
+        assert_eq!(policy.stock_container, stock);
+        assert_eq!(policy.display_container, Some(display.unwrap()));
+    }
+
+    #[test]
+    fn create_merchant_facility_without_display_has_none() {
+        let topo = test_topology();
+        let place = entity(5);
+        let mut world = World::new(topo).unwrap();
+        let mut log = EventLog::new();
+
+        let (facility, _stock, display) = {
+            let mut txn = new_txn(&mut world);
+            let result = txn
+                .create_merchant_facility(place, LoadUnits(100), None)
+                .unwrap();
+            txn.commit(&mut log);
+            result
+        };
+
+        let policy = world
+            .get_component_stock_storage_policy(facility)
+            .expect("facility should have StockStoragePolicy");
+        assert!(policy.display_container.is_none());
+        assert!(display.is_none());
+    }
+
+    #[test]
+    fn create_merchant_facility_places_all_entities_at_same_place() {
+        let topo = test_topology();
+        let place = entity(5);
+        let mut world = World::new(topo).unwrap();
+        let mut log = EventLog::new();
+
+        let (facility, stock, display) = {
+            let mut txn = new_txn(&mut world);
+            let result = txn
+                .create_merchant_facility(place, LoadUnits(100), Some(LoadUnits(50)))
+                .unwrap();
+            txn.commit(&mut log);
+            result
+        };
+
+        assert_eq!(world.effective_place(facility), Some(place));
+        assert_eq!(world.effective_place(stock), Some(place));
+        assert_eq!(
+            world.effective_place(display.unwrap()),
+            Some(place)
+        );
+    }
+
+    #[test]
+    fn create_merchant_facility_containers_have_correct_capacity() {
+        let topo = test_topology();
+        let place = entity(5);
+        let mut world = World::new(topo).unwrap();
+        let mut log = EventLog::new();
+
+        let (_facility, stock, display) = {
+            let mut txn = new_txn(&mut world);
+            let result = txn
+                .create_merchant_facility(place, LoadUnits(100), Some(LoadUnits(50)))
+                .unwrap();
+            txn.commit(&mut log);
+            result
+        };
+
+        let stock_container = world
+            .get_component_container(stock)
+            .expect("stock should be a Container");
+        assert_eq!(stock_container.capacity, LoadUnits(100));
+
+        let display_container = world
+            .get_component_container(display.unwrap())
+            .expect("display should be a Container");
+        assert_eq!(display_container.capacity, LoadUnits(50));
     }
 }
