@@ -358,20 +358,25 @@ impl<'w> WorldTxn<'w> {
         Ok(entity)
     }
 
-    /// Create a merchant facility at `place` with a stock container and an
-    /// optional display container, returning `(facility, stock_container,
-    /// display_container)`.
+    /// Create a merchant facility at `place` owned by `owner`, with a stock
+    /// container and an optional display container.  Returns `(facility,
+    /// stock_container, display_container)`.
     ///
-    /// Both containers are placed at the same location as the facility and
-    /// a [`StockStoragePolicy`] is attached to the facility referencing them.
+    /// All three entities (facility + containers) are placed at the same
+    /// location, owned by the same `owner`, and a [`StockStoragePolicy`] is
+    /// attached to the facility.  Ownership on the containers ensures that
+    /// `can_exercise_control` chains correctly: lot → container (owned by
+    /// owner) → Ok.
     pub fn create_merchant_facility(
         &mut self,
         place: EntityId,
+        owner: EntityId,
         stock_capacity: LoadUnits,
         display_capacity: Option<LoadUnits>,
     ) -> Result<(EntityId, EntityId, Option<EntityId>), WorldError> {
         let facility = self.create_entity(EntityKind::Facility);
         self.set_ground_location(facility, place)?;
+        self.set_owner(facility, owner)?;
 
         let stock_container = self.create_container(Container {
             capacity: stock_capacity,
@@ -380,6 +385,7 @@ impl<'w> WorldTxn<'w> {
             allows_nested_containers: false,
         })?;
         self.set_ground_location(stock_container, place)?;
+        self.set_owner(stock_container, owner)?;
 
         let display_container = if let Some(cap) = display_capacity {
             let dc = self.create_container(Container {
@@ -389,6 +395,7 @@ impl<'w> WorldTxn<'w> {
                 allows_nested_containers: false,
             })?;
             self.set_ground_location(dc, place)?;
+            self.set_owner(dc, owner)?;
             Some(dc)
         } else {
             None
@@ -5659,8 +5666,10 @@ mod tests {
 
         let (facility, stock, display) = {
             let mut txn = new_txn(&mut world);
+            let owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
             let result = txn
-                .create_merchant_facility(place, LoadUnits(100), Some(LoadUnits(50)))
+                .create_merchant_facility(place, owner, LoadUnits(100), Some(LoadUnits(50)))
                 .unwrap();
             txn.commit(&mut log);
             result
@@ -5682,8 +5691,10 @@ mod tests {
 
         let (facility, _stock, display) = {
             let mut txn = new_txn(&mut world);
+            let owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
             let result = txn
-                .create_merchant_facility(place, LoadUnits(100), None)
+                .create_merchant_facility(place, owner, LoadUnits(100), None)
                 .unwrap();
             txn.commit(&mut log);
             result
@@ -5705,8 +5716,10 @@ mod tests {
 
         let (facility, stock, display) = {
             let mut txn = new_txn(&mut world);
+            let owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
             let result = txn
-                .create_merchant_facility(place, LoadUnits(100), Some(LoadUnits(50)))
+                .create_merchant_facility(place, owner, LoadUnits(100), Some(LoadUnits(50)))
                 .unwrap();
             txn.commit(&mut log);
             result
@@ -5729,8 +5742,10 @@ mod tests {
 
         let (_facility, stock, display) = {
             let mut txn = new_txn(&mut world);
+            let owner = txn.create_agent("Owner", ControlSource::Ai).unwrap();
+            txn.set_ground_location(owner, place).unwrap();
             let result = txn
-                .create_merchant_facility(place, LoadUnits(100), Some(LoadUnits(50)))
+                .create_merchant_facility(place, owner, LoadUnits(100), Some(LoadUnits(50)))
                 .unwrap();
             txn.commit(&mut log);
             result

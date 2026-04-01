@@ -518,10 +518,8 @@ mod tests {
             txn.set_ground_location(agent, place).unwrap();
 
             let (facility, stock_container, _display) = txn
-                .create_merchant_facility(place, LoadUnits(200), None)
+                .create_merchant_facility(place, agent, LoadUnits(200), None)
                 .unwrap();
-            // Agent owns the facility.
-            txn.set_owner(facility, agent).unwrap();
 
             let bread_lot = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(5))
@@ -789,10 +787,9 @@ mod tests {
             txn.set_ground_location(agent, place).unwrap();
 
             let (facility, stock_container, display) = txn
-                .create_merchant_facility(place, LoadUnits(200), Some(LoadUnits(100)))
+                .create_merchant_facility(place, agent, LoadUnits(200), Some(LoadUnits(100)))
                 .unwrap();
             let display_container = display.unwrap();
-            txn.set_owner(facility, agent).unwrap();
 
             let bread_lot = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(5))

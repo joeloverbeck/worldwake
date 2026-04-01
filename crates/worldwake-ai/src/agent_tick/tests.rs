@@ -911,15 +911,30 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
             .unwrap();
         txn.set_ground_location(actor, origin).unwrap();
         txn.set_ground_location(seller, origin).unwrap();
-        txn.set_ground_location(bread, origin).unwrap();
-        txn.set_possessor(bread, seller).unwrap();
-        txn.set_component_sale_listing(
-            bread,
-            worldwake_core::SaleListing {
-                listed_at: worldwake_core::Tick(0),
-            },
-        )
-        .unwrap();
+        // Create facility for seller and stage the bread in display container.
+        {
+            use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+            let (_facility, _stock, display) = txn
+                .create_merchant_facility(origin, seller, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display = display.unwrap();
+            txn.put_into_container(bread, display).unwrap();
+            txn.set_component_stock_assignment(
+                bread,
+                StockAssignment {
+                    facility: _facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(
+                bread,
+                worldwake_core::SaleListing {
+                    listed_at: worldwake_core::Tick(0),
+                },
+            )
+            .unwrap();
+        }
         txn.set_component_homeostatic_needs(
             actor,
             HomeostaticNeeds::new(
@@ -1002,15 +1017,30 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         txn.set_ground_location(actor, origin).unwrap();
         txn.set_ground_location(local_witness, origin).unwrap();
         txn.set_ground_location(seller, destination).unwrap();
-        txn.set_ground_location(bread, destination).unwrap();
-        txn.set_possessor(bread, seller).unwrap();
-        txn.set_component_sale_listing(
-            bread,
-            worldwake_core::SaleListing {
-                listed_at: worldwake_core::Tick(0),
-            },
-        )
-        .unwrap();
+        // Create facility for seller and stage the bread in display container.
+        {
+            use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+            let (_facility, _stock, display) = txn
+                .create_merchant_facility(destination, seller, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display = display.unwrap();
+            txn.put_into_container(bread, display).unwrap();
+            txn.set_component_stock_assignment(
+                bread,
+                StockAssignment {
+                    facility: _facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(
+                bread,
+                worldwake_core::SaleListing {
+                    listed_at: worldwake_core::Tick(0),
+                },
+            )
+            .unwrap();
+        }
         txn.set_component_homeostatic_needs(
             actor,
             HomeostaticNeeds::new(
