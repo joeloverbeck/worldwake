@@ -1,6 +1,6 @@
 # S05MERSTOSTALL-004: Add stage_stock_for_sale and unstage_stock actions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new action definitions and handlers in worldwake-systems
@@ -84,3 +84,23 @@ Add both actions to the action registry.
 1. `cargo test -p worldwake-systems -- stock`
 2. `cargo test -p worldwake-systems`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome (2026-04-01)
+
+### What changed
+
+1. Added `stage_stock_for_sale` handlers to `stock_actions.rs` — validates lot is Stored and facility has display_container, moves lot from stock→display container, sets `StockAssignment { kind: Displayed }`, adds `SaleListing { listed_at: txn.tick() }`
+2. Added `unstage_stock` handlers — validates lot is Displayed, moves from display→stock container, sets `StockAssignment { kind: Stored }`, clears `SaleListing`
+3. Registered both in `register_stock_actions` (now 4 actions total: store, collect, stage, unstage)
+4. Used `ActionDomain::Trade` for stage/unstage (vs `Transport` for store/collect) since staging is trade-domain activity
+5. Added `DisplayTestHarness` with facility that has both stock and display containers
+6. 4 new tests: stage moves + adds listing, unstage reverses, no-display fails, full round-trip conservation
+
+### Deviations
+
+None — implementation matches ticket exactly.
+
+### Verification
+
+- `cargo test -p worldwake-systems`: 445 passed, 0 failed (436 baseline + 9 stock action tests)
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean
