@@ -1,6 +1,6 @@
 # S04MERSELMAR-010: DemandMemory ranking integration and blocked-intent dampening
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — ranking boost logic, blocked-intent usage for sell cycles
@@ -105,3 +105,16 @@ Generic `filter_blocked_candidates` (candidate_generation.rs:260) already suppre
 1. `cargo test -p worldwake-ai -- ranking`
 2. `cargo test -p worldwake-ai -- candidate_generation`
 3. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - Added `BlockingFact::NoBuyer` variant for seller-side unproductive cycle dampening
+  - `commit_staff_market` now creates a `BlockedIntent` for `SellCommodity { commodity }` when no trades occurred, using `market_presence_ticks` from `TradeDispositionProfile` as the blocking period
+  - `blocker_resolved` in `failure_handling.rs` handles `NoBuyer` (TTL-only expiry, no early resolution)
+  - `blocking_fact_ttl` in `failure_handling.rs` maps `NoBuyer` to `structural_block_ticks`
+  - 1 new focused test: `staff_market_unproductive_commit_creates_blocked_intent_for_sell_commodity`
+- **Deviations from original plan**:
+  - Deliverables 1, 3, 4 were already implemented by prior work (ranking via `enterprise_score`/`opportunity_signal`, generic `filter_blocked_candidates`, enterprise priority class). Only deliverable 2 (blocked intent creation) was needed.
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` all tests pass

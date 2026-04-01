@@ -625,7 +625,8 @@ fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &Bloc
         BlockingFact::ExclusiveFacilityUnavailable
         | BlockingFact::Unknown
         | BlockingFact::PatienceExhausted
-        | BlockingFact::AssumptionFailed => false,
+        | BlockingFact::AssumptionFailed
+        | BlockingFact::NoBuyer => false,
         BlockingFact::SourceDepleted => {
             let Some(source) = intent.blocker_key.target else {
                 return false;
@@ -800,7 +801,8 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
         | BlockingFact::DangerTooHigh
         | BlockingFact::CombatTooRisky
         | BlockingFact::PatienceExhausted
-        | BlockingFact::AssumptionFailed => budget.structural_block_ticks,
+        | BlockingFact::AssumptionFailed
+        | BlockingFact::NoBuyer => budget.structural_block_ticks,
     }
 }
 
