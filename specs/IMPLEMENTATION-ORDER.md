@@ -128,6 +128,9 @@ Established desire-level `GoalKey` vs opportunity-level `OpportunityKey` separat
 ### S40: Remote Hostile Pursuit — COMPLETED
 Extended exact combat goals (`EngageHostile`, `LootCorpse`) with belief-backed prerequisite travel, keeping `Attack` strictly local-only. Bandits and agents can now plan multi-step pursuit sequences (travel → attack → loot) toward believed hostile locations using the prerequisite-aware search heuristic. 3 golden E2E tests (Scenarios 68/69/70) prove remote hostile pursuit, loot-after-kill chains, and belief-staleness recovery.
 
+### S04: Merchant Selling Market Presence — COMPLETED
+Established proactive seller-side merchant behavior: `SaleListing` component on item lots, `staff_market` action for bounded market-presence cycles, concrete buyer discovery via `listed_sale_lots_at`/`seller_for_sale_lot` belief queries, `sale_lot` field in `TradeActionPayload` with commit-time commodity derivation, listing cleanup on seller departure/death/trade, `BlockingFact::NoBuyer` dampening for unproductive sell cycles, `StaffMarket` planner op with payload override and revalidation, nonzero baseline enterprise motive for merchants without demand memory, and 12 golden E2E tests (5 core + 7 remaining) covering listing lifecycle, buyer discovery, trade against listed lots, dampening, and deterministic replay. Archived spec: `archive/specs/S04-merchant-selling-market-presence.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -166,11 +169,11 @@ E17 ✅ ──→ E19 (guard crime response depends on the shipped theft/justice
 S02 ✅, E16 ──→ E18 ✅, E20 ✅
 S02 ✅, E16, E16b ✅, E16c ──→ E19
 E16c ──→ S05 (institutional stock ledgers should reuse record architecture)
-S04 ──→ S05 (stock storage needs selling + ownership)
-S04 ──→ S06 (opportunity valuation needs market presence)
+S04 ✅ ──→ S05 (stock storage needs selling + ownership)
+S04 ✅ ──→ S06 (opportunity valuation needs market presence)
 S10 (no unmet deps — E11 trade + E14 perception both completed; can be scheduled anytime)
 S10 ──→ S06 (opportunity valuation benefits from variable pricing)
-E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, S04, ~~S07~~, and S10.
+E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, ~~S04~~, ~~S07~~, and S10.
 S31 ✅, S23 ✅, S22 ✅ ──→ S33 ✅ (opportunity-scoped identity completed)
 S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final goal identity shape)
 S33 ✅ ──→ S37 ✅ (cooldown exhaustion shipped on opportunity-scoped identity)
@@ -410,8 +413,9 @@ S36 ✅ ──→ S40 ✅
 ### Phase 4+: Economy Deepening & AI Preferences
 
 **Step 16** (parallel after E22):
-- **S04**: Merchant Selling Market Presence (needs E14)
-- **S05**: Merchant Stock Storage & Stalls (needs S04, S01, E16c)
+- **S04**: Merchant Selling Market Presence — ✅ COMPLETED
+  - archived spec: `archive/specs/S04-merchant-selling-market-presence.md`
+- **S05**: Merchant Stock Storage & Stalls (needs S04 ✅, S01 ✅, E16c ✅)
 - **S06**: Commodity Opportunity Valuation (needs S04, benefits from S10)
 - **S10**: Bilateral Trade Negotiation (all deps met — E11, E14 completed; can be scheduled earlier)
 - **S38**: Learned Route and Source Preferences (needs S35, S33)

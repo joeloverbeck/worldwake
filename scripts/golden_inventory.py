@@ -28,7 +28,7 @@ SCENARIO_HEADER_RE = re.compile(
 DOC_TEST_REF_RE = re.compile(r"`(golden_[a-z0-9_]+)`")
 RUNNING_GOLDEN_BINARY_RE = re.compile(r"^\s*Running tests/(golden_[^ ]+\.rs) ")
 RUNNING_ANY_BINARY_RE = re.compile(r"^\s*Running ")
-LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_]+): test$")
+LISTED_TEST_RE = re.compile(r"^([a-z][a-z0-9_]+): test$", re.MULTILINE)
 REPLAY_TEST_RE = re.compile(
     r"_(?:replays_deterministically|deterministic_replay)$"
 )
@@ -223,17 +223,19 @@ def parse_cargo_test_list_output(output: str) -> OrderedDict[str, list[str]]:
 def run_cargo_test_list(root: pathlib.Path) -> OrderedDict[str, list[str]]:
     inventory: OrderedDict[str, list[str]] = OrderedDict()
     for path in sorted(TESTS_DIR.glob("golden_*.rs")):
+        # Detect feature-gated test files.
+        needs_soak = '#![cfg(feature = "soak")]' in path.read_text(errors="replace")
+        cmd = [
+            "cargo",
+            "test",
+            "-p",
+            "worldwake-ai",
+        ]
+        if needs_soak:
+            cmd.extend(["--features", "soak"])
+        cmd.extend(["--test", path.stem, "--", "--list"])
         result = subprocess.run(
-            [
-                "cargo",
-                "test",
-                "-p",
-                "worldwake-ai",
-                "--test",
-                path.stem,
-                "--",
-                "--list",
-            ],
+            cmd,
             cwd=root,
             capture_output=True,
             text=True,

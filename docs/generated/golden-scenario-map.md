@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 92
-- Files contributing scenario metadata: 15
-- Tests associated with scenario blocks: 223
+- Scenario blocks with explicit metadata: 105
+- Files contributing scenario metadata: 16
+- Tests associated with scenario blocks: 239
 
 ## Scenario Inventory
 
@@ -60,6 +60,19 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2488` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
 | `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3416` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
 | `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4450` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
+| `75` | staff_market Lists on Start, Unlists on Complete | `golden_merchant_selling.rs:143` | `staff_market_lists_on_start_unlists_on_complete` | `staff_market_lists_on_start_unlists_on_complete_replays_deterministically` |
+| `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:249` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
+| `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:366` | `unlisted_stock_not_sellable` | — |
+| `78` | Blocked Intent Dampens Relisting After Unproductive Cycle | `golden_merchant_selling.rs:441` | `blocked_intent_dampens_relisting_after_unproductive_cycle` | — |
+| `79` | Deterministic Replay Preserves Listing Behavior | `golden_merchant_selling.rs:532` | `deterministic_replay_preserves_listing_behavior` | — |
+| `80` | Buyer Discovers Listed Lots, Not Unlisted Stock | `golden_merchant_selling.rs:552` | `buyer_discovers_listed_lots_not_unlisted_stock` | — |
+| `81` | Merchant Emits SellCommodity at Home Market | `golden_merchant_selling.rs:622` | `merchant_emits_sell_commodity_at_home_market` | — |
+| `82` | Seller Departure Invalidates Listing | `golden_merchant_selling.rs:675` | `seller_departure_invalidates_listing` | — |
+| `83` | Dead Seller Invalidates Listing | `golden_merchant_selling.rs:732` | `dead_seller_invalidates_listing` | — |
+| `84` | Remote Merchant Travels to Home Market to Sell | `golden_merchant_selling.rs:789` | `move_cargo_then_sell_commodity_plan_shape` | — |
+| `85` | Demand Memory Raises Sell Ranking | `golden_merchant_selling.rs:886` | `demand_memory_raises_sell_ranking` | — |
+| `86` | Planning State Preserves Listing Determinism | `golden_merchant_selling.rs:986` | `planning_state_preserves_listing_determinism` | — |
+| `87` | Hungry Merchant Eats Own Listed Sale Stock | `golden_merchant_selling.rs:1003` | `hungry_merchant_eats_listed_stock` | `hungry_merchant_eats_listed_stock_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -818,6 +831,170 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: 1. Camp destruction → diaspora → regrouping → EstablishBanditCamp at rally point is a continuous emergent chain. 2. Raids from the reconstituted camp location are lawful combat from new-camp faction entities, not old-camp remnants. 3. Merchant route adaptation is belief-driven (Principle 14): the merchant reroutes only after receiving danger information via social tell, not from any omniscient danger cache. 4. Conservation holds for all commodity types throughout the chain.
 
 **Cross-system chain**: guard attack -> camp destruction -> bandit flee -> regroup at rally -> establish new camp -> traveler arrives -> raid at rally -> witness observes -> witness tells merchant -> merchant reroutes via safe route -> downstream supply delay.
+
+### Scenario 75: staff_market Lists on Start, Unlists on Complete
+
+- Source: `golden_merchant_selling.rs:143`
+- Systems: Trade, AI
+- GoalKinds: SellCommodity
+- ActionDomains: Trade
+- Principles: P1, P3, P8
+- Primary tests: `staff_market_lists_on_start_unlists_on_complete`
+- Replay tests: `staff_market_lists_on_start_unlists_on_complete_replays_deterministically`
+- All tests: `staff_market_lists_on_start_unlists_on_complete`, `staff_market_lists_on_start_unlists_on_complete_replays_deterministically`
+
+**Proves**: staff_market attaches SaleListing on start and removes it on commit
+
+### Scenario 76: Buyer Trades Against Listed Lot
+
+- Source: `golden_merchant_selling.rs:249`
+- Systems: Trade, AI, Needs
+- GoalKinds: AcquireCommodity, SellCommodity
+- ActionDomains: Trade
+- Principles: P1, P3, P4
+- Primary tests: `buyer_trades_against_listed_lot`
+- Replay tests: `buyer_trades_against_listed_lot_replays_deterministically`
+- All tests: `buyer_trades_against_listed_lot`, `buyer_trades_against_listed_lot_replays_deterministically`
+
+**Proves**: buyer discovers and trades against concrete listed lot with conservation
+
+### Scenario 77: Unlisted Stock Not Sellable
+
+- Source: `golden_merchant_selling.rs:366`
+- Systems: Trade, AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Trade
+- Principles: P1, P3, P7
+- Primary tests: `unlisted_stock_not_sellable`
+- Replay tests: None
+- All tests: `unlisted_stock_not_sellable`
+
+**Proves**: buyer cannot discover or trade unlisted merchant stock
+
+### Scenario 78: Blocked Intent Dampens Relisting After Unproductive Cycle
+
+- Source: `golden_merchant_selling.rs:441`
+- Systems: Trade, AI
+- GoalKinds: SellCommodity
+- ActionDomains: Trade
+- Principles: P1, P8
+- Primary tests: `blocked_intent_dampens_relisting_after_unproductive_cycle`
+- Replay tests: None
+- All tests: `blocked_intent_dampens_relisting_after_unproductive_cycle`
+
+**Proves**: NoBuyer blocked intent suppresses immediate SellCommodity re-emission
+
+### Scenario 79: Deterministic Replay Preserves Listing Behavior
+
+- Source: `golden_merchant_selling.rs:532`
+- Systems: Trade, AI
+- Principles: P2
+- Primary tests: `deterministic_replay_preserves_listing_behavior`
+- Replay tests: None
+- All tests: `deterministic_replay_preserves_listing_behavior`
+
+**Proves**: identical seeds produce identical world and event log hashes
+
+### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
+
+- Source: `golden_merchant_selling.rs:552`
+- Systems: Trade, AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Trade
+- Principles: P3, P7
+- Primary tests: `buyer_discovers_listed_lots_not_unlisted_stock`
+- Replay tests: None
+- All tests: `buyer_discovers_listed_lots_not_unlisted_stock`
+
+**Proves**: buyer evidence references only listed lots, not unlisted merchant stock
+
+### Scenario 81: Merchant Emits SellCommodity at Home Market
+
+- Source: `golden_merchant_selling.rs:622`
+- Systems: Trade, AI
+- GoalKinds: SellCommodity
+- ActionDomains: Trade
+- Principles: P1, P6
+- Primary tests: `merchant_emits_sell_commodity_at_home_market`
+- Replay tests: None
+- All tests: `merchant_emits_sell_commodity_at_home_market`
+
+**Proves**: SellCommodity candidate emitted via decision trace
+
+### Scenario 82: Seller Departure Invalidates Listing
+
+- Source: `golden_merchant_selling.rs:675`
+- Systems: Trade
+- Principles: P3, P7
+- Primary tests: `seller_departure_invalidates_listing`
+- Replay tests: None
+- All tests: `seller_departure_invalidates_listing`
+
+**Proves**: SaleListing pruned within one tick of seller leaving the market
+
+### Scenario 83: Dead Seller Invalidates Listing
+
+- Source: `golden_merchant_selling.rs:732`
+- Systems: Trade
+- Principles: P3, P4
+- Primary tests: `dead_seller_invalidates_listing`
+- Replay tests: None
+- All tests: `dead_seller_invalidates_listing`
+
+**Proves**: SaleListing pruned within one tick of seller death
+
+### Scenario 84: Remote Merchant Travels to Home Market to Sell
+
+- Source: `golden_merchant_selling.rs:789`
+- Systems: Trade, AI
+- GoalKinds: SellCommodity
+- ActionDomains: Trade, Travel
+- Principles: P1, P6
+- Primary tests: `move_cargo_then_sell_commodity_plan_shape`
+- Replay tests: None
+- All tests: `move_cargo_then_sell_commodity_plan_shape`
+
+**Proves**: merchant at remote place plans Travel + StaffMarket to reach home_market
+
+### Scenario 85: Demand Memory Raises Sell Ranking
+
+- Source: `golden_merchant_selling.rs:886`
+- Systems: Trade, AI
+- GoalKinds: SellCommodity
+- Principles: P1, P3, P20
+- Primary tests: `demand_memory_raises_sell_ranking`
+- Replay tests: None
+- All tests: `demand_memory_raises_sell_ranking`
+
+**Proves**: demand memory boosts SellCommodity motive above baseline without overpowering self-care
+
+### Scenario 86: Planning State Preserves Listing Determinism
+
+- Source: `golden_merchant_selling.rs:986`
+- Systems: Trade, AI
+- Principles: P2
+- Primary tests: `planning_state_preserves_listing_determinism`
+- Replay tests: None
+- All tests: `planning_state_preserves_listing_determinism`
+
+**Proves**: identical seeds produce identical plan search results for merchant scenarios
+
+### Scenario 87: Hungry Merchant Eats Own Listed Sale Stock
+
+- Source: `golden_merchant_selling.rs:1003`
+- Systems: Needs, Trade, AI
+- GoalKinds: ConsumeOwnedCommodity, SellCommodity
+- ActionDomains: Needs (eat), Trade (staff_market)
+- Principles: P1, P3, P20
+- Primary tests: `hungry_merchant_eats_listed_stock`
+- Replay tests: `hungry_merchant_eats_listed_stock_replays_deterministically`
+- All tests: `hungry_merchant_eats_listed_stock`, `hungry_merchant_eats_listed_stock_replays_deterministically`
+
+**Setup**: single merchant, critical hunger pm(950), Quantity(1) bread with SaleListing
+
+**Proves**: survival-class ConsumeOwnedCommodity outranks enterprise-class SellCommodity; eating the listed lot archives it, removing SaleListing as a side effect
+
+**Cross-system chain**: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium) → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 

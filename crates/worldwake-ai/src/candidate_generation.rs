@@ -1910,16 +1910,11 @@ fn emit_need_driven_candidates(
         return;
     }
 
-    // Merchants should not treat their sale stock as personal food/drink.
-    let sale_kinds = ctx
-        .view
-        .merchandise_profile(ctx.agent)
-        .map(|p| p.sale_kinds)
-        .unwrap_or_default();
-
+    // Whether the agent already has local consumable stock that satisfies
+    // the need.  When true we skip AcquireCommodity emission to avoid
+    // redundant acquisition goals.
     let already_satisfied = CommodityKind::ALL.into_iter().any(|commodity| {
         matches_need(commodity)
-            && !sale_kinds.contains(&commodity)
             && local_controlled_commodity_exists(ctx.view, ctx.agent, ctx.place, commodity)
     });
 
@@ -1927,22 +1922,24 @@ fn emit_need_driven_candidates(
         .into_iter()
         .filter(|commodity| matches_need(*commodity))
     {
-        // Skip ConsumeOwnedCommodity for merchandise stock — merchants
-        // should not eat their own sale inventory.
-        if !sale_kinds.contains(&commodity) {
-            if let Some(evidence) =
-                local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
-            {
-                emit_candidate(
-                    candidates,
-                    GoalKind::ConsumeOwnedCommodity { commodity },
-                    OpportunityAnchor::None,
-                    evidence,
-                    ctx.blocked,
-                    ctx.current_tick,
-                );
-                continue;
-            }
+        // Emit ConsumeOwnedCommodity for any possessed consumable —
+        // including merchant sale stock.  The ranking system handles the
+        // survival-vs-enterprise tradeoff through GoalPriorityClass:
+        // ConsumeOwnedCommodity escalates with hunger pressure while
+        // SellCommodity stays at Medium, so the merchant only eats sale
+        // stock when survival urgency exceeds enterprise value.
+        if let Some(evidence) =
+            local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
+        {
+            emit_candidate(
+                candidates,
+                GoalKind::ConsumeOwnedCommodity { commodity },
+                OpportunityAnchor::None,
+                evidence,
+                ctx.blocked,
+                ctx.current_tick,
+            );
+            continue;
         }
 
         if already_satisfied {
@@ -5039,7 +5036,7 @@ mod tests {
     }
 
     #[test]
-    fn merchant_does_not_emit_consume_owned_for_sale_commodity() {
+    fn merchant_emits_consume_owned_for_sale_commodity() {
         let agent = entity(1);
         let place = entity(10);
         let apple = entity(20);
@@ -5080,8 +5077,10 @@ mod tests {
             Tick(5),
         );
 
-        // Must NOT emit ConsumeOwnedCommodity for a sale commodity.
-        assert!(!contains_goal(
+        // Sale stock IS eligible for ConsumeOwnedCommodity — the ranking
+        // system handles the survival-vs-enterprise tradeoff via priority
+        // class, not candidate suppression.
+        assert!(contains_goal(
             &candidates,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Apple,

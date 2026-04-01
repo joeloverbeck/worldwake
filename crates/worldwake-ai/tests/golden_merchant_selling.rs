@@ -140,7 +140,12 @@ fn seed_buyer(
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: staff_market lists on start, unlists on complete
+// Scenario 75: staff_market Lists on Start, Unlists on Complete
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P3, P8
+// Proves: staff_market attaches SaleListing on start and removes it on commit
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
@@ -241,7 +246,12 @@ fn staff_market_lists_on_start_unlists_on_complete_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: buyer trades against listed lot
+// Scenario 76: Buyer Trades Against Listed Lot
+// Systems: Trade, AI, Needs
+// GoalKinds: AcquireCommodity, SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P3, P4
+// Proves: buyer discovers and trades against concrete listed lot with conservation
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
@@ -353,7 +363,12 @@ fn buyer_trades_against_listed_lot_replays_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: unlisted stock not sellable
+// Scenario 77: Unlisted Stock Not Sellable
+// Systems: Trade, AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: Trade
+// Principles: P1, P3, P7
+// Proves: buyer cannot discover or trade unlisted merchant stock
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -423,7 +438,12 @@ fn unlisted_stock_not_sellable() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 8: blocked intent dampens relisting
+// Scenario 78: Blocked Intent Dampens Relisting After Unproductive Cycle
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P8
+// Proves: NoBuyer blocked intent suppresses immediate SellCommodity re-emission
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -509,7 +529,10 @@ fn blocked_intent_dampens_relisting_after_unproductive_cycle() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 12: deterministic replay (uses test 4 scenario)
+// Scenario 79: Deterministic Replay Preserves Listing Behavior
+// Systems: Trade, AI
+// Principles: P2
+// Proves: identical seeds produce identical world and event log hashes
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -526,7 +549,12 @@ fn deterministic_replay_preserves_listing_behavior() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: buyer discovers listed lots, not unlisted stock
+// Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
+// Systems: Trade, AI
+// GoalKinds: AcquireCommodity
+// ActionDomains: Trade
+// Principles: P3, P7
+// Proves: buyer evidence references only listed lots, not unlisted merchant stock
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -591,7 +619,12 @@ fn buyer_discovers_listed_lots_not_unlisted_stock() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: merchant emits SellCommodity at home market
+// Scenario 81: Merchant Emits SellCommodity at Home Market
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade
+// Principles: P1, P6
+// Proves: SellCommodity candidate emitted via decision trace
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -639,7 +672,10 @@ fn merchant_emits_sell_commodity_at_home_market() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: seller departure invalidates listing
+// Scenario 82: Seller Departure Invalidates Listing
+// Systems: Trade
+// Principles: P3, P7
+// Proves: SaleListing pruned within one tick of seller leaving the market
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -693,7 +729,10 @@ fn seller_departure_invalidates_listing() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 7: dead seller invalidates listing
+// Scenario 83: Dead Seller Invalidates Listing
+// Systems: Trade
+// Principles: P3, P4
+// Proves: SaleListing pruned within one tick of seller death
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -747,7 +786,12 @@ fn dead_seller_invalidates_listing() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 9: move cargo then sell commodity (plan shape)
+// Scenario 84: Remote Merchant Travels to Home Market to Sell
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// ActionDomains: Trade, Travel
+// Principles: P1, P6
+// Proves: merchant at remote place plans Travel + StaffMarket to reach home_market
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -839,7 +883,11 @@ fn move_cargo_then_sell_commodity_plan_shape() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 10: demand memory raises sell ranking
+// Scenario 85: Demand Memory Raises Sell Ranking
+// Systems: Trade, AI
+// GoalKinds: SellCommodity
+// Principles: P1, P3, P20
+// Proves: demand memory boosts SellCommodity motive above baseline without overpowering self-care
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -935,7 +983,10 @@ fn demand_memory_raises_sell_ranking() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 11: planning state preserves listing determinism
+// Scenario 86: Planning State Preserves Listing Determinism
+// Systems: Trade, AI
+// Principles: P2
+// Proves: identical seeds produce identical plan search results for merchant scenarios
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -946,4 +997,162 @@ fn planning_state_preserves_listing_determinism() {
     let (w2, e2) = run_staff_market_lists_unlists(Seed([76; 32]));
     assert_eq!(w1, w2, "planning state world hash mismatch");
     assert_eq!(e1, e2, "planning state event log hash mismatch");
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 87: Hungry Merchant Eats Own Listed Sale Stock
+// Systems: Needs, Trade, AI
+// GoalKinds: ConsumeOwnedCommodity, SellCommodity
+// ActionDomains: Needs (eat), Trade (staff_market)
+// Principles: P1, P3, P20
+// Setup: single merchant, critical hunger pm(950), Quantity(1) bread with SaleListing
+// Proves: survival-class ConsumeOwnedCommodity outranks enterprise-class SellCommodity;
+//         eating the listed lot archives it, removing SaleListing as a side effect
+// Chain: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium)
+//        → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
+// ---------------------------------------------------------------------------
+
+fn run_hungry_merchant_eats_listed_stock(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let (merchant, bread_lot) = seed_merchant(
+        &mut h,
+        "HungryMerchant",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+
+    // Override needs: critical hunger (pm(950) > critical threshold pm(900)).
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_homeostatic_needs(
+            merchant,
+            HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        )
+        .unwrap();
+        // Manually add SaleListing — in normal flow staff_market adds it, but here
+        // we want the listing pre-existing so the eat action competes with sell.
+        txn.set_component_sale_listing(bread_lot, SaleListing { listed_at: Tick(0) })
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Seed beliefs so the AI can perceive.
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    // Confirm pre-conditions.
+    assert!(
+        h.world.get_component_sale_listing(bread_lot).is_some(),
+        "bread lot should have SaleListing before ticking"
+    );
+    assert!(
+        h.world.get_component_item_lot(bread_lot).is_some(),
+        "bread lot should exist before ticking"
+    );
+    let initial_hunger = h
+        .world
+        .get_component_homeostatic_needs(merchant)
+        .unwrap()
+        .hunger;
+
+    // Tick until eat action completes (or up to budget).
+    let mut eat_committed = false;
+    for _ in 0..60 {
+        h.step_once();
+        if let Some(sink) = h.action_trace_sink() {
+            eat_committed |= sink.events_for(merchant).iter().any(|event| {
+                event.action_name == "eat"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        }
+        if eat_committed {
+            break;
+        }
+    }
+    assert!(
+        eat_committed,
+        "merchant should commit eat action within 60 ticks"
+    );
+
+    // Post-condition: bread lot archived (no ItemLot component).
+    assert!(
+        h.world.get_component_item_lot(bread_lot).is_none(),
+        "bread lot should be archived after eating"
+    );
+
+    // Post-condition: SaleListing gone with the archived lot.
+    assert!(
+        h.world.get_component_sale_listing(bread_lot).is_none(),
+        "SaleListing should be removed after lot is archived"
+    );
+
+    // Post-condition: hunger decreased.
+    let final_hunger = h
+        .world
+        .get_component_homeostatic_needs(merchant)
+        .unwrap()
+        .hunger;
+    assert!(
+        final_hunger < initial_hunger,
+        "hunger should decrease after eating: initial={initial_hunger:?}, final={final_hunger:?}"
+    );
+
+    // Decision trace: verify ConsumeOwnedCommodity was a candidate.
+    let sink = h.driver.trace_sink().expect("tracing enabled");
+    let trace = sink
+        .trace_at(merchant, Tick(0))
+        .expect("merchant should have decision trace at tick 0");
+    match &trace.outcome {
+        DecisionOutcome::Planning(planning) => {
+            let has_consume = planning.candidates.ranked.iter().any(|c| {
+                matches!(
+                    c.opportunity.goal_key.kind,
+                    GoalKind::ConsumeOwnedCommodity {
+                        commodity: CommodityKind::Bread,
+                    }
+                )
+            });
+            assert!(
+                has_consume,
+                "decision trace should contain ConsumeOwnedCommodity{{Bread}} candidate"
+            );
+        }
+        other => panic!("expected Planning outcome at tick 0, got {other:?}"),
+    }
+
+    // Conservation: bread quantity decreased by exactly 1 (lawful consumption sink).
+    let final_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
+    assert_eq!(
+        final_bread, 0,
+        "Quantity(1) bread should be fully consumed"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn hungry_merchant_eats_listed_stock() {
+    run_hungry_merchant_eats_listed_stock(Seed([87; 32]));
+}
+
+#[test]
+fn hungry_merchant_eats_listed_stock_replays_deterministically() {
+    let (w1, e1) = run_hungry_merchant_eats_listed_stock(Seed([87; 32]));
+    let (w2, e2) = run_hungry_merchant_eats_listed_stock(Seed([87; 32]));
+    assert_eq!(w1, w2, "world hash mismatch on replay");
+    assert_eq!(e1, e2, "event log hash mismatch on replay");
 }

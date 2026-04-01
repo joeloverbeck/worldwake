@@ -41,7 +41,7 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 
 3. **Journey abandonment (vs suspension)** — `AbandonsCommitment` classification is already unit-tested in `decision_runtime.rs`. High setup complexity (must engineer a scenario where the original destination becomes permanently unreachable or irrelevant mid-journey) for limited code path difference from Scenario 3c's suspension/reactivation path.
 
-4. **SellCommodity** — `GoalKind::SellCommodity` variant exists but `candidate_generation.rs` lacks sell-specific emission logic. Not testable as a golden scenario without first implementing new system code to generate sell candidates.
+4. ~~**SellCommodity**~~ — (removed 2026-04-01: S04 implemented full merchant selling market presence. `SellCommodity` candidate generation, `StaffMarket` planner op, and `SaleListing` lifecycle are now golden-tested in `golden_merchant_selling.rs` with 12 scenarios.)
 
 5. **Self-treatment through ordinary `heal`** — (2026-03-14: rejected. 2026-03-18: implemented.) S07 unified care model made self-treatment lawful via `TreatWounds { patient: self }`. Now golden-tested in Scenario 2c (`golden_self_care_with_medicine`, `golden_self_care_acquires_ground_medicine`).
 
@@ -50,6 +50,8 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 ## Removed Backlog Items
 
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
+
+- **S47 Hungry Merchant Eats Own Listed Sale Stock** (removed 2026-04-01) — Implemented as Scenario 87 in `golden_merchant_selling.rs` (`hungry_merchant_eats_listed_stock` plus deterministic replay). Also removed the blanket `sale_kinds` suppression in `candidate_generation.rs` that prevented merchants from considering consumption of their own sale stock. The ranking system now handles the survival-vs-enterprise tradeoff through `GoalPriorityClass`: `ConsumeOwnedCommodity` escalates with hunger pressure while `SellCommodity` stays at Medium, so merchants only eat sale stock when survival urgency exceeds enterprise value (High or Critical hunger bands).
 
 - **S33OPPSCOGOAIDE-009 Opportunity-scoped source switching goldens** (removed 2026-03-28) — Implemented across `golden_production.rs` and `golden_ai_decisions.rs`. The suite now closes the remaining S33 golden gap at the right ownership boundaries: the blocked-source branch is proven by the strengthened `golden_contested_harvest_start_failure_recovers_via_remote_fallback`, which now asserts the first fresh post-failure selected opportunity is the remote sibling after the local authoritative `StartFailed`/blocker path, and the exhausted-opportunity branch is proven by `golden_exhausted_opportunity_switches_to_sibling_source` plus deterministic replay, which shows a seeded exhausted `OpportunityKey` is suppressed while its sibling loose-lot opportunity is still generated and selected.
 
@@ -78,6 +80,8 @@ Items removed from the golden backlog with rationale (prevents duplicate coverag
 - **P-NEW-8 Blocked Facility Use Avoidance in Planner** (removed 2026-03-13) — Already proven by Scenario 9b.
 
 - **P15 Put-Down Action** (removed 2026-03-13) — Stale premise; current AI cargo architecture treats destination-local controlled stock as sufficient for `MoveCargo`.
+
+- **SellCommodity base coverage** (removed 2026-04-01) — S04 implemented full merchant selling market presence. 12 golden scenarios in `golden_merchant_selling.rs` cover listing lifecycle, buyer discovery, trade against listed lots, dampening, remote travel-to-sell, demand memory ranking, and deterministic replay. The original rejection (#4) was based on missing emission logic that no longer applies.
 
 - **P16 BuryCorpse Goal** (removed 2026-03-13) — Implemented as Scenario 8b.
 
