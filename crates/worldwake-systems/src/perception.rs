@@ -944,9 +944,10 @@ mod tests {
         InstitutionalKnowledgeSource, LoadUnits, MismatchKind, ObservedEntitySnapshot,
         OfficeForceState, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, PrototypePlace, Quantity,
-        RelationDelta, RelationKind, RelationValue, ResourceSource, Seed, SocialObservationDetail,
-        SocialObservationKind, StateDelta, TheftFacts, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        RelationDelta, RelationKind, RelationValue, ResourceSource, SaleListing, Seed,
+        SocialObservationDetail, SocialObservationKind, StateDelta, StockAssignment,
+        StockAssignmentKind, TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1381,6 +1382,89 @@ mod tests {
             vec![EvidenceRef::Mismatch {
                 observer,
                 subject: actor,
+                kind: MismatchKind::EntityMissing,
+            }]
+        );
+    }
+
+    #[test]
+    fn missing_displayed_facility_stock_emits_entity_missing_discovery() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let other_place = *places.get(1).unwrap_or(&place);
+        let (observer, stock_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+
+            let (facility, _stock_container, display_container) = txn
+                .create_merchant_facility(place, observer, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display_container = display_container.expect("display container should exist");
+            let stock_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            txn.set_owner(stock_lot, observer).unwrap();
+            txn.put_into_container(stock_lot, display_container).unwrap();
+            txn.set_component_stock_assignment(
+                stock_lot,
+                StockAssignment {
+                    facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(stock_lot, SaleListing { listed_at: Tick(1) })
+                .unwrap();
+
+            let mut store = AgentBeliefStore::new();
+            store.update_entity(
+                stock_lot,
+                observed_snapshot(Some(place), 2)
+                    .to_believed_entity_state(Tick(1), PerceptionSource::DirectObservation),
+            );
+            txn.set_component_agent_belief_store(observer, store).unwrap();
+
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, stock_lot)
+        };
+
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_ground_location(stock_lot, other_place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x52; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        assert_eq!(
+            discovery_records(&event_log)[0].evidence(),
+            vec![EvidenceRef::Mismatch {
+                observer,
+                subject: stock_lot,
                 kind: MismatchKind::EntityMissing,
             }]
         );

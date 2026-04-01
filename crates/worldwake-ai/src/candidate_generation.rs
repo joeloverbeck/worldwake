@@ -11418,6 +11418,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn missing_facility_stock_emits_investigate_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let missing_entity = entity(2);
+        let facility_container = entity(30);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(missing_entity, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(missing_entity, entity(20));
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(missing_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.believed_owners.insert(missing_entity, agent);
+        view.direct_containers.insert(missing_entity, facility_container);
+        view.entities_at.insert(place, vec![agent]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let violation_id = result.pending_violations[0].id;
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        });
+        assert!(
+            result.candidates.iter().any(|c| c.key == goal_key),
+            "missing facility stock should still reuse the generic investigate path"
+        );
+    }
+
     // Test 2: SupplyDepleted violation detected, InvestigateViolation candidate emitted
     #[test]
     fn violation_supply_depleted_emits_investigate_candidate() {

@@ -398,9 +398,9 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, AgentBeliefStore, BelievedEntityState, CauseRef, CombatProfile,
-        ControlSource, EventLog, PerceptionSource, Permille, Quantity, Seed, Tick,
-        ViolationDispositionProfile, ViolationMemory, WitnessData, World, Wound, WoundCause,
-        WoundId, WoundList,
+        ControlSource, EventLog, LoadUnits, PerceptionSource, Permille, Quantity, SaleListing,
+        Seed, StockAssignment, StockAssignmentKind, Tick, ViolationDispositionProfile,
+        ViolationMemory, WitnessData, World, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -1269,6 +1269,159 @@ mod tests {
                 && record.observed_tick == Tick(4)
                 && record.resolved_tick.is_none()
                 && record.expires_tick == Tick(54)
+        }));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn owner_investigating_missing_displayed_facility_stock_records_suspected_theft() {
+        let mut world = new_world();
+        let (place, other_place) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        let missing = {
+            let mut txn = new_txn(&mut world, 1);
+            let (facility, _stock_container, display_container) = txn
+                .create_merchant_facility(place, actor, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display_container = display_container.expect("display container should exist");
+            let lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_owner(lot, actor).unwrap();
+            txn.put_into_container(lot, display_container).unwrap();
+            txn.set_component_stock_assignment(
+                lot,
+                StockAssignment {
+                    facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(1) })
+                .unwrap();
+            txn.set_ground_location(lot, other_place).unwrap();
+            commit_txn(txn);
+            lot
+        };
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([35; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            ActionExecutionContext {
+                tick: Tick(2),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    active_actions: &mut active_actions,
+                    rng: &mut rng,
+                },
+                ActionExecutionContext {
+                    tick: Tick(3),
+                    cause: CauseRef::Bootstrap,
+                },
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+
+        match tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                tick: Tick(4),
+                cause: CauseRef::Bootstrap,
+            },
+        )
+        .unwrap()
+        {
+            TickOutcome::Committed { .. } => {}
+            other => panic!("expected committed investigate action, got {other:?}"),
+        }
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        assert!(store.social_observations.iter().any(|observation| {
+            observation.detail
+                == SocialObservationDetail::SuspectedTheft {
+                    theft: TheftFacts {
+                        missing_entity: missing,
+                        expected_place: place,
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(1),
+                    },
+                    suspect: None,
+                }
+                && observation.place == place
+                && observation.observed_tick == Tick(4)
+                && observation.source == PerceptionSource::DirectObservation
+        }));
+
+        let memory = world.get_component_violation_memory(actor).unwrap();
+        assert!(memory.violations.iter().any(|record| {
+            record.id == violation_id
+                && record.kind
+                    == ViolationKind::EntityMissing {
+                        entity: missing,
+                        expected_place: place,
+                    }
+                && record.resolved_tick == Some(Tick(4))
+        }));
+        assert!(memory.violations.iter().any(|record| {
+            record.id != violation_id
+                && record.kind
+                    == ViolationKind::SuspectedTheft {
+                        theft: TheftFacts {
+                            missing_entity: missing,
+                            expected_place: place,
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(1),
+                        },
+                        suspect: None,
+                    }
+                && record.observed_tick == Tick(4)
         }));
     }
 
