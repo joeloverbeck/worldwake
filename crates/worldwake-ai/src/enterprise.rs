@@ -2,6 +2,10 @@ use std::collections::BTreeMap;
 use worldwake_core::{CommodityKind, EntityId, Permille, Quantity};
 use worldwake_sim::GoalBeliefView;
 
+/// Baseline enterprise signal for a merchant who has stock but no demand
+/// memory.  Kept low so demand-memory-boosted signals are strictly higher.
+const STOCK_PRESENT_BASELINE: Permille = Permille::new_unchecked(100);
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct EnterpriseSignals {
     restock_gaps: BTreeMap<CommodityKind, Quantity>,
@@ -60,7 +64,17 @@ pub(crate) fn market_signal_for_place(
     let demand = relevant_demand_quantity(view, agent, place, commodity);
     let stock = view.commodity_quantity(agent, commodity).0;
     if demand == 0 {
-        return Permille::new_unchecked(0);
+        // Baseline: a merchant with stock but no demand memory still gets a
+        // modest signal so SellCommodity can emerge without prior demand
+        // observation (S04 spec Section 13 invariant).  The value is below
+        // any demand-memory-boosted signal, preserving demand memory as a
+        // ranking boost rather than a gate.  Per-agent diversity comes from
+        // `enterprise_weight` in the caller (`enterprise_score`).
+        return if stock > 0 {
+            STOCK_PRESENT_BASELINE
+        } else {
+            Permille::new_unchecked(0)
+        };
     }
 
     let deficit = demand.saturating_sub(stock);
@@ -138,15 +152,18 @@ fn permille_ratio(numerator: u32, denominator: u32) -> Permille {
 
 #[cfg(test)]
 mod tests {
-    use super::{relevant_demand_quantity, restock_gap_at_destination, restock_gap_for_market};
+    use super::{
+        market_signal_for_place, relevant_demand_quantity, restock_gap_at_destination,
+        restock_gap_for_market,
+    };
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
         CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
         DemandObservationReason, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-        Wound,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
+        RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
@@ -501,6 +518,56 @@ mod tests {
         assert_eq!(
             restock_gap_at_destination(&view, agent, market, CommodityKind::Bread),
             Some(Quantity(5))
+        );
+    }
+
+    #[test]
+    fn market_signal_returns_baseline_when_stock_present_but_no_demand() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = TestBeliefView::default();
+        // Stock present, no demand memory.
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Bread), Quantity(3));
+
+        let signal = market_signal_for_place(&view, agent, CommodityKind::Bread, market);
+        assert_eq!(
+            signal,
+            super::STOCK_PRESENT_BASELINE,
+            "stock with no demand should produce the baseline signal, not zero"
+        );
+    }
+
+    #[test]
+    fn market_signal_returns_zero_when_no_stock_and_no_demand() {
+        let agent = entity(1);
+        let market = entity(2);
+        let view = TestBeliefView::default();
+
+        let signal = market_signal_for_place(&view, agent, CommodityKind::Bread, market);
+        assert_eq!(
+            signal,
+            Permille::new_unchecked(0),
+            "no stock and no demand should produce zero signal"
+        );
+    }
+
+    #[test]
+    fn market_signal_with_demand_exceeds_baseline() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = TestBeliefView::default();
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Bread), Quantity(3));
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 5)]);
+
+        let signal_with_demand =
+            market_signal_for_place(&view, agent, CommodityKind::Bread, market);
+        assert!(
+            signal_with_demand > super::STOCK_PRESENT_BASELINE,
+            "demand memory should boost signal above baseline: with_demand={signal_with_demand:?}, baseline={:?}",
+            super::STOCK_PRESENT_BASELINE
         );
     }
 }

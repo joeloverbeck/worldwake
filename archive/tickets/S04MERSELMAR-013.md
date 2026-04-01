@@ -1,6 +1,6 @@
 # S04MERSELMAR-013: Nonzero baseline enterprise motive for merchants with stock but no demand memory
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — enterprise motive signal in AI crate
@@ -79,3 +79,13 @@ In `crates/worldwake-ai/src/ranking.rs` tests, add a test that verifies `SellCom
 1. `cargo test -p worldwake-ai -- ranking`
 2. `cargo test -p worldwake-ai -- enterprise`
 3. `cargo clippy --workspace && cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-01
+- **What changed**:
+  - Added `STOCK_PRESENT_BASELINE` constant (`Permille(100)`) in `enterprise.rs`
+  - `market_signal_for_place` returns the baseline when demand=0 but stock>0, instead of hard-returning 0
+  - 3 new focused tests: baseline with stock, zero without stock, demand exceeds baseline
+- **Deviations from original plan**: None — implementation matched ticket exactly
+- **Verification**: `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` all tests pass
