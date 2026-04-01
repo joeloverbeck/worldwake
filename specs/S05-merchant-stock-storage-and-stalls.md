@@ -6,10 +6,10 @@
 Design explicit merchant stock storage and market stall custody for Worldwake so merchant sale inventory is no longer modeled as "goods the merchant happens to be carrying at the market." This spec introduces concrete stock containers, stall containers, and lawful transfer paths between them so ownership, custody, sale visibility, theft, audit, and institutional stock control remain distinct.
 
 This spec extends:
-- [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md)
-- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
+- [S01-production-output-ownership-claims.md](archive/specs/S01-production-output-ownership-claims.md) (implemented)
+- [S04-merchant-selling-market-presence.md](archive/specs/S04-merchant-selling-market-presence.md) (implemented)
 
-It is intentionally forward-looking and must not be scheduled ahead of the active phase gates in [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md) without explicit reprioritization.
+It is intentionally forward-looking and must not be scheduled ahead of the active phase gates in [IMPLEMENTATION-ORDER.md](specs/IMPLEMENTATION-ORDER.md) without explicit reprioritization.
 
 ## Why This Exists
 Current and near-future merchant logistics still stop one layer short of the cleanest architecture:
@@ -35,9 +35,9 @@ The cleaner architecture is:
 This aligns directly with the foundations:
 - Principle 4: persistent identity and explicit transfer
 - Principle 7: locality of interaction and information
-- Principle 15: expectation-based discovery
-- Principle 22: ownership, custody, access, obligation, and jurisdiction are distinct
-- Principle 23: social/economic artifacts should be world state, not controller abstractions
+- Principle 17: surprise comes from violated expectation (expectation-based discovery)
+- Principle 24: ownership, custody, access, obligation, and jurisdiction are distinct
+- Principle 25: social/economic artifacts should be world state, not controller abstractions
 
 ## Phase
 Phase 4+: Economy Deepening, Step 14
@@ -89,11 +89,11 @@ This component belongs on entities such as:
 No global market object is introduced. Storage remains attached to ordinary world entities.
 
 ### 2. Explicit Storage/Display Containers
-Containers used for merchant stock must be ordinary `Container` entities with explicit placement and ownership.
+Containers used for merchant stock must be ordinary entities that participate in the existing containment relation (items placed inside them via `set_container`). No dedicated `Container` component type is needed — containment is modeled through placement relations.
 
 Required properties:
 - concrete entity identity
-- deterministic capacity
+- deterministic capacity (via a capacity component)
 - location at a real place
 - normal ownership/custody relations
 
@@ -152,7 +152,7 @@ fn sale_facility_for_lot(&self, lot: EntityId) -> Option<EntityId>;
 fn authorized_seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
 ```
 
-`authorized_seller_for_sale_lot` derives the active seller from current facility control rather than from direct possession of the lot.
+`authorized_seller_for_sale_lot` evolves the existing `seller_for_sale_lot` to derive the active seller from current facility control rather than from direct possession of the lot.
 
 This is the key architectural shift:
 - sale stock can exist at the market without being hand-carried
@@ -184,8 +184,8 @@ Add explicit stock-handling actions rather than overloading generic `put_down`.
 - moves displayed or stored lots back into direct possession when the actor is authorized
 
 These are intentionally explicit because:
-- "put down" only means relinquish direct possession to local ground/container context
-- storage/display logistics have stronger semantics than generic dropping
+- generic cargo transport (`MoveCargo`) targets destination-local control, not storage/display assignment
+- storage/display logistics have stronger semantics than arrival-with-possession
 - explicit verbs make later theft and audit traces clearer
 
 ### 6. `MoveCargo` Evolves to Destination Storage, Not Mere Arrival
@@ -245,7 +245,7 @@ This model must support:
 That last case is the key extensibility gain. Delivery and sale presence become separate roles.
 
 ## Component Registration
-Register in authoritative schema:
+Register in authoritative schema via `define_component_schema!` in `component_schema.rs` (following the same pattern as `SaleListing`):
 - `StockStoragePolicy` on facility-like entities
 - `StockAssignment` on `EntityKind::ItemLot`
 
@@ -263,7 +263,7 @@ No aggregate "shop stock count" component is permitted as authoritative truth.
 - add `store_stock`, `stage_stock_for_sale`, `unstage_stock`, and `collect_display_stock`
 - update trade listing validity to operate on displayed lots rather than directly possessed lots
 - update lawful transfer checks so displayed/store stock requires authorized facility control
-- keep generic `put_down` as a primitive, but do not overload it to mean "merchant delivered stock correctly"
+- keep generic `MoveCargo` as a transport primitive, but do not overload it to mean "merchant delivered stock correctly"
 
 ### `worldwake-sim`
 - extend affordance enumeration and belief queries for facility stock/display visibility
@@ -277,13 +277,13 @@ No aggregate "shop stock count" component is permitted as authoritative truth.
 - allow delivery roles and seller roles to differ while sharing the same storage state
 - use blocked-intent memory for repeated failed storage/staging attempts rather than hidden cooldown logic
 
-## Cross-System Interactions (Principle 12)
-- E10 transport writes lot location/custody changes into stock/display containers
-- merchant selling reads displayed lots and listing state
+## Cross-System Interactions (Principle 26)
+- E10 transport (implemented) writes lot location/custody changes into stock/display containers
+- S04 merchant selling (implemented) reads displayed lots and listing state — the `SaleListing`, `listed_sale_lots_at`, and `seller_for_sale_lot` infrastructure evolves to use facility-based custody
 - trade consumes displayed lots through ordinary lot transfer
-- E15 discovery reads stock containers and display containers during audits
-- E16 offices/factions express authority through ownership/control of facilities and containers
-- E17 theft operates on the same stored/displayed lots when access is unlawful
+- E15 discovery (implemented) reads stock containers and display containers during audits
+- E16 offices/factions (implemented) express authority through ownership/control of facilities and containers
+- E17 theft/justice (implemented) operates on the same stored/displayed lots when access is unlawful
 
 No direct system-to-system command path is introduced. Influence travels only through:
 - containers
@@ -359,10 +359,10 @@ Derived transient read-model:
 - no world singleton, stock scalar, or backward-compatibility alias is introduced
 
 ## References
-- [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
-- [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)
-- [S01-production-output-ownership-claims.md](/home/joeloverbeck/projects/worldwake/specs/S01-production-output-ownership-claims.md)
-- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
-- [E15-rumor-witness-discovery.md](/home/joeloverbeck/projects/worldwake/specs/E15-rumor-witness-discovery.md)
-- [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/archive/specs/E16-offices-succession-factions.md)
-- [E17-crime-theft-justice.md](/home/joeloverbeck/projects/worldwake/specs/E17-crime-theft-justice.md)
+- [FOUNDATIONS.md](docs/FOUNDATIONS.md)
+- [IMPLEMENTATION-ORDER.md](specs/IMPLEMENTATION-ORDER.md)
+- [S01-production-output-ownership-claims.md](archive/specs/S01-production-output-ownership-claims.md) (implemented)
+- [S04-merchant-selling-market-presence.md](archive/specs/S04-merchant-selling-market-presence.md) (implemented)
+- [E15-rumor-witness-discovery.md](archive/specs/E15-rumor-witness-discovery.md) (implemented)
+- [E16-offices-succession-factions.md](archive/specs/E16-offices-succession-factions.md) (implemented)
+- [E17-crime-theft-justice.md](archive/specs/E17-crime-theft-justice.md) (implemented)

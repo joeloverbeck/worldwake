@@ -14,8 +14,8 @@ Break a numbered spec into a series of small, actionable implementation tickets.
 ```
 
 **Arguments** (both required, positional):
-- `<spec-path>` — path to the spec file (e.g., `specs/99-event-card-policy-surface.md`)
-- `<NAMESPACE>` — ticket namespace prefix (e.g., `99EVECARPOLSUR`)
+- `<spec-path>` — path to the spec file (e.g., `specs/S05-merchant-stock-storage-and-stalls.md`)
+- `<NAMESPACE>` — ticket namespace prefix (e.g., `S05MERSTOSTALL`)
 
 If either argument is missing, ask the user to provide it before proceeding.
 
@@ -40,6 +40,7 @@ Before decomposing, validate the spec's assumptions against the actual codebase:
 - **Grep** for types, functions, and modules the spec references — confirm they are real and current
 - **Flag** any stale assumptions, missing files, or renamed entities
 - If you find discrepancies, present them to the user before proceeding
+- If `/reassess-spec` was run on this spec in the current session and all findings were resolved, Step 2 validation may be abbreviated to a spot-check of key references rather than a full re-validation
 
 ### Step 3: Decompose the Spec
 
@@ -81,6 +82,7 @@ Every ticket MUST include:
 - **Problem**: What user-facing or architecture problem this solves
 - **Assumption Reassessment**: Assumptions validated against current code (use today's date)
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
+- **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
 - **What to Change**: Numbered sections with specific implementation details
 - **Files to Touch**: Exact paths validated against the codebase (new or modify)
 - **Out of Scope**: Explicit non-goals — what this ticket must NOT change
@@ -102,7 +104,7 @@ Do NOT commit. Leave files for user review.
 
 ## Constraints
 
-- **FOUNDATIONS alignment**: Every ticket must respect the principles in `docs/FOUNDATIONS.md` (engine agnosticism, evolution-first, visual separation, etc.)
+- **FOUNDATIONS alignment**: Every ticket must respect the principles in `docs/FOUNDATIONS.md` (maximal emergence, belief-only planning, system decoupling, no backward compatibility, etc.)
 - **Template fidelity**: Every ticket must use the `tickets/_TEMPLATE.md` structure exactly — no ad-hoc sections or missing required fields
 - **Ticket fidelity**: Never silently skip a spec deliverable. If something seems wrong, use the 1-3-1 rule (1 problem, 3 options, 1 recommendation) and ask the user
 - **Codebase truth**: File paths and type references in tickets must be validated against the actual codebase, not assumed from the spec

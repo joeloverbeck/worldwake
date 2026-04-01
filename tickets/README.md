@@ -55,6 +55,7 @@ When a ticket depends on golden ordering or proof-surface choice, use `docs/gold
 10. For mixed-layer or cross-system tickets, confirm the intended invariant, the exact shared boundary under audit, and whether adjacent contradictions belong to this ticket or a follow-up before implementation begins.
 11. If traces prove the outcome but not enough provenance to explain the architecture, keep the immediate proof at the strongest available lower layer and open a follow-up traceability ticket instead of broadening weaker downstream assertions.
 12. For information-path refactors, confirm whether current code still has multiple lawful transport paths for the same fact, name the canonical end-state path, and verify that the planned proof surface remains strong enough to debug that canonical path after the change.
+13. For component registration tickets, verify that all macro expansion sites (`delta.rs`, `world.rs`, `component_tables.rs`) import the new types — the `with_component_schema_entries!` macro generates code using bare type names that must be in scope at each expansion site.
 
 ## Archival Reminder
 
