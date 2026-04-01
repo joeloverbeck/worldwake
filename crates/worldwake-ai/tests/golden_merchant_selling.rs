@@ -2,19 +2,19 @@
 //!
 //! These tests exercise the seller-side lifecycle: `SaleListing` attachment via
 //! `staff_market`, buyer discovery of listed lots, trade against concrete listed
-//! lots, blocked-intent dampening after unproductive sell cycles, and
-//! deterministic replay of the full merchant-selling pipeline.
+//! lots, autonomous stock staging before sell readiness, and deterministic
+//! replay of the full merchant-selling pipeline.
 
 mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, BlockingFact, CommodityKind,
-    ControlSource, DemandMemory, DemandObservation, DemandObservationReason, EventTag,
-    GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    PerceptionProfile, Quantity, SaleListing, Seed, Tick, TradeDispositionProfile,
-    UtilityProfile,
+    hash_event_log, hash_world, total_live_lot_quantity, CommodityKind, ControlSource,
+    DemandMemory, DemandObservation, DemandObservationReason, EventTag, GoalKind,
+    HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    PerceptionProfile, Quantity, SaleListing, Seed, StockAssignmentKind, Tick,
+    TradeDispositionProfile, UtilityProfile,
 };
 use worldwake_ai::DecisionOutcome;
 use worldwake_sim::{ActionTraceKind, PerAgentBeliefView, RecipeRegistry, RuntimeBeliefView};
@@ -573,21 +573,23 @@ fn unlisted_stock_not_sellable() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 78: Blocked Intent Dampens Relisting After Unproductive Cycle
+// Scenario 78: Loose Home Stock Is Staged Before Sell Goal Settles
 // Systems: Trade, AI
 // GoalKinds: SellCommodity
 // ActionDomains: Trade
-// Principles: P1, P8
-// Proves: NoBuyer blocked intent suppresses immediate SellCommodity re-emission
+// Principles: P1, P4, P8
+// Proves: loose home stock is stored and staged into a listed facility lot
+//         before SellCommodity settles; merchant does not enter an immediate
+//         futile staff_market cycle when no buyer is present
 // ---------------------------------------------------------------------------
 
 #[test]
-fn blocked_intent_dampens_relisting_after_unproductive_cycle() {
+fn loose_home_stock_is_staged_before_sell_goal_settles() {
     let mut h = GoldenHarness::with_recipes(Seed([63; 32]), RecipeRegistry::new());
     h.driver.enable_tracing();
     h.enable_action_tracing();
 
-    let (merchant, _stock_lot, _facility) = seed_merchant_with_loose_stock(
+    let (merchant, stock_lot, _facility) = seed_merchant_with_loose_stock(
         &mut h,
         "Merchant",
         VILLAGE_SQUARE,
@@ -604,63 +606,101 @@ fn blocked_intent_dampens_relisting_after_unproductive_cycle() {
         worldwake_core::PerceptionSource::Inference,
     );
 
-    // Run until first staff_market commits (unproductive — no buyer present).
-    let mut first_commit_tick: Option<Tick> = None;
-    for _ in 0..120 {
-        let tick_before = h.scheduler.current_tick();
+    for _ in 0..2 {
         h.step_once();
-        if first_commit_tick.is_none() {
-            if let Some(sink) = h.action_trace_sink() {
-                if sink.events_for_at(merchant, tick_before).iter().any(|e| {
-                    e.action_name == "staff_market"
-                        && matches!(e.kind, ActionTraceKind::Committed { .. })
-                }) {
-                    first_commit_tick = Some(tick_before);
-                }
-            }
-        }
-        if first_commit_tick.is_some() {
-            break;
-        }
     }
-    let first_commit = first_commit_tick.expect("staff_market should commit within 120 ticks");
 
-    // After unproductive commit, blocked intent memory should contain NoBuyer.
-    let blocked = h
-        .world
-        .get_component_blocked_intent_memory(merchant)
-        .expect("blocked intent memory should exist after unproductive cycle");
-    let has_no_buyer = blocked.intents.values().any(|intent| {
-        intent.blocking_fact == BlockingFact::NoBuyer
-            && intent.blocker_key.goal_key.kind
-                == GoalKind::SellCommodity {
-                    commodity: CommodityKind::Bread,
-                }
-    });
+    let action_trace = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for staging scenario");
     assert!(
-        has_no_buyer,
-        "NoBuyer blocked intent should exist after unproductive staff_market at tick {first_commit:?}"
+        action_trace.events_for_at(merchant, Tick(0)).iter().any(|e| {
+            e.action_name == "store_stock"
+                && matches!(e.kind, ActionTraceKind::Committed { .. })
+        }),
+        "merchant should first store loose home stock into facility custody"
+    );
+    assert!(
+        action_trace.events_for_at(merchant, Tick(1)).iter().any(|e| {
+            e.action_name == "stage_stock_for_sale"
+                && matches!(e.kind, ActionTraceKind::Committed { .. })
+        }),
+        "merchant should then stage stored stock for sale"
     );
 
-    // Run a few more ticks — merchant should NOT start another staff_market
-    // while the blocked intent is active.
-    let mut second_staff_market = false;
+    assert!(
+        h.world.get_component_sale_listing(stock_lot).is_some(),
+        "staged lot should become listed for sale"
+    );
+    let assignment = h
+        .world
+        .get_component_stock_assignment(stock_lot)
+        .expect("staged lot should keep a stock assignment");
+    assert_eq!(
+        assignment.kind,
+        StockAssignmentKind::Displayed,
+        "staged lot should move into displayed facility stock"
+    );
+
+    for tick in [Tick(0), Tick(1)] {
+        let trace = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing enabled")
+            .trace_at(merchant, tick)
+            .expect("merchant should have a planning trace during staging");
+        let planning = match &trace.outcome {
+            DecisionOutcome::Planning(planning) => planning,
+            other => panic!("expected planning trace during staging, got {other:?}"),
+        };
+        assert!(
+            planning
+                .selection
+                .selected_goal()
+                .is_some_and(|goal| goal.kind == GoalKind::SellCommodity {
+                    commodity: CommodityKind::Bread,
+                }),
+            "staging ticks should still be executing SellCommodity planning"
+        );
+    }
+
+    let mut saw_staff_market = false;
+    let mut sell_reselected_after_listing = false;
     for _ in 0..5 {
         let tick_before = h.scheduler.current_tick();
         h.step_once();
         if let Some(sink) = h.action_trace_sink() {
-            second_staff_market |= sink
-                .events_for_at(merchant, tick_before)
-                .iter()
-                .any(|e| {
-                    e.action_name == "staff_market"
-                        && matches!(e.kind, ActionTraceKind::Started { .. })
-                });
+            saw_staff_market |= sink.events_for_at(merchant, tick_before).iter().any(|e| {
+                e.action_name == "staff_market"
+                    && matches!(
+                        e.kind,
+                        ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+                    )
+            });
+        }
+        if let Some(trace) = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing enabled")
+            .trace_at(merchant, tick_before)
+        {
+            if let DecisionOutcome::Planning(planning) = &trace.outcome {
+                sell_reselected_after_listing |= planning
+                    .selection
+                    .selected_goal()
+                    .is_some_and(|goal| goal.kind == GoalKind::SellCommodity {
+                        commodity: CommodityKind::Bread,
+                    });
+            }
         }
     }
     assert!(
-        !second_staff_market,
-        "merchant should not restart staff_market immediately after unproductive cycle (blocked intent should dampen)"
+        !saw_staff_market,
+        "merchant should not enter staff_market immediately after lawful staging when no buyer is present"
+    );
+    assert!(
+        !sell_reselected_after_listing,
+        "listed displayed stock should settle SellCommodity instead of immediately re-emitting the same goal"
     );
 }
 

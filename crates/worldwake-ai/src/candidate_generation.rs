@@ -2408,24 +2408,29 @@ fn emit_sell_goals(
 
     for commodity in profile.sale_kinds {
         if at_home_place {
-            // At home market: check local lots and skip if already listed.
+            // At home market: emit SellCommodity only for local lots that still
+            // need staging/listing. A mixed listed + unlisted facility state
+            // should keep the sell path admitted until the remaining stock is
+            // sale-ready.
             let local_lots =
                 ctx.view
                     .local_controlled_lots_for(ctx.agent, current_place, commodity);
             if local_lots.is_empty() {
                 continue;
             }
-            let already_listed = local_lots
+            let unlisted_local_lots = local_lots
                 .iter()
-                .any(|&lot| ctx.view.has_sale_listing(lot));
-            if already_listed {
+                .copied()
+                .filter(|lot| !ctx.view.has_sale_listing(*lot))
+                .collect::<Vec<_>>();
+            if unlisted_local_lots.is_empty() {
                 continue;
             }
 
             let mut evidence = Evidence::with_place(current_place);
-            evidence.entities.extend(local_lots.iter().copied());
+            evidence.entities.extend(unlisted_local_lots.iter().copied());
             let mut trace = EvidenceTrace::default();
-            for &lot in &local_lots {
+            for &lot in &unlisted_local_lots {
                 trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
             }
             if ctx.tracing_enabled {
@@ -7393,7 +7398,7 @@ mod tests {
     }
 
     #[test]
-    fn merchant_at_home_facility_with_already_listed_stock_does_not_emit_sell_commodity() {
+    fn merchant_at_home_facility_with_only_listed_stock_does_not_emit_sell_commodity() {
         let agent = entity(1);
         let place = entity(10);
         let facility = entity(11);
@@ -7440,6 +7445,76 @@ mod tests {
                 commodity: CommodityKind::Bread,
             }
         ));
+    }
+
+    #[test]
+    fn merchant_at_home_facility_with_mixed_listed_and_unlisted_stock_emits_sell_commodity() {
+        let agent = entity(1);
+        let place = entity(10);
+        let facility = entity(11);
+        let listed_bread = entity(20);
+        let stored_bread = entity(21);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([agent, place, facility, listed_bread, stored_bread]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(place, EntityKind::Place);
+        view.entity_kinds.insert(facility, EntityKind::Facility);
+        view.entity_kinds.insert(listed_bread, EntityKind::ItemLot);
+        view.entity_kinds.insert(stored_bread, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(facility, place);
+        view.effective_places.insert(listed_bread, place);
+        view.effective_places.insert(stored_bread, place);
+        view.entities_at
+            .insert(place, vec![agent, facility, listed_bread, stored_bread]);
+        view.direct_possessions.insert(agent, vec![listed_bread, stored_bread]);
+        view.direct_possessors.insert(listed_bread, agent);
+        view.direct_possessors.insert(stored_bread, agent);
+        view.lot_commodities.insert(listed_bread, CommodityKind::Bread);
+        view.lot_commodities.insert(stored_bread, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Bread), Quantity(6));
+        view.commodity_quantities
+            .insert((listed_bread, CommodityKind::Bread), Quantity(3));
+        view.commodity_quantities
+            .insert((stored_bread, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((agent, listed_bread));
+        view.controllable.insert((agent, stored_bread));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(facility),
+            },
+        );
+        view.lot_sellers.insert(listed_bread, agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let sell_candidate = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.key.kind
+                    == GoalKind::SellCommodity {
+                        commodity: CommodityKind::Bread,
+                    }
+            })
+            .expect("mixed listed/unlisted stock should still emit SellCommodity");
+        assert!(
+            sell_candidate.evidence_entities.contains(&stored_bread),
+            "candidate evidence should include the unlisted local lot that still needs staging"
+        );
+        assert!(
+            !sell_candidate.evidence_entities.contains(&listed_bread),
+            "candidate evidence should not be driven by already listed stock"
+        );
     }
 
     #[test]

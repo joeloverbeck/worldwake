@@ -112,6 +112,8 @@ For AI, planner, golden, or start-failure work, prove behavior at the strongest 
 
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
 
+If the architecture change invalidates the old scenario invariant itself rather than just a timing detail or output shape, rewrite the scenario to prove the new contract and update the scenario header/comments to match.
+
 ### 7. Close the loop on the ticket
 
 If the user asked for full ticket completion, update and archive the ticket per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
@@ -122,6 +124,8 @@ When archiving:
 - note any approved partial completion and create a follow-up ticket when required
 
 If the user asked only for implementation or analysis, do not archive automatically, but keep the factual completion details current enough that a later archival pass can record outcome and verification without reconstructing the session from scratch.
+
+When golden coverage changes, keep the scenario prose and proof claim aligned with the updated assertions so the documented contract stays traceable.
 
 Do not archive automatically if the user only asked for implementation or for analysis.
 

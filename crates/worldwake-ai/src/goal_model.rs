@@ -7450,18 +7450,22 @@ mod tests {
         let actor = entity_id(1, 0);
         let market = entity_id(2, 0);
         let facility = entity_id(3, 0);
+        let display_container = entity_id(5, 0);
         let bread_lot = entity_id(4, 0);
         let mut view = TestBeliefView::default();
-        view.alive.extend([actor, facility, bread_lot]);
+        view.alive
+            .extend([actor, facility, display_container, bread_lot]);
         view.kinds.insert(actor, EntityKind::Agent);
         view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(display_container, EntityKind::Container);
         view.kinds.insert(bread_lot, EntityKind::ItemLot);
         view.effective_places.insert(actor, market);
         view.effective_places.insert(facility, market);
+        view.effective_places.insert(display_container, market);
         view.effective_places.insert(bread_lot, market);
-        view.entities_at.insert(market, vec![actor, facility, bread_lot]);
-        view.direct_possessions.insert(actor, vec![bread_lot]);
-        view.direct_possessors.insert(bread_lot, actor);
+        view.entities_at
+            .insert(market, vec![actor, facility, display_container, bread_lot]);
+        view.direct_containers.insert(bread_lot, display_container);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
         view.commodity_quantities
             .insert((bread_lot, CommodityKind::Bread), Quantity(3));
@@ -7470,6 +7474,13 @@ mod tests {
             MerchandiseProfile {
                 sale_kinds: BTreeSet::from([CommodityKind::Bread]),
                 home_facility: Some(facility),
+            },
+        );
+        view.stock_storage_policies.insert(
+            facility,
+            worldwake_core::StockStoragePolicy {
+                stock_container: entity_id(6, 0),
+                display_container: Some(display_container),
             },
         );
         view.listed_lots

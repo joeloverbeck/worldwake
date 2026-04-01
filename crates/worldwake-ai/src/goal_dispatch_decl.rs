@@ -93,6 +93,7 @@ const PRODUCE_OPS: &[PlannerOpKind] = &[
 const SELL_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
     PlannerOpKind::StaffMarket,
 ];
 const RESTOCK_OPS: &[PlannerOpKind] = &[
@@ -783,6 +784,10 @@ mod tests {
         assert!(
             decl.relevant_ops.contains(&PlannerOpKind::MoveCargo),
             "SELL_OPS must contain MoveCargo"
+        );
+        assert!(
+            decl.relevant_ops.contains(&PlannerOpKind::StockManagement),
+            "SELL_OPS must contain StockManagement"
         );
     }
 }

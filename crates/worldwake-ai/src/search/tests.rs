@@ -2144,6 +2144,104 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
     );
 }
 
+#[test]
+fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
+    let actor = entity(1);
+    let market = entity(10);
+    let facility = entity(11);
+    let stock_container = entity(12);
+    let display_container = entity(13);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([
+        actor,
+        market,
+        facility,
+        stock_container,
+        display_container,
+        bread,
+    ]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(facility, EntityKind::Facility);
+    view.kinds.insert(stock_container, EntityKind::Container);
+    view.kinds.insert(display_container, EntityKind::Container);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(facility, market);
+    view.effective_places.insert(stock_container, market);
+    view.effective_places.insert(display_container, market);
+    view.effective_places.insert(bread, market);
+    view.entities_at.insert(
+        market,
+        vec![actor, facility, stock_container, display_container, bread],
+    );
+    view.direct_containers.insert(bread, stock_container);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(3));
+    view.controllable.extend([
+        (actor, facility),
+        (actor, stock_container),
+        (actor, display_container),
+        (actor, bread),
+    ]);
+    view.merchandise_profiles.insert(
+        actor,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(facility),
+        },
+    );
+    view.stock_storage_policies.insert(
+        facility,
+        worldwake_core::StockStoragePolicy {
+            stock_container,
+            display_container: Some(display_container),
+        },
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(market),
+        key: GoalKey::from(GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        }),
+        evidence_entities: BTreeSet::from([bread, facility]),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &PlanningBudget::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::StockManagement);
+    assert_eq!(
+        registry.get(plan.steps[0].def_id).map(|def| def.name.as_str()),
+        Some("stage_stock_for_sale")
+    );
+}
+
 #[allow(clippy::too_many_lines)]
 #[test]
 fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {

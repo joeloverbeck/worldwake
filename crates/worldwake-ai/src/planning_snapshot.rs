@@ -66,6 +66,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) demand_memory: Vec<DemandObservation>,
     pub(crate) merchandise_profile: Option<MerchandiseProfile>,
     pub(crate) has_sale_listing: bool,
+    pub(crate) seller_for_sale_lot: Option<EntityId>,
     pub(crate) reservation_ranges: Vec<TickRange>,
     pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
     /// For Office entities: authoritative office metadata preserved for planning.
@@ -113,6 +114,7 @@ impl Default for SnapshotEntity {
             demand_memory: Vec::new(),
             merchandise_profile: None,
             has_sale_listing: false,
+            seller_for_sale_lot: None,
             reservation_ranges: Vec::new(),
             facility_queue: None,
             office_data: None,
@@ -658,6 +660,7 @@ fn build_snapshot_entity(
         demand_memory: view.demand_memory(entity),
         merchandise_profile: view.merchandise_profile(entity),
         has_sale_listing: view.has_sale_listing(entity),
+        seller_for_sale_lot: view.seller_for_sale_lot(entity),
         reservation_ranges: view.reservation_ranges(entity),
         facility_queue: snapshot_facility_queue(view, actor, entity),
         office_data: view.office_data(entity),

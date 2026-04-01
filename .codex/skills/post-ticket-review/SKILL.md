@@ -36,11 +36,13 @@ This skill must not modify production code or tests. It is a post-implementation
    - missing or incomplete `Outcome`
    - inaccurate verification notes
    - archival mechanics required by [docs/archival-workflow.md](../../../docs/archival-workflow.md)
-4. If the ticket is still active, apply the archival checks above before moving it to the archive.
-5. If the ticket is already archived, validate the archived handoff content rather than reopening or moving it again.
-6. Do not revise the completed ticket's problem statement, scope, or acceptance criteria except where archival mechanics require factual completion notes.
-7. If archival readiness is ambiguous, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) before proceeding.
-8. If the ticket is ready and still active, archive it.
+4. If the ticket still has unresolved in-scope deliverables relative to its current text, stop and report archival as blocked. Do not write completion handoff text yet; implementation must resume first.
+5. If the ticket is still active and the scoped work is complete, apply the archival checks above before moving it to the archive.
+6. If the ticket is already archived, validate the archived handoff content rather than reopening or moving it again.
+7. Do not revise the completed ticket's problem statement, scope, or acceptance criteria except where archival mechanics require factual completion notes.
+8. If archival readiness is ambiguous, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) before proceeding.
+9. If the ticket is ready and still active, archive it.
+10. If an earlier post-ticket review pass blocked archival, treat a later pass as the authoritative handoff step only after the remaining in-scope implementation has landed.
 
 ### 3. Establish the review surface
 
@@ -185,6 +187,7 @@ Return a structured report in the conversation with these sections:
 - **Created**: <ticket ids with one-line rationale and deps>
 - **Updated**: <ticket ids with one-line rationale>
 - **Covered by existing tickets**: <ticket ids and why no new ticket was created>
+- **Adjacent roadmap still valid**: <nearby active tickets that remain relevant context but were not updated and did not directly absorb a newly discovered concern>
 
 ## 1-3-1 Decisions
 
