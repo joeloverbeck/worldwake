@@ -27,11 +27,24 @@ pub fn start_action(
         .get(def.handler)
         .ok_or(ActionError::UnknownActionHandler(def.handler))?;
 
-    validate_start_requirements(def, affordance, world)?;
-
     let actor_place = world.effective_place(affordance.actor);
     let effective_payload = resolve_effective_payload(affordance, def);
-    validate_authoritative_payload(
+    if let Err(err) = validate_start_requirements(def, affordance, world) {
+        handle_start_failure(
+            handler,
+            def,
+            affordance.actor,
+            &affordance.bound_targets,
+            effective_payload,
+            &context,
+            world,
+            event_log,
+            rng,
+            actor_place,
+            err,
+        )?;
+    }
+    if let Err(err) = validate_authoritative_payload(
         handler,
         def,
         registry,
@@ -39,7 +52,21 @@ pub fn start_action(
         &affordance.bound_targets,
         effective_payload,
         world,
-    )?;
+    ) {
+        handle_start_failure(
+            handler,
+            def,
+            affordance.actor,
+            &affordance.bound_targets,
+            effective_payload,
+            &context,
+            world,
+            event_log,
+            rng,
+            actor_place,
+            err,
+        )?;
+    }
 
     let duration = resolve_action_duration(world, def, affordance)?;
     let mut txn = WorldTxn::new(
@@ -69,7 +96,19 @@ pub fn start_action(
                 Ok(reservation_id) => reservation_ids.push(reservation_id),
                 Err(err) => {
                     release_reservations(&mut txn, &reservation_ids)?;
-                    return Err(map_reservation_error(err, target));
+                    return handle_start_failure(
+                        handler,
+                        def,
+                        affordance.actor,
+                        &affordance.bound_targets,
+                        effective_payload,
+                        &context,
+                        world,
+                        event_log,
+                        rng,
+                        actor_place,
+                        map_reservation_error(err, target),
+                    );
                 }
             }
         }
@@ -95,7 +134,19 @@ pub fn start_action(
         Ok(local_state) => local_state,
         Err(err) => {
             release_reservations(&mut txn, &instance.reservation_ids)?;
-            return Err(err);
+            return handle_start_failure(
+                handler,
+                def,
+                affordance.actor,
+                &affordance.bound_targets,
+                effective_payload,
+                &context,
+                world,
+                event_log,
+                rng,
+                actor_place,
+                err,
+            );
         }
     };
 
@@ -113,6 +164,36 @@ pub fn start_action(
     debug_assert!(replaced.is_none(), "active action id prechecked as unique");
 
     Ok(instance_id)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_start_failure(
+    handler: &crate::ActionHandler,
+    def: &crate::ActionDef,
+    actor: worldwake_core::EntityId,
+    targets: &[worldwake_core::EntityId],
+    payload: &crate::ActionPayload,
+    context: &ActionExecutionContext<'_>,
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    rng: &mut crate::DeterministicRng,
+    actor_place: Option<worldwake_core::EntityId>,
+    error: ActionError,
+) -> Result<ActionInstanceId, ActionError> {
+    let mut txn = WorldTxn::new(
+        world,
+        context.tick,
+        context.cause,
+        Some(actor),
+        actor_place,
+        def.visibility,
+        WitnessData::default(),
+    );
+    (handler.on_start_failure)(def, actor, targets, payload, context, &error, rng, &mut txn)?;
+    if !txn.deltas().is_empty() || !txn.tags().is_empty() {
+        let _ = txn.commit(event_log);
+    }
+    Err(error)
 }
 
 fn build_action_instance(

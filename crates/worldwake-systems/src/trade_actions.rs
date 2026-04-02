@@ -2,8 +2,8 @@ use std::{collections::{BTreeMap, BTreeSet}, num::NonZeroU32};
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
-    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, Tick, VisibilitySpec,
-    WorldTxn, WoundList,
+    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick,
+    VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     commodity_opportunity_score, evaluate_trade_bundle, AbortReason, ActionAbortRequestReason,
@@ -12,6 +12,9 @@ use worldwake_sim::{
     CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
     PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry, RuntimeBeliefView,
     StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
+};
+use crate::experience_recording::{
+    record_failed_source_attempt, record_successful_source_acquisition,
 };
 
 pub fn register_trade_action(
@@ -384,6 +387,12 @@ fn commit_trade(
         Some(instance.actor),
         DemandObservationReason::TradeAgreed,
     );
+    record_successful_source_acquisition(
+        txn,
+        instance.actor,
+        trade_source_key(counterparty, requested_commodity),
+        txn.tick(),
+    )?;
     Ok(CommitOutcome::empty())
 }
 
@@ -392,7 +401,7 @@ fn abort_trade(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
-    _reason: &AbortReason,
+    reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
@@ -404,6 +413,17 @@ fn abort_trade(
         return Ok(());
     };
     let commodity = sale_lot_commodity(txn, payload.sale_lot).unwrap_or(CommodityKind::Coin);
+    if trade_abort_is_rejection(reason) {
+        record_failed_source_attempt(
+            txn,
+            instance.actor,
+            trade_source_key(counterparty, commodity),
+            txn.tick(),
+        )?;
+    } else {
+        // External interruptions do not penalize source reliability. The
+        // source did not fail; the negotiation was cut short.
+    }
     record_trade_observation(
         txn,
         instance.actor,
@@ -423,6 +443,28 @@ fn abort_trade(
         DemandObservationReason::WantedToSellButNoBuyer,
     );
     Ok(())
+}
+
+fn trade_source_key(counterparty: EntityId, commodity: CommodityKind) -> SourceKey {
+    SourceKey {
+        entity: counterparty,
+        commodity,
+    }
+}
+
+fn trade_abort_is_rejection(reason: &AbortReason) -> bool {
+    matches!(
+        reason,
+        AbortReason::ExternalAbort {
+            kind: worldwake_sim::ExternalAbortReason::HandlerRequested {
+                reason: ActionAbortRequestReason::TradeBundleRejected {
+                    acceptance: TradeAcceptance::Reject { .. },
+                    ..
+                }
+            },
+            ..
+        }
+    )
 }
 
 fn validate_trade_context(
@@ -1546,14 +1588,16 @@ mod tests {
         AgentBeliefStore, BlockingFact, CauseRef, CommodityKind, ControlSource, DemandMemory,
         DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag, EventView,
         GoalKind, HomeostaticNeeds, LotOperation, MerchandiseProfile, PerceptionSource, Permille,
-        Quantity, SaleListing, Seed, SubstitutePreferences, Tick, TradeCategory,
-        TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        PreferenceProfile, Quantity, ReliabilityRecord, SaleListing, Seed, SourceKey,
+        SourceReliability, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
+        VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
-        ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        abort_action, get_affordances, start_action, tick_action, ActionAbortRequestReason,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
         ActionInstanceId, ActionPayload, ActionState, ActionStatus, Affordance, DeterministicRng,
-        PayloadEntityRole, PerAgentBeliefView, TickOutcome, TradeActionPayload,
+        ExternalAbortReason, PayloadEntityRole, PerAgentBeliefView, TickOutcome,
+        TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -2312,6 +2356,29 @@ mod tests {
             commit_txn(txn);
         }
 
+        fn set_actor_preference_profile(&mut self, source_memory_capacity: u32) {
+            let mut txn = new_txn(&mut self.world, 3);
+            txn.set_component_preference_profile(
+                self.actor,
+                PreferenceProfile {
+                    route_caution_weight: pm(0),
+                    source_trust_weight: pm(0),
+                    route_memory_capacity: 8,
+                    source_memory_capacity,
+                    memory_retention_ticks: 100,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        fn set_actor_source_reliability(&mut self, reliability: SourceReliability) {
+            let mut txn = new_txn(&mut self.world, 3);
+            txn.set_component_source_reliability(self.actor, reliability)
+                .unwrap();
+            commit_txn(txn);
+        }
+
         fn tick(
             &mut self,
             instance_id: ActionInstanceId,
@@ -2582,6 +2649,20 @@ mod tests {
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
+        harness.set_actor_preference_profile(1);
+        harness.set_actor_source_reliability(SourceReliability {
+            sources: BTreeMap::from([(
+                SourceKey {
+                    entity: entity(700),
+                    commodity: CommodityKind::Bread,
+                },
+                ReliabilityRecord {
+                    successful_acquisitions: 3,
+                    failed_attempts: 0,
+                    last_attempt_tick: Tick(1),
+                },
+            )]),
+        });
         let (instance_id, mut active) = harness.start_with_active();
 
         let outcome = tick_action(
@@ -2636,6 +2717,22 @@ mod tests {
 
         verify_live_lot_conservation(&harness.world, CommodityKind::Coin, 1).unwrap();
         verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 1).unwrap();
+        let reliability = harness
+            .world
+            .get_component_source_reliability(harness.actor)
+            .unwrap();
+        assert_eq!(reliability.sources.len(), 1);
+        assert_eq!(
+            reliability.sources.get(&SourceKey {
+                entity: harness.counterparty,
+                commodity: CommodityKind::Bread,
+            }),
+            Some(&ReliabilityRecord {
+                successful_acquisitions: 1,
+                failed_attempts: 0,
+                last_attempt_tick: Tick(4),
+            })
+        );
     }
 
     #[test]
@@ -2744,6 +2841,22 @@ mod tests {
             obs.reason == DemandObservationReason::WantedToSellButNoBuyer
                 && obs.counterparty == Some(harness.actor)
         }));
+        assert_eq!(
+            harness
+                .world
+                .get_component_source_reliability(harness.actor)
+                .unwrap()
+                .sources
+                .get(&SourceKey {
+                    entity: harness.counterparty,
+                    commodity: CommodityKind::Bread,
+                }),
+            Some(&ReliabilityRecord {
+                successful_acquisitions: 0,
+                failed_attempts: 1,
+                last_attempt_tick: Tick(6),
+            })
+        );
     }
 
     #[test]
@@ -2933,6 +3046,49 @@ mod tests {
 
         assert!(matches!(outcome, TickOutcome::Aborted { .. }));
         assert_eq!(harness.log.events_by_tag(EventTag::ActionAborted).len(), 1);
+        assert!(
+            harness
+                .world
+                .get_component_source_reliability(harness.actor)
+                .is_none(),
+            "external trade abort should not create source reliability history"
+        );
+    }
+
+    #[test]
+    fn explicit_external_trade_abort_does_not_update_source_reliability() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let (instance_id, mut active) = harness.start_with_active();
+
+        abort_action(
+            instance_id,
+            &harness.defs,
+            &harness.handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut harness.world,
+                event_log: &mut harness.log,
+                rng: &mut harness.rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
+            ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert!(
+            harness
+                .world
+                .get_component_source_reliability(harness.actor)
+                .is_none(),
+            "explicit external trade abort should not create source reliability history"
+        );
     }
 
     #[test]

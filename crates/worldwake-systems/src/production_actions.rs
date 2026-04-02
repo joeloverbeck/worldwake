@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits,
-    ProductionOutputOwner, Quantity, VisibilitySpec, WorkstationMarker, World, WorldTxn,
+    ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec, WorkstationMarker, World,
+    WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -9,6 +10,9 @@ use worldwake_sim::{
     CommitOutcome, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
     HarvestActionPayload, Interruptibility, Precondition, RecipeDefinition, RecipeRegistry,
     ReservationReq, TargetSpec,
+};
+use crate::experience_recording::{
+    record_failed_source_attempt, record_successful_source_acquisition,
 };
 
 pub fn register_harvest_actions(
@@ -18,6 +22,7 @@ pub fn register_harvest_actions(
 ) -> Vec<ActionDefId> {
     let handler = handlers.register(
         ActionHandler::new(start_harvest, tick_harvest, commit_harvest, abort_harvest)
+            .with_start_failure(record_harvest_start_failure)
             .with_authoritative_payload_validator(validate_exclusive_facility_grant),
     );
 
@@ -598,6 +603,12 @@ fn commit_harvest(
         )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
+    record_successful_source_acquisition(
+        txn,
+        instance.actor,
+        harvest_source_key(payload, workstation),
+        txn.tick(),
+    )?;
     Ok(CommitOutcome::empty())
 }
 
@@ -648,6 +659,75 @@ fn commit_craft(
     Ok(CommitOutcome::empty())
 }
 
+fn harvest_source_key(payload: &HarvestActionPayload, workstation: EntityId) -> SourceKey {
+    SourceKey {
+        entity: workstation,
+        commodity: payload.output_commodity,
+    }
+}
+
+fn harvest_source_failed_intrinsically(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+    payload: &HarvestActionPayload,
+    error: &ActionError,
+) -> bool {
+    match error {
+        ActionError::PreconditionFailed(_) | ActionError::InvalidTarget(_) => {}
+        ActionError::ReservationUnavailable(_)
+        | ActionError::ConstraintFailed(_)
+        | ActionError::AbortRequested(_)
+        | ActionError::InternalError(_)
+        | ActionError::UnknownActionInstance(_)
+        | ActionError::UnknownActionDef(_)
+        | ActionError::UnknownActionHandler(_)
+        | ActionError::InvalidActionStatus { .. }
+        | ActionError::InterruptBlocked { .. } => return false,
+    }
+
+    let actor_place = txn.effective_place(actor);
+    let workstation_place = txn.effective_place(workstation);
+    if workstation_place.is_none() {
+        return true;
+    }
+    if actor_place != workstation_place {
+        return false;
+    }
+    if txn.get_component_workstation_marker(workstation)
+        != Some(&WorkstationMarker(payload.required_workstation_tag))
+    {
+        return false;
+    }
+    let Some(source) = txn.get_component_resource_source(workstation) else {
+        return true;
+    };
+    source.commodity != payload.output_commodity || source.available_quantity < payload.output_quantity
+}
+
+#[allow(clippy::too_many_arguments, clippy::unnecessary_wraps)]
+fn record_harvest_start_failure(
+    _def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    error: &ActionError,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let Some(payload) = payload.as_harvest() else {
+        return Ok(());
+    };
+    let Some(workstation) = targets.first().copied() else {
+        return Ok(());
+    };
+    if harvest_source_failed_intrinsically(txn, actor, workstation, payload, error) {
+        record_failed_source_attempt(txn, actor, harvest_source_key(payload, workstation), txn.tick())?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn abort_harvest(
     _def: &ActionDef,
@@ -658,6 +738,8 @@ fn abort_harvest(
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    // External interruptions do not penalize source reliability. The source
+    // did not fail; the actor was interrupted.
     Ok(())
 }
 
@@ -685,14 +767,15 @@ mod tests {
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
         EntityId, EventId, EventLog, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
         GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
-        Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, RelationDelta,
-        RelationKind, RelationValue, ResourceSource, Seed, StateDelta, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        Permille, PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
+        Seed, SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, DeterministicRng, PerAgentBeliefView, RecipeRegistry,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, DeterministicRng, ExternalAbortReason, PerAgentBeliefView, RecipeRegistry,
         SystemExecutionContext, SystemId, TickOutcome, TradeActionPayload,
     };
 
@@ -822,6 +905,28 @@ mod tests {
         let mut txn = new_txn(world, 2);
         txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([recipe_id]))
             .unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_preference_profile(world: &mut World, actor: EntityId, source_memory_capacity: u32) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_preference_profile(
+            actor,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(0),
+                route_memory_capacity: 8,
+                source_memory_capacity,
+                memory_retention_ticks: 100,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_source_reliability(world: &mut World, actor: EntityId, reliability: SourceReliability) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_source_reliability(actor, reliability).unwrap();
         commit_txn(txn);
     }
 
@@ -1234,6 +1339,188 @@ mod tests {
         let record = event_log.get(EventId(event_log.len() as u64 - 1)).unwrap();
         assert!(record.tags().contains(&EventTag::ActionCommitted));
         assert!(record.tags().contains(&EventTag::WorldMutation));
+    }
+
+    #[test]
+    fn harvest_commit_records_successful_source_reliability_and_enforces_capacity() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        set_preference_profile(&mut world, actor, 1);
+        set_source_reliability(
+            &mut world,
+            actor,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: EntityId {
+                            slot: 400,
+                            generation: 1,
+                        },
+                        commodity: CommodityKind::Apple,
+                    },
+                    ReliabilityRecord {
+                        successful_acquisitions: 7,
+                        failed_attempts: 0,
+                        last_attempt_tick: Tick(1),
+                    },
+                )]),
+            },
+        );
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x82);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            &mut active,
+            11,
+        );
+
+        let reliability = world.get_component_source_reliability(actor).unwrap();
+        assert_eq!(reliability.sources.len(), 1);
+        assert_eq!(
+            reliability.sources.get(&SourceKey {
+                entity: workstation,
+                commodity: CommodityKind::Apple,
+            }),
+            Some(&ReliabilityRecord {
+                successful_acquisitions: 1,
+                failed_attempts: 0,
+                last_attempt_tick: Tick(12),
+            })
+        );
+    }
+
+    #[test]
+    fn harvest_start_failure_records_source_intrinsic_reliability_failure() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        {
+            let mut txn = new_txn(&mut world, 10);
+            txn.set_component_resource_source(
+                workstation,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(0),
+                    max_quantity: Quantity(5),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x83);
+        let mut next_id = ActionInstanceId(0);
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .expect_err("depleted harvest source should fail on authoritative start");
+
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+        assert_eq!(
+            world.get_component_source_reliability(actor).unwrap().sources.get(&SourceKey {
+                entity: workstation,
+                commodity: CommodityKind::Apple,
+            }),
+            Some(&ReliabilityRecord {
+                successful_acquisitions: 0,
+                failed_attempts: 1,
+                last_attempt_tick: Tick(10),
+            })
+        );
+    }
+
+    #[test]
+    fn harvest_external_abort_does_not_update_source_reliability() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0x84);
+        let mut next_id = ActionInstanceId(0);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+            ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert!(
+            world.get_component_source_reliability(actor).is_none(),
+            "external harvest abort should not create source reliability history"
+        );
     }
 
     #[test]

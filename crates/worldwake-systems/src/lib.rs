@@ -9,6 +9,7 @@ pub mod bandit_camp_actions;
 pub mod combat;
 pub mod consult_record_actions;
 pub mod epistemic_actions;
+mod experience_recording;
 pub mod facility_queue;
 pub mod facility_queue_actions;
 mod inventory;

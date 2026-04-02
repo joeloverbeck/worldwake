@@ -158,6 +158,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 For AI, planner, golden, or start-failure work, prove behavior at the strongest available layer instead of relying on a weaker downstream proxy.
 
+When adding start-failure aftermath recording before action instantiation, check whether the surrounding start path normally abandons empty transactions. Preserve that contract so a new failure hook does not emit orphaned events, fake commits, or other empty-transaction side effects when it records nothing.
+
 When a ticket claims cross-layer valuation agreement, explicitly check whether the shared scorer is computing marginal value over the actor's current accessible stock, especially when the proof depends on current-vs-receipt or retain-vs-transfer snapshots.
 
 When a ticket changes whether an action should be available at all, include at least one focused proof that goes through real affordance enumeration rather than only constructing action instances directly.

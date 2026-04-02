@@ -109,6 +109,16 @@ pub type ActionAbortFn = for<'w> fn(
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<(), ActionError>;
+pub type ActionStartFailureFn = for<'w> fn(
+    &ActionDef,
+    EntityId,
+    &[EntityId],
+    &ActionPayload,
+    &crate::ActionExecutionContext<'_>,
+    &ActionError,
+    &mut DeterministicRng,
+    &mut WorldTxn<'w>,
+) -> Result<(), ActionError>;
 pub type AffordancePayloadFn =
     fn(&ActionDef, EntityId, &[EntityId], &dyn RuntimeBeliefView) -> Vec<ActionPayload>;
 pub type AffordanceTargetsFn =
@@ -130,6 +140,7 @@ pub struct ActionHandler {
     pub on_tick: ActionTickFn,
     pub on_commit: ActionCommitFn,
     pub on_abort: ActionAbortFn,
+    pub on_start_failure: ActionStartFailureFn,
     pub affordance_targets: AffordanceTargetsFn,
     pub uses_dynamic_affordance_targets: bool,
     pub affordance_payloads: AffordancePayloadFn,
@@ -151,6 +162,7 @@ impl ActionHandler {
             on_tick,
             on_commit,
             on_abort,
+            on_start_failure: no_start_failure,
             affordance_targets: no_affordance_targets,
             uses_dynamic_affordance_targets: false,
             affordance_payloads: no_affordance_payloads,
@@ -197,6 +209,12 @@ impl ActionHandler {
         self.authoritative_payload_is_valid = authoritative_payload_is_valid;
         self
     }
+
+    #[must_use]
+    pub const fn with_start_failure(mut self, on_start_failure: ActionStartFailureFn) -> Self {
+        self.on_start_failure = on_start_failure;
+        self
+    }
 }
 
 fn no_affordance_payloads(
@@ -224,6 +242,20 @@ fn no_payload_override_validator(
     _view: &dyn RuntimeBeliefView,
 ) -> bool {
     false
+}
+
+#[allow(clippy::too_many_arguments, clippy::unnecessary_wraps)]
+fn no_start_failure(
+    _def: &ActionDef,
+    _actor: EntityId,
+    _targets: &[EntityId],
+    _payload: &ActionPayload,
+    _context: &crate::ActionExecutionContext<'_>,
+    _error: &ActionError,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
