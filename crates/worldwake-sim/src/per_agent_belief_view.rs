@@ -12,10 +12,11 @@ use worldwake_core::{
     DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
     HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
     IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation,
-    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -866,6 +867,24 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_route_experience(agent).cloned())
+            .flatten()
+    }
+
+    fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_source_reliability(agent).cloned())
+            .flatten()
+    }
+
+    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_preference_profile(agent).copied())
+            .flatten()
+    }
+
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_patrol_profile(agent).cloned())
@@ -1388,7 +1407,10 @@ mod tests {
         TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
         WoundId,
-        test_utils::sample_commodity_valuation_profile,
+        test_utils::{
+            sample_commodity_valuation_profile, sample_preference_profile,
+            sample_route_experience, sample_source_reliability,
+        },
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1994,6 +2016,141 @@ mod tests {
 
         assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), None);
         assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), None);
+    }
+
+    #[test]
+    fn route_experience_returns_actor_experience_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let route_experience = sample_route_experience();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_route_experience(agent, route_experience.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::route_experience(&view, agent),
+            Some(route_experience.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::route_experience(&view, agent),
+            Some(route_experience)
+        );
+    }
+
+    #[test]
+    fn route_experience_returns_none_when_component_missing() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::route_experience(&view, agent), None);
+        assert_eq!(GoalBeliefView::route_experience(&view, agent), None);
+    }
+
+    #[test]
+    fn source_reliability_returns_actor_reliability_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let source_reliability = sample_source_reliability();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_source_reliability(agent, source_reliability.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::source_reliability(&view, agent),
+            Some(source_reliability.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::source_reliability(&view, agent),
+            Some(source_reliability)
+        );
+    }
+
+    #[test]
+    fn source_reliability_returns_none_when_component_missing() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::source_reliability(&view, agent), None);
+        assert_eq!(GoalBeliefView::source_reliability(&view, agent), None);
+    }
+
+    #[test]
+    fn preference_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = sample_preference_profile();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_preference_profile(agent, profile)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::preference_profile(&view, agent), Some(profile));
+        assert_eq!(GoalBeliefView::preference_profile(&view, agent), Some(profile));
+    }
+
+    #[test]
+    fn preference_profile_returns_none_when_component_missing() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::preference_profile(&view, agent), None);
+        assert_eq!(GoalBeliefView::preference_profile(&view, agent), None);
     }
 
     #[test]

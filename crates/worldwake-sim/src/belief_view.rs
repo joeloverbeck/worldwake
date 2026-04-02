@@ -10,11 +10,11 @@ use worldwake_core::{
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
-    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
-    WorkstationTag, Wound,
+    PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -233,6 +233,18 @@ pub trait GoalBeliefView {
     }
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
+    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+        let _ = agent;
+        None
+    }
+    fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
+        let _ = agent;
+        None
+    }
+    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
         let _ = agent;
         None
     }
@@ -484,6 +496,18 @@ pub trait RuntimeBeliefView {
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
+    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+        let _ = agent;
+        None
+    }
+    fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
+        let _ = agent;
+        None
+    }
+    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
         let _ = agent;
         None
     }
@@ -1132,6 +1156,27 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::CommodityValuationProfile> {
                 $crate::RuntimeBeliefView::commodity_valuation_profile(self, agent)
+            }
+
+            fn route_experience(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::RouteExperience> {
+                $crate::RuntimeBeliefView::route_experience(self, agent)
+            }
+
+            fn source_reliability(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::SourceReliability> {
+                $crate::RuntimeBeliefView::source_reliability(self, agent)
+            }
+
+            fn preference_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::PreferenceProfile> {
+                $crate::RuntimeBeliefView::preference_profile(self, agent)
             }
 
             fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {
