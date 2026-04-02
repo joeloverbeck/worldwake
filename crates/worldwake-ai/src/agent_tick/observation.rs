@@ -169,7 +169,6 @@ pub(super) fn refresh_runtime_for_read_phase(
         agent,
         phase.tick,
         phase.utility,
-        phase.recipe_registry,
         &dc,
     );
 

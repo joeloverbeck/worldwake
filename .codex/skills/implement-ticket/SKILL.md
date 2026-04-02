@@ -73,6 +73,12 @@ Separate:
 - blocked work that needs user direction
 - explicit out-of-scope work
 
+When a ticket inherits broader spec language than this specific slice can honestly prove, distinguish:
+- the end-state architecture claim the spec is aiming for
+- the narrower contract this ticket actually owns after reassessment
+
+Do not keep a later ticket's proof surface artificially broad just because the parent spec states the larger destination. Correct the ticket so its acceptance criteria match the boundary this slice can really deliver.
+
 If the ticket's requested invariant exposes a production contradiction, correct the scope first instead of pretending it is a tests-only change.
 
 For golden tickets, remove duplicate proof from scope unless the new scenario proves a materially different contract from the existing coverage.
@@ -132,6 +138,8 @@ Check that each focused selector actually matches the new or changed test names.
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 
 If stronger lawful behavior now reaches completion earlier than an older focused test assumed, recalibrate the test inputs to preserve the intended proof surface instead of weakening the implementation to preserve stale timing or valuation assumptions.
+
+If an attempted acceptance proof reveals a deeper shared-layer contradiction outside the ticket's corrected scope, do not silently pull that broader fix into the current ticket. Update the ticket's proof surface back to the owned boundary unless the broader change is already in scope or the user explicitly confirms the expansion.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 
