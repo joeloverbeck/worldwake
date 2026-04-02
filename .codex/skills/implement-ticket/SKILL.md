@@ -146,6 +146,8 @@ Check that each focused selector actually matches the new or changed test names.
 
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 
+When CI or clippy forces a bounded reshape of a shared function signature or parameter bundle during implementation, proactively sweep all production call sites, same-file test invocations, and public re-exports before the next verification pass. Do not rely on staggered compile fallout to discover the remaining invocation sites one by one.
+
 When a required verification tool or script invokes broader repo checks and exposes an adjacent blocker outside the ticket's main architecture change, distinguish:
 - ticket-owned fallout that the current ticket should absorb
 - toolchain or verification-gate fallout that only surfaced because the required check reached farther

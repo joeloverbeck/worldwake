@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [tickets/S39LIMSIDBEN-002.md](/home/joeloverbeck/projects/worldwake/tickets/S39LIMSIDBEN-002.md), [specs/S39-limited-side-benefit-plan-scoring.md](/home/joeloverbeck/projects/worldwake/specs/S39-limited-side-benefit-plan-scoring.md), [archive/specs/S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/archive/specs/S04-merchant-selling-market-presence.md)
+**Deps**: [archive/tickets/S39LIMSIDBEN-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S39LIMSIDBEN-002.md), [specs/S39-limited-side-benefit-plan-scoring.md](/home/joeloverbeck/projects/worldwake/specs/S39-limited-side-benefit-plan-scoring.md), [archive/specs/S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/archive/specs/S04-merchant-selling-market-presence.md)
 
 ## Problem
 

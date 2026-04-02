@@ -1,7 +1,7 @@
 use crate::{
     classify_frame_plan_relation, frame_switch_policy::compare_relation_aware_goal_switch,
-    goal_switching::GoalSwitchKind, AgentDecisionRuntime, FramePlanRelation, GoalKey,
-    GoalPriorityClass, PlannedPlan, RankedGoal,
+    goal_switching::GoalSwitchKind, side_benefit::build_plan_value, AgentDecisionRuntime,
+    FramePlanRelation, GoalKey, GoalPriorityClass, PlanValue, PlannedPlan, RankedGoal,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -13,14 +13,20 @@ pub struct SelectionCandidatePlan {
     pub found_plan: Option<PlannedPlan>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SelectionPolicy {
+    pub side_benefit_weight: Permille,
+    pub default_switch_margin: Permille,
+    pub frame_switch_margin: Permille,
+}
+
 pub fn select_best_plan(
     candidates: &[RankedGoal],
     plans: &[SelectionCandidatePlan],
     active_goal: Option<GoalKey>,
     current: &AgentDecisionRuntime,
     jc: Option<&IntentionFrame>,
-    default_switch_margin: Permille,
-    frame_switch_margin: Permille,
+    policy: SelectionPolicy,
 ) -> Option<PlannedPlan> {
     let candidate_scores = candidates
         .iter()
@@ -43,11 +49,21 @@ pub fn select_best_plan(
                 .get(&selection_plan.searched_opportunity)
                 .copied()?;
             debug_assert_eq!(plan.opportunity, selection_plan.searched_opportunity);
-            Some((priority_class, motive_score, plan.clone()))
+            Some((
+                priority_class,
+                motive_score,
+                build_plan_value(
+                    plan.clone(),
+                    priority_class,
+                    motive_score,
+                    candidates,
+                    policy.side_benefit_weight,
+                ),
+            ))
         })
         .collect::<Vec<_>>();
     available.sort_by(compare_ranked_plans);
-    let best_plan = available.first()?.2.clone();
+    let best_plan = available.first()?.2.plan.clone();
     let has_current_goal_plan = active_goal.is_some_and(|goal| {
         plans
             .iter()
@@ -63,7 +79,8 @@ pub fn select_best_plan(
         return Some(best_plan);
     };
 
-    for (challenger_class, challenger_motive, challenger_plan) in available {
+    for (challenger_class, challenger_motive, challenger_value) in available {
+        let challenger_plan = challenger_value.plan.clone();
         let relation = classify_frame_plan_relation(jc, &challenger_plan);
         if relation == FramePlanRelation::RefreshesFrame
             || challenger_plan.goal == current_plan.goal
@@ -78,8 +95,8 @@ pub fn select_best_plan(
                 challenger_class,
                 challenger_motive,
                 relation,
-                default_switch_margin,
-                frame_switch_margin,
+                policy.default_switch_margin,
+                policy.frame_switch_margin,
             ),
             Some(GoalSwitchKind::HigherPriorityGoal | GoalSwitchKind::SameClassMargin)
         ) {
@@ -95,25 +112,27 @@ pub fn select_best_plan(
 }
 
 fn compare_ranked_plans(
-    left: &(GoalPriorityClass, u32, PlannedPlan),
-    right: &(GoalPriorityClass, u32, PlannedPlan),
+    left: &(GoalPriorityClass, u32, PlanValue),
+    right: &(GoalPriorityClass, u32, PlanValue),
 ) -> Ordering {
     right
         .0
         .cmp(&left.0)
         .then_with(|| right.1.cmp(&left.1))
+        .then_with(|| right.2.total_value.cmp(&left.2.total_value))
         .then_with(|| {
             left.2
+                .plan
                 .total_estimated_ticks
-                .cmp(&right.2.total_estimated_ticks)
+                .cmp(&right.2.plan.total_estimated_ticks)
         })
-        .then_with(|| left.2.steps.cmp(&right.2.steps))
-        .then_with(|| left.2.goal.cmp(&right.2.goal))
+        .then_with(|| left.2.plan.steps.cmp(&right.2.plan.steps))
+        .then_with(|| left.2.plan.goal.cmp(&right.2.plan.goal))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{select_best_plan, SelectionCandidatePlan};
+    use super::{select_best_plan, SelectionCandidatePlan, SelectionPolicy};
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
@@ -206,6 +225,18 @@ mod tests {
         Permille::new(300).unwrap()
     }
 
+    fn side_benefit_weight() -> Permille {
+        Permille::new(100).unwrap()
+    }
+
+    fn selection_policy() -> SelectionPolicy {
+        SelectionPolicy {
+            side_benefit_weight: side_benefit_weight(),
+            default_switch_margin: default_switch_margin(),
+            frame_switch_margin: default_switch_margin(),
+        }
+    }
+
     fn selection_plan(goal: GoalKey, plan: Option<PlannedPlan>) -> SelectionCandidatePlan {
         SelectionCandidatePlan {
             searched_opportunity: opportunity(goal),
@@ -258,8 +289,7 @@ mod tests {
             None,
             &AgentDecisionRuntime::default(),
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -318,8 +348,7 @@ mod tests {
             None,
             &AgentDecisionRuntime::default(),
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -338,7 +367,7 @@ mod tests {
         });
         let current_plan = plan(current_goal, 1, 3);
         let challenger_plan = plan(challenger_goal, 2, 2);
-        let candidates = vec![
+        let candidates = [
             ranked(
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
@@ -373,8 +402,7 @@ mod tests {
             Some(current_goal),
             &runtime,
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -410,8 +438,7 @@ mod tests {
             None,
             &AgentDecisionRuntime::default(),
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
         let second = select_best_plan(
@@ -420,13 +447,218 @@ mod tests {
             None,
             &AgentDecisionRuntime::default(),
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
         assert_eq!(first, second);
         assert_eq!(first.goal, faster.goal);
+    }
+
+    #[test]
+    fn same_priority_and_primary_motive_can_break_tie_on_side_benefits() {
+        let market = entity(20);
+        let market_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let orchard_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let market_plan = plan(market_goal, 1, 3);
+        let orchard_plan = plan(orchard_goal, 2, 3);
+        let candidates = [
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                700,
+            ),
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                700,
+            ),
+            ranked(
+                worldwake_core::GoalKind::SellCommodity {
+                    commodity: CommodityKind::Apple,
+                },
+                GoalPriorityClass::Low,
+                400,
+            ),
+        ];
+        let plans = vec![
+            selection_plan(market_goal, Some(market_plan.clone())),
+            selection_plan(orchard_goal, Some(orchard_plan)),
+        ];
+
+        let selected = select_best_plan(
+            &[
+                candidates[0].clone(),
+                candidates[1].clone(),
+                RankedGoal {
+                    grounded: GroundedGoal {
+                        anchor: OpportunityAnchor::Place(market),
+                        key: candidates[2].grounded.key,
+                        evidence_entities: BTreeSet::new(),
+                        evidence_places: BTreeSet::new(),
+                    },
+                    ..candidates[2].clone()
+                },
+            ],
+            &plans,
+            None,
+            &AgentDecisionRuntime::default(),
+            None,
+            selection_policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.goal, market_goal);
+    }
+
+    #[test]
+    fn side_benefits_do_not_override_higher_priority_class() {
+        let market = entity(30);
+        let orchard = entity(31);
+        let high_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        let lower_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let candidates = vec![
+            ranked(
+                worldwake_core::GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                GoalPriorityClass::Critical,
+                200,
+            ),
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                200,
+            ),
+            RankedGoal {
+                grounded: GroundedGoal {
+                    anchor: OpportunityAnchor::Place(market),
+                    key: GoalKey::from(worldwake_core::GoalKind::Patrol { place: market }),
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::Low,
+                motive_score: 2_000,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            },
+        ];
+        let plans = vec![
+            selection_plan(high_goal, Some(plan(high_goal, 3, 4))),
+            selection_plan(lower_goal, Some(plan(lower_goal, 4, 4))),
+        ];
+
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            None,
+            &AgentDecisionRuntime::default(),
+            None,
+            SelectionPolicy {
+                side_benefit_weight: Permille::new(500).unwrap(),
+                ..selection_policy()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(selected.goal, high_goal);
+        assert_ne!(selected.goal, GoalKey::from(worldwake_core::GoalKind::Patrol { place: orchard }));
+    }
+
+    #[test]
+    fn same_class_goal_switch_uses_primary_motive_not_total_value() {
+        let market = entity(40);
+        let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let challenger_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let current_plan = plan(current_goal, 5, 3);
+        let challenger_plan = plan(challenger_goal, 6, 3);
+        let candidates = vec![
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_000,
+            ),
+            ranked(
+                worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                1_000,
+            ),
+            RankedGoal {
+                grounded: GroundedGoal {
+                    anchor: OpportunityAnchor::Place(market),
+                    key: GoalKey::from(worldwake_core::GoalKind::SellCommodity {
+                        commodity: CommodityKind::Apple,
+                    }),
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::Low,
+                motive_score: 800,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            },
+        ];
+        let plans = vec![
+            selection_plan(current_goal, Some(current_plan.clone())),
+            selection_plan(challenger_goal, Some(challenger_plan)),
+        ];
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(current_plan),
+            dirty: crate::DirtySet::default(),
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            Some(current_goal),
+            &runtime,
+            None,
+            SelectionPolicy {
+                side_benefit_weight: Permille::new(500).unwrap(),
+                ..selection_policy()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(selected.goal, current_goal);
     }
 
     #[test]
@@ -484,8 +716,7 @@ mod tests {
             Some(goal),
             &runtime,
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -528,8 +759,7 @@ mod tests {
             Some(eat_goal),
             &runtime,
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -569,8 +799,7 @@ mod tests {
             Some(eat_goal),
             &runtime,
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -606,8 +835,7 @@ mod tests {
             Some(eat_goal),
             &runtime,
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -677,8 +905,10 @@ mod tests {
             Some(current_goal),
             &runtime,
             jc.as_ref(),
-            default_switch_margin(),
-            Permille::new(400).unwrap(),
+            SelectionPolicy {
+                frame_switch_margin: Permille::new(400).unwrap(),
+                ..selection_policy()
+            },
         )
         .unwrap();
         let permissive = select_best_plan(
@@ -687,8 +917,10 @@ mod tests {
             Some(current_goal),
             &runtime,
             jc.as_ref(),
-            default_switch_margin(),
-            Permille::new(300).unwrap(),
+            SelectionPolicy {
+                frame_switch_margin: Permille::new(300).unwrap(),
+                ..selection_policy()
+            },
         )
         .unwrap();
 
@@ -741,8 +973,7 @@ mod tests {
             Some(current_goal),
             &runtime,
             None,
-            default_switch_margin(),
-            default_switch_margin(),
+            selection_policy(),
         )
         .unwrap();
 
@@ -849,8 +1080,10 @@ mod tests {
             Some(committed_goal),
             &runtime,
             jc.as_ref(),
-            default_switch_margin(),
-            route_switch_margin(),
+            SelectionPolicy {
+                frame_switch_margin: route_switch_margin(),
+                ..selection_policy()
+            },
         )
         .unwrap();
 

@@ -651,6 +651,7 @@ fn process_agent(
                 &blocked_memory,
                 default_switch_margin,
                 frame_switch_margin,
+                utility.side_benefit_weight,
                 tick,
                 budget,
                 semantics_table,

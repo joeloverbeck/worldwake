@@ -26,6 +26,7 @@ use crate::knowledge_path::{
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::ranking::RankedGoalComparison;
+use crate::side_benefit::SideBenefit;
 use crate::ExhaustionRetryState;
 // ── Frame Transition Trace ──────────────────────────────────────
 
@@ -920,6 +921,29 @@ pub struct SelectedPlanTrace {
     /// Compact summary of the winning fresh search when this selected plan came
     /// from `SearchSelection`.
     pub search_provenance: Option<SelectedPlanSearchProvenance>,
+    /// Primary motive used for class/switch-margin comparisons.
+    pub primary_motive: u32,
+    /// Post-search bounded total including recognized side-benefits.
+    pub total_value: u32,
+    /// Secondary goals recognized along the selected plan's path.
+    pub side_benefits: Vec<SideBenefitTrace>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SideBenefitTrace {
+    pub goal_key: GoalKey,
+    pub at_place: EntityId,
+    pub estimated_value: u32,
+}
+
+impl From<&SideBenefit> for SideBenefitTrace {
+    fn from(value: &SideBenefit) -> Self {
+        Self {
+            goal_key: value.goal_key,
+            at_place: value.at_place,
+            estimated_value: value.estimated_value,
+        }
+    }
 }
 
 /// Compact planner-owned provenance for the selected fresh search result.
@@ -1681,10 +1705,13 @@ fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
         format_selected_plan_search_provenance,
     );
     format!(
-        "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}, search={search}]",
+        "{:?}[steps={}, next_index={:?}, next_step={next_step}, path={step_kinds}, primary={}, total={}, side_benefits={}, search={search}]",
         selected_plan.terminal_kind,
         selected_plan.steps.len(),
         selected_plan.next_step_index,
+        selected_plan.primary_motive,
+        selected_plan.total_value,
+        selected_plan.side_benefits.len(),
     )
 }
 
@@ -2855,6 +2882,15 @@ mod tests {
                             }],
                         }),
                     }),
+                    primary_motive: 600,
+                    total_value: 660,
+                    side_benefits: vec![SideBenefitTrace {
+                        goal_key: GoalKey::new(GoalKind::SellCommodity {
+                            commodity: CommodityKind::Apple,
+                        }),
+                        at_place: entity(12),
+                        estimated_value: 60,
+                    }],
                 }),
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
                 goal_switch: None,
@@ -2882,6 +2918,9 @@ mod tests {
         assert!(summary.contains("SearchSelection"));
         assert!(summary.contains("GoalSatisfied"));
         assert!(summary.contains("Sleep]") || summary.contains("path=Sleep"));
+        assert!(summary.contains("primary=600"));
+        assert!(summary.contains("total=660"));
+        assert!(summary.contains("side_benefits=1"));
         assert!(summary.contains("expansions=3"));
         assert!(summary.contains("root_remaining=7"));
         assert!(summary.contains("selected_root_travel=EntityId"));

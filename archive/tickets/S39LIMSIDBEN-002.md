@@ -1,6 +1,6 @@
 # S39LIMSIDBEN-002: Integrate side-benefits into plan selection and traces
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — AI plan-selection scoring, decision-trace surfaces, and selection call-site wiring
@@ -88,3 +88,25 @@ Propagate the new selection parameter and trace fields through [`agent_tick/plan
 1. `cargo test -p worldwake-ai plan_selection::tests::selection_prefers_higher_priority_class_before_cost -- --exact --nocapture`
 2. `cargo test -p worldwake-ai decision_trace -- --nocapture`
 3. `cargo test -p worldwake-ai`
+
+## Outcome
+
+Completed: 2026-04-03
+
+- Integrated side-benefit-aware `PlanValue` scoring into [`select_best_plan()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/plan_selection.rs) while keeping priority class and primary motive as the canonical switch/retention drivers.
+- Introduced [`SelectionPolicy`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/plan_selection.rs) to carry `side_benefit_weight` and switch margins through the live selection boundary without leaving an over-wide shared function signature.
+- Extended selected-plan trace summaries in [`decision_trace.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_trace.rs) and [`agent_tick/planning.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs) to expose `primary_motive`, `total_value`, and concrete side-benefit provenance for the winning branch.
+- Updated AI call sites and direct test constructors in [`agent_tick/mod.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/mod.rs), [`agent_tick/tests.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/tests.rs), and [`lib.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/lib.rs) so the new selection and trace surfaces are wired coherently.
+
+Deviations from original plan:
+
+- [`goal_model.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/goal_model.rs) did not need changes. The live fallout stayed within plan selection, planning summaries, trace types, and AI call sites.
+- CI-matching clippy surfaced a shared-signature cleanup during implementation, so the final handoff uses `SelectionPolicy` rather than threading three separate selection parameters directly through `select_best_plan()`.
+
+Verification results:
+
+- `cargo test -p worldwake-ai plan_selection -- --nocapture`
+- `cargo test -p worldwake-ai decision_trace -- --nocapture`
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
