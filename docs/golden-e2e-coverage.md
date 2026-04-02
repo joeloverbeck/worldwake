@@ -20,11 +20,11 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 ## Pending Backlog Summary
 
-No active golden-gap backlog items at present.
+1. **S48 Learned source reliability reroutes later acquisition after real failure** — [specs/S48-golden-gaps-S38.md](../specs/S48-golden-gaps-S38.md). The suite now fully covers S38 learned route memory (Scenarios 91-93), but it still lacks an end-to-end source-reliability chain showing that a real source-intrinsic acquisition failure records durable `SourceReliability` and changes the agent's later source choice when a lawful sibling source exists.
 
 ### Recommended Implementation Order
 
-- None.
+- `S48` — closes the remaining S38 source-reliability golden gap.
 
 ---
 

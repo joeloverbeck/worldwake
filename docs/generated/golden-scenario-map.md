@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 110
-- Files contributing scenario metadata: 18
-- Tests associated with scenario blocks: 248
+- Scenario blocks with explicit metadata: 113
+- Files contributing scenario metadata: 19
+- Tests associated with scenario blocks: 254
 
 ## Scenario Inventory
 
@@ -56,6 +56,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6385` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
 | `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6634` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
 | `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7193` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
+| `91` | Hostile Completed Travel Reweights the Next Route Choice | `golden_experience_preferences.rs:519` | `golden_hostile_completed_travel_flips_next_route_choice` | `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically` |
+| `92` | Combat-Aborted Travel Still Creates Hostile Route Memory | `golden_experience_preferences.rs:553` | `golden_combat_aborted_travel_flips_next_route_choice` | `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically` |
+| `93` | Preference Profiles Create Route Diversity From the Same Memory | `golden_experience_preferences.rs:584` | `golden_preference_profile_diversifies_route_selection` | `golden_preference_profile_diversifies_route_selection_replays_deterministically` |
 | `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:88` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
 | `27` | Controlled Agent Death | `golden_integration.rs:1007` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
 | `28` | Pursuit Across Information Boundary | `golden_integration.rs:1273` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
@@ -758,6 +761,51 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Primary tests: `golden_dual_discovery_converges_without_double_accusation`
 - Replay tests: `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 - All tests: `golden_dual_discovery_converges_without_double_accusation`, `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
+
+### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
+
+- Source: `golden_experience_preferences.rs:519`
+- Systems: Travel, learned route experience, belief view, AI planning
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: S38 Market, S38 Dangerous Road, S38 Safe Route, S38 Orchard
+- Primary tests: `golden_hostile_completed_travel_flips_next_route_choice`
+- Replay tests: `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically`
+- All tests: `golden_hostile_completed_travel_flips_next_route_choice`, `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically`
+
+**Setup**: A hungry traveler first traverses the shorter road under human control.
+
+**Proves**: 1. Hostile completed travel records `RouteExperience`. 2. The recorded hostile edge is read back through the belief-facing travel cost surface. 3. The next apple-acquisition plan flips from the short road to the longer safe route.
+
+### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
+
+- Source: `golden_experience_preferences.rs:553`
+- Systems: Travel, interrupt/abort, learned route experience, AI planning
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: S38 Market, S38 Dangerous Road, S38 Safe Route, S38 Orchard
+- Primary tests: `golden_combat_aborted_travel_flips_next_route_choice`
+- Replay tests: `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
+- All tests: `golden_combat_aborted_travel_flips_next_route_choice`, `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
+
+**Setup**: Same topology and motive, but the dangerous-road travel is interrupted
+
+**Proves**: 1. Combat-aborted travel still records hostile route experience. 2. Failure leaves durable preference aftermath. 3. The next planned apple journey still flips to the safer route.
+
+### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
+
+- Source: `golden_experience_preferences.rs:584`
+- Systems: learned route experience, belief view, AI planning
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: S38 Market, S38 Dangerous Road, S38 Safe Route, S38 Orchard
+- Primary tests: `golden_preference_profile_diversifies_route_selection`
+- Replay tests: `golden_preference_profile_diversifies_route_selection_replays_deterministically`
+- All tests: `golden_preference_profile_diversifies_route_selection`, `golden_preference_profile_diversifies_route_selection_replays_deterministically`
+
+**Setup**: Two equally hungry agents share the same topology, source beliefs, and
+
+**Proves**: 1. The same recorded route history can lead to different travel choices. 2. `PreferenceProfile` acts as a tie-breaking cost influence rather than a suppression gate.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 

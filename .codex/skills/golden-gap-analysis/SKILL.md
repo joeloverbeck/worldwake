@@ -90,6 +90,8 @@ If a candidate overlaps an existing or rejected scenario in the same meaningful 
 
 Also reject a candidate when a recently completed ticket has already resolved the underlying contradiction at a stronger non-golden proof surface, so the remaining scenario would no longer represent a meaningful golden gap.
 
+Do not over-apply that rule. Lower-layer proof only closes a candidate when it already owns the meaningful contract. If the completed spec still promises a broader cross-system emergence and that emergence is not yet shown in the live golden suite, the candidate may remain a valid golden gap even when focused tests are strong.
+
 ### 7. Check FOUNDATIONS alignment
 
 For each surviving candidate, verify it aligns with [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).

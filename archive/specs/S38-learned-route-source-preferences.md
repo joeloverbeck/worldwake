@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # S38: Learned Route and Source Preferences
 
 ## Summary
@@ -315,3 +317,10 @@ All three components serialize/deserialize with the world snapshot. Post-load pr
 6. Agents without `PreferenceProfile` behave identically to pre-spec behavior.
 7. Memory retention and capacity eviction (binary, no gradual decay) prevent unbounded growth.
 8. Travel abort due to combat records hostile encounter (P10). Harvest/trade abort from external interruption does not penalize source reliability.
+
+## Outcome
+
+- **Completion date**: 2026-04-02
+- **What changed**: Implemented the full learned-preference substrate across core, sim, systems, and AI. `RouteExperience`, `SourceReliability`, and `PreferenceProfile` are now authoritative agent components; belief views expose the new self-authoritative reads; travel, harvest, and trade record learned route/source experience from real outcomes; route danger adjusts travel-cost estimation; source reliability discounts acquisition/restock ranking; and `golden_experience_preferences.rs` now proves the end-to-end route-memory emergence chain with deterministic replay.
+- **Deviations from original plan**: The main runtime work was broader than the original draft in two places. Travel learning required widening the action callback boundary so commit/abort handlers could lawfully read authoritative event history, and harvest source-intrinsic `StartFailed` learning required a mixed-layer start-failure aftermath path rather than a systems-only implementation. Post-implementation golden-gap analysis also identified one remaining follow-up spec, [S48-golden-gaps-S38.md](/home/joeloverbeck/projects/worldwake/specs/S48-golden-gaps-S38.md), for the still-missing end-to-end source-reliability reroute golden.
+- **Verification**: Focused `worldwake-core`, `worldwake-sim`, `worldwake-systems`, and `worldwake-ai` tests passed across the S38 ticket sequence, including save/load round-trip coverage, route/source learning unit coverage, ranking/trace coverage, and `golden_experience_preferences`. Broad verification also passed repeatedly with `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and a successful golden inventory refresh via `python3 scripts/golden_inventory.py --write --check-docs`.

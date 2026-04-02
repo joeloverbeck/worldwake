@@ -1,6 +1,6 @@
 # S38LRNPREF-008: Golden tests — experience-driven route and source preferences
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -101,3 +101,25 @@ For each golden test, verify that replaying with the same seed produces identica
 1. `cargo test -p worldwake-ai golden_experience`
 2. `cargo test -p worldwake-ai` (full AI suite including all existing golden tests)
 3. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-02
+
+What changed:
+- Added [golden_experience_preferences.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_experience_preferences.rs) with three new S38 golden scenarios:
+  - hostile completed travel records personal route danger and flips the next planned route to the safer alternative
+  - combat-aborted travel still records hostile route experience and flips the next planned route
+  - two agents with the same hostile route memory but different `PreferenceProfile.route_caution_weight` values choose different first travel legs
+- Added deterministic replay companions for all three scenarios.
+- Kept the ticket as a golden-only slice after reassessment confirmed the existing `golden_t22` coverage was belief-driven route avoidance after a `tell`, not personal `RouteExperience`/`PreferenceProfile` learning.
+
+Deviations from original plan:
+- The hostile completed-travel scenario proves durable `RouteExperience` aftermath through semantic record assertions rather than pinning the stored `last_travel_tick` to exact scheduler equality, because exact tick identity was not the owned contract.
+- The new golden focuses on route-learning coverage only. Source-reliability goldens remain out of scope as planned.
+
+Verification results:
+- `cargo test -p worldwake-ai --test golden_experience_preferences -- --nocapture`
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

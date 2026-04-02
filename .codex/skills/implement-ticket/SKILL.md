@@ -146,6 +146,8 @@ If you change code after a broader verification pass, rerun the narrowest affect
 
 If stronger lawful behavior now reaches completion earlier than an older focused test assumed, recalibrate the test inputs to preserve the intended proof surface instead of weakening the implementation to preserve stale timing or valuation assumptions.
 
+When a golden proves durable learned-state aftermath such as memory records, counters, or timestamps, assert the semantic contract unless exact tick identity is itself the owned invariant. If only ordering or recency matters, prove that boundary directly instead of pinning the record to `current_tick`.
+
 If an attempted acceptance proof reveals a deeper shared-layer contradiction outside the ticket's corrected scope, do not silently pull that broader fix into the current ticket. Update the ticket's proof surface back to the owned boundary unless the broader change is already in scope or the user explicitly confirms the expansion.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:

@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 19
-- Files contributing `golden_*` tests: 19
-- Total `golden_*` tests: 263
+- Golden test files: 20
+- Files contributing `golden_*` tests: 20
+- Total `golden_*` tests: 269
 
 ## Per-File Inventory
 
@@ -19,6 +19,7 @@ Do not hand-edit it.
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 10 |
 | `golden_emergent.rs` | 47 |
+| `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 16 |
 | `golden_merchant_selling.rs` | 18 |
 | `golden_offices.rs` | 22 |
@@ -171,6 +172,15 @@ Do not hand-edit it.
 - `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
+
+### `golden_experience_preferences.rs`
+
+- `golden_hostile_completed_travel_flips_next_route_choice`
+- `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically`
+- `golden_combat_aborted_travel_flips_next_route_choice`
+- `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
+- `golden_preference_profile_diversifies_route_selection`
+- `golden_preference_profile_diversifies_route_selection_replays_deterministically`
 
 ### `golden_integration.rs`
 
