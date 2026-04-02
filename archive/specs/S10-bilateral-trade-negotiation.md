@@ -1,4 +1,4 @@
-**Status**: DRAFT
+**Status**: ✅ COMPLETED
 
 # S10: Bilateral Trade Negotiation
 
@@ -559,3 +559,26 @@ cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings 
 - Rubinstein, A. (1982). "Perfect Equilibrium in a Bargaining Model" — alternating offers protocol
 - Rosenschein, J. & Zlotkin, G. (1994). *Rules of Encounter* — monotonic concession protocol
 - Zeng, D. & Sycara, K. (1998). "Bayesian Learning in Negotiation" — rejection-driven belief updates
+
+## Outcome
+
+Completed: 2026-04-02
+
+What changed:
+- added the bilateral-trade type surface in `worldwake-core` and `worldwake-sim`: `TradeRole`, `DemandObservationReason::TradeAgreed`, `TradeDispositionProfile.rejection_escalation_rate`, and `ActionState::Trade`
+- implemented reservation pricing, opening-offer derivation, concession curves, urgency-modulated deadlines, and alternating-offer negotiation in `crates/worldwake-systems/src/trade_actions.rs`
+- rewired trade affordance generation to emit belief-driven variable-price openings and validate payload overrides against live coin-budget constraints
+- added the full end-to-end golden supply-chain proof and deterministic replay coverage in `crates/worldwake-ai/tests/golden_supply_chain.rs`
+
+Deviations from original plan:
+- the completed work did not require changes in `crates/worldwake-sim/src/trade_valuation.rs`; the shipped negotiation helpers remained self-contained in `trade_actions.rs`
+- the final full-chain golden needed local facility-belief seeding calibration so the merchant's returned stock could transition into sell-ready behavior under the live home-facility contract
+
+Verification results:
+- `cargo test -p worldwake-core -- trade --nocapture`
+- `cargo test -p worldwake-sim -- action_state --nocapture`
+- `cargo test -p worldwake-systems -- trade`
+- `cargo test -p worldwake-ai --test golden_supply_chain`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

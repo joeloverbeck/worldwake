@@ -6,8 +6,8 @@ Do not hand-edit it.
 ## Summary
 
 - Golden test files: 18
-- Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 258
+- Files contributing `golden_*` tests: 18
+- Total `golden_*` tests: 260
 
 ## Per-File Inventory
 
@@ -27,7 +27,7 @@ Do not hand-edit it.
 | `golden_resilience.rs` | 2 |
 | `golden_soak.rs` | 1 |
 | `golden_social.rs` | 14 |
-| `golden_supply_chain.rs` | 0 |
+| `golden_supply_chain.rs` | 2 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 9 |
 | `golden_travel_physiology.rs` | 12 |
@@ -305,7 +305,8 @@ Do not hand-edit it.
 
 ### `golden_supply_chain.rs`
 
-- No `golden_*` tests
+- `golden_full_supply_chain_negotiated_restock_to_consumption`
+- `golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically`
 
 ### `golden_t22_bandit_camp_destruction.rs`
 

@@ -20,14 +20,11 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 ## Pending Backlog Summary
 
-**S46: Patrol-Driven Crime Discovery Chain** (2 tests: main + replay) — Guard patrol drives travel to a crime scene where perception refresh detects missing goods via stale belief mismatch, triggering `InvestigateViolation` and `SuspectedTheft` evidence creation. Proves the cross-system emergence chain: Patrol + Travel + Perception + Crime/Justice + AI. See `specs/S46-golden-gaps-E19.md`.
-
-**S02c: Multi-Role Emergent Supply Chain** (3 tests: main + replay + conservation) — still blocked on `specs/S10-bilateral-trade-negotiation.md` for the full producer→merchant→consumer combined chain only. The craft-restock prerequisite segment is no longer a gap: `golden_supply_chain.rs` now covers both the harvest-restock segment and the prerequisite-aware craft-restock segment, while the ignored blocked full-chain cases remain the unresolved pricing/negotiation gap.
+No active golden-gap backlog items at present.
 
 ### Recommended Implementation Order
 
-1. S46 patrol-driven crime discovery chain (1 scenario + replay)
-2. S02c multi-role emergent supply chain
+- None.
 
 ---
 

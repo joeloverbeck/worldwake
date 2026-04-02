@@ -47,7 +47,7 @@ Use these lenses:
 - traceability gaps where expected debug surfaces were absent, weak, or misleading
 - edge cases or cross-system interactions that surfaced unexpectedly
 - documentation gaps or stale guidance
-- setup calibration problems in golden work: scenario parameters, topology, tick budgets, agent placement, and similar setup assumptions
+- setup calibration problems in golden work: scenario parameters, topology, tick budgets, agent placement, belief seeding or local-knowledge calibration, and similar setup assumptions
 
 Optionally note what worked on the first attempt, but keep that brief and only as context for the harder lessons.
 
@@ -76,6 +76,8 @@ If significant drift exists, capture it as:
 - **Ticket says**
 - **Implementation does**
 - **Section that should be updated**
+
+If significant drift existed at the start of implementation but was corrected before coding and the final ticket now matches the implementation, report that explicitly as pre-implementation drift that was already corrected rather than treating the drift check as simply empty.
 
 If no significant drift exists, say so and move on.
 

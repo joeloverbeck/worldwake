@@ -1,6 +1,6 @@
 # S10BILTRANEG-006: Golden supply chain tests
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -15,11 +15,13 @@ The full supply chain golden test (merchant restocks → consumer trades → con
 1. `golden_supply_chain.rs` at `crates/worldwake-ai/tests/golden_supply_chain.rs` exists (1622 lines). Contains helper functions `run_merchant_restock_with_traces` and `run_consumer_trade_with_traces` but no full supply chain test function.
 2. `PlanningBudget::default()` at `crates/worldwake-ai/src/budget.rs:20-37` has `max_node_expansions: 224`, `beam_width: 8`. The spec requires the test to pass with these defaults.
 3. `default_trade_disposition()` at `golden_supply_chain.rs:41-49` uses `initial_offer_bias: pm(500)`, `concession_rate: pm(100)`, `negotiation_round_ticks: nz(4)`, `demand_memory_retention_ticks: 48`, `market_presence_ticks: nz(30)`. After ticket 001, this must also include `rejection_escalation_rate`.
-4. `enterprise_trade_disposition()` at line ~51-56 overrides only `demand_memory_retention_ticks: 240`. The merchant uses this — with enterprise_weight: pm(900), the merchant will have a high seller reservation price, requiring the consumer to offer >1 coin.
-5. Golden tests require `PerceptionProfile` on agents that need to observe post-production output (CLAUDE.md). The existing segment tests already set this up correctly.
-6. `hash_world` and `hash_event_log` are used for deterministic replay verification (existing pattern in other golden tests).
-7. `verify_authoritative_conservation` and `verify_live_lot_conservation` are the conservation check functions used in existing golden tests.
-8. The test must validate: (a) merchant restocks from orchard, (b) consumer observes merchant's return, (c) consumer negotiates and trades at price > 1, (d) consumer eats to reduce hunger, (e) conservation holds throughout.
+4. The live merchant contract is facility-based, not place-based. Any new full-chain golden must create a real merchant facility and set `MerchandiseProfile.home_facility` to that facility entity, not to `GeneralStore` directly.
+5. `enterprise_trade_disposition()` at line ~51-56 overrides only `demand_memory_retention_ticks: 240`. The merchant uses this — with enterprise_weight: pm(900), the merchant should require a negotiated price > 1 coin in the full-chain scenario.
+6. Golden tests require `PerceptionProfile` on agents that need to observe post-production output. The existing restock helper already follows that pattern.
+7. `hash_world` and `hash_event_log` are used for deterministic replay verification (existing pattern in other golden tests).
+8. `verify_authoritative_conservation` and `verify_live_lot_conservation` are the conservation check functions used in existing golden tests.
+9. The file currently contains helper runners but no `#[test]` entry points. This ticket must add actual golden tests, not just more dormant helpers.
+10. The test must validate: (a) merchant restocks from orchard into home facility custody, (b) consumer observes merchant stock at the store, (c) consumer negotiates and trades at price > 1, (d) consumer eats to reduce hunger, (e) conservation holds throughout.
 
 ## Architecture Check
 
@@ -45,7 +47,7 @@ Write a `#[test]` function that:
    - Orchard place (with apple resource source)
    - General Store place (market)
    - Road connecting them
-   - Merchant agent at General Store with `enterprise_trade_disposition()`, `enterprise_weight: pm(900)`, `MerchandiseProfile` for apples, `PerceptionProfile`
+   - Merchant agent at General Store with `enterprise_trade_disposition()`, `enterprise_weight: pm(900)`, `PerceptionProfile`, and a real merchant facility whose entity id is stored in `MerchandiseProfile.home_facility`
    - Consumer agent at General Store with `default_trade_disposition()`, hunger need, coins, `PerceptionProfile`
    - Apple trees/resources at orchard
 
@@ -53,7 +55,7 @@ Write a `#[test]` function that:
 
 3. Asserts:
    - Merchant traveled to orchard and returned with apples (via decision traces)
-   - Consumer observed merchant's apples (via perception)
+   - Consumer observed merchant's apples at the store (via belief/perception or resulting local trade selection)
    - Consumer initiated trade with merchant
    - Trade completed at an agreed price (via `TradeAgreed` observation in consumer's demand memory, quantity > 1)
    - Consumer ate an apple (hunger decreased)
@@ -66,13 +68,20 @@ Write a `#[test]` function that:
 2. Compares `hash_world` and `hash_event_log` between runs.
 3. Asserts both are identical (deterministic replay).
 
-### 3. Verify existing segment tests still pass
+### 3. Correct the stale supply-chain setup to live merchant architecture
 
-The existing `run_merchant_restock_with_traces` and `run_consumer_trade_with_traces` helpers must continue to work. The segment trade test uses a merchant with low enterprise weight and surplus stock, so 1:1 trades should still be acceptable (the negotiation will converge to ~1 coin when the seller has low reservation). Verify this by running the existing test suite.
+- add or reuse a local helper to create a merchant facility in `golden_supply_chain.rs`
+- store that facility entity in `MerchandiseProfile.home_facility` for the full-chain merchant
+- update the stale file header comment so it no longer claims the end-to-end chain is still blocked once the new scenario lands
+
+### 4. Verify the existing helper runners still work as supporting coverage
+
+The existing `run_merchant_restock_with_traces` and `run_consumer_trade_with_traces` helpers should continue to represent valid segment coverage, but they should not be promoted into duplicate top-level goldens unless they prove a distinct contract from the new full-chain scenario.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/tests/golden_supply_chain.rs` (modify — add `test_full_supply_chain`, `test_full_supply_chain_replay`, update disposition helpers for `rejection_escalation_rate` if not already done in ticket 001)
+- `crates/worldwake-ai/tests/golden_supply_chain.rs` (modify — add a local merchant-facility helper or equivalent setup so the new scenario uses facility-based home-market identity)
 
 ## Out of Scope
 
@@ -87,9 +96,10 @@ The existing `run_merchant_restock_with_traces` and `run_consumer_trade_with_tra
 
 1. `test_full_supply_chain` passes with `PlanningBudget::default()` — consumer successfully trades with merchant at mutually acceptable price
 2. `test_full_supply_chain_replay` passes — deterministic replay preserved
-3. All existing golden tests pass unchanged: `cargo test -p worldwake-ai` — no regressions
-4. Conservation invariants hold throughout the full supply chain simulation
-5. Full suite: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
+3. The stale supply-chain file header no longer claims the full end-to-end chain is blocked on S10 once the scenario lands
+4. All existing golden tests pass unchanged: `cargo test -p worldwake-ai` — no regressions
+5. Conservation invariants hold throughout the full supply chain simulation
+6. Full suite: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Invariants
 
@@ -111,3 +121,24 @@ The existing `run_merchant_restock_with_traces` and `run_consumer_trade_with_tra
 2. `cargo test -p worldwake-ai --test golden_supply_chain` — all supply chain golden tests
 3. `cargo test -p worldwake-ai` — all AI golden tests (regression check)
 4. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+Completed: 2026-04-02
+
+What changed:
+- added a local facility helper in `crates/worldwake-ai/tests/golden_supply_chain.rs` so the full-chain merchant setup uses the live facility-based `MerchandiseProfile.home_facility` contract
+- added `Scenario 88` and its deterministic replay companion: `golden_full_supply_chain_negotiated_restock_to_consumption` and `golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically`
+- updated the stale file header in `golden_supply_chain.rs` so it no longer claims the full supply chain is still blocked on S10
+- proved the full merchant restock -> negotiated trade -> consumption chain under `PlanningBudget::default()` with conservation assertions and a `TradeAgreed` price check above one coin
+
+Deviations from original plan:
+- the critical scenario calibration was local belief seeding, not production code: the merchant needed direct local home-facility beliefs at `GeneralStore` so the restock return could transition into lawful sell-side behavior before the consumer trade
+- the existing segment runners remained as supporting helper coverage and were not promoted into duplicate top-level goldens
+
+Verification results:
+- `cargo test -p worldwake-ai --test golden_supply_chain -- golden_full_supply_chain_negotiated_restock_to_consumption --nocapture`
+- `cargo test -p worldwake-ai --test golden_supply_chain`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 //! Golden E2E tests for the multi-role supply chain (S02c).
 //!
-//! These tests exercise the supply chain in two proven segments:
+//! These tests exercise the supply chain in proven segments plus the full
+//! end-to-end merchant loop:
 //!
 //! 1. **Merchant restock cycle**: merchant travels to orchard, harvests apples,
 //!    returns to General Store with stock. Validates multi-hop travel + production
@@ -11,12 +12,10 @@
 //!    has apples, then eats to reduce hunger. Validates trade + consumption with
 //!    decision trace assertions.
 //!
-//! The full end-to-end chain (restock → trade → consumption in one simulation)
-//! is blocked on `specs/S10-bilateral-trade-negotiation.md`: the trade system
-//! lacks price negotiation, so the consumer's fixed 1-coin offer is rejected by
-//! the enterprise-focused merchant. S09 (A* heuristic + travel pruning) resolved
-//! the earlier plan search budget exhaustion; perception (E14) correctly updates
-//! beliefs. The remaining blocker is purely trade valuation mechanics.
+//! 3. **Full supply chain**: merchant restocks from Orchard Farm into home
+//!    facility custody, consumer discovers the returned stock, negotiates at a
+//!    lawful price, and consumes the acquired apple. Validates the complete
+//!    restock -> trade -> consumption chain under the live negotiation contract.
 
 mod golden_harness;
 
@@ -54,6 +53,20 @@ fn enterprise_trade_disposition() -> TradeDispositionProfile {
         demand_memory_retention_ticks: 240,
         ..default_trade_disposition()
     }
+}
+
+fn create_home_facility(
+    h: &mut GoldenHarness,
+    owner: worldwake_core::EntityId,
+    place: worldwake_core::EntityId,
+    tick: u64,
+) -> worldwake_core::EntityId {
+    let mut txn = new_txn(&mut h.world, tick);
+    let (facility, _stock_container, _display_container) = txn
+        .create_merchant_facility(place, owner, worldwake_core::LoadUnits(500), Some(worldwake_core::LoadUnits(300)))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+    facility
 }
 
 fn default_epistemic_profile() -> EpistemicDispositionProfile {
@@ -1619,4 +1632,307 @@ fn run_consumer_trade_with_traces(seed: Seed) -> (StateHash, StateHash) {
         hash_world(&h.world).unwrap(),
         hash_event_log(&h.event_log).unwrap(),
     )
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let mut h = GoldenHarness::new(seed);
+
+    let orchard_workstation = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    let merchant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            enterprise_weight: pm(900),
+            social_weight: pm(0),
+            care_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        general_store,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+    let home_facility = create_home_facility(&mut h, merchant, general_store, 0);
+
+    let consumer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Consumer",
+        general_store,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        consumer,
+        general_store,
+        CommodityKind::Coin,
+        Quantity(5),
+    );
+
+    let perception_profile = PerceptionProfile {
+        memory_capacity: 64,
+        memory_retention_ticks: 240,
+        observation_fidelity: pm(875),
+        confidence_policy: BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
+    };
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_perception_profile(merchant, perception_profile)
+            .unwrap();
+        txn.set_component_perception_profile(consumer, perception_profile)
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            merchant,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+                home_facility: Some(home_facility),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(merchant, enterprise_trade_disposition())
+            .unwrap();
+        txn.set_component_trade_disposition_profile(consumer, default_trade_disposition())
+            .unwrap();
+        txn.set_component_demand_memory(
+            merchant,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Apple,
+                    quantity: Quantity(2),
+                    place: general_store,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_actor_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        &[orchard_workstation],
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        consumer,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    h.driver = AgentTickDriver::new(PlanningBudget::default());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let initial_total_coins = total_authoritative_commodity_quantity(&h.world, CommodityKind::Coin);
+    let initial_authoritative_apples =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+
+    let initial_consumer_hunger = h.agent_hunger(consumer);
+    let mut merchant_left_home = false;
+    let mut merchant_harvested_apples = false;
+    let mut merchant_returned_home_after_harvest = false;
+    let mut consumer_started_trade = false;
+    let mut consumer_trade_agreed = false;
+    let mut consumer_hunger_decreased = false;
+
+    for _ in 0..500 {
+        h.step_once();
+
+        let authoritative_apples =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Apple);
+        let live_apples = total_live_lot_quantity(&h.world, CommodityKind::Apple);
+        let authoritative_coins =
+            total_authoritative_commodity_quantity(&h.world, CommodityKind::Coin);
+        let live_coins = total_live_lot_quantity(&h.world, CommodityKind::Coin);
+
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, authoritative_apples)
+            .unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Apple, live_apples).unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Coin, authoritative_coins)
+            .unwrap();
+        verify_live_lot_conservation(&h.world, CommodityKind::Coin, live_coins).unwrap();
+
+        assert_eq!(
+            authoritative_coins, initial_total_coins,
+            "coin conservation should hold across the full supply chain"
+        );
+        assert!(
+            authoritative_apples <= initial_authoritative_apples,
+            "authoritative apples should never increase during the full supply chain"
+        );
+
+        merchant_left_home |=
+            h.world.is_in_transit(merchant) || h.world.effective_place(merchant) != Some(general_store);
+        consumer_hunger_decreased |= h.agent_hunger(consumer) < initial_consumer_hunger;
+        consumer_trade_agreed |= h
+            .world
+            .get_component_demand_memory(consumer)
+            .is_some_and(|memory| {
+                memory.observations.iter().any(|obs| {
+                    obs.reason == DemandObservationReason::TradeAgreed
+                        && obs.commodity == CommodityKind::Apple
+                        && obs.quantity > Quantity(1)
+                        && obs.counterparty == Some(merchant)
+                })
+            });
+
+        let consumer_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for full supply chain")
+            .events_for(consumer);
+        let merchant_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for full supply chain")
+            .events_for(merchant);
+        merchant_harvested_apples |= merchant_events.iter().any(|event| {
+            event.action_name == "harvest:Harvest Apples"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+        merchant_returned_home_after_harvest |= merchant_harvested_apples
+            && h.world.effective_place(merchant) == Some(general_store);
+        consumer_started_trade |= consumer_events.iter().any(|event| {
+            event.action_name == "trade"
+                && matches!(event.kind, ActionTraceKind::Started { .. })
+        });
+
+        if merchant_left_home
+            && merchant_harvested_apples
+            && merchant_returned_home_after_harvest
+            && consumer_started_trade
+            && consumer_trade_agreed
+            && consumer_hunger_decreased
+        {
+            break;
+        }
+    }
+
+    assert!(
+        merchant_left_home,
+        "merchant should leave General Store to restock apples before the trade completes"
+    );
+    assert!(
+        merchant_harvested_apples,
+        "merchant should commit Harvest Apples before the full-chain trade completes"
+    );
+    assert!(
+        merchant_returned_home_after_harvest,
+        "merchant should return to General Store after harvesting apples and before the consumer completes the chain"
+    );
+    assert!(
+        consumer_started_trade,
+        "consumer should initiate trade after the merchant restock returns stock to the store"
+    );
+    assert!(
+        consumer_trade_agreed,
+        "consumer should record TradeAgreed for apples at a negotiated price greater than one coin"
+    );
+    assert!(
+        consumer_hunger_decreased,
+        "consumer hunger should decrease after consuming the traded apple"
+    );
+    assert!(!h.agent_is_dead(merchant), "merchant must stay alive");
+    assert!(!h.agent_is_dead(consumer), "consumer must stay alive");
+
+    let sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    let consumer_selected_acquire = sink.traces_for(consumer).into_iter().any(|trace| {
+        matches!(
+            &trace.outcome,
+            DecisionOutcome::Planning(planning)
+                if planning.selection.selected_goal().is_some_and(|goal| {
+                    matches!(
+                        goal.kind,
+                        GoalKind::AcquireCommodity {
+                            commodity: CommodityKind::Apple,
+                            ..
+                        }
+                    )
+                })
+        )
+    });
+    assert!(
+        consumer_selected_acquire,
+        "consumer should select AcquireCommodity(Apple) during the full supply chain scenario"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 88: Full Supply Chain Negotiated Restock To Consumption
+// ---------------------------------------------------------------------------
+//
+// Systems: Enterprise, Travel, Production, Trade, Needs, Conservation
+// GoalKinds: RestockCommodity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Production, Travel, Trade, Needs
+// Places: GeneralStore, OrchardFarm
+//
+// Setup: enterprise-focused merchant at GeneralStore with a real home facility,
+// remembered unmet apple demand, and zero stock. Hungry consumer at the same
+// store holds coins. Orchard Farm has an apple source.
+//
+// Proves: merchant restocks into home-facility custody, consumer then discovers
+// the returned stock, negotiates a lawful price greater than one coin, and eats
+// the acquired apple. Coin conservation and deterministic replay hold.
+
+#[test]
+fn golden_full_supply_chain_negotiated_restock_to_consumption() {
+    let _ = run_full_supply_chain(Seed([88; 32]));
+}
+
+#[test]
+fn golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically() {
+    let first = run_full_supply_chain(Seed([89; 32]));
+    let second = run_full_supply_chain(Seed([89; 32]));
+    assert_eq!(
+        first, second,
+        "full supply chain scenario should replay deterministically"
+    );
 }
