@@ -37,6 +37,7 @@ Read ALL of these files before any analysis:
 
 1. **The spec file** (from the argument) — read the entire file
 2. **`docs/FOUNDATIONS.md`** — architectural commandments; every spec must align with these principles
+3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain an FND-01 Section H analysis) — defines the required format and checklist points for P30 compliance
 
 Parse the spec's metadata: Status, Priority, Dependencies, Goals, Non-Goals, FOUNDATIONS.md Alignment table (if present), and all implementation sections.
 
@@ -63,6 +64,7 @@ For every reference extracted in Step 2, validate against the actual codebase:
 4. **Dependencies (specs/tickets)**: For each dependency, verify whether it lives in `specs/`, `archive/specs/`, `tickets/`, or `archive/tickets/`. Record the correct path. If a dependency is listed as incomplete but has since been implemented, note this.
 5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration. For types or enums the spec proposes to extend (new variants, new fields), check the existing derive macros and trait bounds. Record any constraints that new additions must satisfy (e.g., `Copy`, `Serialize`, `Ord`).
 6. **Downstream consumers**: For types or interfaces the spec proposes to modify, grep for all import sites and usage points. Record the blast radius — files that would need updating.
+7. **Upstream spec references**: Grep active specs in `specs/` for references to the target spec's deliverables (type names, component names, interfaces it introduces). Note any active specs that would be affected by proposed changes.
 
 For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation.
 
@@ -72,14 +74,14 @@ Do not present findings yet. Collect everything for Step 4.
 
 Review each section of the spec against `docs/FOUNDATIONS.md`:
 
-1. If the spec has a FOUNDATIONS.md Alignment table, verify each claimed alignment is accurate. Flag any principle the spec claims to satisfy but actually violates.
+1. If the spec has a FOUNDATIONS.md Alignment table, verify each claimed alignment is accurate. For each entry, verify the principle number matches the principle name in `docs/FOUNDATIONS.md` — misnumbered principles are a common error (e.g., citing P20 for "Agent Diversity" when the correct number is P22). Flag misnumbered principles as Issues. Flag any principle the spec claims to satisfy but actually violates.
 2. Identify any Foundation principle the spec does **not** address but should, given its scope. Pay particular attention to:
    - **Principle 1** (Maximal Emergence) — does the spec introduce authored sequences or magic triggers?
    - **Principle 7** (Locality) — does the spec have agents querying global state on behalf of a character?
    - **Principle 14** (World State Is Not Belief State) — does the spec let agents read authoritative world state directly?
    - **Principle 26** (Systems Interact Through State) — does the spec introduce cross-system direct calls instead of state-mediated interaction?
    - **Principle 28** (No Backward Compatibility) — does the spec leave compatibility shims or defer migration?
-   - **Principle 30** (Causal Hooks Declaration) — does the spec declare its causal hooks per the required 15-point checklist?
+   - **Principle 30** (Causal Hooks Declaration) — does the spec declare its causal hooks per the required checklist (14 unique points; items 14 and 15 in FOUNDATIONS.md are identical)?
 3. Record each alignment issue with the specific Foundation number and what conflicts.
 4. If the spec modifies action preconditions, `validate_*` functions, affordance generation (`enumerate_*_payloads`), or `can_exercise_control`, verify compliance with the Authoritative-to-AI Impact Rule checklist in CLAUDE.md. Check all 7 points: `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, payload revalidation (`with_payload_override_validator`), and golden test pass.
 
@@ -95,6 +97,8 @@ For each finding, record:
 - What the spec says (or omits)
 - What the codebase actually has (with file paths and line references)
 - The recommended change to the spec
+
+Optionally tag findings by severity: CRITICAL (blocks ticket decomposition), HIGH (should fix before tickets), MEDIUM (improves quality), LOW (nice to fix). This helps users prioritize when the finding list is long.
 
 ### Step 6: Present Findings
 
@@ -128,6 +132,8 @@ Present all findings to the user in a structured report:
 **Wait for user response.** Do not proceed to Step 7 until the user has:
 - Approved, rejected, or modified each finding
 - Answered all questions
+
+If the user delegates question resolution (e.g., "you decide based on FOUNDATIONS," "reassess and determine the best choice"), resolve each question by reasoning against the referenced constraint (typically `docs/FOUNDATIONS.md`). Present the resolution with justification for each question and wait for user confirmation before proceeding to Step 7.
 
 If the user's answers raise new questions or invalidate previous findings, present a follow-up round (same format, same question limit). Repeat until all findings are resolved.
 
