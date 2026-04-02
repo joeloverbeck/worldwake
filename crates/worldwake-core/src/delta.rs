@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, Container, DeadAt, DemandMemory, DeprivationExposure,
+    CombatStance, CommodityKind, CommodityValuationProfile, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExclusiveFacilityPolicy,
     FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
@@ -237,6 +237,7 @@ mod tests {
     use crate::{
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
+            sample_commodity_valuation_profile,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
@@ -323,6 +324,7 @@ mod tests {
                 fine_severity: Permille::new(450).unwrap(),
             }),
             ComponentValue::UtilityProfile(sample_utility_profile()),
+            ComponentValue::CommodityValuationProfile(sample_commodity_valuation_profile()),
             ComponentValue::PatrolRoute(PatrolRoute {
                 assigned_places: vec![entity(26), entity(27), entity(28)],
                 current_index: 1,
@@ -669,6 +671,7 @@ mod tests {
                 ComponentKind::TheftDispositionProfile,
                 ComponentKind::JusticeDispositionProfile,
                 ComponentKind::UtilityProfile,
+                ComponentKind::CommodityValuationProfile,
                 ComponentKind::PatrolRoute,
                 ComponentKind::PatrolProfile,
                 ComponentKind::OfficeData,

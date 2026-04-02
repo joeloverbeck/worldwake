@@ -33,6 +33,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
    - when affordance generation depends on self-authoritative profile reads, those profile prerequisites are present in both production code and representative AI/planner test harnesses
+   - for component-registration tickets, hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests that mirror the authoritative component set still match the live schema after the new entry lands
 4. Reassess against Worldwake's repo rules:
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
@@ -74,6 +75,13 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 For golden tickets, remove duplicate proof from scope unless the new scenario proves a materially different contract from the existing coverage.
 
 When a shared type changes, treat helper factories, sample fixtures, serialized scenario/config inputs, and schema examples as part of the construction-site sweep, not just direct Rust struct literals.
+
+For component-registration work, distinguish:
+- the authoritative schema declaration itself
+- runtime code-generation or macro-expansion sites that truly require the bare type in scope
+- test-only helper or manifest sites that mirror the component set
+
+Do not assume every file that references the schema macro needs a new top-level import; verify actual local type use first.
 
 ### 5. Implement with Worldwake discipline
 

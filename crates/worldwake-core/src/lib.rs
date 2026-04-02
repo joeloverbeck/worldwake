@@ -68,6 +68,7 @@ pub mod topology;
 pub mod trade;
 pub mod traits;
 pub mod utility_profile;
+pub mod valuation;
 pub mod verification;
 pub mod violation;
 pub mod visibility;
@@ -176,6 +177,7 @@ pub use trade::{
 };
 pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;
+pub use valuation::CommodityValuationProfile;
 pub use verification::{verify_completeness, VerificationError};
 pub use violation::{
     RecordedViolation, ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
