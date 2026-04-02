@@ -606,6 +606,7 @@ fn commit_defend(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -618,7 +619,9 @@ fn commit_defend(
 fn abort_defend(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1192,6 +1195,7 @@ fn commit_loot(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1225,6 +1229,7 @@ fn commit_bury(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1250,6 +1255,7 @@ fn commit_attack(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1314,7 +1320,9 @@ fn commit_attack(
 fn abort_attack(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1325,7 +1333,9 @@ fn abort_attack(
 fn abort_loot(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1336,7 +1346,9 @@ fn abort_loot(
 fn abort_bury(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1348,6 +1360,7 @@ fn commit_heal(
     _def: &ActionDef,
     _instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1358,7 +1371,9 @@ fn commit_heal(
 fn abort_heal(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {

@@ -5,8 +5,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, HeardBeliefDisposition, Quantity, TellTopic, World,
-    WorldTxn,
+    ActionDefId, CommodityKind, EntityId, EventLog, HeardBeliefDisposition, Quantity, TellTopic,
+    World, WorldTxn,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -96,13 +96,16 @@ pub type ActionCommitFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
     &crate::ActionExecutionContext<'_>,
+    &EventLog,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<CommitOutcome, ActionError>;
 pub type ActionAbortFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
+    &crate::ActionExecutionContext<'_>,
     &AbortReason,
+    &EventLog,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<(), ActionError>;
@@ -502,6 +505,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -514,7 +518,9 @@ mod tests {
     fn noop_abort(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _reason: &AbortReason,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
@@ -578,6 +584,7 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([0x11; 32]));
         let recipes = RecipeRegistry::new();
         let context = execution_context(&recipes);
+        let event_log = worldwake_core::EventLog::new();
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -599,7 +606,9 @@ mod tests {
         (handler.on_abort)(
             &def,
             &instance,
+            &context,
             &AbortReason::external_abort_with_detail(ExternalAbortReason::Other, "test"),
+            &event_log,
             &mut rng,
             &mut txn,
         )
@@ -689,6 +698,7 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([0x22; 32]));
         let recipes = RecipeRegistry::new();
         let context = execution_context(&recipes);
+        let event_log = worldwake_core::EventLog::new();
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -699,7 +709,9 @@ mod tests {
             WitnessData::default(),
         );
 
-        let outcome = (handler.on_commit)(&def, &instance, &context, &mut rng, &mut txn).unwrap();
+        let outcome =
+            (handler.on_commit)(&def, &instance, &context, &event_log, &mut rng, &mut txn)
+                .unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

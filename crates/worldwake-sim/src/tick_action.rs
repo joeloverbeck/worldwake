@@ -70,10 +70,12 @@ pub fn tick_action(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn abort_requested_during_tick(
     def: &crate::ActionDef,
     instance: &mut ActionInstance,
     handler: &crate::ActionHandler,
+    context: &ActionExecutionContext<'_>,
     txn: WorldTxn<'_>,
     event_log: &mut EventLog,
     rng: &mut DeterministicRng,
@@ -84,6 +86,7 @@ fn abort_requested_during_tick(
         def,
         instance,
         handler,
+        context,
         txn,
         event_log,
         rng,
@@ -136,7 +139,7 @@ fn tick_action_inner(
         Ok(progress) => progress,
         Err(ActionError::AbortRequested(reason)) => {
             return abort_requested_during_tick(
-                def, instance, handler, txn, event_log, rng, reason,
+                def, instance, handler, &context, txn, event_log, rng, reason,
             );
         }
         Err(err) => return Err(err),
@@ -170,6 +173,7 @@ fn tick_action_inner(
             def,
             instance,
             handler,
+            &context,
             txn,
             event_log,
             rng,
@@ -181,7 +185,7 @@ fn tick_action_inner(
         )?;
         Ok(TickOutcome::Aborted { reason, replan })
     } else {
-        match (handler.on_commit)(def, instance, &context, rng, &mut txn) {
+        match (handler.on_commit)(def, instance, &context, &*event_log, rng, &mut txn) {
             Ok(outcome) => {
                 instance.status = ActionStatus::Committed;
                 release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -200,6 +204,7 @@ fn tick_action_inner(
                     def,
                     instance,
                     handler,
+                    &context,
                     txn,
                     event_log,
                     rng,
@@ -235,11 +240,13 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        CommodityKind, ControlSource, EntityId, EntityKind, EventLog, EventPayload, EventTag,
+        EventView, PendingEvent, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn,
     };
 
+    #[allow(clippy::struct_excessive_bools)]
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     struct HookState {
         tick_calls: usize,
@@ -252,6 +259,8 @@ mod tests {
         replace_local_state: Option<ActionState>,
         abort_reasons: Vec<AbortReason>,
         commit_outcome: CommitOutcome,
+        commit_event_log_len: usize,
+        commit_saw_system_tag: bool,
     }
 
     fn test_lock() -> &'static Mutex<()> {
@@ -360,19 +369,40 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
         let mut state = hook_state().lock().unwrap();
         state.commit_calls += 1;
+        state.commit_event_log_len = event_log.len();
+        state.commit_saw_system_tag = !event_log.events_by_tag(EventTag::System).is_empty();
         Ok(state.commit_outcome.clone())
+    }
+
+    fn emit_system_event(log: &mut EventLog, tick: Tick, actor: EntityId, target: EntityId) {
+        let _ = log.emit(PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::System]),
+        }));
     }
 
     #[allow(clippy::unnecessary_wraps)]
     fn abort_handler(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         reason: &AbortReason,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
@@ -907,6 +937,41 @@ mod tests {
         assert!(!active_actions.contains_key(&instance_id));
         assert_eq!(hook_state().lock().unwrap().commit_calls, 1);
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
+    }
+
+    #[test]
+    fn commit_handler_receives_live_event_log_context() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        hook_state().lock().unwrap().complete_on_tick = true;
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
+            start_dynamic_sample_action();
+        emit_system_event(&mut log, Tick(10), actor, target);
+        let mut rng = test_rng();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+                recipe_registry: test_recipes(),
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let state = hook_state().lock().unwrap().clone();
+        assert_eq!(state.commit_calls, 1);
+        assert_eq!(state.commit_event_log_len, 2);
+        assert!(state.commit_saw_system_tag);
     }
 
     #[test]

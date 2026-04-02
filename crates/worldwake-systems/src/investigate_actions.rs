@@ -114,6 +114,7 @@ fn commit_investigate(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -242,7 +243,9 @@ fn theft_facts_for_subject(
 fn abort_investigate(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {

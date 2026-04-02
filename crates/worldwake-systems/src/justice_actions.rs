@@ -478,6 +478,7 @@ fn commit_accuse(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -537,7 +538,9 @@ fn commit_accuse(
 fn abort_accuse(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1013,6 +1016,7 @@ fn commit_fine(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1063,6 +1067,7 @@ fn commit_exile(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1115,7 +1120,9 @@ fn commit_exile(
 fn abort_punishment(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1211,6 +1218,7 @@ mod tests {
             def,
             instance,
             &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &EventLog::new(),
             &mut rng,
             &mut txn,
         )
@@ -1868,7 +1876,9 @@ mod tests {
         (handler.on_abort)(
             def,
             &instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
             &AbortReason::external_abort(ExternalAbortReason::Other),
+            &EventLog::new(),
             &mut rng,
             &mut txn,
         )

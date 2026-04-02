@@ -342,6 +342,7 @@ fn commit_trade(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -390,7 +391,9 @@ fn commit_trade(
 fn abort_trade(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1434,6 +1437,7 @@ fn commit_staff_market(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1458,7 +1462,9 @@ fn commit_staff_market(
 fn abort_staff_market(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -3824,10 +3830,12 @@ mod tests {
         (handler_entry.on_abort)(
             def,
             instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
             &worldwake_sim::AbortReason::Interrupted {
                 kind: worldwake_sim::InterruptReason::Other,
                 detail: None,
             },
+            &EventLog::new(),
             &mut h.rng,
             &mut txn,
         )

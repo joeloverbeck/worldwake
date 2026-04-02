@@ -152,6 +152,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -162,7 +163,9 @@ mod tests {
     fn abort_a(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _reason: &AbortReason,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
@@ -173,6 +176,7 @@ mod tests {
         _def: &ActionDef,
         instance: &ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -282,6 +286,7 @@ mod tests {
         let mut rng = DeterministicRng::new(Seed([0x68; 32]));
         let recipes = RecipeRegistry::new();
         let context = execution_context(&recipes);
+        let event_log = worldwake_core::EventLog::new();
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -296,6 +301,7 @@ mod tests {
             &def,
             &instance,
             &context,
+            &event_log,
             &mut rng,
             &mut txn,
         )

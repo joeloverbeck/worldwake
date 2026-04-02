@@ -987,6 +987,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -997,7 +998,9 @@ mod tests {
     fn abort_record(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _context: &crate::ActionExecutionContext<'_>,
         _reason: &crate::AbortReason,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {

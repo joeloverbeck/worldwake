@@ -305,6 +305,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<crate::CommitOutcome, ActionError> {
@@ -315,7 +316,9 @@ mod tests {
     fn abort_noop(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _reason: &AbortReason,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {

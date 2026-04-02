@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, Permille, Tick, TravelEdgeId,
-    VisibilitySpec, WorldTxn,
+    ActionDefId, BodyCostPerTick, EdgeExperience, EntityId, EntityKind, EventLog, EventTag,
+    EventView, Permille, Tick, TravelEdgeId, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -84,6 +84,58 @@ fn direct_possessions(txn: &WorldTxn<'_>, actor: EntityId) -> Vec<EntityId> {
     let mut possessions = txn.possessions_of(actor);
     possessions.sort();
     possessions
+}
+
+fn had_combat_during_travel(
+    event_log: &EventLog,
+    agent: EntityId,
+    start_tick: Tick,
+    end_tick: Tick,
+) -> bool {
+    event_log
+        .events_by_tag(EventTag::Combat)
+        .iter()
+        .filter_map(|event_id| event_log.get(*event_id))
+        .any(|record| {
+            let tick = record.tick();
+            tick.0 >= start_tick.0
+                && tick.0 < end_tick.0
+                && (record.actor_id() == Some(agent) || record.target_ids().contains(&agent))
+        })
+}
+
+fn record_route_experience(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    edge_id: TravelEdgeId,
+    current_tick: Tick,
+    hostile: bool,
+) -> Result<(), ActionError> {
+    let mut route_experience = txn
+        .get_component_route_experience(actor)
+        .cloned()
+        .unwrap_or_default();
+    let experience = route_experience
+        .edges
+        .entry(edge_id)
+        .or_insert(EdgeExperience {
+            safe_trips: 0,
+            hostile_encounters: 0,
+            last_travel_tick: current_tick,
+        });
+    if hostile {
+        experience.hostile_encounters = experience.hostile_encounters.saturating_add(1);
+    } else {
+        experience.safe_trips = experience.safe_trips.saturating_add(1);
+    }
+    experience.last_travel_tick = current_tick;
+
+    if let Some(profile) = txn.get_component_preference_profile(actor).copied() {
+        route_experience.enforce_limits(current_tick, &profile);
+    }
+
+    txn.set_component_route_experience(actor, route_experience)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
 }
 
 fn resolve_travel(
@@ -203,10 +255,11 @@ fn commit_travel(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let (_, _, destination, _, _) = travel_state(instance)?;
+    let (edge_id, _, destination, departure_tick, _) = travel_state(instance)?;
     txn.clear_component_in_transit_on_edge(instance.actor)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(instance.actor, destination)
@@ -215,17 +268,22 @@ fn commit_travel(
         txn.set_ground_location(entity, destination)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
+    let current_tick = txn.tick();
+    let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, current_tick);
+    record_route_experience(txn, instance.actor, edge_id, current_tick, hostile)?;
     Ok(CommitOutcome::empty())
 }
 
 fn abort_travel(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    let (_, origin, _, _, _) = travel_state(instance)?;
+    let (edge_id, origin, _, departure_tick, _) = travel_state(instance)?;
     txn.clear_component_in_transit_on_edge(instance.actor)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(instance.actor, origin)
@@ -235,6 +293,10 @@ fn abort_travel(
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
     txn.add_tag(EventTag::Travel);
+    let current_tick = txn.tick();
+    if had_combat_during_travel(event_log, instance.actor, departure_tick, current_tick) {
+        record_route_experience(txn, instance.actor, edge_id, current_tick, true)?;
+    }
     Ok(())
 }
 
@@ -245,8 +307,9 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, AgentBeliefStore, CauseRef, Container, ControlSource,
-        EventLog, EventView, InTransitOnEdge, LoadUnits, MetabolismProfile, PerceptionSource,
-        Place, Quantity, Seed, Topology, TravelEdge, WitnessData, World,
+        EdgeExperience, EventLog, EventPayload, EventView, InTransitOnEdge, LoadUnits,
+        MetabolismProfile, PendingEvent, PerceptionSource, Place, PreferenceProfile, Quantity,
+        RouteExperience, Seed, Topology, TravelEdge, WitnessData, World,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
@@ -407,6 +470,93 @@ mod tests {
         .unwrap()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn tick_travel_action(
+        world: &mut World,
+        log: &mut EventLog,
+        active_actions: &mut BTreeMap<ActionInstanceId, ActionInstance>,
+        rng: &mut DeterministicRng,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        instance_id: ActionInstanceId,
+        tick: u64,
+    ) -> TickOutcome {
+        tick_action(
+            instance_id,
+            defs,
+            handlers,
+            ActionExecutionAuthority {
+                active_actions,
+                world,
+                event_log: log,
+                rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+        )
+        .unwrap()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn abort_travel_action(
+        world: &mut World,
+        log: &mut EventLog,
+        active_actions: &mut BTreeMap<ActionInstanceId, ActionInstance>,
+        rng: &mut DeterministicRng,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        instance_id: ActionInstanceId,
+        tick: u64,
+    ) {
+        let _ = abort_action(
+            instance_id,
+            defs,
+            handlers,
+            ActionExecutionAuthority {
+                active_actions,
+                world,
+                event_log: log,
+                rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+            worldwake_sim::ExternalAbortReason::Other,
+        )
+        .unwrap();
+    }
+
+    fn emit_combat_event(
+        log: &mut EventLog,
+        tick: u64,
+        place: EntityId,
+        actor: EntityId,
+        target: EntityId,
+    ) {
+        let _ = log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(tick),
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::Combat]),
+        }));
+    }
+
+    fn set_preference_profile(world: &mut World, actor: EntityId, profile: PreferenceProfile) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_preference_profile(actor, profile).unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_route_experience(world: &mut World, actor: EntityId, route: RouteExperience) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_route_experience(actor, route).unwrap();
+        commit_txn(txn);
+    }
+
     #[test]
     fn register_travel_actions_creates_single_generic_travel_def() {
         let (defs, _, id) = setup_registries();
@@ -478,36 +628,30 @@ mod tests {
         assert!(start_record.tags().contains(&EventTag::Travel));
 
         for tick in [6, 7] {
-            let outcome = tick_action(
-                instance_id,
+            let outcome = tick_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
                 &defs,
                 &handlers,
-                ActionExecutionAuthority {
-                    active_actions: &mut active_actions,
-                    world: &mut world,
-                    event_log: &mut log,
-                    rng: &mut rng,
-                },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
-            )
-            .unwrap();
+                instance_id,
+                tick,
+            );
             assert_eq!(outcome, TickOutcome::Continuing);
             assert_eq!(world.effective_place(actor), None);
         }
 
-        let outcome = tick_action(
-            instance_id,
+        let outcome = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active_actions,
-                world: &mut world,
-                event_log: &mut log,
-                rng: &mut rng,
-            },
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(8)),
-        )
-        .unwrap();
+            instance_id,
+            8,
+        );
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         assert_eq!(world.effective_place(actor), Some(destination));
@@ -633,20 +777,16 @@ mod tests {
             destination,
         );
 
-        let _ = abort_action(
-            instance_id,
+        abort_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
             &defs,
             &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active_actions,
-                world: &mut world,
-                event_log: &mut log,
-                rng: &mut rng,
-            },
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
-            worldwake_sim::ExternalAbortReason::Other,
-        )
-        .unwrap();
+            instance_id,
+            6,
+        );
 
         assert_eq!(world.effective_place(actor), Some(origin));
         assert_eq!(world.effective_place(bag), Some(origin));
@@ -657,6 +797,330 @@ mod tests {
             .get(log.events_by_tag(EventTag::ActionAborted)[0])
             .unwrap();
         assert!(record.tags().contains(&EventTag::Travel));
+    }
+
+    #[test]
+    fn committed_safe_travel_creates_route_experience() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+
+        assert_eq!(
+            tick_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+                6,
+            ),
+            TickOutcome::Continuing
+        );
+        assert_eq!(
+            tick_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+                7,
+            ),
+            TickOutcome::Continuing
+        );
+        assert!(matches!(
+            tick_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+                8,
+            ),
+            TickOutcome::Committed { .. }
+        ));
+
+        assert_eq!(
+            world
+                .get_component_route_experience(actor)
+                .unwrap()
+                .edges
+                .get(&TravelEdgeId(10)),
+            Some(&EdgeExperience {
+                safe_trips: 1,
+                hostile_encounters: 0,
+                last_travel_tick: Tick(8),
+            })
+        );
+    }
+
+    #[test]
+    fn committed_hostile_travel_records_hostile_encounter_from_event_log() {
+        let (mut world, actor, _, _, origin, destination) = setup_world();
+        let opponent = entity(99);
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            6,
+        );
+        emit_combat_event(&mut log, 6, origin, opponent, actor);
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            7,
+        );
+        assert!(matches!(
+            tick_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+                8,
+            ),
+            TickOutcome::Committed { .. }
+        ));
+
+        assert_eq!(
+            world
+                .get_component_route_experience(actor)
+                .unwrap()
+                .edges
+                .get(&TravelEdgeId(10)),
+            Some(&EdgeExperience {
+                safe_trips: 0,
+                hostile_encounters: 1,
+                last_travel_tick: Tick(8),
+            })
+        );
+    }
+
+    #[test]
+    fn hostile_abort_travel_records_route_experience() {
+        let (mut world, actor, _, _, origin, destination) = setup_world();
+        let opponent = entity(99);
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            6,
+        );
+        emit_combat_event(&mut log, 6, origin, opponent, actor);
+        abort_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            7,
+        );
+
+        assert_eq!(
+            world
+                .get_component_route_experience(actor)
+                .unwrap()
+                .edges
+                .get(&TravelEdgeId(10)),
+            Some(&EdgeExperience {
+                safe_trips: 0,
+                hostile_encounters: 1,
+                last_travel_tick: Tick(7),
+            })
+        );
+    }
+
+    #[test]
+    fn non_combat_abort_does_not_record_route_experience() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            6,
+        );
+        abort_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            7,
+        );
+
+        assert_eq!(world.get_component_route_experience(actor), None);
+    }
+
+    #[test]
+    fn travel_recording_enforces_route_memory_capacity_after_update() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        set_preference_profile(
+            &mut world,
+            actor,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(0),
+                route_memory_capacity: 1,
+                source_memory_capacity: 1,
+                memory_retention_ticks: 100,
+            },
+        );
+        set_route_experience(
+            &mut world,
+            actor,
+            RouteExperience {
+                edges: BTreeMap::from([(
+                    TravelEdgeId(11),
+                    EdgeExperience {
+                        safe_trips: 3,
+                        hostile_encounters: 0,
+                        last_travel_tick: Tick(1),
+                    },
+                )]),
+            },
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            6,
+        );
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            7,
+        );
+        let _ = tick_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            8,
+        );
+
+        let route = world.get_component_route_experience(actor).unwrap();
+        assert_eq!(route.edges.len(), 1);
+        assert_eq!(
+            route.edges.get(&TravelEdgeId(10)),
+            Some(&EdgeExperience {
+                safe_trips: 1,
+                hostile_encounters: 0,
+                last_travel_tick: Tick(8),
+            })
+        );
     }
 
     fn pm(value: u16) -> Permille {

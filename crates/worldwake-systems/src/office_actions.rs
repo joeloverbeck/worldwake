@@ -647,6 +647,7 @@ fn commit_bribe(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -674,7 +675,9 @@ fn commit_bribe(
 fn abort_bribe(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -708,6 +711,7 @@ fn commit_threaten(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -736,7 +740,9 @@ fn commit_threaten(
 fn abort_threaten(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -770,6 +776,7 @@ fn commit_declare_support(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -805,7 +812,9 @@ fn commit_declare_support(
 fn abort_declare_support(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -839,6 +848,7 @@ fn commit_press_force_claim(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -860,7 +870,9 @@ fn commit_press_force_claim(
 fn abort_press_force_claim(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -894,6 +906,7 @@ fn commit_yield_force_claim(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -909,7 +922,9 @@ fn commit_yield_force_claim(
 fn abort_yield_force_claim(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
@@ -1497,6 +1512,7 @@ mod tests {
             def,
             instance,
             &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &EventLog::new(),
             &mut rng,
             &mut txn,
         )
@@ -1995,6 +2011,7 @@ mod tests {
             def,
             &instance,
             &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &EventLog::new(),
             &mut rng,
             &mut txn,
         )
@@ -2038,7 +2055,9 @@ mod tests {
         (handler.on_abort)(
             def,
             &instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
             &AbortReason::external_abort(ExternalAbortReason::Other),
+            &EventLog::new(),
             &mut rng,
             &mut txn,
         )

@@ -159,7 +159,16 @@ fn transition_action_inner(
         WitnessData::default(),
     );
 
-    finalize_failed_action(def, instance, handler, txn, event_log, rng, &termination)
+    finalize_failed_action(
+        def,
+        instance,
+        handler,
+        &context,
+        txn,
+        event_log,
+        rng,
+        &termination,
+    )
 }
 
 #[cfg(test)]
@@ -177,15 +186,18 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventTag, EventView, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        CommodityKind, ControlSource, EntityId, EventLog, EventPayload, EventTag, EventView,
+        PendingEvent, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
+    #[allow(clippy::struct_field_names)]
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     struct HookState {
         abort_calls: usize,
         abort_reasons: Vec<AbortReason>,
+        abort_event_log_len: usize,
+        abort_saw_system_tag: bool,
     }
 
     fn test_lock() -> &'static Mutex<()> {
@@ -258,6 +270,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &ActionInstance,
         _context: &ActionExecutionContext<'_>,
+        _event_log: &EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<crate::CommitOutcome, ActionError> {
@@ -268,14 +281,34 @@ mod tests {
     fn abort_hook(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         reason: &AbortReason,
+        event_log: &EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<(), ActionError> {
         let mut state = hook_state().lock().unwrap();
         state.abort_calls += 1;
         state.abort_reasons.push(reason.clone());
+        state.abort_event_log_len = event_log.len();
+        state.abort_saw_system_tag = !event_log.events_by_tag(EventTag::System).is_empty();
         Ok(())
+    }
+
+    fn emit_system_event(log: &mut EventLog, tick: Tick, actor: EntityId, target: EntityId) {
+        let _ = log.emit(PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(actor),
+            target_ids: vec![target],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::System]),
+        }));
     }
 
     fn sample_def(
@@ -578,5 +611,40 @@ mod tests {
         let state = hook_state().lock().unwrap().clone();
         assert_eq!(state.abort_calls, 1);
         assert_eq!(state.abort_reasons, vec![replan.reason.clone()]);
+    }
+
+    #[test]
+    fn abort_handler_receives_live_event_log_context() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (mut world, mut log, mut active_actions, defs, handlers, instance_id, actor, target) =
+            start_sample_action(Interruptibility::FreelyInterruptible);
+        emit_system_event(&mut log, Tick(10), actor, target);
+        let mut rng = test_rng();
+
+        let replan = abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext {
+                cause: CauseRef::Bootstrap,
+                tick: Tick(11),
+                recipe_registry: test_recipes(),
+            },
+            ExternalAbortReason::TargetDestroyed,
+        )
+        .unwrap();
+
+        let state = hook_state().lock().unwrap().clone();
+        assert_eq!(state.abort_calls, 1);
+        assert_eq!(state.abort_reasons, vec![replan.reason]);
+        assert_eq!(state.abort_event_log_len, 2);
+        assert!(state.abort_saw_system_tag);
     }
 }

@@ -538,6 +538,7 @@ mod tests {
         _def: &ActionDef,
         _instance: &worldwake_sim::ActionInstance,
         _context: &worldwake_sim::ActionExecutionContext<'_>,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
@@ -548,7 +549,9 @@ mod tests {
     fn noop_abort(
         _def: &ActionDef,
         _instance: &worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _reason: &worldwake_sim::AbortReason,
+        _event_log: &worldwake_core::EventLog,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<(), ActionError> {

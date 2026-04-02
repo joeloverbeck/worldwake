@@ -1,6 +1,6 @@
 use crate::{
-    AbortReason, ActionDef, ActionError, ActionHandler, ActionInstance, ActionStatus,
-    DeterministicRng, ReplanNeeded,
+    AbortReason, ActionDef, ActionError, ActionExecutionContext, ActionHandler, ActionInstance,
+    ActionStatus, DeterministicRng, ReplanNeeded,
 };
 use worldwake_core::{EventLog, EventTag, WorldTxn};
 
@@ -10,16 +10,26 @@ pub(crate) struct FailedActionTermination {
     pub event_tag: EventTag,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn finalize_failed_action(
     def: &ActionDef,
     instance: &mut ActionInstance,
     handler: &ActionHandler,
+    context: &ActionExecutionContext<'_>,
     mut txn: WorldTxn<'_>,
     event_log: &mut EventLog,
     rng: &mut DeterministicRng,
     termination: &FailedActionTermination,
 ) -> Result<ReplanNeeded, ActionError> {
-    (handler.on_abort)(def, instance, &termination.reason, rng, &mut txn)?;
+    (handler.on_abort)(
+        def,
+        instance,
+        context,
+        &termination.reason,
+        &*event_log,
+        rng,
+        &mut txn,
+    )?;
     release_reservations(&mut txn, &instance.reservation_ids)?;
     instance.status = termination.status;
     txn.add_tag(termination.event_tag);
