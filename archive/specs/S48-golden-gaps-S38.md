@@ -1,4 +1,4 @@
-**Status**: Proposed
+**Status**: ✅ COMPLETED
 
 # S48: Golden Gap — Learned Source Reliability Redirects Later Acquisition
 
@@ -89,3 +89,22 @@ This proves that S38 source learning is not just a focused ranking helper. A con
 3. The scenario proves the reroute through decision trace or equivalent planner-facing evidence, not only by eventual world state
 4. Conservation invariants continue to hold
 5. Deterministic replay reproduces the same world and event-log hashes
+
+## Outcome
+
+- Completed: 2026-04-02
+- What changed:
+  - the original harvest-source golden gap was corrected during implementation to a trade-source scenario because same-place harvest depletion can lawfully remove the failed local source before ranking
+  - the new golden then exposed a real AI search-binding contradiction, so delivery became mixed-layer: a bounded production fix in `crates/worldwake-ai/src/search/candidates.rs`, a focused regression in `crates/worldwake-ai/src/search/tests.rs`, and the final S48 golden plus replay in `crates/worldwake-ai/tests/golden_trade.rs`
+  - generated golden inventory docs were refreshed, and the required inventory verification path was unblocked by a small soak-test cleanup in `crates/worldwake-ai/tests/golden_soak.rs`
+- Deviations from original plan:
+  - the planned “failed local harvest redirects later acquisition to remote sibling source” scenario was not the honest live proof boundary
+  - the shipped proof instead uses seller rejection and later reranking between two still-lawful trade sources, which preserves the intended S38 `SourceReliability` emergence contract while aligning with live candidate-generation and belief behavior
+- Verification results:
+  - `cargo test -p worldwake-ai search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_trade golden_trade_rejection_reroutes_to_reliable_seller -- --exact --nocapture`
+  - `cargo test -p worldwake-ai --test golden_trade golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically -- --exact --nocapture`
+  - `cargo test -p worldwake-ai`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

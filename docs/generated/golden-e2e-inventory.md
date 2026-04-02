@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 20
 - Files contributing `golden_*` tests: 20
-- Total `golden_*` tests: 269
+- Total `golden_*` tests: 271
 
 ## Per-File Inventory
 
@@ -31,7 +31,7 @@ Do not hand-edit it.
 | `golden_social.rs` | 14 |
 | `golden_supply_chain.rs` | 2 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
-| `golden_trade.rs` | 9 |
+| `golden_trade.rs` | 11 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_ai_decisions.rs`
@@ -347,6 +347,8 @@ Do not hand-edit it.
 - `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically`
 - `golden_local_trade_start_failure_recovers_via_production_fallback`
 - `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically`
+- `golden_trade_rejection_reroutes_to_reliable_seller`
+- `golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically`
 
 ### `golden_travel_physiology.rs`
 

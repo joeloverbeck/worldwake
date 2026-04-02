@@ -31,6 +31,34 @@ struct SoakResult {
     saw_steal: bool,
 }
 
+fn env_u8(name: &str) -> Option<u8> {
+    std::env::var(name).ok().and_then(|v| v.parse().ok())
+}
+
+fn soak_seeds(seed_start: u8, seed_count: u8) -> Vec<Seed> {
+    (0u8..seed_count)
+        .map(|offset| {
+            let i = seed_start.wrapping_add(offset);
+            let mut bytes = [0u8; 32];
+            bytes[0] = i;
+            bytes[31] = i.wrapping_mul(17);
+            Seed(bytes)
+        })
+        .collect()
+}
+
+fn soak_seeds_from_env() -> Vec<Seed> {
+    soak_seeds(
+        env_u8("SOAK_SEED_START").unwrap_or(0),
+        env_u8("SOAK_SEEDS").unwrap_or(10),
+    )
+}
+
+fn scaled_emergence_threshold(seed_count: usize, baseline_hits: usize) -> usize {
+    let numerator = seed_count.saturating_mul(baseline_hits);
+    numerator.div_ceil(10).max(1)
+}
+
 /// Run a single soak run for the given seed and return per-run results.
 fn run_t30_soak(seed: Seed) -> SoakResult {
     let (mut h, all_agents, _ruling_faction, _bandit_faction, _office) = build_t30_world(seed);
@@ -197,22 +225,14 @@ fn run_t30_soak(seed: Seed) -> SoakResult {
 
 #[test]
 fn t30_seven_day_soak() {
-    // CI uses 10 seeds for speed; local runs can use SOAK_SEEDS=20 for extra coverage.
-    let seed_count: u8 = std::env::var("SOAK_SEEDS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(10);
-
-    let seeds: Vec<Seed> = (0u8..seed_count)
-        .map(|i| {
-            let mut bytes = [0u8; 32];
-            bytes[0] = i;
-            bytes[31] = i.wrapping_mul(17);
-            Seed(bytes)
-        })
-        .collect();
+    // CI defaults to 10 seeds. SOAK_SEED_START can shard the range across jobs,
+    // and local runs can raise SOAK_SEEDS for broader coverage.
+    let seeds = soak_seeds_from_env();
+    let seed_count = seeds.len();
 
     let results: Vec<SoakResult> = seeds.iter().map(|&s| run_t30_soak(s)).collect();
+    let claim_office_threshold = scaled_emergence_threshold(seed_count, 3);
+    let steal_threshold = scaled_emergence_threshold(seed_count, 3);
 
     // --- Cross-run invariant 9: Not all hashes identical ---
     let unique_world_hashes: BTreeSet<_> = results.iter().map(|r| r.world_hash).collect();
@@ -225,15 +245,17 @@ fn t30_seven_day_soak() {
     // --- Cross-run invariant 10: Political emergence ---
     let claim_office_count = results.iter().filter(|r| r.saw_claim_office).count();
     assert!(
-        claim_office_count >= 3,
-        "only {claim_office_count}/{seed_count} runs produced ClaimOffice events (need >= 3)"
+        claim_office_count >= claim_office_threshold,
+        "only {claim_office_count}/{seed_count} runs produced ClaimOffice events \
+         (need >= {claim_office_threshold})"
     );
 
     // --- Cross-run invariant 11: Crime emergence ---
     let steal_count = results.iter().filter(|r| r.saw_steal).count();
     assert!(
-        steal_count >= 3,
-        "only {steal_count}/{seed_count} runs produced StealItem/Crime events (need >= 3)"
+        steal_count >= steal_threshold,
+        "only {steal_count}/{seed_count} runs produced StealItem/Crime events \
+         (need >= {steal_threshold})"
     );
 
     // --- Per-run emergence: at least 1 death, acquire, travel, tell across all runs ---
@@ -259,4 +281,33 @@ fn t30_seven_day_soak() {
         tell_count >= 1,
         "no runs produced a tell/share-belief action in 10080 ticks"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soak_seeds_default_to_ten_from_zero() {
+        let seeds = soak_seeds(0, 10);
+        assert_eq!(seeds.len(), 10);
+        assert_eq!(seeds[0].0[0], 0);
+        assert_eq!(seeds[9].0[0], 9);
+    }
+
+    #[test]
+    fn soak_seeds_honor_start_and_count() {
+        let seeds = soak_seeds(4, 3);
+        assert_eq!(seeds.len(), 3);
+        assert_eq!(seeds[0].0[0], 4);
+        assert_eq!(seeds[1].0[0], 5);
+        assert_eq!(seeds[2].0[0], 6);
+    }
+
+    #[test]
+    fn scaled_emergence_threshold_matches_full_and_sharded_runs() {
+        assert_eq!(scaled_emergence_threshold(10, 3), 3);
+        assert_eq!(scaled_emergence_threshold(2, 3), 1);
+        assert_eq!(scaled_emergence_threshold(5, 3), 2);
+    }
 }

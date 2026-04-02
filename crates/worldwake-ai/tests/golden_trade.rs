@@ -9,14 +9,15 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     total_live_lot_quantity, AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind,
     ControlSource, DemandMemory, DemandObservation, DemandObservationReason, DeprivationKind,
-    EventTag, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, SaleListing,
-    Seed, StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
-    Wound, WoundCause, WoundId, WoundList,
+    EventTag, GoalKey, GoalKind, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionProfile,
+    PreferenceProfile, PrototypePlace, Quantity, ResourceSource, SaleListing, Seed, SourceKey,
+    StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound,
+    WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
-    ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry, RequestBindingKind,
+    ActionTraceEvent, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry, RequestBindingKind,
     RequestProvenance, RequestResolutionOutcome, RuntimeBeliefView, TradeActionPayload,
 };
 
@@ -152,6 +153,431 @@ fn request_simple_action(
 
 fn request_travel(h: &mut GoldenHarness, traveler: worldwake_core::EntityId, destination: worldwake_core::EntityId) {
     request_simple_action(h, traveler, "travel", vec![destination]);
+}
+
+fn source_trust_profile(source_trust_weight: u16) -> PreferenceProfile {
+    PreferenceProfile {
+        route_caution_weight: pm(0),
+        source_trust_weight: pm(source_trust_weight),
+        route_memory_capacity: 8,
+        source_memory_capacity: 8,
+        memory_retention_ticks: 240,
+    }
+}
+
+fn set_preference_profile(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    profile: PreferenceProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_preference_profile(agent, profile).unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn trade_trace_summaries(h: &GoldenHarness, agent: worldwake_core::EntityId) -> Vec<String> {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .traces_for(agent)
+        .into_iter()
+        .map(|trace| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SourceReliabilityTradeOutcome {
+    world_hash: worldwake_core::StateHash,
+    log_hash: worldwake_core::StateHash,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_trade_rejection_source_reroute_scenario(
+    seed: Seed,
+) -> SourceReliabilityTradeOutcome {
+    let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let local_seller = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Local Seller",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let remote_seller = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Seller",
+        general_store,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+    let buyer = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Buyer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        KnownRecipes::new(),
+    );
+
+    set_control_source(&mut h, local_seller, ControlSource::Human, 0);
+    set_control_source(&mut h, remote_seller, ControlSource::Human, 0);
+    set_control_source(&mut h, buyer, ControlSource::Ai, 0);
+    set_preference_profile(&mut h, buyer, source_trust_profile(1000), 0);
+
+    let local_bread_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        local_seller,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(1),
+    );
+    let remote_bread_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        remote_seller,
+        general_store,
+        CommodityKind::Bread,
+        Quantity(5),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        buyer,
+        VILLAGE_SQUARE,
+        CommodityKind::Coin,
+        Quantity(3),
+    );
+    let (local_facility, local_display) =
+        create_home_facility_with_display(&mut h, local_seller, VILLAGE_SQUARE, 0);
+    let (remote_facility, remote_display) =
+        create_home_facility_with_display(&mut h, remote_seller, general_store, 0);
+
+    let mut txn = new_txn(&mut h.world, 0);
+    for (seller, lot, facility, display) in [
+        (local_seller, local_bread_lot, local_facility, local_display),
+        (remote_seller, remote_bread_lot, remote_facility, remote_display),
+    ] {
+        txn.set_component_sale_listing(
+            lot,
+            SaleListing {
+                listed_at: Tick(0),
+            },
+        )
+        .unwrap();
+        txn.set_component_merchandise_profile(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(facility),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(seller, instant_trade_disposition_profile())
+            .unwrap();
+        txn.clear_possessor(lot).unwrap();
+        txn.put_into_container(lot, display).unwrap();
+        txn.set_component_stock_assignment(
+            lot,
+            worldwake_core::StockAssignment {
+                facility,
+                kind: worldwake_core::StockAssignmentKind::Displayed,
+            },
+        )
+        .unwrap();
+    }
+    txn.set_component_trade_disposition_profile(buyer, instant_trade_disposition_profile())
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        buyer,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let bread_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: worldwake_ai::CommodityPurpose::SelfConsume,
+    });
+    let local_opportunity = OpportunityKey {
+        goal_key: bread_goal,
+        anchor: OpportunityAnchor::Place(VILLAGE_SQUARE),
+    };
+    let remote_opportunity = OpportunityKey {
+        goal_key: bread_goal,
+        anchor: OpportunityAnchor::Place(general_store),
+    };
+
+    let local_source_key = SourceKey {
+        entity: local_seller,
+        commodity: CommodityKind::Bread,
+    };
+    assert!(
+        h.world
+            .get_component_source_reliability(buyer)
+            .and_then(|reliability| reliability.sources.get(&local_source_key))
+            .is_none(),
+        "buyer should not start with a source-reliability record for the rejecting seller",
+    );
+
+    h.step_once();
+    let initial_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(buyer, Tick(0))
+        .expect("buyer should plan on the opening tick");
+    let initial_planning = match &initial_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected buyer planning on opening tick, got {other:?}"),
+    };
+    assert!(
+        initial_planning.selection.selected_goal_is(bread_goal),
+        "initial planning should target self-consume bread acquisition",
+    );
+    assert!(
+        initial_planning.selection.selected_opportunity_is(local_opportunity),
+        "without learned seller unreliability, the local seller should be selected first; traces={:?}",
+        trade_trace_summaries(&h, buyer)
+    );
+    let initial_local_evidence = initial_planning
+        .candidates
+        .evidence_for_opportunity(local_opportunity)
+        .expect("local seller opportunity should expose evidence");
+    assert!(initial_local_evidence.contributors.iter().any(|contributor| {
+        contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+            && contributor.place == VILLAGE_SQUARE
+            && contributor.entity == local_seller
+    }));
+
+    let initial_buyer_hunger = h.agent_hunger(buyer);
+    let initial_remote_seller_bread = h.agent_commodity_qty(remote_seller, CommodityKind::Bread);
+    let initial_remote_seller_coins = h.agent_commodity_qty(remote_seller, CommodityKind::Coin);
+    let initial_buyer_coins = h.agent_commodity_qty(buyer, CommodityKind::Coin);
+
+    let mut saw_rejection = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for_at(buyer, Tick(0))
+        .iter()
+        .any(|event| {
+            event.action_name == "trade"
+                && matches!(
+                    event.kind,
+                    ActionTraceKind::Aborted { ref reason, .. }
+                        if reason.contains("TradeBundleRejected")
+                            && reason.contains("InsufficientPayment")
+                )
+        });
+    for _ in 0..20 {
+        if saw_rejection {
+            break;
+        }
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        if h.action_trace_sink().expect("action tracing should remain enabled").events_for_at(buyer, tick_before).iter().any(|event| {
+            event.action_name == "trade"
+                && matches!(
+                    event.kind,
+                    ActionTraceKind::Aborted { ref reason, .. }
+                        if reason.contains("TradeBundleRejected")
+                            && reason.contains("InsufficientPayment")
+	                )
+        }) {
+            saw_rejection = true;
+            break;
+        }
+    }
+    assert!(
+        saw_rejection,
+        "buyer should hit a real trade rejection against the local seller",
+    );
+
+    let source_reliability = h
+        .world
+        .get_component_source_reliability(buyer)
+        .expect("trade rejection should record source reliability on the buyer");
+    let local_record = source_reliability
+        .sources
+        .get(&local_source_key)
+        .expect("rejected local seller should be remembered as a failed source");
+    assert_eq!(local_record.successful_acquisitions, 0);
+    assert!(
+        local_record.failed_attempts >= 1,
+        "the rejected local seller should accumulate at least one failed source attempt",
+    );
+    assert!(
+        h.world.get_component_sale_listing(local_bread_lot).is_some(),
+        "the rejected local lot must remain listed so the reroute is not caused by seller removal",
+    );
+    assert_eq!(
+        h.agent_commodity_qty(local_seller, CommodityKind::Bread),
+        Quantity(1),
+        "the local seller should still hold the bread after rejecting the trade",
+    );
+
+    let mut reroute_tick = None;
+    for _ in 0..20 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        let Some(trace) = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should remain enabled")
+            .trace_at(buyer, tick_before)
+        else {
+            continue;
+        };
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        if planning.selection.selected_plan_source != Some(SelectedPlanSource::SearchSelection) {
+            continue;
+        }
+        if planning.selection.selected_goal_is(bread_goal)
+            && planning.selection.selected_opportunity_is(remote_opportunity)
+        {
+            reroute_tick = Some(tick_before);
+            break;
+        }
+    }
+    let reroute_tick = reroute_tick.expect(
+        "after learning the local seller's rejection, the buyer should reroute to the remote seller",
+    );
+    let reroute_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(buyer, reroute_tick)
+        .expect("reroute planning tick should remain traceable");
+    let reroute_planning = match &reroute_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected reroute planning trace, got {other:?}"),
+    };
+    let ranked_summaries = reroute_planning.candidates.ranked_summaries_for_goal(bread_goal);
+    let local_summary = ranked_summaries
+        .iter()
+        .find(|summary| summary.opportunity == local_opportunity)
+        .expect("rejected local seller should remain a ranked candidate after rejection");
+    let remote_summary = ranked_summaries
+        .iter()
+        .find(|summary| summary.opportunity == remote_opportunity)
+        .expect("remote seller should remain a ranked candidate after rejection");
+    let local_discount = local_summary
+        .source_reliability_discount
+        .as_ref()
+        .expect("local seller should now carry a source reliability discount");
+    assert_eq!(local_discount.source_entity, local_seller);
+    assert_eq!(local_discount.commodity, CommodityKind::Bread);
+    assert_eq!(local_discount.failure_ratio_permille, 1000);
+    assert!(
+        local_discount.post_discount_motive < local_discount.pre_discount_motive,
+        "the learned seller discount should reduce the local seller's motive score",
+    );
+    assert!(
+        remote_summary.source_reliability_discount.is_none(),
+        "the alternate seller should stay undiscounted",
+    );
+    let reroute_local_evidence = reroute_planning
+        .candidates
+        .evidence_for_opportunity(local_opportunity)
+        .expect("local opportunity should keep evidence after rejection");
+    assert!(reroute_local_evidence.contributors.iter().any(|contributor| {
+        contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+            && contributor.place == VILLAGE_SQUARE
+            && contributor.entity == local_seller
+    }));
+    let reroute_remote_evidence = reroute_planning
+        .candidates
+        .evidence_for_opportunity(remote_opportunity)
+        .expect("remote opportunity should expose seller evidence");
+    assert!(reroute_remote_evidence.contributors.iter().any(|contributor| {
+        contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+            && contributor.place == general_store
+            && contributor.entity == remote_seller
+    }));
+
+    let mut remote_trade_committed = false;
+    let mut buyer_hunger_decreased = false;
+    let mut buyer_spent_coin = false;
+    let mut remote_seller_received_coin = false;
+    let mut remote_seller_lost_bread = false;
+    for _ in 0..120 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+        remote_trade_committed |= h
+            .action_trace_sink()
+            .expect("action tracing should remain enabled")
+            .events_for_at(buyer, tick_before)
+            .iter()
+            .any(|event| {
+                event.action_name == "trade"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        buyer_hunger_decreased |= h.agent_hunger(buyer) < initial_buyer_hunger;
+        buyer_spent_coin |= h.agent_commodity_qty(buyer, CommodityKind::Coin) < initial_buyer_coins;
+        remote_seller_received_coin |=
+            h.agent_commodity_qty(remote_seller, CommodityKind::Coin) > initial_remote_seller_coins;
+        remote_seller_lost_bread |=
+            h.agent_commodity_qty(remote_seller, CommodityKind::Bread) < initial_remote_seller_bread;
+        if remote_trade_committed
+            && buyer_hunger_decreased
+            && buyer_spent_coin
+            && remote_seller_received_coin
+            && remote_seller_lost_bread
+        {
+            break;
+        }
+    }
+    let action_summaries = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(buyer)
+        .into_iter()
+        .map(ActionTraceEvent::summary)
+        .collect::<Vec<_>>();
+    assert!(
+        remote_trade_committed,
+        "the rerouted plan should execute a real trade against the remote seller; decision_traces={:?}; action_traces={action_summaries:?}",
+        trade_trace_summaries(&h, buyer),
+    );
+    assert!(
+        buyer_hunger_decreased,
+        "the buyer should relieve hunger after the rerouted acquisition",
+    );
+    assert!(
+        buyer_spent_coin,
+        "the buyer should spend coin on the successful remote trade",
+    );
+    assert!(
+        remote_seller_received_coin,
+        "the remote seller should receive the buyer's coin on success",
+    );
+    assert!(
+        remote_seller_lost_bread,
+        "the remote seller should lose bread on the successful rerouted trade",
+    );
+
+    SourceReliabilityTradeOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1346,5 +1772,46 @@ fn golden_local_trade_start_failure_recovers_via_production_fallback_replays_det
     assert_eq!(
         first.remote_source_final_quantity, second.remote_source_final_quantity,
         "trade start-failure scenario should replay the same remote fallback outcome"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 94: Trade Rejection Reweights Seller Choice
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Trade, Needs
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Trade, Travel, Needs
+// Places: VillageSquare, GeneralStore
+//
+// Setup: Hungry buyer knows two bread sellers. The local VillageSquare seller
+//   stays listed but rejects an underfunded trade. A remote GeneralStore seller
+//   remains lawful for the same commodity.
+//
+// Proves: Trade rejection records `SourceReliability` on the rejecting seller.
+//   The next planning pass still sees the local seller as a live candidate, but
+//   applies a seller-specific reliability discount and reroutes to the remote
+//   seller. The buyer then completes the remote bread acquisition and eats.
+//
+// Chain: local trade rejection -> source-reliability memory ->
+//   next-tick seller reranking -> remote trade -> consumption.
+
+#[test]
+fn golden_trade_rejection_reroutes_to_reliable_seller() {
+    let _ = run_trade_rejection_source_reroute_scenario(Seed([20; 32]));
+}
+
+#[test]
+fn golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically() {
+    let first = run_trade_rejection_source_reroute_scenario(Seed([21; 32]));
+    let second = run_trade_rejection_source_reroute_scenario(Seed([21; 32]));
+
+    assert_eq!(
+        first.world_hash, second.world_hash,
+        "trade rejection reroute scenario should replay the same world hash"
+    );
+    assert_eq!(
+        first.log_hash, second.log_hash,
+        "trade rejection reroute scenario should replay the same event log hash"
     );
 }

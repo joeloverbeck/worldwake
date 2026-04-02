@@ -188,7 +188,7 @@ S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final go
 S33 ✅ ──→ S37 ✅ (cooldown exhaustion shipped on opportunity-scoped identity)
 S33 ✅ ──→ S39 (side-benefit scoring needs opportunity awareness)
 S35 ✅ ──→ S38 ✅ (learned preferences shipped on top of activity observation and opportunity identity)
-S38 ✅ ──→ S48 (remaining S38 golden gap closes the source-reliability end-to-end reroute chain)
+S38 ✅ ──→ S48 ✅ (source-reliability golden reroute chain completed)
 E18 ✅ ──→ S40 ✅ (remote hostile pursuit extends bandit combat beyond same-place opportunism)
 S12 ✅ ──→ S40 ✅ (remote hostile pursuit reuses prerequisite-aware search)
 S36 ✅ ──→ S40 ✅ (remote hostile pursuit extends declaration-owned combat goal surfaces)
@@ -383,7 +383,7 @@ S33 ✅ ──→ S37 ✅
 S33 ✅ ──→ S39
 S34 ✅ (independent)
 S35 ✅ (independent)
-S35 ✅ ──→ S38
+S35 ✅ ──→ S38 ✅
 E18 ✅ ──→ S40 ✅
 S12 ✅ ──→ S40 ✅
 S36 ✅ ──→ S40 ✅
@@ -433,19 +433,20 @@ S36 ✅ ──→ S40 ✅
   - archived spec: `archive/specs/S06-commodity-opportunity-valuation.md`
 - **S38**: Learned Route and Source Preferences — ✅ COMPLETED
   - archived spec: `archive/specs/S38-learned-route-source-preferences.md`
+- **S48**: Golden Gap — Learned Source Reliability Redirects Later Acquisition — ✅ COMPLETED
+  - archived spec: `archive/specs/S48-golden-gaps-S38.md`
+  - corrected from the original harvest-source narrative to the honest trade-source proof boundary, and shipped with a bounded AI search-binding fix when the new golden exposed a real selected-opportunity vs executable-trade contradiction
 - **S39**: Limited Side-Benefit Plan Scoring (needs S33)
   - post-search side-benefit detection at plan destinations
   - tie-breaking bonus for plans that also satisfy secondary goals
   - `side_benefit_weight` on `UtilityProfile` for per-agent diversity
-- **S48**: Golden Gap — Learned Source Reliability Redirects Later Acquisition (needs S38)
-  - end-to-end golden proof that a real source-intrinsic failure records `SourceReliability`
-  - later planning/ranking prefers a lawful sibling source instead of retrying the failed one
 
 #### Final Acceptance
 - All Phase 4 gate criteria plus:
 - [x] Merchants autonomously sell at markets with stock storage
 - [x] Commodity opportunity valuation drives shared AI/trade indirect commodity reasoning
 - [x] Learned route preferences emerge from personal hostile travel history with deterministic replay coverage
+- [x] Learned source reliability now has end-to-end golden proof through later lawful source reranking
 - [ ] Economy sustains 100+ tick soak without conservation violations
 
 ---
@@ -529,7 +530,6 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S35-observable-activity-signals.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S36-declarative-goal-registration.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | `S39-limited-side-benefit-plan-scoring.md` | 4+ | 16 | S33 |
-| `S48-golden-gaps-S38.md` | 4+ | 16 | S38 |
 | `S42-per-agent-reasoning-style.md` | 5 | 17 | none |
 | `S43-communication-type-differentiation.md` | 5 | 17 | none |
 | `S44-generalized-contention-substrate.md` | 5 | 18 | S42, S43 |
@@ -557,5 +557,5 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | ✅ COMPLETED |
-| 4+: Economy & AI Preferences | S04–S06, S10, S38–S39, S48 | Merchant economy depth, learned preferences, side-benefit scoring, S38 golden closeout | IN PROGRESS (S04, S05, S06, S10, S38 complete; S39 and S48 pending) |
+| 4+: Economy & AI Preferences | S04–S06, S10, S38–S39, S48 | Merchant economy depth, learned preferences, side-benefit scoring, S38 golden closeout | IN PROGRESS (S04, S05, S06, S10, S38, S48 complete; S39 pending) |
 | 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | PENDING |

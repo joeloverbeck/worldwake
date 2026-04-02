@@ -484,12 +484,42 @@ fn intended_exclusive_action(
         .then_some(candidate.def_id)
 }
 
+fn required_trade_counterparty(goal: &GroundedGoal) -> Option<EntityId> {
+    let seller = goal.evidence_entities.iter().copied().next()?;
+    if goal.evidence_entities.len() != 1 {
+        return None;
+    }
+    match goal.key.kind {
+        GoalKind::AcquireCommodity { .. }
+        | GoalKind::RestockCommodity { .. }
+        | GoalKind::TreatWounds { .. } => Some(seller),
+        _ => None,
+    }
+}
+
+fn affordance_matches_grounded_opportunity(goal: &GroundedGoal, affordance: &Affordance) -> bool {
+    let Some(required_counterparty) = required_trade_counterparty(goal) else {
+        return true;
+    };
+    let Some(trade) = affordance
+        .payload_override
+        .as_ref()
+        .and_then(ActionPayload::as_trade)
+    else {
+        return true;
+    };
+    trade.counterparty == required_counterparty
+}
+
 pub(super) fn search_candidates_from_affordance(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     affordance: &Affordance,
 ) -> Vec<SearchCandidate> {
+    if !affordance_matches_grounded_opportunity(goal, affordance) {
+        return Vec::new();
+    }
     let planning_targets = affordance
         .bound_targets
         .iter()

@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 113
+- Scenario blocks with explicit metadata: 114
 - Files contributing scenario metadata: 19
-- Tests associated with scenario blocks: 254
+- Tests associated with scenario blocks: 256
 
 ## Scenario Inventory
 
@@ -115,10 +115,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:2025` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
 | `48` | Raid-Belief Economic Cascade | `golden_t22_bandit_camp_destruction.rs:2064` | `golden_raid_belief_economic_cascade` | `golden_raid_belief_economic_cascade_replays_deterministically` |
 | `49` | Wound-Dampened Raid Spiral | `golden_t22_bandit_camp_destruction.rs:2103` | `golden_wound_dampened_raid_spiral` | `golden_wound_dampened_raid_spiral_replays_deterministically` |
-| `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:1209` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
-| `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:1244` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
-| `2f` | Carrier Delivers To Facility Without Becoming Seller | `golden_trade.rs:1279` | `golden_carrier_delivery_to_facility_preserves_seller_identity` | `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically` |
-| `74` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:1310` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
+| `2b` | Buyer-Driven Trade Acquisition | `golden_trade.rs:1635` | `golden_buyer_driven_trade_acquisition` | `golden_buyer_driven_trade_acquisition_replays_deterministically` |
+| `2d` | Merchant Restock and Return to Home Market | `golden_trade.rs:1670` | `golden_merchant_restock_return_stock` | `golden_merchant_restock_return_stock_replays_deterministically` |
+| `2f` | Carrier Delivers To Facility Without Becoming Seller | `golden_trade.rs:1705` | `golden_carrier_delivery_to_facility_preserves_seller_identity` | `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically` |
+| `74` | Local Trade Start Failure Recovers via Production Fallback | `golden_trade.rs:1736` | `golden_local_trade_start_failure_recovers_via_production_fallback` | `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically` |
+| `94` | Trade Rejection Reweights Seller Choice | `golden_trade.rs:1779` | `golden_trade_rejection_reroutes_to_reliable_seller` | `golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically` |
 | `58` | Travel Need Escalation | `golden_travel_physiology.rs:53` | `golden_travel_escalation` | — |
 | `59` | Critical Bladder Local Relief | `golden_travel_physiology.rs:199` | `golden_critical_bladder_local_relief` | — |
 | `60` | Agent Diversity in Travel Escalation | `golden_travel_physiology.rs:337` | `golden_agent_diversity` | — |
@@ -1721,7 +1722,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2b: Buyer-Driven Trade Acquisition
 
-- Source: `golden_trade.rs:1209`
+- Source: `golden_trade.rs:1635`
 - Systems: Needs, AI, Trade, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Needs
@@ -1738,7 +1739,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 
-- Source: `golden_trade.rs:1244`
+- Source: `golden_trade.rs:1670`
 - Systems: Enterprise, Travel, Production, Transport, Conservation
 - GoalKinds: RestockCommodity, MoveCargo
 - ActionDomains: Production, Travel, Transport
@@ -1755,7 +1756,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2f: Carrier Delivers To Facility Without Becoming Seller
 
-- Source: `golden_trade.rs:1279`
+- Source: `golden_trade.rs:1705`
 - Systems: Travel, Transport, Trade, Conservation
 - ActionDomains: Travel, Transport, Trade
 - Places: VillageSquare, GeneralStore
@@ -1769,7 +1770,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 74: Local Trade Start Failure Recovers via Production Fallback
 
-- Source: `golden_trade.rs:1310`
+- Source: `golden_trade.rs:1736`
 - Systems: AI, Trade, Production, Travel, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Production, Travel, Needs
@@ -1783,6 +1784,23 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: Losing buyer records lawful StartFailed. Next AI tick clears stale local trade branch. Recovery through distant production fallback.
 
 **Cross-system chain**: Two buyers -> stale trade start -> StartFailed -> next AI tick clears branch -> travel to remote production -> harvest -> eat.
+
+### Scenario 94: Trade Rejection Reweights Seller Choice
+
+- Source: `golden_trade.rs:1779`
+- Systems: AI, Trade, Needs
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Trade, Travel, Needs
+- Places: VillageSquare, GeneralStore
+- Primary tests: `golden_trade_rejection_reroutes_to_reliable_seller`
+- Replay tests: `golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically`
+- All tests: `golden_trade_rejection_reroutes_to_reliable_seller`, `golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically`
+
+**Setup**: Hungry buyer knows two bread sellers. The local VillageSquare seller stays listed but rejects an underfunded trade. A remote GeneralStore seller remains lawful for the same commodity.
+
+**Proves**: Trade rejection records `SourceReliability` on the rejecting seller. The next planning pass still sees the local seller as a live candidate, but applies a seller-specific reliability discount and reroutes to the remote seller. The buyer then completes the remote bread acquisition and eats.
+
+**Cross-system chain**: local trade rejection -> source-reliability memory -> next-tick seller reranking -> remote trade -> consumption.
 
 ### Scenario 58: Travel Need Escalation
 

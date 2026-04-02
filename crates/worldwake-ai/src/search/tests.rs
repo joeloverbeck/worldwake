@@ -33,7 +33,7 @@ use worldwake_core::{
 use worldwake_sim::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
     PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, TransportActionPayload,
+    RuntimeBeliefView, TradeActionPayload, TransportActionPayload,
 };
 use worldwake_systems::build_full_action_registries;
 
@@ -3917,6 +3917,133 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         .map(|def| def.id)
         .collect::<BTreeSet<_>>();
     assert_eq!(intended_actions, expected_actions);
+}
+
+#[test]
+fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity() {
+    let actor = entity(1);
+    let seller_a = entity(2);
+    let seller_b = entity(3);
+    let market = entity(10);
+    let lot_a = entity(20);
+    let lot_b = entity(21);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, seller_a, seller_b, market, lot_a, lot_b]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(seller_a, EntityKind::Agent);
+    view.kinds.insert(seller_b, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(lot_a, EntityKind::ItemLot);
+    view.kinds.insert(lot_b, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(seller_a, market);
+    view.effective_places.insert(seller_b, market);
+    view.effective_places.insert(lot_a, market);
+    view.effective_places.insert(lot_b, market);
+    view.entities_at
+        .insert(market, vec![actor, seller_a, seller_b, lot_a, lot_b]);
+    view.trade_profiles
+        .insert(actor, sample_trade_disposition_profile());
+    view.merchandise_profiles.insert(
+        seller_a,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(market),
+        },
+    );
+    view.merchandise_profiles.insert(
+        seller_b,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(market),
+        },
+    );
+    view.commodity_quantities
+        .insert((actor, CommodityKind::Coin), Quantity(3));
+    view.commodity_quantities
+        .insert((seller_a, CommodityKind::Bread), Quantity(1));
+    view.commodity_quantities
+        .insert((seller_b, CommodityKind::Bread), Quantity(1));
+    view.lot_commodities.insert(lot_a, CommodityKind::Bread);
+    view.lot_commodities.insert(lot_b, CommodityKind::Bread);
+    view.direct_possessors.insert(lot_a, seller_a);
+    view.direct_possessors.insert(lot_b, seller_b);
+    view.direct_possessions.entry(seller_a).or_default().push(lot_a);
+    view.direct_possessions.entry(seller_b).or_default().push(lot_b);
+    view.listed_lots
+        .insert((market, CommodityKind::Bread), vec![lot_a, lot_b]);
+    view.lot_sellers.insert(lot_a, seller_a);
+    view.lot_sellers.insert(lot_b, seller_b);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([seller_b]),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry();
+    let trade_def_id = registry
+        .iter()
+        .find(|def| def.name == "trade")
+        .map(|def| def.id)
+        .expect("trade action should be registered");
+
+    let local_seller_affordance = Affordance {
+        def_id: trade_def_id,
+        actor,
+        bound_targets: vec![seller_a],
+        payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+            counterparty: seller_a,
+            sale_lot: lot_a,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_quantity: Quantity(1),
+        })),
+        explanation: None,
+    };
+    let remote_seller_affordance = Affordance {
+        def_id: trade_def_id,
+        actor,
+        bound_targets: vec![seller_b],
+        payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+            counterparty: seller_b,
+            sale_lot: lot_b,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(1),
+            requested_quantity: Quantity(1),
+        })),
+        explanation: None,
+    };
+
+    let wrong_candidates =
+        search_candidates_from_affordance(&goal, &state, &registry, &local_seller_affordance);
+    let correct_candidates =
+        search_candidates_from_affordance(&goal, &state, &registry, &remote_seller_affordance);
+
+    assert!(wrong_candidates.is_empty());
+    assert_eq!(correct_candidates.len(), 1);
+    assert_eq!(correct_candidates[0].authoritative_targets, vec![seller_b]);
+    assert_eq!(
+        correct_candidates[0]
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_trade)
+            .map(|trade| trade.counterparty),
+        Some(seller_b)
+    );
 }
 
 // ── A* heuristic tests ──────────────────────────────────────────────

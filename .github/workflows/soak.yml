@@ -10,7 +10,27 @@ on:
 jobs:
   soak:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: seeds-0-1
+            seed_start: 0
+            seed_count: 2
+          - name: seeds-2-3
+            seed_start: 2
+            seed_count: 2
+          - name: seeds-4-5
+            seed_start: 4
+            seed_count: 2
+          - name: seeds-6-7
+            seed_start: 6
+            seed_count: 2
+          - name: seeds-8-9
+            seed_start: 8
+            seed_count: 2
+    name: soak / ${{ matrix.shard.name }}
 
     steps:
       - name: Checkout
@@ -23,4 +43,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run soak tests
-        run: cargo test -p worldwake-ai --features soak --test golden_soak
+        env:
+          SOAK_SEED_START: ${{ matrix.shard.seed_start }}
+          SOAK_SEEDS: ${{ matrix.shard.seed_count }}
+        run: cargo test --release -p worldwake-ai --features soak --test golden_soak

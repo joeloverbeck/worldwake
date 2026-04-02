@@ -144,6 +144,12 @@ Check that each focused selector actually matches the new or changed test names.
 
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 
+When a required verification tool or script invokes broader repo checks and exposes an adjacent blocker outside the ticket's main architecture change, distinguish:
+- ticket-owned fallout that the current ticket should absorb
+- toolchain or verification-gate fallout that only surfaced because the required check reached farther
+
+If the blocker is small, local, and necessary to complete the required verification path, repair it and keep the ticket scope honest about why that extra edit happened. If it is broader or would materially expand the ticket beyond its corrected boundary, stop and use 1-3-1 instead of silently absorbing unrelated work.
+
 If stronger lawful behavior now reaches completion earlier than an older focused test assumed, recalibrate the test inputs to preserve the intended proof surface instead of weakening the implementation to preserve stale timing or valuation assumptions.
 
 When a golden proves durable learned-state aftermath such as memory records, counters, or timestamps, assert the semantic contract unless exact tick identity is itself the owned invariant. If only ordering or recency matters, prove that boundary directly instead of pinning the record to `current_tick`.
