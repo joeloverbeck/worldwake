@@ -1,5 +1,5 @@
 ---
-name: implement
+name: cli-improvement-implement
 description: "Read latest CLI evaluation, implement top recommendations within crates/worldwake-cli/. Invoke after evaluate to fix highest-priority issues."
 user-invocable: true
 ---

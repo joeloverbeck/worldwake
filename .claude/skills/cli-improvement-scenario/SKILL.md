@@ -1,5 +1,5 @@
 ---
-name: scenario
+name: cli-improvement-scenario
 description: "Update the CLI evaluation scenario (scenarios/cli-evaluation.ron) when new simulation features land. Invoke after implementing specs that add new action types, systems, or components."
 user-invocable: true
 ---
