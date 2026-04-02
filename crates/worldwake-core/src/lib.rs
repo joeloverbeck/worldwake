@@ -43,6 +43,7 @@ pub mod drives;
 pub mod entity;
 pub mod epistemic;
 pub mod error;
+pub mod experience;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
@@ -121,6 +122,10 @@ pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
+pub use experience::{
+    EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
+    SourceReliability,
+};
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;

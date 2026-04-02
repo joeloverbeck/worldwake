@@ -6,10 +6,11 @@
 use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
     CommodityPurpose, CommodityValuationProfile, DemandMemory, DemandObservation,
-    DemandObservationReason, EntityId, FacilityQueueDispositionProfile, GoalKey, GoalKind,
-    MerchandiseProfile, Permille, Quantity, Seed, StockAssignment, StockAssignmentKind,
+    DemandObservationReason, EdgeExperience, EntityId, FacilityQueueDispositionProfile, GoalKey,
+    GoalKind, MerchandiseProfile, PreferenceProfile, Permille, Quantity, ReliabilityRecord,
+    RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind,
     StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-    UtilityProfile,
+    TravelEdgeId, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU32, NonZeroU8};
@@ -111,6 +112,48 @@ pub fn sample_commodity_valuation_profile() -> CommodityValuationProfile {
         recipe_opportunity_depth: NonZeroU8::new(3).unwrap(),
         recipe_place_horizon: 2,
         indirect_value_decay_per_step: Permille::new(150).unwrap(),
+    }
+}
+
+/// Returns a representative route experience fixture.
+pub fn sample_route_experience() -> RouteExperience {
+    RouteExperience {
+        edges: BTreeMap::from([(
+            TravelEdgeId(3),
+            EdgeExperience {
+                safe_trips: 4,
+                hostile_encounters: 1,
+                last_travel_tick: Tick(19),
+            },
+        )]),
+    }
+}
+
+/// Returns a representative source reliability fixture.
+pub fn sample_source_reliability() -> SourceReliability {
+    SourceReliability {
+        sources: BTreeMap::from([(
+            SourceKey {
+                entity: entity_id(9, 0),
+                commodity: CommodityKind::Bread,
+            },
+            ReliabilityRecord {
+                successful_acquisitions: 3,
+                failed_attempts: 1,
+                last_attempt_tick: Tick(21),
+            },
+        )]),
+    }
+}
+
+/// Returns a representative learned-preference profile fixture.
+pub fn sample_preference_profile() -> PreferenceProfile {
+    PreferenceProfile {
+        route_caution_weight: Permille::new(300).unwrap(),
+        source_trust_weight: Permille::new(200).unwrap(),
+        route_memory_capacity: 24,
+        source_memory_capacity: 18,
+        memory_retention_ticks: 400,
     }
 }
 

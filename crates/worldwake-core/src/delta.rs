@@ -8,11 +8,11 @@ use crate::{
     FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
     JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
-    OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PursuitProfile,
-    PerceptionProfile, Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity,
+    OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PreferenceProfile,
+    PursuitProfile, PerceptionProfile, Permille, ProductionJob, ProductionOutputOwnershipPolicy, Quantity,
     RecordData, ReservationRecord, ResourceSource, SaleListing, StockAssignment,
-    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UniqueItem, UtilityProfile,
+    RouteExperience, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
 };
 use serde::{Deserialize, Serialize};
@@ -237,7 +237,8 @@ mod tests {
     use crate::{
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
-            sample_commodity_valuation_profile,
+            sample_commodity_valuation_profile, sample_preference_profile,
+            sample_route_experience, sample_source_reliability,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
@@ -325,6 +326,9 @@ mod tests {
             }),
             ComponentValue::UtilityProfile(sample_utility_profile()),
             ComponentValue::CommodityValuationProfile(sample_commodity_valuation_profile()),
+            ComponentValue::RouteExperience(sample_route_experience()),
+            ComponentValue::SourceReliability(sample_source_reliability()),
+            ComponentValue::PreferenceProfile(sample_preference_profile()),
             ComponentValue::PatrolRoute(PatrolRoute {
                 assigned_places: vec![entity(26), entity(27), entity(28)],
                 current_index: 1,
@@ -672,6 +676,9 @@ mod tests {
                 ComponentKind::JusticeDispositionProfile,
                 ComponentKind::UtilityProfile,
                 ComponentKind::CommodityValuationProfile,
+                ComponentKind::RouteExperience,
+                ComponentKind::SourceReliability,
+                ComponentKind::PreferenceProfile,
                 ComponentKind::PatrolRoute,
                 ComponentKind::PatrolProfile,
                 ComponentKind::OfficeData,

@@ -10,6 +10,7 @@ use crate::{
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
+    experience::{PreferenceProfile, RouteExperience, SourceReliability},
     facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
     institutional::RecordData,

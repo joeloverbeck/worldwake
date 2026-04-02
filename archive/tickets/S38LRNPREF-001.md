@@ -1,6 +1,6 @@
 # S38LRNPREF-001: Core types, Component impls, and component schema registration
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new ECS components in worldwake-core, SAVE_FORMAT_VERSION bump in worldwake-sim
@@ -13,7 +13,7 @@ No infrastructure exists for per-agent experience memories. The three new compon
 ## Assumption Reassessment (2026-04-02)
 
 1. `Component` trait requires `'static + Send + Sync + Clone + Debug + Serialize + DeserializeOwned` — verified at `crates/worldwake-core/src/traits.rs:15`.
-2. `component_schema.rs` uses `with_component_schema_entries!` macro — verified at `crates/worldwake-core/src/component_schema.rs:3`. All macro expansion sites (`delta.rs`, `world.rs`, `component_tables.rs`, `world_txn.rs`) must import new types.
+2. `component_schema.rs` uses `with_component_schema_entries!` macro — verified at `crates/worldwake-core/src/component_schema.rs:3`. Bare-type macro expansion sites (`delta.rs`, `world.rs`, `component_tables.rs`) must import the new types. `world_txn.rs` uses the crate-qualified `select_txn_simple_set_components` selector, so it will pick up new simple-setters without a matching top-level import unless the file starts using the types directly.
 3. `TravelEdgeId` exists at `crates/worldwake-core/src/ids.rs:149` as `struct TravelEdgeId(u32)` with `Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize`.
 4. `EntityId` exists at `crates/worldwake-core/src/ids.rs:39` as `struct EntityId { slot: u32, generation: u32 }` with same derives.
 5. `CommodityKind` exists at `crates/worldwake-core/src/items.rs:9` as enum with 10 variants including `Ord` derive.
@@ -26,12 +26,13 @@ No infrastructure exists for per-agent experience memories. The three new compon
 ## Architecture Check
 
 1. Three new components follow the established PerceptionProfile pattern: per-agent, agent-only, Copy-able profile + Default-able stores. Struct shapes and derives match existing conventions.
-2. No backward-compatibility shims. These are net-new types with no legacy predecessors.
+2. Component-registration fallout includes the hardcoded authoritative component manifest in `delta.rs` (`ComponentKind::ALL`, `component_samples()`, and related tests), not just schema macro expansion sites.
+3. No backward-compatibility shims. These are net-new types with no legacy predecessors.
 
 ## Verification Layers
 
 1. Component trait bounds satisfied → compile-time verification (derive macros + `impl Component`)
-2. Component schema registration correct → focused unit test: construct world, insert/get/remove each component
+2. Component schema registration and manifest mirrors correct → focused unit tests: construct world, insert/get/remove each component; `delta.rs` authoritative component inventory still matches the live schema
 3. SAVE_FORMAT_VERSION bump → existing save/load round-trip tests catch version mismatch
 4. Single-layer ticket (worldwake-core types + schema); no cross-system verification needed.
 
@@ -52,9 +53,13 @@ Create `crates/worldwake-core/src/experience.rs` containing:
 
 Add entries for `RouteExperience`, `SourceReliability`, and `PreferenceProfile` to `with_component_schema_entries!` in `component_schema.rs`, gated to `EntityKind::Agent`.
 
-### 3. Macro expansion site imports
+### 3. Macro expansion site imports and component-manifest updates
 
-Add `use crate::{RouteExperience, SourceReliability, PreferenceProfile};` (or bare type names if already in scope via `crate::*`) at each macro expansion site: `delta.rs`, `world.rs`, `component_tables.rs`, `world_txn.rs`.
+Add `use crate::{RouteExperience, SourceReliability, PreferenceProfile};` (or bare type names if already in scope via `crate::*`) at the bare-type macro expansion sites: `delta.rs`, `world.rs`, `component_tables.rs`.
+
+Update `delta.rs` to keep the authoritative component manifest honest:
+- add the new `ComponentKind` variants to the explicit `ComponentKind::ALL` expectation test
+- add representative `ComponentValue` samples for the new components so `component_value_reports_matching_component_kind` still proves the full schema mirror surface
 
 ### 4. Module declaration and re-exports
 
@@ -69,10 +74,9 @@ Bump `SAVE_FORMAT_VERSION` from 12 to 13 in `crates/worldwake-sim/src/save_load.
 - `crates/worldwake-core/src/experience.rs` (new)
 - `crates/worldwake-core/src/lib.rs` (modify — module declaration + re-exports)
 - `crates/worldwake-core/src/component_schema.rs` (modify — 3 new entries)
-- `crates/worldwake-core/src/delta.rs` (modify — imports)
+- `crates/worldwake-core/src/delta.rs` (modify — imports + component manifest/tests)
 - `crates/worldwake-core/src/world.rs` (modify — imports)
 - `crates/worldwake-core/src/component_tables.rs` (modify — imports)
-- `crates/worldwake-core/src/world_txn.rs` (modify — imports)
 - `crates/worldwake-sim/src/save_load.rs` (modify — version bump)
 
 ## Out of Scope
@@ -105,11 +109,35 @@ Bump `SAVE_FORMAT_VERSION` from 12 to 13 in `crates/worldwake-sim/src/save_load.
 
 ### New/Modified Tests
 
-1. `crates/worldwake-core/src/experience.rs` (new, `#[cfg(test)]` module) — component insert/get/remove round-trips, Default behavior, SourceKey ordering
-2. `crates/worldwake-sim/src/save_load.rs` (existing tests run) — save/load round-trip with new components
+1. `crates/worldwake-core/src/experience.rs` (new, `#[cfg(test)]` module) — component insert/get/remove round-trips, Default behavior, SourceKey ordering, wrong-kind rejection
+2. `crates/worldwake-core/src/delta.rs` (existing tests updated) — authoritative component inventory and representative `ComponentValue` sample coverage
+3. `crates/worldwake-sim/src/save_load.rs` (existing tests run) — save/load round-trip with new components
 
 ### Commands
 
 1. `cargo test -p worldwake-core experience`
 2. `cargo test -p worldwake-sim save_load`
 3. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+- **Completed**: 2026-04-02
+- **What changed**:
+  - added `crates/worldwake-core/src/experience.rs` with `EdgeExperience`, `RouteExperience`, `SourceKey`, `ReliabilityRecord`, `SourceReliability`, and `PreferenceProfile`
+  - registered the new agent-only components in `crates/worldwake-core/src/component_schema.rs`
+  - re-exported the new types from `crates/worldwake-core/src/lib.rs`
+  - updated `crates/worldwake-core/src/delta.rs` so the authoritative component manifest and representative `ComponentValue` samples include the new schema entries
+  - updated `crates/worldwake-core/src/component_tables.rs` and `crates/worldwake-core/src/world.rs` for the new bare-type component surfaces
+  - added representative fixtures in `crates/worldwake-core/src/test_utils.rs`
+  - bumped `SAVE_FORMAT_VERSION` from `12` to `13` in `crates/worldwake-sim/src/save_load.rs`
+  - expanded the existing save/load fixture builder so the broad roundtrip tests actually serialize and deserialize the new components
+- **Deviations from original plan**:
+  - `world_txn.rs` did not require a new top-level import because its simple-setter generation path is crate-qualified through `select_txn_simple_set_components`
+  - the schema-registration blast radius included `delta.rs` manifest/test updates and save/load fixture expansion, not just raw macro-site imports
+- **Verification**:
+  - `cargo test -p worldwake-core experience`
+  - `cargo test -p worldwake-core component_kind_variants_match_authoritative_components`
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-sim save_load`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

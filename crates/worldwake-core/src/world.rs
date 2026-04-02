@@ -10,9 +10,9 @@ use crate::{
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile,
-    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
+    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
     RelationTables, ResourceSource, SaleListing, StockAssignment, StockStoragePolicy,
-    SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    RouteExperience, SourceReliability, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
 };

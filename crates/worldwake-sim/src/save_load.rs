@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 12;
+pub const SAVE_FORMAT_VERSION: u32 = 13;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -210,6 +210,9 @@ mod tests {
         EventLog, EventPayload, PendingEvent, PerceptionSource, Quantity, ReservationId, Seed,
         StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
         World, WorldTxn,
+        test_utils::{
+            sample_preference_profile, sample_route_experience, sample_source_reliability,
+        },
     };
 
     fn state_hash(byte: u8) -> StateHash {
@@ -314,6 +317,15 @@ mod tests {
         let mut belief_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
         belief_txn
             .set_component_agent_belief_store(actor, beliefs)
+            .unwrap();
+        belief_txn
+            .set_component_route_experience(actor, sample_route_experience())
+            .unwrap();
+        belief_txn
+            .set_component_source_reliability(actor, sample_source_reliability())
+            .unwrap();
+        belief_txn
+            .set_component_preference_profile(actor, sample_preference_profile())
             .unwrap();
         let _ = belief_txn.commit(&mut event_log);
         let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
