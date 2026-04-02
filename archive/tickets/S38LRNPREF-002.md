@@ -1,6 +1,6 @@
 # S38LRNPREF-002: Memory eviction and post-load pruning
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -90,3 +90,19 @@ Add `pub fn prune_dead_sources(&mut self, is_alive: impl Fn(&EntityId) -> bool)`
 
 1. `cargo test -p worldwake-core experience`
 2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+- **Completed**: 2026-04-02
+- **What changed**:
+  - added `RouteExperience::enforce_limits` in `crates/worldwake-core/src/experience.rs` for binary staleness eviction plus oldest-record capacity eviction
+  - added `SourceReliability::enforce_limits` in `crates/worldwake-core/src/experience.rs` with the matching staleness and capacity behavior
+  - added `RouteExperience::prune_dead_edges` and `SourceReliability::prune_dead_sources` in `crates/worldwake-core/src/experience.rs`
+  - expanded the focused `experience.rs` test module to cover stale-record eviction, capacity eviction, deterministic oldest-tick tie-breaking, and dead-reference pruning
+- **Deviations from original plan**:
+  - none; the ticket remained a single-layer `worldwake-core` data-method slice, and save/load pipeline integration stayed out of scope
+- **Verification**:
+  - `cargo test -p worldwake-core experience`
+  - `cargo test -p worldwake-core`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
