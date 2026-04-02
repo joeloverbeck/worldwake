@@ -34,6 +34,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
    - when affordance generation depends on self-authoritative profile reads, those profile prerequisites are present in both production code and representative AI/planner test harnesses
    - for component-registration tickets, hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests that mirror the authoritative component set still match the live schema after the new entry lands
+   - when a ticket extends a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or other generated surfaces that materialize that API indirectly; if they exist, distinguish the canonical consumer boundary from any implementation-detail mirror the live architecture requires
 4. Reassess against Worldwake's repo rules:
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
@@ -83,6 +84,8 @@ For component-registration work, distinguish:
 
 Do not assume every file that references the schema macro needs a new top-level import; verify actual local type use first.
 
+For trait-surface tickets, do not assume the named trait is implemented directly at each consumer. Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits, and correct the ticket if the implementation boundary is broader than the original prose.
+
 ### 5. Implement with Worldwake discipline
 
 1. Keep edits minimal and targeted.
@@ -115,6 +118,10 @@ Typical order:
 3. broader workspace validation if the change crosses boundaries or the ticket requires it
 
 When the change touches more than one focused proof surface inside the same crate, run each focused selector needed to cover those boundaries rather than assuming one name filter is sufficient.
+
+If a canonical interface is realized through a forwarding layer, prove both:
+- the canonical consumer-facing call
+- the forwarding or runtime path that actually materializes it
 
 Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
 

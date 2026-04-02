@@ -7,14 +7,14 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceSource, SocialObservation, StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-    World, Wound,
+    CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ControlSource,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation,
+    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -737,6 +737,16 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_commodity_valuation_profile(agent)
+                    .copied()
+            })
+            .flatten()
+    }
+
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_patrol_profile(agent).cloned())
@@ -1254,11 +1264,12 @@ mod tests {
         AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
         CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille,
-        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
+        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Quantity,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
         WoundId,
+        test_utils::sample_commodity_valuation_profile,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1823,6 +1834,47 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(RuntimeBeliefView::tell_profile(&view, agent), None);
+    }
+
+    #[test]
+    fn commodity_valuation_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = sample_commodity_valuation_profile();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_commodity_valuation_profile(agent, profile)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), Some(profile));
+        assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), Some(profile));
+    }
+
+    #[test]
+    fn commodity_valuation_profile_returns_none_when_component_missing() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), None);
+        assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), None);
     }
 
     #[test]
