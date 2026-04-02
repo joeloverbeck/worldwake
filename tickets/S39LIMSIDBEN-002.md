@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — AI plan-selection scoring, decision-trace surfaces, and selection call-site wiring
-**Deps**: [tickets/S39LIMSIDBEN-001.md](/home/joeloverbeck/projects/worldwake/tickets/S39LIMSIDBEN-001.md), [archive/specs/S33-opportunity-scoped-goal-identity.md](/home/joeloverbeck/projects/worldwake/archive/specs/S33-opportunity-scoped-goal-identity.md), [archive/specs/S22-generalized-intention-frames.md](/home/joeloverbeck/projects/worldwake/archive/specs/S22-generalized-intention-frames.md)
+**Deps**: [archive/tickets/S39LIMSIDBEN-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S39LIMSIDBEN-001.md), [archive/specs/S33-opportunity-scoped-goal-identity.md](/home/joeloverbeck/projects/worldwake/archive/specs/S33-opportunity-scoped-goal-identity.md), [archive/specs/S22-generalized-intention-frames.md](/home/joeloverbeck/projects/worldwake/archive/specs/S22-generalized-intention-frames.md)
 
 ## Problem
 

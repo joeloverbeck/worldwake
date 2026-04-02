@@ -89,6 +89,8 @@ When a golden-driven ticket mixes still-valid negative coverage gaps with an ove
 
 When a shared type changes, treat helper factories, sample fixtures, serialized scenario/config inputs, and schema examples as part of the construction-site sweep, not just direct Rust struct literals.
 
+When a widely used serialized component or profile gains a field, proactively search sibling crates for full struct literals embedded in RON/JSON/YAML tests, bundled scenarios, and schema-shape deserialization fixtures. Do not assume the owning crate's Rust constructors are the only fallout surface.
+
 For component-registration work, distinguish:
 - the authoritative schema declaration itself
 - runtime code-generation or macro-expansion sites that truly require the bare type in scope

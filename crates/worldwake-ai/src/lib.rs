@@ -34,6 +34,7 @@ pub mod pursuit_belief;
 pub mod ranking;
 mod route_threat;
 pub mod search;
+pub mod side_benefit;
 mod shared_collections;
 mod theft;
 
@@ -108,6 +109,7 @@ pub use ranking::{
 };
 pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
 pub use search::{search_plan, PlanSearchResult};
+pub use side_benefit::{build_plan_value, detect_side_benefits, PlanValue, SideBenefit};
 pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 
 #[cfg(test)]

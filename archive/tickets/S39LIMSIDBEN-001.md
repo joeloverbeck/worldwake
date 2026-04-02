@@ -1,6 +1,6 @@
 # S39LIMSIDBEN-001: Add side-benefit scoring substrate and per-agent weight
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `UtilityProfile` field and new AI-side side-benefit scoring substrate
@@ -88,3 +88,32 @@ Cover the exact detection and arithmetic rules this ticket owns before any selec
 1. `cargo test -p worldwake-core utility_profile::tests::utility_profile_roundtrips_through_bincode -- --exact --nocapture`
 2. `cargo test -p worldwake-ai --lib`
 3. `cargo test -p worldwake-core`
+4. `cargo test -p worldwake-ai`
+5. `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full -- --exact --nocapture`
+6. `cargo test -p worldwake-cli`
+7. `cargo test --workspace`
+8. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed: 2026-04-03
+
+What changed:
+- added `side_benefit_weight: Permille` to [`UtilityProfile`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/utility_profile.rs) with the spec default and updated representative `UtilityProfile` fixtures in [`test_utils.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/test_utils.rs)
+- added the new pure AI substrate in [`side_benefit.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/side_benefit.rs): `SideBenefit`, `PlanValue`, `detect_side_benefits()`, and `build_plan_value()`
+- exported the new module surface from [`lib.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/lib.rs)
+
+Deviations from original plan:
+- no architectural deviation from the ticket scope was needed
+- broad workspace verification exposed one adjacent schema-fidelity fixture in [`crates/worldwake-cli/src/scenario/types.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-cli/src/scenario/types.rs); I updated that full RON `UtilityProfile` literal to include `side_benefit_weight` so the shared struct-shape change verified honestly across crates
+
+Verification results:
+- `cargo test -p worldwake-core utility_profile::tests::utility_profile_roundtrips_through_bincode -- --exact --nocapture`
+- `cargo test -p worldwake-core component_tables::tests::insert_and_get_utility_profile -- --exact --nocapture`
+- `cargo test -p worldwake-core`
+- `cargo test -p worldwake-ai --lib`
+- `cargo test -p worldwake-ai`
+- `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full -- --exact --nocapture`
+- `cargo test -p worldwake-cli`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
