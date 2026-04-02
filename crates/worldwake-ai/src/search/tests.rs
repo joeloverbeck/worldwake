@@ -6868,7 +6868,7 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
 }
 
 #[test]
-fn search_trace_records_duration_dependency_when_root_candidate_duration_estimate_fails() {
+fn search_trace_omits_trade_root_candidate_without_trade_disposition_profile() {
     let actor = entity(1);
     let town = entity(10);
     let seller = entity(20);
@@ -6939,18 +6939,11 @@ fn search_trace_records_duration_dependency_when_root_candidate_duration_estimat
         .iter()
         .find(|summary| summary.depth == 0)
         .expect("root expansion summary should be recorded");
-    let trade = root
-        .root_candidates
-        .iter()
-        .find(|candidate| candidate.op_kind == Some(PlannerOpKind::Trade))
-        .expect("trade root candidate should be traced");
-    assert_eq!(
-        trade.outcome,
-        crate::decision_trace::RootCandidateOutcome::Skipped(
-            crate::decision_trace::RootCandidateSkipReason::DurationEstimateFailed {
-                dependency: crate::planner_duration_contract::PlannerDurationDependency::ActorTradeDisposition,
-            },
-        )
+    assert!(
+        root.root_candidates
+            .iter()
+            .all(|candidate| candidate.op_kind != Some(PlannerOpKind::Trade)),
+        "trade root candidate should be absent when no trade disposition profile exists"
     );
 }
 

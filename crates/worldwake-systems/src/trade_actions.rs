@@ -19,7 +19,8 @@ pub fn register_trade_action(
 ) -> ActionDefId {
     let handler = handlers.register(
         ActionHandler::new(start_trade, tick_trade, commit_trade, abort_trade)
-            .with_affordance_payloads(enumerate_trade_payloads),
+            .with_affordance_payloads(enumerate_trade_payloads)
+            .with_payload_override_validator(validate_trade_payload_override),
     );
     defs.register(trade_action_def(ActionDefId(defs.len() as u32), handler))
 }
@@ -96,6 +97,9 @@ fn enumerate_trade_payloads(
     if view.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
         return Vec::new();
     }
+    let Some(disposition) = view.trade_disposition_profile(actor) else {
+        return Vec::new();
+    };
 
     // Discover concrete listed sale lots at this place for each commodity the
     // counterparty is selling.  We iterate sale_kinds to know which commodities
@@ -103,6 +107,23 @@ fn enumerate_trade_payloads(
     let profile = view.merchandise_profile(counterparty).unwrap();
     let mut payloads: Vec<ActionPayload> = Vec::new();
     for commodity in &profile.sale_kinds {
+        let reservation = buyer_reservation_price(
+            view.homeostatic_needs(actor).as_ref(),
+            wounds_for(view, actor).as_ref(),
+            *commodity,
+            view.commodity_quantity(actor, CommodityKind::Coin),
+            count_local_alternatives(view, actor, counterparty, place, *commodity),
+        );
+        if reservation < Quantity(1) {
+            continue;
+        }
+        let opening_offer = derive_opening_offer(
+            worldwake_core::TradeRole::Buyer,
+            reservation,
+            disposition.initial_offer_bias,
+            disposition.rejection_escalation_rate,
+            rejection_count_for(view, actor, counterparty, *commodity),
+        );
         for lot in view.listed_sale_lots_at(place, *commodity) {
             if view.seller_for_sale_lot(lot) != Some(counterparty) {
                 continue;
@@ -111,14 +132,10 @@ fn enumerate_trade_payloads(
                 counterparty,
                 sale_lot: lot,
                 offered_commodity: CommodityKind::Coin,
-                offered_quantity: Quantity(1),
+                offered_quantity: opening_offer,
                 requested_quantity: Quantity(1),
             };
-            if trade_bundle_is_mutually_accepted(
-                view, actor, counterparty, place, *commodity, &payload,
-            ) {
-                payloads.push(ActionPayload::Trade(payload));
-            }
+            payloads.push(ActionPayload::Trade(payload));
         }
     }
     payloads.sort();
@@ -321,36 +338,19 @@ fn ensure_bundle_accepted(
     Ok(())
 }
 
-fn trade_bundle_is_mutually_accepted(
-    view: &dyn RuntimeBeliefView,
+fn validate_trade_payload_override(
+    _def: &ActionDef,
     actor: EntityId,
-    counterparty: EntityId,
-    place: EntityId,
-    requested_commodity: CommodityKind,
-    payload: &TradeActionPayload,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    view: &dyn RuntimeBeliefView,
 ) -> bool {
-    evaluate_trade_bundle(
-        actor,
-        view,
-        view.homeostatic_needs(actor).as_ref(),
-        wounds_for(view, actor).as_ref(),
-        view.commodity_quantity(actor, CommodityKind::Coin),
-        &[(payload.offered_commodity, payload.offered_quantity)],
-        &[(requested_commodity, payload.requested_quantity)],
-        &local_trade_alternatives(view, actor, counterparty, place),
-        demand_memory_for(view, actor).as_ref(),
-    ) == TradeAcceptance::Accept
-        && evaluate_trade_bundle(
-            counterparty,
-            view,
-            view.homeostatic_needs(counterparty).as_ref(),
-            wounds_for(view, counterparty).as_ref(),
-            view.commodity_quantity(counterparty, CommodityKind::Coin),
-            &[(requested_commodity, payload.requested_quantity)],
-            &[(payload.offered_commodity, payload.offered_quantity)],
-            &local_trade_alternatives(view, counterparty, actor, place),
-            demand_memory_for(view, counterparty).as_ref(),
-        ) == TradeAcceptance::Accept
+    let Some(payload) = payload.as_trade() else {
+        return false;
+    };
+    payload.offered_commodity == CommodityKind::Coin
+        && payload.offered_quantity >= Quantity(1)
+        && payload.offered_quantity <= view.commodity_quantity(actor, CommodityKind::Coin)
 }
 
 fn local_trade_alternatives(
@@ -393,6 +393,23 @@ pub(crate) fn count_local_alternatives(
     local_trade_alternatives(view, actor, excluded_counterparty, place)
         .into_iter()
         .filter(|(_, kind, quantity)| *kind == commodity && *quantity > Quantity(0))
+        .count() as u32
+}
+
+#[allow(dead_code)]
+pub(crate) fn rejection_count_for(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    counterparty: EntityId,
+    commodity: CommodityKind,
+) -> u32 {
+    view.demand_memory(actor)
+        .into_iter()
+        .filter(|obs| {
+            obs.reason == DemandObservationReason::WantedToBuyButTooExpensive
+                && obs.counterparty == Some(counterparty)
+                && obs.commodity == commodity
+        })
         .count() as u32
 }
 
@@ -629,6 +646,7 @@ fn wounds_for(view: &dyn RuntimeBeliefView, actor: EntityId) -> Option<WoundList
     (!wounds.is_empty()).then_some(WoundList { wounds })
 }
 
+#[allow(dead_code)]
 fn demand_memory_for(
     view: &dyn RuntimeBeliefView,
     actor: EntityId,
@@ -1174,8 +1192,9 @@ fn record_sell_blocked_intent(
 mod tests {
     use super::{
         buyer_reservation_price, count_local_alternatives, derive_opening_offer, generate_offer,
-        register_trade_action, select_substitute_trade_candidate, seller_reservation_price,
-        urgency_modulated_deadline, SubstituteTradeCandidate,
+        register_trade_action, rejection_count_for, select_substitute_trade_candidate,
+        seller_reservation_price, urgency_modulated_deadline, validate_trade_payload_override,
+        SubstituteTradeCandidate,
     };
     use crate::trade_actions::local_alternatives;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1248,6 +1267,21 @@ mod tests {
                 counterparty: Some(entity(88)),
                 reason: DemandObservationReason::WantedToBuyButNoSeller,
             }],
+        }
+    }
+
+    fn expensive_rejection(
+        commodity: CommodityKind,
+        counterparty: EntityId,
+        tick: u64,
+    ) -> DemandObservation {
+        DemandObservation {
+            commodity,
+            quantity: Quantity(1),
+            place: entity(99),
+            tick: Tick(tick),
+            counterparty: Some(counterparty),
+            reason: DemandObservationReason::WantedToBuyButTooExpensive,
         }
     }
 
@@ -1947,24 +1981,90 @@ mod tests {
     fn trade_affordance_enumerates_concrete_bundle_payloads_from_handler() {
         let harness = TradeHarness::new(
             CommodityKind::Coin,
-            Quantity(1),
+            Quantity(10),
             CommodityKind::Bread,
             Quantity(1),
             1,
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        // Debug: check visibility
+        let affordances = affordances_for(
+            &harness.world,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+
+        assert!(affordances.iter().any(|affordance| {
+            affordance.def_id == harness.def_id
+                && affordance.bound_targets == vec![harness.counterparty]
+                && affordance.payload_override.as_ref().and_then(ActionPayload::as_trade).is_some_and(
+                    |payload| {
+                        payload.counterparty == harness.counterparty
+                            && payload.sale_lot == harness.counterparty_offer
+                            && payload.offered_commodity == CommodityKind::Coin
+                            && payload.offered_quantity > Quantity(1)
+                            && payload.requested_quantity == Quantity(1)
+                    },
+                )
+        }));
+    }
+
+    #[test]
+    fn trade_affordance_returns_empty_when_buyer_has_no_coins() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
         {
-            use worldwake_sim::RuntimeBeliefView as RBV;
-            let beliefs = test_belief_store(&harness.world, harness.actor);
-            let view = PerAgentBeliefView::new(harness.actor, &harness.world, &beliefs);
-            eprintln!("entities_at place: {:?}", RBV::entities_at(&view, harness.place));
-            eprintln!("counterparty_offer effective_place: {:?}", harness.world.effective_place(harness.counterparty_offer));
-            eprintln!("counterparty_offer has_sale_listing: {:?}", harness.world.has_component_sale_listing(harness.counterparty_offer));
-            eprintln!("counterparty_offer stock_assignment: {:?}", harness.world.get_component_stock_assignment(harness.counterparty_offer));
-            eprintln!("listed_sale_lots_at: {:?}", RBV::listed_sale_lots_at(&view, harness.place, CommodityKind::Bread));
-            eprintln!("seller_for_sale_lot: {:?}", RBV::seller_for_sale_lot(&view, harness.counterparty_offer));
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.clear_possessor(harness.actor_offer).unwrap();
+            txn.clear_owner(harness.actor_offer).unwrap();
+            txn.archive_entity(harness.actor_offer).unwrap();
+            commit_txn(txn);
+        }
+
+        let affordances = affordances_for(
+            &harness.world,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+
+        assert!(
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == harness.def_id && affordance.bound_targets == vec![harness.counterparty])
+        );
+    }
+
+    #[test]
+    fn trade_affordance_is_emitted_even_when_fixed_one_coin_bundle_would_be_rejected() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(8),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        {
+            let mut txn = new_txn(&mut harness.world, 3);
+            txn.set_component_demand_memory(
+                harness.counterparty,
+                DemandMemory {
+                    observations: vec![
+                        expensive_rejection(CommodityKind::Bread, harness.actor, 1),
+                        expensive_rejection(CommodityKind::Bread, harness.actor, 2),
+                    ],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
         }
 
         let affordances = affordances_for(
@@ -1977,9 +2077,123 @@ mod tests {
         assert!(affordances.iter().any(|affordance| {
             affordance.def_id == harness.def_id
                 && affordance.bound_targets == vec![harness.counterparty]
-                && affordance.payload_override
-                    == Some(ActionPayload::Trade(harness.payload.clone()))
+                && affordance.payload_override.as_ref().and_then(ActionPayload::as_trade).is_some()
         }));
+    }
+
+    #[test]
+    fn rejection_count_for_filters_by_reason_counterparty_and_commodity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, counterparty) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Actor", ControlSource::Ai).unwrap();
+            let counterparty = txn.create_agent("Seller", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Other", ControlSource::Ai).unwrap();
+            txn.set_component_demand_memory(
+                actor,
+                DemandMemory {
+                    observations: vec![
+                        expensive_rejection(CommodityKind::Bread, counterparty, 1),
+                        expensive_rejection(CommodityKind::Bread, counterparty, 2),
+                        expensive_rejection(CommodityKind::Apple, counterparty, 3),
+                        expensive_rejection(CommodityKind::Bread, other, 4),
+                        DemandObservation {
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(1),
+                            place: entity(99),
+                            tick: Tick(5),
+                            counterparty: Some(counterparty),
+                            reason: DemandObservationReason::WantedToBuyButNoSeller,
+                        },
+                    ],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, counterparty)
+        };
+
+        let beliefs = test_belief_store(&world, actor);
+        let view = PerAgentBeliefView::new(actor, &world, &beliefs);
+
+        assert_eq!(
+            rejection_count_for(&view, actor, counterparty, CommodityKind::Bread),
+            2
+        );
+    }
+
+    #[test]
+    fn trade_payload_override_validator_accepts_valid_variable_price() {
+        let harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(5),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let beliefs = test_belief_store(&harness.world, harness.actor);
+        let view = PerAgentBeliefView::new(harness.actor, &harness.world, &beliefs);
+        let def = harness.defs.get(harness.def_id).unwrap();
+        let payload = ActionPayload::Trade(TradeActionPayload {
+            counterparty: harness.counterparty,
+            sale_lot: harness.counterparty_offer,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(3),
+            requested_quantity: Quantity(1),
+        });
+
+        assert!(validate_trade_payload_override(
+            def,
+            harness.actor,
+            &[harness.counterparty],
+            &payload,
+            &view,
+        ));
+    }
+
+    #[test]
+    fn trade_payload_override_validator_rejects_zero_or_excessive_offers() {
+        let harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(2),
+            CommodityKind::Bread,
+            Quantity(1),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        let beliefs = test_belief_store(&harness.world, harness.actor);
+        let view = PerAgentBeliefView::new(harness.actor, &harness.world, &beliefs);
+        let def = harness.defs.get(harness.def_id).unwrap();
+        let zero = ActionPayload::Trade(TradeActionPayload {
+            counterparty: harness.counterparty,
+            sale_lot: harness.counterparty_offer,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(0),
+            requested_quantity: Quantity(1),
+        });
+        let excessive = ActionPayload::Trade(TradeActionPayload {
+            counterparty: harness.counterparty,
+            sale_lot: harness.counterparty_offer,
+            offered_commodity: CommodityKind::Coin,
+            offered_quantity: Quantity(3),
+            requested_quantity: Quantity(1),
+        });
+
+        assert!(!validate_trade_payload_override(
+            def,
+            harness.actor,
+            &[harness.counterparty],
+            &zero,
+            &view,
+        ));
+        assert!(!validate_trade_payload_override(
+            def,
+            harness.actor,
+            &[harness.counterparty],
+            &excessive,
+            &view,
+        ));
     }
 
     #[test]

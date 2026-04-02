@@ -1,6 +1,6 @@
 # S10BILTRANEG-004: Modified enumerate_trade_payloads with variable-price offers
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` (affordance generation, payload override validator)
@@ -130,3 +130,25 @@ Accept the payload if:
 2. `cargo test -p worldwake-systems -- trade` — all trade tests
 3. `cargo test -p worldwake-ai` — golden tests (regression check)
 4. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+**Completed**: 2026-04-02
+
+Implemented variable-price trade affordance generation in `crates/worldwake-systems/src/trade_actions.rs`. `enumerate_trade_payloads` now derives buyer opening offers from belief-state reservation pricing, local alternatives, trade-disposition bias, and `WantedToBuyButTooExpensive` rejection history instead of hardcoding `Quantity(1)`. The stale `trade_bundle_is_mutually_accepted` affordance filter was removed, `rejection_count_for` was added, and the trade action now registers `validate_trade_payload_override` so planner-synthesized trade payloads revalidate against the live coin-budget boundary.
+
+Focused affordance and override-validation tests were added in `trade_actions.rs`, and the only downstream fallout was a stale AI search-trace harness assumption in `crates/worldwake-ai/src/search/tests.rs`. That harness was updated to reflect the new admission contract: without a `TradeDispositionProfile`, trade root candidates are now omitted at affordance generation instead of surviving until duration estimation.
+
+**Deviations from original plan**:
+1. The implementation touched `crates/worldwake-ai/src/search/tests.rs` in addition to the planned `trade_actions.rs` surface because the AI regression was a stale trace expectation, not a production contradiction.
+2. The old `demand_memory_for` helper remained in place but is now explicitly marked as staged/unused after this ticket because the new affordance path reads rejection observations directly.
+
+**Verification results**:
+1. `cargo test -p worldwake-systems trade_affordance_ -- --nocapture`
+2. `cargo test -p worldwake-systems rejection_count_for -- --nocapture`
+3. `cargo test -p worldwake-systems trade_payload_override_validator -- --nocapture`
+4. `cargo test -p worldwake-systems -- trade`
+5. `cargo test -p worldwake-ai search_trace_omits_trade_root_candidate_without_trade_disposition_profile -- --nocapture`
+6. `cargo test -p worldwake-ai`
+7. `cargo test --workspace`
+8. `cargo clippy --workspace --all-targets -- -D warnings`
