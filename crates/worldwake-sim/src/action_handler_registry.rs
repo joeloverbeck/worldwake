@@ -58,10 +58,11 @@ pub fn verify_completeness(
 mod tests {
     use super::{verify_completeness, ActionHandlerRegistry};
     use crate::{
-        AbortReason, ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler,
-        ActionHandlerId, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ActionStatus, CommitOutcome, Constraint, DeterministicRng, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        AbortReason, ActionDef, ActionDefRegistry, ActionDuration, ActionError,
+        ActionExecutionContext, ActionHandler, ActionHandlerId, ActionInstance,
+        ActionInstanceId, ActionPayload, ActionProgress, ActionState, ActionStatus,
+        CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
+        Precondition, RecipeRegistry, ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -117,6 +118,7 @@ mod tests {
     fn start_a(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -127,6 +129,7 @@ mod tests {
     fn start_b(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -137,6 +140,7 @@ mod tests {
     fn tick_a(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -147,6 +151,7 @@ mod tests {
     fn commit_a(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -167,6 +172,7 @@ mod tests {
     fn commit_b(
         _def: &ActionDef,
         instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -174,6 +180,14 @@ mod tests {
         txn.create_agent("Bram", ControlSource::Ai)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
         Ok(CommitOutcome::empty())
+    }
+
+    fn execution_context(recipes: &RecipeRegistry) -> ActionExecutionContext<'_> {
+        ActionExecutionContext {
+            cause: CauseRef::Bootstrap,
+            tick: Tick(1),
+            recipe_registry: recipes,
+        }
     }
 
     #[test]
@@ -202,6 +216,8 @@ mod tests {
         let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut rng = DeterministicRng::new(Seed([0x66; 32]));
+        let recipes = RecipeRegistry::new();
+        let context = execution_context(&recipes);
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -213,11 +229,13 @@ mod tests {
         );
 
         assert_eq!(
-            (retrieved_first.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
+            (retrieved_first.on_start)(&def, &mut instance, &context, &mut rng, &mut txn)
+                .unwrap(),
             None
         );
         assert_eq!(
-            (retrieved_second.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
+            (retrieved_second.on_start)(&def, &mut instance, &context, &mut rng, &mut txn)
+                .unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -232,6 +250,8 @@ mod tests {
         let def = sample_def(ActionHandlerId(0));
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut rng = DeterministicRng::new(Seed([0x67; 32]));
+        let recipes = RecipeRegistry::new();
+        let context = execution_context(&recipes);
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -243,7 +263,9 @@ mod tests {
         );
         let starts = registry
             .iter()
-            .map(|handler| (handler.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap())
+            .map(|handler| {
+                (handler.on_start)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap()
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(starts, vec![None, Some(ActionState::Empty)]);
@@ -258,6 +280,8 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let before = world.query_agent_data().count();
         let mut rng = DeterministicRng::new(Seed([0x68; 32]));
+        let recipes = RecipeRegistry::new();
+        let context = execution_context(&recipes);
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -268,7 +292,14 @@ mod tests {
             WitnessData::default(),
         );
 
-        (registry.get(handler_id).unwrap().on_commit)(&def, &instance, &mut rng, &mut txn).unwrap();
+        (registry.get(handler_id).unwrap().on_commit)(
+            &def,
+            &instance,
+            &context,
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

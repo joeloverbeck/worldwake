@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # S47: Golden Gap — Hungry Merchant Eats Own Listed Sale Stock
 
@@ -86,3 +86,10 @@ The merchant's autonomous needs-driven consumption of their own trade stock demo
 3. Conservation invariant holds: `verify_live_lot_conservation` passes
 4. Deterministic replay produces identical world and event log hashes
 5. Existing `golden_merchant_selling.rs` tests continue to pass
+
+## Outcome
+
+- **Completion date**: 2026-04-02
+- **What changed**: Golden test `hungry_merchant_eats_listed_stock` and replay companion implemented in `golden_merchant_selling.rs`. Merchant with critical hunger consumes own listed bread, SaleListing removed as side effect.
+- **Deviations from original plan**: None known.
+- **Verification**: All golden tests pass, conservation invariants hold, deterministic replay verified.

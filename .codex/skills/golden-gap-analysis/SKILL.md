@@ -88,6 +88,8 @@ For each candidate scenario, verify it is not already covered by:
 
 If a candidate overlaps an existing or rejected scenario in the same meaningful code path, reject it and explain why.
 
+Also reject a candidate when a recently completed ticket has already resolved the underlying contradiction at a stronger non-golden proof surface, so the remaining scenario would no longer represent a meaningful golden gap.
+
 ### 7. Check FOUNDATIONS alignment
 
 For each surviving candidate, verify it aligns with [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).

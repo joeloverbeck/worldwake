@@ -204,6 +204,7 @@ mod tests {
                         negotiation_round_ticks: 2,
                         initial_offer_bias: 600,
                         concession_rate: 100,
+                        rejection_escalation_rate: 200,
                         demand_memory_retention_ticks: 50,
                         market_presence_ticks: 30,
                     ),

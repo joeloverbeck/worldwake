@@ -312,6 +312,7 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
                 negotiation_round_ticks: nz(4),
                 initial_offer_bias: pm(500),
                 concession_rate: pm(100),
+                rejection_escalation_rate: pm(200),
                 demand_memory_retention_ticks: 240,
                 market_presence_ticks: nz(30),
             },

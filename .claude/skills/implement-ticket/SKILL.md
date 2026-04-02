@@ -45,12 +45,12 @@ Structured workflow for ticket reassessment and implementation. This eliminates 
 ### Phase 4: Extract Deliverables
 
 10. **Extract deliverables** from the ticket's "What to Change" and "Acceptance Criteria" sections into a numbered task list. Exclude deliverables already marked as done during the reassessment phase (Phase 3).
-11. **Present the task list** to the user for confirmation before starting implementation
+11. **Present the task list** to the user. If all tasks are straightforward extractions from the ticket with no ambiguity, proceed to implementation. If any task requires interpretation or the list differs significantly from the ticket's structure, wait for user confirmation before starting.
 
 ### Phase 5: Implement
 
-12. **Create a feature branch**. If the project uses worktrees (check CLAUDE.md), set one up before implementation. Verify a clean test baseline before starting work. If tests fail, report and stop.
-13. **Execute in batches** of ~3 tasks:
+12. **Create a feature branch**. If the project uses worktrees (check CLAUDE.md), set one up before implementation. If already in a worktree on a feature branch, skip branch creation. In all cases, verify a clean test baseline before starting work. If tests fail, report and stop.
+13. **Execute in natural batches** — group tightly coupled tasks (e.g., type + function + wiring), then verify. Batch boundaries should be at natural checkpoints where the code compiles and can be tested, not at an arbitrary task count:
     - Mark each task as `in_progress` before starting, `completed` when done
     - After each batch, report what was implemented and verification output
     - Wait for feedback before continuing to the next batch

@@ -31,6 +31,7 @@ fn merchant_trade_disposition() -> TradeDispositionProfile {
         negotiation_round_ticks: nz(1),
         initial_offer_bias: pm(500),
         concession_rate: pm(200),
+        rejection_escalation_rate: pm(200),
         demand_memory_retention_ticks: 48,
         market_presence_ticks: nz(10),
     }

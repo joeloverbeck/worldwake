@@ -10,14 +10,17 @@ use crate::{
     RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
     RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
-use std::{cmp::Ordering, collections::BTreeSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet},
+};
 use worldwake_core::{
     belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
     DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
     OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, TellTopic,
     ThresholdBand, Tick, UtilityProfile, ViolationKind,
 };
-use worldwake_sim::{GoalBeliefView, RecipeRegistry};
+use worldwake_sim::{commodity_opportunity_score, CommodityOpportunityBreakdown, GoalBeliefView};
 
 /// Outcome of the ranking pipeline, preserving information about filtered candidates.
 #[derive(Clone, Debug)]
@@ -77,7 +80,6 @@ pub fn rank_candidates(
     agent: EntityId,
     current_tick: Tick,
     utility: &UtilityProfile,
-    recipes: &RecipeRegistry,
     decision_context: &DecisionContext,
 ) -> RankingOutcome {
     let context = RankingContext::new(view, agent, current_tick, utility, *decision_context);
@@ -94,10 +96,9 @@ pub fn rank_candidates(
             suppressed.push(candidate.key);
             continue;
         }
-        let provenance = goal_ranking_provenance(candidate, &context, recipes);
-        let priority_class =
-            ranked_priority_class(candidate, &context, recipes, provenance.as_ref());
-        let motive_score = ranked_motive_score(candidate, &context, recipes, provenance.as_ref());
+        let provenance = goal_ranking_provenance(candidate, &context);
+        let priority_class = ranked_priority_class(candidate, &context, provenance.as_ref());
+        let motive_score = ranked_motive_score(candidate, &context, provenance.as_ref());
         let competition_discount = apply_competition_discount(candidate, &context, motive_score);
         let scored = RankedGoal {
             grounded: candidate.clone(),
@@ -127,11 +128,10 @@ pub fn rank_candidates(
 fn ranked_priority_class(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
     provenance: Option<&RankedGoalProvenance>,
 ) -> GoalPriorityClass {
     provenance.cloned().map_or_else(
-        || priority_class(candidate, context, recipes),
+        || priority_class(candidate, context),
         |provenance| match provenance {
             RankedGoalProvenance::Danger(_) => context.decision_context.danger_class,
             RankedGoalProvenance::Drive(provenance) => provenance.final_priority_class,
@@ -142,11 +142,10 @@ fn ranked_priority_class(
 fn ranked_motive_score(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
     provenance: Option<&RankedGoalProvenance>,
 ) -> u32 {
     provenance.cloned().map_or_else(
-        || motive_score(candidate, context, recipes),
+        || motive_score(candidate, context),
         |provenance| match provenance {
             RankedGoalProvenance::Danger(_) => {
                 score_product(context.utility.danger_weight, context.danger_pressure)
@@ -208,11 +207,10 @@ fn competition_discount_scope(candidate: &GroundedGoal) -> Option<(ActionDomain,
 fn goal_ranking_provenance(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
 ) -> Option<RankedGoalProvenance> {
     match candidate.key.kind.ranked_goal_provenance_family() {
         Some(RankedGoalProvenanceFamily::Drive) => {
-            drive_goal_ranking_provenance(&candidate.key.kind, context, recipes)
+            drive_goal_ranking_provenance(&candidate.key.kind, context)
         }
         Some(RankedGoalProvenanceFamily::Danger) => Some(RankedGoalProvenance::Danger(
             context.danger_assessment.clone(),
@@ -224,7 +222,6 @@ fn goal_ranking_provenance(
 fn drive_goal_ranking_provenance(
     goal_kind: &GoalKind,
     context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
 ) -> Option<RankedGoalProvenance> {
     match goal_kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
@@ -237,7 +234,9 @@ fn drive_goal_ranking_provenance(
             purpose: CommodityPurpose::RecipeInput(recipe_id),
         }
         | GoalKind::ProduceCommodity { recipe_id } => {
-            recipe_output_provenance(*recipe_id, context, recipes).map(RankedGoalProvenance::Drive)
+            best_recipe_output_assessment(*recipe_id, context)
+                .and_then(|assessment| assessment.provenance)
+                .map(RankedGoalProvenance::Drive)
         }
         GoalKind::Sleep => drive_goal_provenance(
             context,
@@ -281,6 +280,8 @@ struct RankingContext<'a> {
     danger_assessment: crate::DangerAssessment,
     danger_pressure: Permille,
     decision_context: DecisionContext,
+    holdings: BTreeMap<CommodityKind, u32>,
+    local_alternatives: BTreeMap<CommodityKind, u32>,
 }
 
 impl<'a> RankingContext<'a> {
@@ -303,6 +304,8 @@ impl<'a> RankingContext<'a> {
             danger_pressure: danger_assessment.pressure,
             danger_assessment,
             decision_context,
+            holdings: holdings_from_view(view, agent),
+            local_alternatives: local_alternatives_from_view(view, agent),
         }
     }
 }
@@ -326,7 +329,6 @@ fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
 fn priority_class(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
 ) -> GoalPriorityClass {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
@@ -337,9 +339,10 @@ fn priority_class(
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
-        } => recipe_output_priority(recipe_id, context, recipes),
+        }
+        | GoalKind::ProduceCommodity { recipe_id } => best_recipe_output_assessment(recipe_id, context)
+            .map_or(GoalPriorityClass::Background, |assessment| assessment.priority_class),
         GoalKind::AcquireCommodity { .. }
-        | GoalKind::ProduceCommodity { .. }
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
         | GoalKind::MoveCargo { .. }
@@ -481,7 +484,6 @@ fn drive_provenance_from_inputs(
 fn motive_score(
     candidate: &GroundedGoal,
     context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
 ) -> u32 {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
@@ -496,7 +498,9 @@ fn motive_score(
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
-        } => recipe_output_motive_score(recipe_id, context, recipes),
+        }
+        | GoalKind::ProduceCommodity { recipe_id } => best_recipe_output_assessment(recipe_id, context)
+            .map_or(0, |assessment| assessment.motive_score),
         GoalKind::AcquireCommodity { commodity, .. }
         | GoalKind::SellCommodity { commodity }
         | GoalKind::RestockCommodity { commodity } => enterprise_score(commodity, context),
@@ -531,26 +535,6 @@ fn motive_score(
             } else {
                 score_product(context.utility.care_weight, patient_pain)
             }
-        }
-        GoalKind::ProduceCommodity { recipe_id } => {
-            let signal = recipes
-                .get(recipe_id)
-                .map_or(Permille::new_unchecked(0), |recipe| {
-                    recipe
-                        .outputs
-                        .iter()
-                        .map(|(commodity, _)| {
-                            opportunity_signal(
-                                context.view,
-                                context.agent,
-                                context.view.effective_place(context.agent),
-                                *commodity,
-                            )
-                        })
-                        .max_by_key(|signal| signal.value())
-                        .unwrap_or(Permille::new_unchecked(0))
-                });
-            score_product(context.utility.enterprise_weight, signal)
         }
         GoalKind::MoveCargo {
             commodity,
@@ -795,39 +779,6 @@ fn drive_score(
     }
 }
 
-fn recipe_output_priority(
-    recipe_id: worldwake_core::RecipeId,
-    context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
-) -> GoalPriorityClass {
-    recipes
-        .get(recipe_id)
-        .map_or(GoalPriorityClass::Background, |recipe| {
-            recipe
-                .outputs
-                .iter()
-                .map(|(commodity, _)| commodity_goal_priority(*commodity, context))
-                .max()
-                .unwrap_or(GoalPriorityClass::Background)
-        })
-}
-
-fn commodity_goal_priority(
-    commodity: CommodityKind,
-    context: &RankingContext<'_>,
-) -> GoalPriorityClass {
-    let self_consume = self_consume_priority(commodity, context);
-    if self_consume > GoalPriorityClass::Background {
-        return self_consume;
-    }
-
-    if enterprise_score(commodity, context) > 0 {
-        GoalPriorityClass::Medium
-    } else {
-        GoalPriorityClass::Background
-    }
-}
-
 fn self_consume_provenance(
     commodity: CommodityKind,
     context: &RankingContext<'_>,
@@ -853,55 +804,6 @@ fn self_consume_provenance(
         .then(|| drive_provenance_from_inputs(context, base_priority_class, motive_inputs))
 }
 
-fn recipe_output_provenance(
-    recipe_id: worldwake_core::RecipeId,
-    context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
-) -> Option<RankedDriveGoalProvenance> {
-    recipes.get(recipe_id).and_then(|recipe| {
-        recipe
-            .outputs
-            .iter()
-            .filter_map(|(commodity, _)| self_consume_provenance(*commodity, context))
-            .max_by_key(|provenance| {
-                provenance
-                    .motive_inputs
-                    .iter()
-                    .map(|input| input.score)
-                    .max()
-                    .unwrap_or(0)
-            })
-    })
-}
-
-fn recipe_output_motive_score(
-    recipe_id: worldwake_core::RecipeId,
-    context: &RankingContext<'_>,
-    recipes: &RecipeRegistry,
-) -> u32 {
-    recipes.get(recipe_id).map_or(0, |recipe| {
-        recipe
-            .outputs
-            .iter()
-            .map(|(commodity, _)| commodity_goal_motive_score(*commodity, context))
-            .max()
-            .unwrap_or(0)
-    })
-}
-
-fn commodity_goal_motive_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u32 {
-    let self_consume = relevant_self_consume_factors(commodity, context)
-        .into_iter()
-        .map(|factor| score_product(factor.weight, factor.pressure))
-        .max()
-        .unwrap_or(0);
-    if self_consume > 0 {
-        return self_consume;
-    }
-
-    enterprise_score(commodity, context)
-}
-
 fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
     let GoalKind::RaidTarget { target } = candidate.key.kind else {
         unreachable!("raid_target_motive requires RaidTarget");
@@ -916,8 +818,19 @@ fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) ->
         .copied()
         .filter_map(|commodity| {
             let quantity = context.view.commodity_quantity(target, commodity);
-            (quantity > Quantity(0))
-                .then(|| commodity_goal_motive_score(commodity, context).saturating_mul(quantity.0))
+            (quantity > Quantity(0)).then(|| {
+                let mut simulated_holdings = context.holdings.clone();
+                *simulated_holdings.entry(commodity).or_insert(0) += quantity.0;
+                let breakdown = commodity_opportunity_score(
+                    context.agent,
+                    commodity,
+                    context.view,
+                    &simulated_holdings,
+                    &context.local_alternatives,
+                );
+                commodity_shared_motive_score(commodity, breakdown, context)
+                    .saturating_mul(quantity.0)
+            })
         })
         .sum()
 }
@@ -973,6 +886,147 @@ fn enterprise_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u
 
 fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
+}
+
+fn holdings_from_view(view: &dyn GoalBeliefView, agent: EntityId) -> BTreeMap<CommodityKind, u32> {
+    CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| (kind, view.commodity_quantity(agent, kind).0))
+        .collect()
+}
+
+fn local_alternatives_from_view(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+) -> BTreeMap<CommodityKind, u32> {
+    let Some(place) = view.effective_place(agent) else {
+        return BTreeMap::new();
+    };
+
+    CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|commodity| {
+            let quantity = view
+                .listed_sale_lots_at(place, commodity)
+                .into_iter()
+                .filter(|lot| view.seller_for_sale_lot(*lot) != Some(agent))
+                .map(|lot| view.locally_observed_commodity_quantity(agent, lot, commodity).0)
+                .sum();
+            (commodity, quantity)
+        })
+        .collect()
+}
+
+fn treatment_priority(context: &RankingContext<'_>) -> GoalPriorityClass {
+    context.thresholds.map_or(GoalPriorityClass::Background, |thresholds| {
+        classify_band(derive_pain_pressure(context.view, context.agent), &thresholds.pain)
+    })
+}
+
+fn treatment_motive_score(context: &RankingContext<'_>) -> u32 {
+    score_product(
+        context.utility.pain_weight,
+        derive_pain_pressure(context.view, context.agent),
+    )
+}
+
+fn clamp_breakdown_to_permille(value: u32) -> Permille {
+    Permille::new(value.min(1000) as u16).unwrap()
+}
+
+fn commodity_shared_priority(
+    commodity: CommodityKind,
+    breakdown: CommodityOpportunityBreakdown,
+    context: &RankingContext<'_>,
+) -> GoalPriorityClass {
+    if breakdown.direct_survival_score > 0 {
+        return self_consume_priority(commodity, context);
+    }
+    if breakdown.treatment_score > 0 {
+        return treatment_priority(context);
+    }
+    if breakdown.enterprise_score > 0 || breakdown.indirect_recipe_score > 0 {
+        GoalPriorityClass::Medium
+    } else {
+        GoalPriorityClass::Background
+    }
+}
+
+fn commodity_shared_provenance(
+    commodity: CommodityKind,
+    breakdown: CommodityOpportunityBreakdown,
+    context: &RankingContext<'_>,
+) -> Option<RankedDriveGoalProvenance> {
+    (breakdown.direct_survival_score > 0)
+        .then(|| self_consume_provenance(commodity, context))
+        .flatten()
+}
+
+fn commodity_shared_motive_score(
+    commodity: CommodityKind,
+    breakdown: CommodityOpportunityBreakdown,
+    context: &RankingContext<'_>,
+) -> u32 {
+    if breakdown.direct_survival_score > 0 {
+        return relevant_self_consume_factors(commodity, context)
+            .into_iter()
+            .map(|factor| score_product(factor.weight, factor.pressure))
+            .max()
+            .unwrap_or(0);
+    }
+    if breakdown.treatment_score > 0 {
+        return treatment_motive_score(context);
+    }
+
+    let enterprise = enterprise_score(commodity, context);
+    let indirect = score_product(
+        context.utility.enterprise_weight,
+        clamp_breakdown_to_permille(breakdown.indirect_recipe_score),
+    );
+    enterprise.max(indirect)
+}
+
+#[derive(Clone, Debug)]
+struct RecipeOutputAssessment {
+    commodity: CommodityKind,
+    priority_class: GoalPriorityClass,
+    motive_score: u32,
+    provenance: Option<RankedDriveGoalProvenance>,
+}
+
+fn best_recipe_output_assessment(
+    recipe_id: worldwake_core::RecipeId,
+    context: &RankingContext<'_>,
+) -> Option<RecipeOutputAssessment> {
+    let recipe = context.view.recipe_definition(recipe_id)?;
+    recipe
+        .outputs
+        .iter()
+        .map(|(commodity, quantity)| {
+            let mut simulated_holdings = context.holdings.clone();
+            *simulated_holdings.entry(*commodity).or_insert(0) += quantity.0;
+            let breakdown = commodity_opportunity_score(
+                context.agent,
+                *commodity,
+                context.view,
+                &simulated_holdings,
+                &context.local_alternatives,
+            );
+            RecipeOutputAssessment {
+                commodity: *commodity,
+                priority_class: commodity_shared_priority(*commodity, breakdown, context),
+                motive_score: commodity_shared_motive_score(*commodity, breakdown, context),
+                provenance: commodity_shared_provenance(*commodity, breakdown, context),
+            }
+        })
+        .max_by(|left, right| {
+            left.priority_class
+                .cmp(&right.priority_class)
+                .then_with(|| left.motive_score.cmp(&right.motive_score))
+                .then_with(|| left.commodity.cmp(&right.commodity))
+        })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1214,20 +1268,18 @@ mod tests {
     use worldwake_core::{
         belief_confidence, ActionDomain, BeliefConfidencePolicy, BelievedActivity,
         BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DemandObservationReason, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, OpportunityAnchor, PatrolProfile,
-        PatrolRoute, PerceptionSource, Permille, PunishmentKind, Quantity, RecipeId,
-        RecordedViolation, ResourceSource, TellTopic, TheftDispositionProfile, TheftFacts, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
-        ViolationKind, WorkstationTag, Wound, WoundCause, WoundId,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommodityValuationProfile,
+        DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
+        EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PunishmentKind, Quantity, RecipeId, RecordedViolation, ResourceSource, TellTopic,
+        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, UtilityProfile, ViolationId, ViolationKind, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
-    use worldwake_sim::{
-        ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
-        RuntimeBeliefView,
-    };
+    use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView};
 
     #[derive(Clone, Default)]
     struct TestBeliefView {
@@ -1243,14 +1295,20 @@ mod tests {
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        commodity_valuation_profiles: BTreeMap<EntityId, CommodityValuationProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
+        known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
+        recipe_definitions: BTreeMap<RecipeId, RecipeDefinition>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         institutional_claims: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        listed_sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        sale_lot_sellers: BTreeMap<EntityId, EntityId>,
+        matching_workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
         office_data: BTreeMap<EntityId, OfficeData>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         force_controller_beliefs:
@@ -1436,6 +1494,9 @@ mod tests {
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
+        fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+            self.commodity_valuation_profiles.get(&agent).copied()
+        }
         fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
             self.patrol_profiles.get(&agent).cloned()
         }
@@ -1486,23 +1547,32 @@ mod tests {
         }
         fn listed_sale_lots_at(
             &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
+            place: EntityId,
+            commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
+            self.listed_sale_lots
+                .get(&(place, commodity))
+                .cloned()
+                .unwrap_or_default()
         }
-        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
-            None
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.sale_lot_sellers.get(&lot).copied()
         }
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            Vec::new()
+        fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
+            self.known_recipes.get(&agent).cloned().unwrap_or_default()
+        }
+        fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+            self.recipe_definitions.get(&recipe).cloned()
         }
         fn matching_workstations_at(
             &self,
-            _place: EntityId,
-            _tag: WorkstationTag,
+            place: EntityId,
+            tag: WorkstationTag,
         ) -> Vec<EntityId> {
-            Vec::new()
+            self.matching_workstations
+                .get(&(place, tag))
+                .cloned()
+                .unwrap_or_default()
         }
         fn resource_sources_at(
             &self,
@@ -1736,6 +1806,17 @@ mod tests {
         view
     }
 
+    fn teach_recipe(
+        view: &mut TestBeliefView,
+        agent: EntityId,
+        recipe: RecipeDefinition,
+    ) -> RecipeId {
+        let recipe_id = RecipeId(view.recipe_definitions.len() as u32);
+        view.known_recipes.entry(agent).or_default().push(recipe_id);
+        view.recipe_definitions.insert(recipe_id, recipe);
+        recipe_id
+    }
+
     fn add_home_facility(view: &mut TestBeliefView, market: EntityId, facility: EntityId) {
         view.alive.insert(facility);
         view.entity_kinds.insert(facility, EntityKind::Facility);
@@ -1747,7 +1828,6 @@ mod tests {
     fn crime_goals_use_profile_driven_motive_scores() {
         let agent = entity(1);
         let mut view = base_view(agent);
-        let recipes = RecipeRegistry::new();
         view.theft_profiles.insert(
             agent,
             TheftDispositionProfile {
@@ -1795,7 +1875,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &recipes,
         );
 
         assert_eq!(outcome.ranked.len(), 3);
@@ -1850,7 +1929,6 @@ mod tests {
     fn theft_goal_is_zero_motive_when_witness_penalty_cancels_profile_weight() {
         let agent = entity(1);
         let mut view = base_view(agent);
-        let recipes = RecipeRegistry::new();
         let place = entity(99);
 
         view.theft_profiles.insert(
@@ -1877,7 +1955,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &recipes,
         );
 
         assert!(outcome.ranked.is_empty());
@@ -1903,7 +1980,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -1926,7 +2002,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -1944,7 +2019,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2006,7 +2080,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2021,7 +2094,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2056,7 +2128,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2070,10 +2141,9 @@ mod tests {
         agent: EntityId,
         current_tick: Tick,
         utility: &UtilityProfile,
-        recipes: &RecipeRegistry,
     ) -> super::RankingOutcome {
         let dc = build_decision_context(view, agent);
-        rank_candidates(candidates, view, agent, current_tick, utility, recipes, &dc)
+        rank_candidates(candidates, view, agent, current_tick, utility, &dc)
     }
 
     #[test]
@@ -2094,7 +2164,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2128,7 +2197,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2179,7 +2247,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2203,8 +2270,7 @@ mod tests {
         let market = entity(2);
         let facility = entity(3);
         let mut view = base_view(agent);
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(RecipeDefinition {
+        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
             name: "Bake Bread".to_string(),
             inputs: vec![(CommodityKind::Firewood, Quantity(1))],
             outputs: vec![(CommodityKind::Bread, Quantity(1))],
@@ -2254,7 +2320,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &recipes,
         )
         .into_ranked();
 
@@ -2303,7 +2368,6 @@ mod tests {
             agent,
             current_tick(),
             &zero_awareness,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2405,7 +2469,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2423,8 +2486,7 @@ mod tests {
             HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(RecipeDefinition {
+        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
             name: "Bake Bread".to_string(),
             inputs: vec![(CommodityKind::Firewood, Quantity(1))],
             outputs: vec![(CommodityKind::Bread, Quantity(1))],
@@ -2443,7 +2505,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &recipes,
         )
         .into_ranked();
 
@@ -2477,7 +2538,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2499,7 +2559,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert!(ranked.is_empty());
@@ -2517,7 +2576,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert!(ranked.is_empty());
@@ -2531,7 +2589,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
@@ -2563,7 +2620,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert!(ranked.is_empty());
@@ -2591,7 +2647,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert!(ranked.is_empty());
@@ -2613,7 +2668,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2676,7 +2730,6 @@ mod tests {
             agent,
             current_tick(),
             &baseline,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         let boosted_ranked = rank(
@@ -2685,7 +2738,6 @@ mod tests {
             agent,
             current_tick(),
             &stronger_social,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2760,7 +2812,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         let trusting_ranked = rank(
@@ -2769,7 +2820,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2817,7 +2867,6 @@ mod tests {
             agent,
             current_tick(),
             &zero_social,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2872,7 +2921,6 @@ mod tests {
                 social_weight: pm(1000),
                 ..utility()
             },
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert!(matches!(
@@ -2902,7 +2950,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         assert!(matches!(
@@ -2948,7 +2995,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -2999,7 +3045,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3048,7 +3093,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3070,7 +3114,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3090,7 +3133,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3120,7 +3162,6 @@ mod tests {
             agent,
             current_tick(),
             &profile,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3159,7 +3200,6 @@ mod tests {
             agent,
             current_tick(),
             &profile,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3191,8 +3231,7 @@ mod tests {
         );
         view.demand_memory
             .insert(agent, vec![demand(market, CommodityKind::Firewood, 10)]);
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(RecipeDefinition {
+        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
             name: "Cut Firewood".to_string(),
             inputs: vec![(CommodityKind::Grain, Quantity(2))],
             outputs: vec![(CommodityKind::Firewood, Quantity(1))],
@@ -3208,7 +3247,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &recipes,
         )
         .into_ranked();
 
@@ -3224,8 +3262,7 @@ mod tests {
             agent,
             HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
         );
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(RecipeDefinition {
+        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
             name: "Bake Bread".to_string(),
             inputs: vec![(CommodityKind::Firewood, Quantity(1))],
             outputs: vec![(CommodityKind::Bread, Quantity(1))],
@@ -3241,7 +3278,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &recipes,
         )
         .into_ranked();
 
@@ -3283,7 +3319,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
         let second = rank(
@@ -3292,7 +3327,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3335,7 +3369,6 @@ mod tests {
             agent,
             current_tick(),
             &utility,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3373,7 +3406,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3430,7 +3462,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3458,7 +3489,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3483,7 +3513,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3514,7 +3543,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3563,7 +3591,6 @@ mod tests {
             agent,
             current_tick(),
             &utility,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3652,7 +3679,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3679,7 +3705,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3698,7 +3723,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3742,7 +3766,6 @@ mod tests {
             agent,
             current_tick(),
             &utility,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3779,7 +3802,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         );
 
         assert!(ranked.into_ranked().is_empty());
@@ -3816,7 +3838,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         );
 
         assert!(ranked.into_ranked().is_empty());
@@ -3828,7 +3849,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3852,7 +3872,6 @@ mod tests {
             agent,
             current_tick(),
             &utility,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3907,7 +3926,6 @@ mod tests {
             agent,
             current_tick(),
             &utility,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3940,7 +3958,6 @@ mod tests {
             agent,
             current_tick(),
             &profile,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -3979,7 +3996,6 @@ mod tests {
             agent,
             current_tick(),
             &profile,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -4018,7 +4034,6 @@ mod tests {
             agent,
             current_tick(),
             &profile,
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 
@@ -4052,7 +4067,6 @@ mod tests {
             agent,
             current_tick(),
             &utility(),
-            &RecipeRegistry::new(),
         )
         .into_ranked();
 

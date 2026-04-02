@@ -196,7 +196,7 @@ pub(super) fn build_candidate_plans(
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
 ) -> Vec<CandidatePlanSearch> {
-    let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let admitted_candidates: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
@@ -530,7 +530,7 @@ pub(super) fn plan_and_validate_next_step(
     recipe_registry: &RecipeRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
     // A second read view covers plan selection and step validation after the active-action fork.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
@@ -671,7 +671,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     }
 
     // Traced path: inline the logic to capture intermediate results.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     let mut plan_search_trace = PlanSearchTrace {
         attempts: Vec::new(),

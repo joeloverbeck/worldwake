@@ -30,7 +30,6 @@ pub fn explain_goal(
         agent,
         current_tick,
         utility,
-        recipes,
         &dc,
     );
     let target = outcome

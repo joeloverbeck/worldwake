@@ -5,13 +5,14 @@
 
 use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
-    CommodityPurpose, DemandMemory, DemandObservation, DemandObservationReason, EntityId,
-    FacilityQueueDispositionProfile, GoalKey, GoalKind, MerchandiseProfile, Permille, Quantity,
-    Seed, StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick,
-    TradeCategory, TradeDispositionProfile, UtilityProfile,
+    CommodityPurpose, CommodityValuationProfile, DemandMemory, DemandObservation,
+    DemandObservationReason, EntityId, FacilityQueueDispositionProfile, GoalKey, GoalKind,
+    MerchandiseProfile, Permille, Quantity, Seed, StockAssignment, StockAssignmentKind,
+    StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
+    UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU8};
 
 /// Returns a fixed, well-known seed for deterministic test scenarios.
 pub fn deterministic_seed() -> Seed {
@@ -57,6 +58,7 @@ pub fn sample_trade_disposition_profile() -> TradeDispositionProfile {
         negotiation_round_ticks: NonZeroU32::new(6).unwrap(),
         initial_offer_bias: Permille::new(650).unwrap(),
         concession_rate: Permille::new(125).unwrap(),
+        rejection_escalation_rate: Permille::new(200).unwrap(),
         demand_memory_retention_ticks: 240,
         market_presence_ticks: NonZeroU32::new(30).unwrap(),
     }
@@ -100,6 +102,15 @@ pub fn sample_utility_profile() -> UtilityProfile {
         activity_awareness_weight: Permille::new(250).unwrap(),
         courage: Permille::new(350).unwrap(),
         care_weight: Permille::new(250).unwrap(),
+    }
+}
+
+/// Returns a representative commodity valuation profile fixture.
+pub fn sample_commodity_valuation_profile() -> CommodityValuationProfile {
+    CommodityValuationProfile {
+        recipe_opportunity_depth: NonZeroU8::new(3).unwrap(),
+        recipe_place_horizon: 2,
+        indirect_value_decay_per_step: Permille::new(150).unwrap(),
     }
 }
 

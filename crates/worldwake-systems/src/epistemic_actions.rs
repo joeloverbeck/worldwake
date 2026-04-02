@@ -280,6 +280,7 @@ fn validate_ask_witness_context(
 fn start_ask_witness(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -292,6 +293,7 @@ fn start_ask_witness(
 fn tick_ask_witness(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -303,6 +305,7 @@ fn tick_ask_witness(
 fn commit_ask_witness(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -383,7 +386,7 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionExecutionContext, ActionInstanceId, Affordance, PerAgentBeliefView, TickOutcome,
+        ActionInstanceId, Affordance, PerAgentBeliefView, TickOutcome,
     };
 
     fn nz(value: u32) -> NonZeroU32 {
@@ -528,10 +531,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                tick: Tick(start_tick),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(start_tick)),
         )
         .unwrap();
 
@@ -546,10 +546,7 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    tick: Tick(tick),
-                    cause: CauseRef::Bootstrap,
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if tick == commit_tick {
@@ -823,10 +820,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                tick: Tick(2),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
         )
         .unwrap();
         assert_eq!(
@@ -840,10 +834,7 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    tick: Tick(3),
-                    cause: CauseRef::Bootstrap,
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
             )
             .unwrap(),
             TickOutcome::Continuing
@@ -860,10 +851,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(4),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap()
         {
@@ -920,10 +908,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                tick: Tick(2),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
         )
         .unwrap();
         let _ = tick_action(
@@ -936,10 +921,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(3),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
         )
         .unwrap();
         kill_entity(&mut world, witness, 3);
@@ -954,10 +936,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(4),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap()
         {
@@ -1005,10 +984,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                tick: Tick(2),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
         )
         .unwrap();
         let _ = tick_action(
@@ -1021,10 +997,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(3),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
         )
         .unwrap();
         incapacitate_entity(&mut world, witness, 3);
@@ -1039,10 +1012,7 @@ mod tests {
                 active_actions: &mut active_actions,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(4),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap()
         {

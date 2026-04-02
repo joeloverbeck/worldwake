@@ -27,6 +27,7 @@ use crate::{
     },
     trade::{DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy, SubstitutePreferences, TradeDispositionProfile},
     utility_profile::UtilityProfile,
+    valuation::CommodityValuationProfile,
     violation::{ViolationDispositionProfile, ViolationMemory},
     wounds::WoundList,
     EntityId,

@@ -1,20 +1,21 @@
 use crate::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionInstance,
-    ActionInstanceId, ActionPayload, DurationExpr, RuntimeBeliefView,
+    ActionInstanceId, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
     is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
     BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceSource, SocialObservation, StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
-    World, Wound,
+    CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ControlSource,
+    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, SocialObservation,
+    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -40,6 +41,7 @@ pub struct PerAgentBeliefView<'w> {
     agent: EntityId,
     current_tick: Tick,
     world: &'w World,
+    recipe_registry: Option<&'w RecipeRegistry>,
     belief_store: &'w AgentBeliefStore,
     runtime: Option<PerAgentBeliefRuntime<'w>>,
 }
@@ -61,10 +63,32 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         belief_store: &'w AgentBeliefStore,
     ) -> Self {
+        Self::new_at_tick_with_recipes(agent, current_tick, world, None, belief_store)
+    }
+
+    #[must_use]
+    pub const fn new_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+        belief_store: &'w AgentBeliefStore,
+    ) -> Self {
+        Self::new_at_tick_with_recipes(agent, Tick(0), world, Some(recipe_registry), belief_store)
+    }
+
+    #[must_use]
+    pub const fn new_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+        belief_store: &'w AgentBeliefStore,
+    ) -> Self {
         Self {
             agent,
             current_tick,
             world,
+            recipe_registry,
             belief_store,
             runtime: None,
         }
@@ -88,10 +112,48 @@ impl<'w> PerAgentBeliefView<'w> {
         belief_store: &'w AgentBeliefStore,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
+        Self::with_runtime_at_tick_with_recipes(
+            agent,
+            current_tick,
+            world,
+            None,
+            belief_store,
+            runtime,
+        )
+    }
+
+    #[must_use]
+    pub const fn with_runtime_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+        belief_store: &'w AgentBeliefStore,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
+        Self::with_runtime_at_tick_with_recipes(
+            agent,
+            Tick(0),
+            world,
+            Some(recipe_registry),
+            belief_store,
+            runtime,
+        )
+    }
+
+    #[must_use]
+    pub const fn with_runtime_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+        belief_store: &'w AgentBeliefStore,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
         Self {
             agent,
             current_tick,
             world,
+            recipe_registry,
             belief_store,
             runtime: Some(runtime),
         }
@@ -104,10 +166,29 @@ impl<'w> PerAgentBeliefView<'w> {
 
     #[must_use]
     pub fn from_world_at_tick(agent: EntityId, current_tick: Tick, world: &'w World) -> Self {
+        Self::from_world_at_tick_with_recipes(agent, current_tick, world, None)
+    }
+
+    #[must_use]
+    pub fn from_world_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+    ) -> Self {
+        Self::from_world_at_tick_with_recipes(agent, Tick(0), world, Some(recipe_registry))
+    }
+
+    #[must_use]
+    pub fn from_world_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+    ) -> Self {
         let belief_store = world
             .get_component_agent_belief_store(agent)
             .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
-        Self::new_at_tick(agent, current_tick, world, belief_store)
+        Self::new_at_tick_with_recipes(agent, current_tick, world, recipe_registry, belief_store)
     }
 
     #[must_use]
@@ -126,10 +207,44 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
+        Self::with_runtime_from_world_at_tick_with_recipes(agent, current_tick, world, None, runtime)
+    }
+
+    #[must_use]
+    pub fn with_runtime_from_world_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
+        Self::with_runtime_from_world_at_tick_with_recipes(
+            agent,
+            Tick(0),
+            world,
+            Some(recipe_registry),
+            runtime,
+        )
+    }
+
+    #[must_use]
+    pub fn with_runtime_from_world_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
         let belief_store = world
             .get_component_agent_belief_store(agent)
             .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
-        Self::with_runtime_at_tick(agent, current_tick, world, belief_store, runtime)
+        Self::with_runtime_at_tick_with_recipes(
+            agent,
+            current_tick,
+            world,
+            recipe_registry,
+            belief_store,
+            runtime,
+        )
     }
 
     fn believed_entity(&self, entity: EntityId) -> Option<&BelievedEntityState> {
@@ -398,6 +513,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                 .world
                 .get_component_known_recipes(actor)
                 .is_some_and(|known| known.recipes.contains(&recipe))
+    }
+
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        self.recipe_registry.and_then(|registry| registry.get(recipe)).cloned()
     }
 
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
@@ -733,6 +852,16 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                 self.world
                     .get_component_trade_disposition_profile(agent)
                     .cloned()
+            })
+            .flatten()
+    }
+
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_commodity_valuation_profile(agent)
+                    .copied()
             })
             .flatten()
     }
@@ -1254,11 +1383,12 @@ mod tests {
         AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
         CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille,
-        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
+        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Quantity,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
         WoundId,
+        test_utils::sample_commodity_valuation_profile,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1823,6 +1953,47 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(RuntimeBeliefView::tell_profile(&view, agent), None);
+    }
+
+    #[test]
+    fn commodity_valuation_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = sample_commodity_valuation_profile();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_commodity_valuation_profile(agent, profile)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), Some(profile));
+        assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), Some(profile));
+    }
+
+    #[test]
+    fn commodity_valuation_profile_returns_none_when_component_missing() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), None);
+        assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), None);
     }
 
     #[test]

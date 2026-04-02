@@ -2487,6 +2487,7 @@ mod tests {
     fn noop_start(
         _def: &ActionDef,
         _instance: &mut worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -2497,6 +2498,7 @@ mod tests {
     fn noop_tick(
         _def: &ActionDef,
         _instance: &mut worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -2507,6 +2509,7 @@ mod tests {
     fn noop_commit(
         _def: &ActionDef,
         _instance: &worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
@@ -3967,6 +3970,7 @@ mod tests {
                 negotiation_round_ticks: NonZeroU32::new(4).unwrap(),
                 initial_offer_bias: pm(120),
                 concession_rate: pm(80),
+                rejection_escalation_rate: pm(200),
                 demand_memory_retention_ticks: 12,
                 market_presence_ticks: NonZeroU32::new(30).unwrap(),
             },

@@ -458,6 +458,7 @@ fn subject_is_listener_observable_entity_belief_in_world(
 fn start_tell(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -469,6 +470,7 @@ fn start_tell(
 fn tick_tell(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -506,6 +508,7 @@ fn tell_trace(
 fn commit_tell(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1030,7 +1033,14 @@ mod tests {
         let mut rng = test_rng(seed);
         let mut txn = new_action_txn(world, instance.actor, def.visibility, tick);
 
-        (handler.on_commit)(def, instance, &mut rng, &mut txn).unwrap();
+        (handler.on_commit)(
+            def,
+            instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap();
         txn.add_tag(EventTag::ActionCommitted);
         for tag in &def.causal_event_tags {
             txn.add_tag(*tag);
@@ -1058,7 +1068,13 @@ mod tests {
         let mut rng = test_rng(seed);
         let mut txn = new_action_txn(world, instance.actor, def.visibility, tick);
 
-        (handler.on_commit)(def, instance, &mut rng, &mut txn)
+        (handler.on_commit)(
+            def,
+            instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
     }
 
     fn assert_tell_trace(
@@ -1804,7 +1820,17 @@ mod tests {
         let mut txn = new_txn(&mut world, 5);
 
         assert_eq!(
-            (handler.on_start)(tell, &mut instance, &mut rng, &mut txn).unwrap(),
+            (handler.on_start)(
+                tell,
+                &mut instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -2757,7 +2783,14 @@ mod tests {
         let mut rng = test_rng(1);
         let mut txn = new_action_txn(&mut world, speaker, def.visibility, 8);
 
-        (handler.on_commit)(def, &instance, &mut rng, &mut txn).unwrap();
+        (handler.on_commit)(
+            def,
+            &instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap();
         txn.add_tag(EventTag::ActionCommitted);
         for tag in &def.causal_event_tags {
             txn.add_tag(*tag);

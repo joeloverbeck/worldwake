@@ -288,6 +288,7 @@ fn resolve_facility_for_lot(
 fn start_store_stock(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -307,6 +308,7 @@ fn start_store_stock(
 fn commit_store_stock(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -340,6 +342,7 @@ fn commit_store_stock(
 fn start_collect_display_stock(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -359,6 +362,7 @@ fn start_collect_display_stock(
 fn commit_collect_display_stock(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -382,6 +386,7 @@ fn commit_collect_display_stock(
 fn start_stage_stock_for_sale(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -409,6 +414,7 @@ fn start_stage_stock_for_sale(
 fn commit_stage_stock_for_sale(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -449,6 +455,7 @@ fn commit_stage_stock_for_sale(
 fn start_unstage_stock(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -470,6 +477,7 @@ fn start_unstage_stock(
 fn commit_unstage_stock(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -505,6 +513,7 @@ fn commit_unstage_stock(
 fn tick_stock(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -603,11 +612,11 @@ mod tests {
     }
 
     fn new_txn<'w>(world: &'w mut World, _log: &mut EventLog) -> WorldTxn<'w> {
-        use worldwake_core::{CauseRef, WitnessData};
+        use worldwake_core::WitnessData;
         WorldTxn::new(
             world,
             Tick(1),
-            CauseRef::Bootstrap,
+            worldwake_core::CauseRef::Bootstrap,
             None,
             None,
             VisibilitySpec::SamePlace,
@@ -677,7 +686,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -698,7 +707,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -724,7 +733,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -732,7 +741,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_collect_display_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_collect_display_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -766,7 +775,7 @@ mod tests {
         let def = dummy_def();
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let mut instance = make_instance(stranger, h.bread_lot);
-        let result = start_store_stock(&def, &mut instance, &mut rng, &mut txn);
+        let result = start_store_stock(&def, &mut instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn);
 
         assert!(
             result.is_err(),
@@ -794,7 +803,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -808,7 +817,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_collect_display_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_collect_display_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -879,7 +888,7 @@ mod tests {
         let mut rng = dummy_rng();
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let instance = make_instance(h.agent, h.bread_lot);
-        commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+        commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
         txn.commit(&mut h.event_log);
     }
 
@@ -899,7 +908,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_stage_stock_for_sale(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_stage_stock_for_sale(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -939,7 +948,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_stage_stock_for_sale(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_stage_stock_for_sale(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -947,7 +956,7 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_unstage_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_unstage_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -985,14 +994,14 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 
         // Attempt to stage — should fail.
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let mut instance = make_instance(h.agent, h.bread_lot);
-        let result = start_stage_stock_for_sale(&def, &mut instance, &mut rng, &mut txn);
+        let result = start_stage_stock_for_sale(&def, &mut instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn);
 
         assert!(
             result.is_err(),
@@ -1022,21 +1031,21 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_stage_stock_for_sale(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_stage_stock_for_sale(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
         // Unstage.
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_unstage_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_unstage_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
         // Collect.
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_collect_display_stock(&def, &instance, &mut rng, &mut txn).unwrap();
+            commit_collect_display_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn).unwrap();
             txn.commit(&mut h.event_log);
         }
 

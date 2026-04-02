@@ -26,7 +26,7 @@ pub fn tick_action(
     registry: &ActionDefRegistry,
     handler_registry: &ActionHandlerRegistry,
     authority: ActionExecutionAuthority<'_>,
-    context: ActionExecutionContext,
+    context: ActionExecutionContext<'_>,
 ) -> Result<TickOutcome, ActionError> {
     let ActionExecutionAuthority {
         active_actions,
@@ -104,7 +104,7 @@ fn tick_action_inner(
     world: &mut World,
     event_log: &mut EventLog,
     rng: &mut DeterministicRng,
-    context: ActionExecutionContext,
+    context: ActionExecutionContext<'_>,
 ) -> Result<TickOutcome, ActionError> {
     if instance.status != ActionStatus::Active {
         return Err(ActionError::InvalidActionStatus {
@@ -132,7 +132,7 @@ fn tick_action_inner(
     );
 
     let duration_elapsed = instance.remaining_duration.advance();
-    let progress = match (handler.on_tick)(def, instance, rng, &mut txn) {
+    let progress = match (handler.on_tick)(def, instance, &context, rng, &mut txn) {
         Ok(progress) => progress,
         Err(ActionError::AbortRequested(reason)) => {
             return abort_requested_during_tick(
@@ -181,7 +181,7 @@ fn tick_action_inner(
         )?;
         Ok(TickOutcome::Aborted { reason, replan })
     } else {
-        match (handler.on_commit)(def, instance, rng, &mut txn) {
+        match (handler.on_commit)(def, instance, &context, rng, &mut txn) {
             Ok(outcome) => {
                 instance.status = ActionStatus::Committed;
                 release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -229,7 +229,7 @@ mod tests {
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
         ActionState, ActionStatus, Affordance, CommitOutcome, Constraint, DeterministicRng,
         DurationExpr, Interruptibility, Materialization, MaterializationTag, Precondition,
-        ReplanNeeded, ReservationReq, TargetSpec,
+        RecipeRegistry, ReplanNeeded, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -262,6 +262,11 @@ mod tests {
     fn hook_state() -> &'static Mutex<HookState> {
         static HOOK_STATE: OnceLock<Mutex<HookState>> = OnceLock::new();
         HOOK_STATE.get_or_init(|| Mutex::new(HookState::default()))
+    }
+
+    fn test_recipes() -> &'static RecipeRegistry {
+        static TEST_RECIPES: OnceLock<RecipeRegistry> = OnceLock::new();
+        TEST_RECIPES.get_or_init(RecipeRegistry::new)
     }
 
     fn reset_hooks() {
@@ -300,6 +305,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -310,6 +316,7 @@ mod tests {
     fn start_empty_state(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -319,6 +326,7 @@ mod tests {
     fn tick_handler(
         _def: &ActionDef,
         instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -351,6 +359,7 @@ mod tests {
     fn commit_handler(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -484,6 +493,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -568,6 +578,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -640,6 +651,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -682,6 +694,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -718,6 +731,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -759,6 +773,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -796,6 +811,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -842,6 +858,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -876,6 +893,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -924,6 +942,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -971,6 +990,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -1047,6 +1067,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -1086,6 +1107,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -1127,6 +1149,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap_err();
@@ -1167,6 +1190,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap_err();
@@ -1204,6 +1228,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap_err();

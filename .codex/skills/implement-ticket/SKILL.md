@@ -28,9 +28,15 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
 3. Validate the ticket's concrete claims:
    - referenced files exist
    - referenced types, functions, modules, commands, and tests exist
+   - when a ticket extracts or reuses private helper logic, confirm the exact current crate/file ownership of that helper before finalizing the implementation plan or `Files to Touch`
    - described architecture still matches the live code
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
+   - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
+   - when a ticket depends on shared static data such as recipe definitions, schemas, or other registry-backed content, confirm the live service bundle, execution context, or callback boundary that would need to carry that data; if the current runtime boundary does not expose it, correct the ticket before coding to name the real substrate change
+   - when affordance generation depends on self-authoritative profile reads, those profile prerequisites are present in both production code and representative AI/planner test harnesses
+   - for component-registration tickets, hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests that mirror the authoritative component set still match the live schema after the new entry lands
+   - when a ticket extends a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or other generated surfaces that materialize that API indirectly; if they exist, distinguish the canonical consumer boundary from any implementation-detail mirror the live architecture requires
 4. Reassess against Worldwake's repo rules:
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
@@ -67,9 +73,30 @@ Separate:
 - blocked work that needs user direction
 - explicit out-of-scope work
 
+When a ticket inherits broader spec language than this specific slice can honestly prove, distinguish:
+- the end-state architecture claim the spec is aiming for
+- the narrower contract this ticket actually owns after reassessment
+
+Do not keep a later ticket's proof surface artificially broad just because the parent spec states the larger destination. Correct the ticket so its acceptance criteria match the boundary this slice can really deliver.
+
 If the ticket's requested invariant exposes a production contradiction, correct the scope first instead of pretending it is a tests-only change.
 
 For golden tickets, remove duplicate proof from scope unless the new scenario proves a materially different contract from the existing coverage.
+
+When a golden-driven ticket mixes still-valid negative coverage gaps with an over-claimed positive agreement proof, preserve the honest golden slice and correct the ticket to include any bounded production fix needed for the exposed contradiction instead of dropping the remaining golden work entirely.
+
+When a shared type changes, treat helper factories, sample fixtures, serialized scenario/config inputs, and schema examples as part of the construction-site sweep, not just direct Rust struct literals.
+
+For component-registration work, distinguish:
+- the authoritative schema declaration itself
+- runtime code-generation or macro-expansion sites that truly require the bare type in scope
+- test-only helper or manifest sites that mirror the component set
+
+Do not assume every file that references the schema macro needs a new top-level import; verify actual local type use first.
+
+For trait-surface tickets, do not assume the named trait is implemented directly at each consumer. Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits, and correct the ticket if the implementation boundary is broader than the original prose.
+
+When a ticket is an explicit staged extraction step, temporary duplicated logic is acceptable only if the caller-rewire or old-path removal step is already owned by a named follow-up ticket. Correct the current ticket to state that boundary explicitly instead of leaving the duplication looking accidental.
 
 ### 5. Implement with Worldwake discipline
 
@@ -88,8 +115,10 @@ For golden tickets, remove duplicate proof from scope unless the new scenario pr
    - determinism
    - conservation
    - unique location
-7. If authoritative validation, control checks, action preconditions, target specs, or other affordance-surface behavior changes, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md).
+7. If authoritative validation, control checks, action preconditions, target specs, or other affordance-surface behavior changes, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md). If the change removes candidates earlier in that pipeline, update stale downstream planner/search harness expectations to the new admission contract instead of weakening the implementation to preserve obsolete traces.
 8. When widening an existing action into a new custody or state regime, audit all related stored state carriers so the moved entity does not keep stale assignment, listing, queue, or other regime-specific markers after the transition.
+9. When adding a new enum variant, search for exhaustive matches, pattern arms, and state validators in dependent crates and update the non-owning handlers explicitly before broad verification.
+10. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
 
 ### 6. Verify at the right boundary
 
@@ -102,7 +131,17 @@ Typical order:
 
 When the change touches more than one focused proof surface inside the same crate, run each focused selector needed to cover those boundaries rather than assuming one name filter is sufficient.
 
-If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale.
+If a canonical interface is realized through a forwarding layer, prove both:
+- the canonical consumer-facing call
+- the forwarding or runtime path that actually materializes it
+
+Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
+
+If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
+
+If stronger lawful behavior now reaches completion earlier than an older focused test assumed, recalibrate the test inputs to preserve the intended proof surface instead of weakening the implementation to preserve stale timing or valuation assumptions.
+
+If an attempted acceptance proof reveals a deeper shared-layer contradiction outside the ticket's corrected scope, do not silently pull that broader fix into the current ticket. Update the ticket's proof surface back to the owned boundary unless the broader change is already in scope or the user explicitly confirms the expansion.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 
@@ -116,11 +155,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 For AI, planner, golden, or start-failure work, prove behavior at the strongest available layer instead of relying on a weaker downstream proxy.
 
+When a ticket claims cross-layer valuation agreement, explicitly check whether the shared scorer is computing marginal value over the actor's current accessible stock, especially when the proof depends on current-vs-receipt or retain-vs-transfer snapshots.
+
 When a ticket changes whether an action should be available at all, include at least one focused proof that goes through real affordance enumeration rather than only constructing action instances directly.
 
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
 
 If the architecture change invalidates the old scenario invariant itself rather than just a timing detail or output shape, rewrite the scenario to prove the new contract and update the scenario header/comments to match.
+
+When a ticket intentionally lands pure scaffolding ahead of downstream integration, either wire the immediate call sites if they are in scope or mark the temporary unused surface deliberately and record why. Do not let staged helper work fail later CI clippy passes by accident.
 
 ### 7. Close the loop on the ticket
 

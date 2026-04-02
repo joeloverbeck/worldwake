@@ -361,6 +361,7 @@ pub fn build_t30_world(
                 negotiation_round_ticks: std::num::NonZeroU32::new(3).unwrap(),
                 initial_offer_bias: pm(600),
                 concession_rate: pm(100),
+                rejection_escalation_rate: pm(200),
                 demand_memory_retention_ticks: 500,
                 market_presence_ticks: std::num::NonZeroU32::new(30).unwrap(),
             },

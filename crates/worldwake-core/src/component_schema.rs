@@ -255,6 +255,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                commodity_valuation_profiles,
+                CommodityValuationProfile,
+                insert_commodity_valuation_profile,
+                get_commodity_valuation_profile,
+                get_commodity_valuation_profile_mut,
+                remove_commodity_valuation_profile,
+                has_commodity_valuation_profile,
+                iter_commodity_valuation_profiles,
+                insert_component_commodity_valuation_profile,
+                get_component_commodity_valuation_profile,
+                get_component_commodity_valuation_profile_mut,
+                remove_component_commodity_valuation_profile,
+                has_component_commodity_valuation_profile,
+                entities_with_commodity_valuation_profile,
+                query_commodity_valuation_profile,
+                count_with_commodity_valuation_profile,
+                "CommodityValuationProfile",
+                |kind| kind == EntityKind::Agent,
+                CommodityValuationProfile,
+                crate::CommodityValuationProfile,
+                set_component_commodity_valuation_profile,
+                clear_component_commodity_valuation_profile,
+                txn_simple_set
+            }
+            {
                 patrol_routes,
                 PatrolRoute,
                 insert_patrol_route,

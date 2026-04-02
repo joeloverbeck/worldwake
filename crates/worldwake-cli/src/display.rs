@@ -22,11 +22,27 @@ pub enum ResolveError {
 
 /// Return a human-readable display name for an entity.
 ///
-/// If the entity has a `Name` component, returns the name string.
-/// Otherwise returns `"<EntityKind>#<slot>"` (e.g. `"Agent#3"`).
+/// Resolution order:
+/// 1. `Name` component → name string (e.g. `"Merchant Vara"`)
+/// 2. Topology place → place name (e.g. `"Market Square"`)
+/// 3. `ItemLot` component → quantity + commodity (e.g. `"5× Grain"`)
+/// 4. `WorkstationMarker` → workstation tag (e.g. `"Mill"`)
+/// 5. Fallback → `"<EntityKind>#<slot>"` (e.g. `"Agent#3"`)
 pub fn entity_display_name(world: &World, id: EntityId) -> String {
     if let Some(name) = world.get_component_name(id) {
         return name.0.clone();
+    }
+    // Places are stored in topology with names but lack Name components.
+    if let Some(place) = world.topology().place(id) {
+        return place.name.clone();
+    }
+    // Item lots: show as "5× Grain".
+    if let Some(lot) = world.get_component_item_lot(id) {
+        return format_quantity(lot.commodity, lot.quantity);
+    }
+    // Workstations/facilities: show the workstation tag.
+    if let Some(wm) = world.get_component_workstation_marker(id) {
+        return format!("{:?}", wm.0);
     }
     match world.entity_kind(id) {
         Some(kind) => format!("{kind:?}#{}", id.slot),
@@ -209,11 +225,8 @@ mod tests {
             generation: 0,
         };
         let display = entity_display_name(world, place_id);
-        // Places don't get Name component — falls back to "Place#0".
-        assert!(
-            display == "Place#0" || display == "Village",
-            "got: {display}"
-        );
+        // Places resolve via topology to their place name.
+        assert_eq!(display, "Village");
     }
 
     #[test]

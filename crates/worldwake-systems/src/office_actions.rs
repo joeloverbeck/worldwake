@@ -624,6 +624,7 @@ fn validate_yield_force_claim_payload_authoritatively(
 fn start_bribe(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -635,6 +636,7 @@ fn start_bribe(
 fn tick_bribe(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -644,6 +646,7 @@ fn tick_bribe(
 fn commit_bribe(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -682,6 +685,7 @@ fn abort_bribe(
 fn start_threaten(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -693,6 +697,7 @@ fn start_threaten(
 fn tick_threaten(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -702,6 +707,7 @@ fn tick_threaten(
 fn commit_threaten(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -741,6 +747,7 @@ fn abort_threaten(
 fn start_declare_support(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -752,6 +759,7 @@ fn start_declare_support(
 fn tick_declare_support(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -761,6 +769,7 @@ fn tick_declare_support(
 fn commit_declare_support(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -807,6 +816,7 @@ fn abort_declare_support(
 fn start_press_force_claim(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -818,6 +828,7 @@ fn start_press_force_claim(
 fn tick_press_force_claim(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -827,6 +838,7 @@ fn tick_press_force_claim(
 fn commit_press_force_claim(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -859,6 +871,7 @@ fn abort_press_force_claim(
 fn start_yield_force_claim(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -870,6 +883,7 @@ fn start_yield_force_claim(
 fn tick_yield_force_claim(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -879,6 +893,7 @@ fn tick_yield_force_claim(
 fn commit_yield_force_claim(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1478,7 +1493,14 @@ mod tests {
         let handler = handlers.get(def.handler).unwrap();
         let mut txn = new_action_txn(world, instance.actor, tick);
         let mut rng = test_rng(seed);
-        (handler.on_commit)(def, instance, &mut rng, &mut txn).unwrap();
+        (handler.on_commit)(
+            def,
+            instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap();
         txn.add_tag(EventTag::ActionCommitted);
         for tag in &def.causal_event_tags {
             txn.add_tag(*tag);
@@ -1969,7 +1991,14 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(2);
 
-        let err = (handler.on_commit)(def, &instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_commit)(
+            def,
+            &instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             ActionError::AbortRequested(

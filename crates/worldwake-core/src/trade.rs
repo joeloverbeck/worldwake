@@ -67,12 +67,19 @@ pub struct DemandMemory {
 
 impl Component for DemandMemory {}
 
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
+pub enum TradeRole {
+    Buyer,
+    Seller,
+}
+
 /// Per-agent negotiation pacing, opening stance, and demand-memory retention.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TradeDispositionProfile {
     pub negotiation_round_ticks: NonZeroU32,
     pub initial_offer_bias: Permille,
     pub concession_rate: Permille,
+    pub rejection_escalation_rate: Permille,
     pub demand_memory_retention_ticks: u32,
     pub market_presence_ticks: NonZeroU32,
 }
@@ -105,6 +112,7 @@ pub enum DemandObservationReason {
     WantedToBuyButSellerOutOfStock,
     WantedToBuyButTooExpensive,
     WantedToSellButNoBuyer,
+    TradeAgreed,
 }
 
 #[cfg(test)]
@@ -112,7 +120,7 @@ mod tests {
     use super::{
         DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, SaleListing,
         StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences,
-        TradeDispositionProfile,
+        TradeDispositionProfile, TradeRole,
     };
     use crate::{
         test_utils::{
@@ -175,6 +183,11 @@ mod tests {
     #[test]
     fn demand_observation_reason_value_bounds() {
         assert_copy_value_bounds::<DemandObservationReason>();
+    }
+
+    #[test]
+    fn trade_role_satisfies_required_traits() {
+        assert_copy_value_bounds::<TradeRole>();
     }
 
     #[test]

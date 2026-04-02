@@ -81,18 +81,21 @@ pub enum TellBeliefDeltaKind {
 pub type ActionStartFn = for<'w> fn(
     &ActionDef,
     &mut ActionInstance,
+    &crate::ActionExecutionContext<'_>,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<Option<ActionState>, ActionError>;
 pub type ActionTickFn = for<'w> fn(
     &ActionDef,
     &mut ActionInstance,
+    &crate::ActionExecutionContext<'_>,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<ActionProgress, ActionError>;
 pub type ActionCommitFn = for<'w> fn(
     &ActionDef,
     &ActionInstance,
+    &crate::ActionExecutionContext<'_>,
     &mut DeterministicRng,
     &mut WorldTxn<'w>,
 ) -> Result<CommitOutcome, ActionError>;
@@ -409,13 +412,14 @@ impl AbortReason {
 mod tests {
     use super::{
         AbortReason, ActionAbortRequestReason, ActionError, ActionHandler, ActionProgress,
-        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
-        PayloadEntityRole, SelfTargetActionKind,
+        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization,
+        MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
     };
     use crate::{
-        ActionDef, ActionDuration, ActionHandlerId, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        ActionDef, ActionDuration, ActionExecutionContext, ActionHandlerId, ActionInstance,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, RecipeRegistry,
+        ReservationReq, TargetSpec,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
@@ -476,6 +480,7 @@ mod tests {
     fn noop_start(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -486,6 +491,7 @@ mod tests {
     fn noop_tick(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -495,6 +501,7 @@ mod tests {
     fn create_agent_on_commit(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -517,6 +524,14 @@ mod tests {
     fn assert_copy_traits<T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug>() {}
 
     fn assert_clone_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
+
+    fn execution_context(recipes: &RecipeRegistry) -> ActionExecutionContext<'_> {
+        ActionExecutionContext {
+            cause: CauseRef::Bootstrap,
+            tick: Tick(1),
+            recipe_registry: recipes,
+        }
+    }
 
     #[test]
     fn action_supporting_types_satisfy_required_traits() {
@@ -561,6 +576,8 @@ mod tests {
         let mut instance = sample_instance();
         let def = sample_def();
         let mut rng = DeterministicRng::new(Seed([0x11; 32]));
+        let recipes = RecipeRegistry::new();
+        let context = execution_context(&recipes);
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -572,11 +589,11 @@ mod tests {
         );
 
         assert_eq!(
-            (handler.on_start)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
+            (handler.on_start)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
         assert_eq!(
-            (handler.on_tick)(&def, &mut instance, &mut rng, &mut txn).unwrap(),
+            (handler.on_tick)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap(),
             ActionProgress::Continue
         );
         (handler.on_abort)(
@@ -670,6 +687,8 @@ mod tests {
         let instance = sample_instance();
         let def = sample_def();
         let mut rng = DeterministicRng::new(Seed([0x22; 32]));
+        let recipes = RecipeRegistry::new();
+        let context = execution_context(&recipes);
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -680,7 +699,7 @@ mod tests {
             WitnessData::default(),
         );
 
-        let outcome = (handler.on_commit)(&def, &instance, &mut rng, &mut txn).unwrap();
+        let outcome = (handler.on_commit)(&def, &instance, &context, &mut rng, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

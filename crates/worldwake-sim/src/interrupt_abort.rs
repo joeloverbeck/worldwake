@@ -170,8 +170,8 @@ mod tests {
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
         ActionState, ActionStatus, Affordance, Constraint, DeterministicRng, DurationExpr,
-        ExternalAbortReason, InterruptReason, Interruptibility, Precondition, ReservationReq,
-        TargetSpec,
+        ExternalAbortReason, InterruptReason, Interruptibility, Precondition, RecipeRegistry,
+        ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -202,6 +202,11 @@ mod tests {
         *hook_state().lock().unwrap() = HookState::default();
     }
 
+    fn test_recipes() -> &'static RecipeRegistry {
+        static TEST_RECIPES: OnceLock<RecipeRegistry> = OnceLock::new();
+        TEST_RECIPES.get_or_init(RecipeRegistry::new)
+    }
+
     fn entity(slot: u32) -> EntityId {
         EntityId {
             slot,
@@ -230,6 +235,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -240,6 +246,7 @@ mod tests {
     fn tick_continue(
         _def: &ActionDef,
         _instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -250,6 +257,7 @@ mod tests {
     fn commit_noop(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<crate::CommitOutcome, ActionError> {
@@ -376,6 +384,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
+                recipe_registry: test_recipes(),
             },
         )
         .unwrap();
@@ -413,6 +422,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
             InterruptReason::DangerNearby,
         )
@@ -455,6 +465,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
             InterruptReason::DangerNearby,
         )
@@ -504,6 +515,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
             InterruptReason::Reprioritized,
         )
@@ -542,6 +554,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
+                recipe_registry: test_recipes(),
             },
             ExternalAbortReason::TargetDestroyed,
         )

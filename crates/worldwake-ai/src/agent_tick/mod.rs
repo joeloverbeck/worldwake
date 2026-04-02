@@ -225,11 +225,13 @@ pub(super) fn runtime_belief_view<'a>(
     world: &'a worldwake_core::World,
     scheduler: &'a Scheduler,
     action_defs: &'a worldwake_sim::ActionDefRegistry,
+    recipe_registry: &'a RecipeRegistry,
 ) -> PerAgentBeliefView<'a> {
-    PerAgentBeliefView::with_runtime_from_world_at_tick(
+    PerAgentBeliefView::with_runtime_from_world_at_tick_with_recipes(
         agent,
         scheduler.current_tick(),
         world,
+        Some(recipe_registry),
         PerAgentBeliefRuntime::new(scheduler.active_actions(), action_defs),
     )
 }
@@ -353,7 +355,8 @@ fn process_agent(
 
     // ── Dead-agent early return ──
     {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+        let view =
+            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
         if view.is_dead(agent) || !view.is_alive(agent) {
             if current_frame.is_some() {
                 runtime.last_frame_clear_reason = Some(FrameClearReason::Death);
@@ -450,7 +453,8 @@ fn process_agent(
             .as_ref()
             .is_some_and(|f| !matches!(f.state, worldwake_core::FrameState::Exhausted));
         if should_eval {
-            let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+            let view =
+                runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
             let frame = current_frame.as_mut().unwrap();
             frame.assumptions = populate_assumptions(&frame.domain, agent, &view);
             let eval = evaluate_assumptions(&frame.assumptions, &view, None);
@@ -518,7 +522,13 @@ fn process_agent(
             if has_no_critical_threat {
                 let deferred_eval = evaluate_assumptions(
                     &[worldwake_core::FrameAssumption::NoCriticalThreat],
-                    &runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs),
+                    &runtime_belief_view(
+                        agent,
+                        ctx.world,
+                        ctx.scheduler,
+                        action_defs,
+                        recipe_registry,
+                    ),
                     Some(&ranked_candidates),
                 );
                 if matches!(
@@ -546,7 +556,8 @@ fn process_agent(
     // ── Feasibility annotation and re-sort ──
     let mut ranked_candidates = ranked_candidates;
     {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+        let view =
+            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
         for ranked in &mut ranked_candidates {
             ranked.feasibility = crate::feasibility::feasibility_hint(
                 &view,
@@ -563,7 +574,8 @@ fn process_agent(
     let active_action = active_action_for_agent(ctx, agent);
     let frame_switch_margin = {
         let jc = ctx.world.get_component_intention_frame(agent);
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+        let view =
+            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
         effective_goal_switch_margin(&view, agent, jc, budget)
     };
     let default_switch_margin = budget.switch_margin_permille;
@@ -697,7 +709,13 @@ fn process_agent(
 
         tracing.then(|| {
             let (patrol_route, affordance_trace) = {
-                let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+                let view = runtime_belief_view(
+                    agent,
+                    ctx.world,
+                    ctx.scheduler,
+                    action_defs,
+                    recipe_registry,
+                );
                 let patrol = patrol_route_snapshot(&view, agent);
                 let place = view.effective_place(agent);
                 let affordances = worldwake_sim::get_affordances(
@@ -832,7 +850,8 @@ fn process_agent(
 
     // ── Patience exhaustion → BlockedIntent + Exhausted state ──
     if patience_exhausted {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs);
+        let view =
+            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
         let exhausted = check_patience_exhaustion(
             current_frame.as_ref().unwrap(),
             view.effective_place(agent),
@@ -918,6 +937,7 @@ fn process_agent(
         ctx.event_log,
         ctx.scheduler,
         action_defs,
+        recipe_registry,
         agent,
         tick,
         &original_blocked,

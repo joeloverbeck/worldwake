@@ -82,7 +82,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     tracing: bool,
 ) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs);
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, phase.recipe_registry);
     let before = blocked_memory.clone();
     let queue_transition_changed = handle_facility_queue_transitions(
         &view,
@@ -169,7 +169,6 @@ pub(super) fn refresh_runtime_for_read_phase(
         agent,
         phase.tick,
         phase.utility,
-        phase.recipe_registry,
         &dc,
     );
 

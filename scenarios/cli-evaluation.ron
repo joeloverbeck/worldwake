@@ -1,0 +1,182 @@
+// CLI evaluation scenario for Worldwake.
+//
+// 5 places, 6 travel edges (mix of bidirectional and unidirectional),
+// 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
+// and a resource source.  Designed to exercise all 30 CLI commands.
+(
+    seed: 7777,
+    places: [
+        (name: "Thornwall Village", tags: [Village, Store]),
+        (name: "Eldergrove Forest", tags: [Forest]),
+        (name: "Dusty Trail", tags: [Trail]),
+        (name: "Hearthstone Inn", tags: [Inn]),
+        (name: "Golden Fields", tags: [Field, Farm]),
+    ],
+    edges: [
+        // Village hub connections
+        (from: "Thornwall Village", to: "Eldergrove Forest", travel_ticks: 3, bidirectional: true),
+        (from: "Thornwall Village", to: "Dusty Trail", travel_ticks: 2, bidirectional: true),
+        (from: "Thornwall Village", to: "Hearthstone Inn", travel_ticks: 4, bidirectional: true),
+        (from: "Thornwall Village", to: "Golden Fields", travel_ticks: 5, bidirectional: true),
+        // One-way shortcut from forest to trail (downhill path)
+        (from: "Eldergrove Forest", to: "Dusty Trail", travel_ticks: 2, bidirectional: false),
+        // Long route between outlying places
+        (from: "Hearthstone Inn", to: "Golden Fields", travel_ticks: 8, bidirectional: true),
+    ],
+    agents: [
+        // Human-controlled protagonist at village
+        (
+            name: "Kael",
+            location: "Thornwall Village",
+            control: Human,
+            needs: (
+                hunger: 500,
+                thirst: 300,
+                fatigue: 100,
+                bladder: 100,
+                dirtiness: 100,
+            ),
+            utility_profile: (
+                hunger_weight: 500,
+                thirst_weight: 500,
+                fatigue_weight: 500,
+                bladder_weight: 500,
+                dirtiness_weight: 500,
+                pain_weight: 500,
+                danger_weight: 500,
+                enterprise_weight: 500,
+                social_weight: 500,
+                activity_awareness_weight: 500,
+                courage: 500,
+                care_weight: 500,
+            ),
+        ),
+        // AI merchant at village with trade and merchandise profiles
+        (
+            name: "Merchant Vara",
+            location: "Thornwall Village",
+            control: Ai,
+            needs: (
+                hunger: 200,
+                thirst: 200,
+                fatigue: 100,
+                bladder: 100,
+                dirtiness: 100,
+            ),
+            utility_profile: (
+                hunger_weight: 300,
+                thirst_weight: 300,
+                fatigue_weight: 200,
+                bladder_weight: 200,
+                dirtiness_weight: 200,
+                pain_weight: 400,
+                danger_weight: 600,
+                enterprise_weight: 800,
+                social_weight: 400,
+                activity_awareness_weight: 300,
+                courage: 300,
+                care_weight: 200,
+            ),
+            merchandise_profile: (
+                sale_kinds: [Grain, Apple, Bread],
+                home_facility: "Thornwall Village",
+            ),
+            trade_disposition: (
+                negotiation_round_ticks: 2,
+                initial_offer_bias: 600,
+                concession_rate: 100,
+                rejection_escalation_rate: 200,
+                demand_memory_retention_ticks: 50,
+                market_presence_ticks: 30,
+            ),
+        ),
+        // AI forager in the forest with high thirst
+        (
+            name: "Forager Lina",
+            location: "Eldergrove Forest",
+            control: Ai,
+            needs: (
+                hunger: 200,
+                thirst: 600,
+                fatigue: 100,
+                bladder: 100,
+                dirtiness: 100,
+            ),
+            utility_profile: (
+                hunger_weight: 600,
+                thirst_weight: 700,
+                fatigue_weight: 300,
+                bladder_weight: 200,
+                dirtiness_weight: 200,
+                pain_weight: 500,
+                danger_weight: 400,
+                enterprise_weight: 400,
+                social_weight: 300,
+                activity_awareness_weight: 500,
+                courage: 400,
+                care_weight: 300,
+            ),
+        ),
+        // AI guard on the trail with combat profile and high courage
+        (
+            name: "Guard Theron",
+            location: "Dusty Trail",
+            control: Ai,
+            needs: (
+                hunger: 300,
+                thirst: 300,
+                fatigue: 100,
+                bladder: 100,
+                dirtiness: 100,
+            ),
+            combat_profile: (
+                wound_capacity: 900,
+                incapacitation_threshold: 750,
+                attack_skill: 600,
+                guard_skill: 550,
+                defend_bonus: 150,
+                natural_clot_resistance: 400,
+                natural_recovery_rate: 60,
+                unarmed_wound_severity: 250,
+                unarmed_bleed_rate: 120,
+                unarmed_attack_ticks: 3,
+                defend_stance_ticks: 10,
+            ),
+            utility_profile: (
+                hunger_weight: 400,
+                thirst_weight: 400,
+                fatigue_weight: 300,
+                bladder_weight: 200,
+                dirtiness_weight: 200,
+                pain_weight: 600,
+                danger_weight: 800,
+                enterprise_weight: 200,
+                social_weight: 300,
+                activity_awareness_weight: 400,
+                courage: 850,
+                care_weight: 400,
+            ),
+        ),
+    ],
+    items: [
+        // Coins on Kael for trading
+        (commodity: Coin, quantity: 20, location: "Kael"),
+        // Water on Kael for immediate needs
+        (commodity: Water, quantity: 5, location: "Kael"),
+        // Grain and bread at village store
+        (commodity: Grain, quantity: 10, location: "Thornwall Village"),
+        (commodity: Bread, quantity: 5, location: "Thornwall Village"),
+        // Apples in the forest
+        (commodity: Apple, quantity: 8, location: "Eldergrove Forest"),
+        // Sword on Guard Theron
+        (commodity: Sword, quantity: 1, location: "Guard Theron"),
+        // Firewood at the inn
+        (commodity: Firewood, quantity: 3, location: "Hearthstone Inn"),
+    ],
+    facilities: [
+        (workstation: Mill, location: "Thornwall Village"),
+    ],
+    resource_sources: [
+        (commodity: Apple, location: "Eldergrove Forest", regeneration_ticks_per_unit: 2, capacity: 20),
+    ],
+)

@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
+    CombatStance, CommodityKind, CommodityValuationProfile, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
     DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
     FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
@@ -5637,6 +5637,7 @@ mod tests {
                     negotiation_round_ticks: NonZeroU32::new(4).unwrap(),
                     initial_offer_bias: Permille::new(500).unwrap(),
                     concession_rate: Permille::new(100).unwrap(),
+                    rejection_escalation_rate: Permille::new(200).unwrap(),
                     demand_memory_retention_ticks: 60,
                     market_presence_ticks: NonZeroU32::new(30).unwrap(),
                 },

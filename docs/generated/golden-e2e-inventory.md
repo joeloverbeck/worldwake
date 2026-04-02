@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 18
-- Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 258
+- Golden test files: 19
+- Files contributing `golden_*` tests: 19
+- Total `golden_*` tests: 263
 
 ## Per-File Inventory
 
@@ -16,6 +16,7 @@ Do not hand-edit it.
 | `golden_ai_decisions.rs` | 18 |
 | `golden_care.rs` | 18 |
 | `golden_combat.rs` | 25 |
+| `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 10 |
 | `golden_emergent.rs` | 47 |
 | `golden_integration.rs` | 16 |
@@ -27,7 +28,7 @@ Do not hand-edit it.
 | `golden_resilience.rs` | 2 |
 | `golden_soak.rs` | 1 |
 | `golden_social.rs` | 14 |
-| `golden_supply_chain.rs` | 0 |
+| `golden_supply_chain.rs` | 2 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 9 |
 | `golden_travel_physiology.rs` | 12 |
@@ -101,6 +102,12 @@ Do not hand-edit it.
 - `golden_suppression_then_binding_combined`
 - `golden_suppression_then_binding_combined_replays_deterministically`
 - `golden_action_trace_records_loot_lifecycle`
+
+### `golden_commodity_opportunity.rs`
+
+- `golden_unreachable_workstation_suppresses_recipe_input_value`
+- `golden_unreachable_workstation_suppresses_recipe_input_value_replays_deterministically`
+- `golden_no_known_recipe_suppresses_recipe_input_value`
 
 ### `golden_determinism.rs`
 
@@ -305,7 +312,8 @@ Do not hand-edit it.
 
 ### `golden_supply_chain.rs`
 
-- No `golden_*` tests
+- `golden_full_supply_chain_negotiated_restock_to_consumption`
+- `golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically`
 
 ### `golden_t22_bandit_camp_destruction.rs`
 

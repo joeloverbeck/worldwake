@@ -24,7 +24,13 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     valid: bool,
 ) -> Result<(), TickInputError> {
     if !valid {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            ctx.action_defs,
+            ctx.recipe_registry,
+        );
         let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
             &view,
             jc.as_ref(),
@@ -53,7 +59,13 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
-        let view = runtime_belief_view(agent, ctx.world, ctx.scheduler, ctx.action_defs);
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            ctx.action_defs,
+            ctx.recipe_registry,
+        );
         let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
             &view,
             jc.as_ref(),
@@ -72,6 +84,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 ctx.event_log,
                 ctx.scheduler,
                 ctx.action_defs,
+                ctx.recipe_registry,
                 agent,
                 tick,
                 original_blocked,
@@ -96,6 +109,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             ctx.event_log,
             ctx.scheduler,
             ctx.action_defs,
+            ctx.recipe_registry,
             agent,
             tick,
             original_blocked,
@@ -127,6 +141,7 @@ pub(super) fn finalize_agent_tick(
     event_log: &mut worldwake_core::EventLog,
     scheduler: &Scheduler,
     action_defs: &worldwake_sim::ActionDefRegistry,
+    recipe_registry: &worldwake_sim::RecipeRegistry,
     agent: EntityId,
     tick: Tick,
     original_blocked: &BlockedIntentMemory,
@@ -153,7 +168,7 @@ pub(super) fn finalize_agent_tick(
     )?;
     {
         // Snapshot the post-mutation world state before ending the tick.
-        let view = runtime_belief_view(agent, world, scheduler, action_defs);
+        let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
         update_runtime_observation_snapshot(&view, agent, runtime);
     }
     Ok(())

@@ -67,7 +67,12 @@ fn travel_state(
             departure_tick,
             arrival_tick,
         }) => Ok((edge_id, origin, destination, departure_tick, arrival_tick)),
-        Some(ActionState::Empty | ActionState::Heal { .. } | ActionState::Investigate { .. })
+        Some(
+            ActionState::Empty
+            | ActionState::Heal { .. }
+            | ActionState::Investigate { .. }
+            | ActionState::Trade { .. },
+        )
         | None => Err(ActionError::InternalError(format!(
             "travel action instance {} is missing travel state",
             instance.instance_id
@@ -104,6 +109,7 @@ fn resolve_travel(
 fn start_travel(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -186,6 +192,7 @@ fn start_travel(
 fn tick_travel(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -195,6 +202,7 @@ fn tick_travel(
 fn commit_travel(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -242,7 +250,7 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionExecutionContext, ActionInstance, ActionInstanceId, DeterministicRng,
+        ActionInstance, ActionInstanceId, DeterministicRng,
         PerAgentBeliefView, TickOutcome,
     };
 
@@ -394,10 +402,7 @@ mod tests {
                 rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap()
     }
@@ -483,10 +488,7 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             assert_eq!(outcome, TickOutcome::Continuing);
@@ -503,10 +505,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(8),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(8)),
         )
         .unwrap();
 
@@ -552,10 +551,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap_err();
 
@@ -609,10 +605,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap_err();
 
@@ -650,10 +643,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
             worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();

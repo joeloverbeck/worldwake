@@ -439,6 +439,7 @@ fn validate_accuse_payload_authoritatively(
 fn start_accuse(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -466,6 +467,7 @@ fn start_accuse(
 fn tick_accuse(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -475,6 +477,7 @@ fn tick_accuse(
 fn commit_accuse(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -976,6 +979,7 @@ fn validate_exile_start(
 fn start_fine(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -986,6 +990,7 @@ fn start_fine(
 fn start_exile(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -997,6 +1002,7 @@ fn start_exile(
 fn tick_punishment(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1006,6 +1012,7 @@ fn tick_punishment(
 fn commit_fine(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1055,6 +1062,7 @@ fn commit_fine(
 fn commit_exile(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1199,7 +1207,14 @@ mod tests {
         let handler = handlers.get(def.handler).unwrap();
         let mut txn = new_action_txn(world, instance.actor, tick);
         let mut rng = test_rng(seed);
-        (handler.on_commit)(def, instance, &mut rng, &mut txn).unwrap();
+        (handler.on_commit)(
+            def,
+            instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap();
         txn.add_tag(EventTag::ActionCommitted);
         for tag in &def.causal_event_tags {
             txn.add_tag(*tag);
@@ -1712,7 +1727,14 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(1);
 
-        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(
+            def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded"))
@@ -1751,7 +1773,14 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(11);
 
-        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(
+            def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("already recorded"))
@@ -1768,7 +1797,14 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.accuser, 3);
         let mut rng = test_rng(2);
 
-        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(
+            def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("lacks subjective theft evidence"))
@@ -1922,7 +1958,14 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(1);
 
-        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(
+            def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap_err();
 
         assert!(matches!(
             err,
@@ -1964,7 +2007,17 @@ mod tests {
         let handler = handlers.get(def.handler).unwrap();
         let mut start_txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut start_rng = test_rng(5);
-        (handler.on_start)(def, &mut instance, &mut start_rng, &mut start_txn).unwrap();
+        (handler.on_start)(
+            def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                start_txn.tick(),
+            ),
+            &mut start_rng,
+            &mut start_txn,
+        )
+        .unwrap();
 
         let _ = commit_action(&mut fx.world, &defs, &handlers, fine_id, &instance, 7, 3);
 
@@ -2036,7 +2089,14 @@ mod tests {
         let mut txn = new_action_txn(&mut fx.world, fx.actor, 3);
         let mut rng = test_rng(2);
 
-        let err = (handler.on_start)(def, &mut instance, &mut rng, &mut txn).unwrap_err();
+        let err = (handler.on_start)(
+            def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap_err();
 
         assert!(
             matches!(err, ActionError::PreconditionFailed(message) if message.contains("does not hold office"))

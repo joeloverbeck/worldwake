@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Commodity Opportunity Valuation
 
@@ -41,12 +41,11 @@ The correct fix is not a special-case "firewood matters if hungry." The correct 
 - agent-specific bounded reasoning limits
 
 ## Spec Ownership Scan
-Active `specs/E14-*` through `specs/E22-*` do not define indirect commodity valuation.
+E14 through E22 are all completed and archived. No active spec defines indirect commodity valuation.
 
-Closest related spec:
-- `specs/S04-merchant-selling-market-presence.md`
-
-That spec fixes seller visibility and concrete listed-lot trade, but it explicitly keeps the valuation helper bilateral and bundle-based without specifying how indirect commodity utility should be represented. It is adjacent, not sufficient.
+Closest related specs:
+- `archive/specs/S04-merchant-selling-market-presence.md` (COMPLETED — seller visibility and concrete listed-lot trade; keeps valuation bilateral and bundle-based without indirect commodity utility)
+- `archive/specs/S10-bilateral-trade-negotiation.md` (COMPLETED — bilateral negotiation protocol with reservation prices derived from needs, inventory, alternatives, demand memory; valuation happens during `tick_trade()` negotiation rounds via `evaluate_for_participant` → `evaluate_trade_bundle`)
 
 ## Phase
 Phase 4+: Economy Deepening, Step 14
@@ -58,7 +57,8 @@ Phase 4+: Economy Deepening, Step 14
 - `worldwake-ai`
 
 ## Dependencies
-- S04
+- S04 (COMPLETED, archived)
+- S10 (COMPLETED, archived — bilateral trade negotiation; reservation prices and `evaluate_trade_bundle` integration already landed)
 
 E14 is not strictly required for the first implementation pass because the model only uses the actor's current beliefs and locally queryable believed opportunities. The design must remain compatible with richer future belief propagation.
 
@@ -84,7 +84,7 @@ E14 is not strictly required for the first implementation pass because the model
 Add a new per-agent profile that bounds indirect commodity reasoning. This is separate from `UtilityProfile` because it configures reasoning limits and decay, not AI motive weights.
 
 ```rust
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct CommodityValuationProfile {
     recipe_opportunity_depth: NonZeroU8,
     recipe_place_horizon: u8,
@@ -108,7 +108,7 @@ Add:
 fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile>;
 ```
 
-This should land on the narrow AI-facing goal/value read surface, not blindly on the broad mixed affordance/search trait. If the post-E14 boundary uses a dedicated goal-forming trait, extend that surface instead of defaulting to the full `BeliefView`.
+This should land on `GoalBeliefView` (the narrow AI-facing goal/value read surface at `worldwake-sim/src/belief_view.rs:30`), not on the broader `RuntimeBeliefView` (the mixed affordance/runtime trait at `belief_view.rs:319`).
 
 ### 3. Shared `commodity_opportunity` Module in `worldwake-sim`
 Add a new shared module that derives concrete commodity value channels from beliefs plus recipes.
@@ -117,16 +117,16 @@ Suggested public surface:
 
 ```rust
 pub struct CommodityOpportunityBreakdown {
-    pub direct_survival_score: u64,
-    pub treatment_score: u64,
-    pub enterprise_score: u64,
-    pub indirect_recipe_score: u64,
+    pub direct_survival_score: u32,
+    pub treatment_score: u32,
+    pub enterprise_score: u32,
+    pub indirect_recipe_score: u32,
 }
 
 pub fn commodity_opportunity_score(
     actor: EntityId,
     commodity: CommodityKind,
-    belief: &dyn BeliefView,
+    belief: &dyn GoalBeliefView,
     recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
@@ -161,8 +161,10 @@ The shared analysis must preserve current direct channels:
 
 Indirect recipe value is added as another channel, not as a replacement.
 
-### 6. Extend `evaluate_trade_bundle`
-`evaluate_trade_bundle` must use the shared commodity-opportunity layer rather than a trade-only direct-use snapshot.
+### 6. Extend `evaluate_trade_bundle` with recipe awareness
+`evaluate_trade_bundle` (at `worldwake-sim/src/trade_valuation.rs`) must use the shared commodity-opportunity layer rather than a trade-only direct-use snapshot.
+
+Post-S10, `evaluate_trade_bundle` is called from `evaluate_for_participant` during `tick_trade()` negotiation rounds — not at commit time. The integration point is the negotiation tick loop where each agent evaluates the counterparty's current offer against their reservation. The reservation price functions (`buyer_reservation_price`, `seller_reservation_price` in `worldwake-systems/src/trade_actions.rs`) also need recipe-awareness via the shared layer.
 
 The clean shape is:
 - either extend the helper signature to accept `&RecipeRegistry`
@@ -283,7 +285,7 @@ No commodity-value cache is permitted as authoritative state.
 - keep candidate generation grounded in known missing inputs and real paths
 - do not add compatibility wrappers preserving both old and new ranking paths
 
-## Cross-System Interactions (Principle 12)
+## Cross-System Interactions (Principle 26)
 - E11 trade reads beliefs, remembered demand, recipes, and valuation profile to accept or reject bundles
 - E13 planning reads the same beliefs, recipes, and valuation profile to rank indirect commodity goals
 - E10 production defines the concrete recipes, inputs, outputs, and workstation constraints that create indirect value
@@ -316,6 +318,24 @@ No system calls another system's behavior directly.
 - finite input stocks and finite source throughput
 - workstation occupancy and queueing
 - travel time to believed reachable facilities
+
+## Outcome
+
+- Completed: 2026-04-02
+- What changed:
+  - Added `CommodityValuationProfile` as an authoritative component and exposed it through the belief-facing valuation surface.
+  - Added the shared `commodity_opportunity` module in `worldwake-sim` with bounded, deterministic indirect recipe propagation over known recipes, reachable workstations, accessible sibling inputs, and per-agent valuation limits.
+  - Reworked `evaluate_trade_bundle` and the bilateral-trade runtime path to use the shared commodity-opportunity model instead of direct-only bundle valuation.
+  - Rewired AI ranking for `AcquireCommodity { purpose: RecipeInput(..) }` and `ProduceCommodity` onto the same shared commodity-opportunity layer.
+  - Added and completed the S06 proof surface across focused `worldwake-sim` valuation tests, AI ranking tests, existing positive recipe-input goldens, and the new negative commodity-opportunity goldens.
+- Deviations from original plan:
+  - The final implementation widened the sim runtime/action-execution substrate so recipe definitions could reach runtime-backed belief views and trade handlers lawfully, rather than only changing `trade_valuation.rs` in isolation.
+  - The final S06 closeout required a bounded shared marginal-value fix in `commodity_opportunity.rs` so absent recipe inputs no longer received retained-value credit in trade snapshots.
+- Verification:
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
 - carry-capacity limits on moving enabling inputs
 - body-cost and time cost of production steps
 - demand-memory retention decay
@@ -368,8 +388,9 @@ Derived transient read-model:
 - all authoritative iteration remains deterministic
 
 ## References
-- [E11-trade-economy.md](/home/joeloverbeck/projects/worldwake/archive/specs/E11-trade-economy.md)
-- [E13-decision-architecture.md](/home/joeloverbeck/projects/worldwake/archive/specs/E13-decision-architecture.md)
-- [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
-- [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md)
-- [IMPLEMENTATION-ORDER.md](/home/joeloverbeck/projects/worldwake/specs/IMPLEMENTATION-ORDER.md)
+- [E11-trade-economy.md](archive/specs/E11-trade-economy.md)
+- [E13-decision-architecture.md](archive/specs/E13-decision-architecture.md)
+- [S04-merchant-selling-market-presence.md](archive/specs/S04-merchant-selling-market-presence.md)
+- [S10-bilateral-trade-negotiation.md](archive/specs/S10-bilateral-trade-negotiation.md)
+- [FOUNDATIONS.md](docs/FOUNDATIONS.md)
+- [IMPLEMENTATION-ORDER.md](specs/IMPLEMENTATION-ORDER.md)

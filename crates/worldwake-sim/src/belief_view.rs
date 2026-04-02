@@ -1,18 +1,20 @@
 use crate::{
     action_semantics::consultation_duration_ticks, ActionDuration, ActionPayload, DurationExpr,
+    RecipeDefinition,
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, PlaceTagSet, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-    RecordedViolation, ResourceSource, SocialObservation, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    CommodityTreatmentProfile, CommodityValuationProfile, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, SocialObservation,
+    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile,
+    WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -89,6 +91,10 @@ pub trait GoalBeliefView {
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        let _ = recipe;
+        None
+    }
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
     fn locally_observed_commodity_quantity(
@@ -226,6 +232,10 @@ pub trait GoalBeliefView {
         Vec::new()
     }
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId>;
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
@@ -377,6 +387,10 @@ pub trait RuntimeBeliefView {
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        let _ = recipe;
+        None
+    }
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
     fn locally_observed_commodity_quantity(
@@ -469,6 +483,10 @@ pub trait RuntimeBeliefView {
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
         let _ = agent;
         None
@@ -799,6 +817,13 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::known_recipes(self, agent)
             }
 
+            fn recipe_definition(
+                &self,
+                recipe: worldwake_core::RecipeId,
+            ) -> Option<$crate::RecipeDefinition> {
+                $crate::RuntimeBeliefView::recipe_definition(self, recipe)
+            }
+
             fn unique_item_count(
                 &self,
                 holder: worldwake_core::EntityId,
@@ -1100,6 +1125,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::MerchandiseProfile> {
                 $crate::RuntimeBeliefView::merchandise_profile(self, agent)
+            }
+
+            fn commodity_valuation_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::CommodityValuationProfile> {
+                $crate::RuntimeBeliefView::commodity_valuation_profile(self, agent)
             }
 
             fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {
