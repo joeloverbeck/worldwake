@@ -155,6 +155,7 @@ pub(super) fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
         provenance: ranked.provenance.clone(),
+        source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),
         feasibility: ranked.feasibility,
     }
@@ -939,11 +940,12 @@ mod tests {
         CandidatePlanSearch,
     };
     use crate::{
-        build_semantics_table, decision_trace::CompetitionDiscount, feasibility::FeasibilityHint,
-        AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
-        ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
-        OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlanningBudget, RankedGoal,
+        build_semantics_table,
+        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+        feasibility::FeasibilityHint, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
+        ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
+        GoalPriorityClass, GroundedGoal, OpportunityAnchor, OpportunityKey, PlanSearchResult,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlanningBudget, RankedGoal,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -1139,6 +1141,7 @@ mod tests {
             priority_class: GoalPriorityClass::High,
             motive_score: 100,
             provenance: None,
+            source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Likely,
         }
@@ -1164,6 +1167,31 @@ mod tests {
         let summary = summarize_ranked_goal(&ranked);
 
         assert_eq!(summary.competition_discount, ranked.competition_discount);
+    }
+
+    #[test]
+    fn summarize_ranked_goal_preserves_source_reliability_discount() {
+        let goal = acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(40)),
+            BTreeSet::from([entity(9)]),
+            BTreeSet::new(),
+        );
+        let mut ranked = ranked_goal(goal);
+        ranked.source_reliability_discount = Some(SourceReliabilityDiscount {
+            source_entity: entity(9),
+            commodity: CommodityKind::Bread,
+            failure_ratio_permille: 500,
+            pre_discount_motive: 100,
+            post_discount_motive: 50,
+        });
+
+        let summary = summarize_ranked_goal(&ranked);
+
+        assert_eq!(
+            summary.source_reliability_discount,
+            ranked.source_reliability_discount
+        );
     }
 
     fn setup_agent_world() -> (World, worldwake_core::EntityId, worldwake_core::EntityId) {

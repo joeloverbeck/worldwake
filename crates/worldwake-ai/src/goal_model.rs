@@ -1,7 +1,7 @@
 use crate::{
     decision_trace::{
         CompetitionDiscount, PrerequisiteExclusionReason, PrerequisiteExclusionTrace,
-        PrerequisiteGuidanceTrace,
+        PrerequisiteGuidanceTrace, SourceReliabilityDiscount,
     },
     derive_danger_pressure,
     enterprise::{merchant_home_place, restock_gap_at_destination},
@@ -1809,6 +1809,7 @@ pub struct RankedGoal {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
+    pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
     pub feasibility: crate::feasibility::FeasibilityHint,
 }
@@ -1821,7 +1822,8 @@ mod tests {
         RankedGoalProvenanceFamily, RootCandidateSynthesis,
     };
     use crate::{
-        build_planning_snapshot, build_semantics_table, decision_trace::CompetitionDiscount,
+        build_planning_snapshot, build_semantics_table,
+        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
         search_plan, CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind,
         PlannerOpSemantics, PlannerTransitionKind, PlanningBudget, PlanningState,
     };
@@ -1899,11 +1901,42 @@ mod tests {
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
             provenance: None,
+            source_reliability_discount: None,
             competition_discount: Some(discount.clone()),
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
 
         assert_eq!(ranked.competition_discount, Some(discount));
+    }
+
+    #[test]
+    fn ranked_goal_supports_optional_source_reliability_discount() {
+        let discount = SourceReliabilityDiscount {
+            source_entity: entity_id(9, 0),
+            commodity: CommodityKind::Bread,
+            failure_ratio_permille: 500,
+            pre_discount_motive: 700,
+            post_discount_motive: 350,
+        };
+        let ranked = RankedGoal {
+            grounded: GroundedGoal {
+                anchor: worldwake_core::OpportunityAnchor::None,
+                key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                evidence_entities: BTreeSet::from([entity_id(9, 0)]),
+                evidence_places: BTreeSet::new(),
+            },
+            priority_class: GoalPriorityClass::High,
+            motive_score: discount.post_discount_motive,
+            provenance: None,
+            source_reliability_discount: Some(discount.clone()),
+            competition_discount: None,
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+        };
+
+        assert_eq!(ranked.source_reliability_discount, Some(discount));
     }
 
     #[test]
@@ -1949,6 +1982,7 @@ mod tests {
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
             provenance: None,
+            source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };

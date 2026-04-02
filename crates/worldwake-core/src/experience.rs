@@ -59,6 +59,16 @@ pub fn danger_ratio_permille(experience: &EdgeExperience) -> u32 {
     }
 }
 
+#[must_use]
+pub fn failure_ratio_permille(record: &ReliabilityRecord) -> u32 {
+    let total = u32::from(record.successful_acquisitions) + u32::from(record.failed_attempts);
+    if total == 0 {
+        0
+    } else {
+        u32::from(record.failed_attempts) * 1000 / total
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SourceKey {
     pub entity: EntityId,
@@ -122,7 +132,7 @@ impl Component for PreferenceProfile {}
 mod tests {
     use super::{
         EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-        SourceReliability, danger_ratio_permille,
+        SourceReliability, danger_ratio_permille, failure_ratio_permille,
     };
     use crate::{
         test_utils::{
@@ -183,6 +193,40 @@ mod tests {
     #[test]
     fn source_reliability_defaults_empty() {
         assert!(SourceReliability::default().sources.is_empty());
+    }
+
+    #[test]
+    fn failure_ratio_permille_returns_zero_without_attempts() {
+        let record = ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 0,
+            last_attempt_tick: Tick(1),
+        };
+
+        assert_eq!(failure_ratio_permille(&record), 0);
+    }
+
+    #[test]
+    fn failure_ratio_permille_handles_boundary_values() {
+        let zero_failures = ReliabilityRecord {
+            successful_acquisitions: 4,
+            failed_attempts: 0,
+            last_attempt_tick: Tick(1),
+        };
+        let even_split = ReliabilityRecord {
+            successful_acquisitions: 3,
+            failed_attempts: 3,
+            last_attempt_tick: Tick(1),
+        };
+        let all_failures = ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: u16::MAX,
+            last_attempt_tick: Tick(1),
+        };
+
+        assert_eq!(failure_ratio_permille(&zero_failures), 0);
+        assert_eq!(failure_ratio_permille(&even_split), 500);
+        assert_eq!(failure_ratio_permille(&all_failures), 1000);
     }
 
     #[test]

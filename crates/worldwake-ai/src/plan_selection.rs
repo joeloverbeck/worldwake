@@ -143,6 +143,7 @@ mod tests {
             priority_class: class,
             motive_score: motive,
             provenance: None,
+            source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         }
@@ -283,6 +284,7 @@ mod tests {
                 priority_class: GoalPriorityClass::High,
                 motive_score: 450,
                 provenance: None,
+                source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             },
@@ -296,6 +298,7 @@ mod tests {
                 priority_class: GoalPriorityClass::High,
                 motive_score: 900,
                 provenance: None,
+                source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             },

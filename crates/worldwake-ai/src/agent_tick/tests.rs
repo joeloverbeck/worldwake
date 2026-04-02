@@ -1466,6 +1466,7 @@ fn ranked_goal(
         priority_class: crate::GoalPriorityClass::Medium,
         motive_score: 500,
         provenance: None,
+        source_reliability_discount: None,
         competition_discount: None,
         feasibility: crate::feasibility::FeasibilityHint::Uncertain,
     }

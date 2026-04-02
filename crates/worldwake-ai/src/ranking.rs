@@ -1,6 +1,6 @@
 use crate::{
     assess_danger, classify_band,
-    decision_trace::CompetitionDiscount,
+    decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
@@ -17,8 +17,8 @@ use std::{
 use worldwake_core::{
     belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
     DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, SourceKey,
+    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, failure_ratio_permille,
 };
 use worldwake_sim::{commodity_opportunity_score, CommodityOpportunityBreakdown, GoalBeliefView};
 
@@ -99,14 +99,23 @@ pub fn rank_candidates(
         let provenance = goal_ranking_provenance(candidate, &context);
         let priority_class = ranked_priority_class(candidate, &context, provenance.as_ref());
         let motive_score = ranked_motive_score(candidate, &context, provenance.as_ref());
-        let competition_discount = apply_competition_discount(candidate, &context, motive_score);
+        let source_reliability_discount =
+            apply_source_reliability_discount(candidate, &context, motive_score);
+        let post_source_reliability_motive = source_reliability_discount
+            .as_ref()
+            .map_or(motive_score, |discount| discount.post_discount_motive);
+        let competition_discount =
+            apply_competition_discount(candidate, &context, post_source_reliability_motive);
         let scored = RankedGoal {
             grounded: candidate.clone(),
             priority_class,
             motive_score: competition_discount
                 .as_ref()
-                .map_or(motive_score, |discount| discount.post_discount_motive),
+                .map_or(post_source_reliability_motive, |discount| {
+                    discount.post_discount_motive
+                }),
             provenance,
+            source_reliability_discount,
             competition_discount,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
@@ -188,6 +197,58 @@ fn apply_competition_discount(
         pre_discount_motive: motive_score,
         post_discount_motive: post_discount_motive.max(1),
     })
+}
+
+fn apply_source_reliability_discount(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    motive_score: u32,
+) -> Option<SourceReliabilityDiscount> {
+    if motive_score == 0 {
+        return None;
+    }
+
+    let (source_entity, commodity) = source_reliability_discount_scope(candidate)?;
+    let source_reliability = context.view.source_reliability(context.agent)?;
+    let profile = context.view.preference_profile(context.agent)?;
+    let record = source_reliability.sources.get(&SourceKey {
+        entity: source_entity,
+        commodity,
+    })?;
+    let failure_ratio = failure_ratio_permille(record);
+    if failure_ratio == 0 {
+        return None;
+    }
+
+    let trust_weight = u32::from(profile.source_trust_weight.value());
+    let effective_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
+    let post_discount_motive =
+        (motive_score.saturating_mul(1000u32.saturating_sub(effective_discount)) / 1000).max(1);
+
+    Some(SourceReliabilityDiscount {
+        source_entity,
+        commodity,
+        failure_ratio_permille: failure_ratio,
+        pre_discount_motive: motive_score,
+        post_discount_motive,
+    })
+}
+
+fn source_reliability_discount_scope(
+    candidate: &GroundedGoal,
+) -> Option<(EntityId, CommodityKind)> {
+    let mut source_entities = candidate.evidence_entities.iter().copied();
+    let source_entity = source_entities.next()?;
+    if source_entities.next().is_some() {
+        return None;
+    }
+
+    match candidate.key.kind {
+        GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity } => {
+            Some((source_entity, commodity))
+        }
+        _ => None,
+    }
 }
 
 fn competition_discount_scope(candidate: &GroundedGoal) -> Option<(ActionDomain, EntityId)> {
@@ -1257,11 +1318,13 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_competition_discount, build_decision_context, rank_candidates, RankingContext,
+        apply_competition_discount, apply_source_reliability_discount, build_decision_context,
+        rank_candidates, RankingContext,
     };
     use crate::{
-        decision_trace::CompetitionDiscount, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
-        RankedDriveKind, RankedGoalProvenance, RankedPriorityAdjustment,
+        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind,
+        RankedGoalProvenance, RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1274,10 +1337,11 @@ mod tests {
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
         OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PunishmentKind, Quantity, RecipeId, RecordedViolation, ResourceSource, TellTopic,
-        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, UtilityProfile, ViolationId, ViolationKind, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        PreferenceProfile, PunishmentKind, Quantity, RecipeId, RecordedViolation,
+        ReliabilityRecord, ResourceSource, RouteExperience, SourceKey, SourceReliability,
+        TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView};
 
@@ -1296,6 +1360,9 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         commodity_valuation_profiles: BTreeMap<EntityId, CommodityValuationProfile>,
+        route_experiences: BTreeMap<EntityId, RouteExperience>,
+        source_reliabilities: BTreeMap<EntityId, SourceReliability>,
+        preference_profiles: BTreeMap<EntityId, PreferenceProfile>,
         theft_profiles: BTreeMap<EntityId, TheftDispositionProfile>,
         justice_profiles: BTreeMap<EntityId, JusticeDispositionProfile>,
         epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
@@ -1496,6 +1563,15 @@ mod tests {
         }
         fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
             self.commodity_valuation_profiles.get(&agent).copied()
+        }
+        fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+            self.route_experiences.get(&agent).cloned()
+        }
+        fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
+            self.source_reliabilities.get(&agent).cloned()
+        }
+        fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+            self.preference_profiles.get(&agent).copied()
         }
         fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
             self.patrol_profiles.get(&agent).cloned()
@@ -1745,6 +1821,19 @@ mod tests {
         }
     }
 
+    fn goal_at_place_with_sources(
+        kind: GoalKind,
+        place: EntityId,
+        evidence_entities: BTreeSet<EntityId>,
+    ) -> GroundedGoal {
+        GroundedGoal {
+            anchor: OpportunityAnchor::Place(place),
+            key: GoalKey::from(kind),
+            evidence_entities,
+            evidence_places: BTreeSet::from([place]),
+        }
+    }
+
     fn observed_activity_state(
         place: EntityId,
         domain: ActionDomain,
@@ -1822,6 +1911,17 @@ mod tests {
         view.entity_kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(facility, market);
         view.place_entities.entry(market).or_default().push(facility);
+    }
+
+    fn source_reliability_record(
+        successful_acquisitions: u16,
+        failed_attempts: u16,
+    ) -> ReliabilityRecord {
+        ReliabilityRecord {
+            successful_acquisitions,
+            failed_attempts,
+            last_attempt_tick: current_tick(),
+        }
     }
 
     #[test]
@@ -2474,6 +2574,364 @@ mod tests {
 
         assert_eq!(ranked[0].motive_score, 200_000);
         assert_eq!(ranked[0].competition_discount, None);
+    }
+
+    #[test]
+    fn source_reliability_discount_skips_non_commodity_goals() {
+        let agent = entity(1);
+        let view = base_view(agent);
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(
+            apply_source_reliability_discount(&goal(GoalKind::Sleep), &context, 100),
+            None
+        );
+    }
+
+    #[test]
+    fn source_reliability_discount_returns_none_without_experience() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(
+            apply_source_reliability_discount(
+                &goal_at_place_with_sources(
+                    GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    },
+                    market,
+                    BTreeSet::from([source]),
+                ),
+                &context,
+                100
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn source_reliability_discount_returns_none_without_preference_profile() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    source_reliability_record(1, 1),
+                )]),
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(
+            apply_source_reliability_discount(
+                &goal_at_place_with_sources(
+                    GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    },
+                    market,
+                    BTreeSet::from([source]),
+                ),
+                &context,
+                100
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn source_reliability_discount_applies_failure_ratio_proportionally() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+            },
+        );
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    source_reliability_record(2, 2),
+                )]),
+            },
+        );
+
+        let ranked = rank(
+            &[goal_at_place_with_sources(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                market,
+                BTreeSet::from([source]),
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 45_000);
+        assert_eq!(
+            ranked[0].source_reliability_discount,
+            Some(SourceReliabilityDiscount {
+                source_entity: source,
+                commodity: CommodityKind::Bread,
+                failure_ratio_permille: 500,
+                pre_discount_motive: 90_000,
+                post_discount_motive: 45_000,
+            })
+        );
+    }
+
+    #[test]
+    fn source_reliability_discount_floors_positive_motive_at_one() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+            },
+        );
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    source_reliability_record(0, 5),
+                )]),
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        let discount = apply_source_reliability_discount(
+            &goal_at_place_with_sources(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                market,
+                BTreeSet::from([source]),
+            ),
+            &context,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(discount.failure_ratio_permille, 1000);
+        assert_eq!(discount.pre_discount_motive, 1);
+        assert_eq!(discount.post_discount_motive, 1);
+    }
+
+    #[test]
+    fn source_reliability_discount_skips_zero_failure_ratio() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+            },
+        );
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    source_reliability_record(3, 0),
+                )]),
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(
+            apply_source_reliability_discount(
+                &goal_at_place_with_sources(
+                    GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    },
+                    market,
+                    BTreeSet::from([source]),
+                ),
+                &context,
+                100
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn source_reliability_discount_composes_with_competition_discount() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let competitor = entity(10);
+        let mut view = base_view(agent);
+        add_home_facility(&mut view, market, entity(3));
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(entity(3)),
+            },
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+            },
+        );
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    source_reliability_record(1, 1),
+                )]),
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                competitor,
+                observed_activity_state(market, ActionDomain::Production, None),
+            )],
+        );
+
+        let ranked = rank(
+            &[goal_at_place_with_sources(
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                market,
+                BTreeSet::from([source]),
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 80_000);
+        assert_eq!(
+            ranked[0].source_reliability_discount,
+            Some(SourceReliabilityDiscount {
+                source_entity: source,
+                commodity: CommodityKind::Bread,
+                failure_ratio_permille: 500,
+                pre_discount_motive: 200_000,
+                post_discount_motive: 100_000,
+            })
+        );
+        assert_eq!(
+            ranked[0].competition_discount,
+            Some(CompetitionDiscount {
+                observed_competitors: vec![competitor],
+                domain: ActionDomain::Production,
+                effective_discount: pm(200),
+                pre_discount_motive: 100_000,
+                post_discount_motive: 80_000,
+            })
+        );
     }
 
     #[test]
@@ -4101,6 +4559,7 @@ mod tests {
             priority_class,
             motive_score: motive,
             provenance: None,
+            source_reliability_discount: None,
             competition_discount: None,
             feasibility,
         }

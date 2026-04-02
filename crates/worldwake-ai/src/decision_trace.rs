@@ -153,6 +153,9 @@ impl DecisionOutcome {
                     .map(|s| s.feasibility)
                     .filter(|f| *f != FeasibilityHint::Uncertain)
                     .map_or_else(String::new, |f| format!(", feasibility={f:?}"));
+                let source_reliability_suffix = selected_summary
+                    .and_then(|summary| summary.source_reliability_discount.as_ref())
+                    .map_or_else(String::new, format_source_reliability_discount_summary);
                 let competition_suffix = selected_summary
                     .and_then(|summary| summary.competition_discount.as_ref())
                     .map_or_else(String::new, format_competition_discount_summary);
@@ -187,7 +190,7 @@ impl DecisionOutcome {
                 });
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}{patrol_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}{patrol_suffix}"
                 )
             }
         }
@@ -466,6 +469,7 @@ pub struct RankedGoalSummary {
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
     pub provenance: Option<RankedGoalProvenance>,
+    pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
     pub feasibility: FeasibilityHint,
 }
@@ -476,6 +480,16 @@ pub struct CompetitionDiscount {
     pub observed_competitors: Vec<EntityId>,
     pub domain: ActionDomain,
     pub effective_discount: Permille,
+    pub pre_discount_motive: u32,
+    pub post_discount_motive: u32,
+}
+
+/// Records the source reliability discount applied to a ranked goal's motive score.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SourceReliabilityDiscount {
+    pub source_entity: EntityId,
+    pub commodity: CommodityKind,
+    pub failure_ratio_permille: u32,
     pub pre_discount_motive: u32,
     pub post_discount_motive: u32,
 }
@@ -1104,11 +1118,22 @@ impl DecisionTraceSink {
             // Render per-candidate evidence and knowledge paths for Planning outcomes.
             if let DecisionOutcome::Planning(ref planning) = trace.outcome {
                 for ranked in &planning.candidates.ranked {
-                    if let Some(discount) = ranked.competition_discount.as_ref() {
+                    if ranked.source_reliability_discount.is_some()
+                        || ranked.competition_discount.is_some()
+                    {
+                        let source_reliability_suffix = ranked
+                            .source_reliability_discount
+                            .as_ref()
+                            .map_or_else(String::new, format_source_reliability_discount_summary);
+                        let competition_suffix = ranked
+                            .competition_discount
+                            .as_ref()
+                            .map_or_else(String::new, format_competition_discount_summary);
                         eprintln!(
-                            "  Ranked: {}{}",
+                            "  Ranked: {}{}{}",
                             format_opportunity_key(ranked.opportunity),
-                            format_competition_discount_summary(discount)
+                            source_reliability_suffix,
+                            competition_suffix
                         );
                     }
                 }
@@ -1629,6 +1654,17 @@ fn format_competition_discount_summary(discount: &CompetitionDiscount) -> String
     )
 }
 
+fn format_source_reliability_discount_summary(discount: &SourceReliabilityDiscount) -> String {
+    format!(
+        ", source_reliability=entity={} commodity={:?} failure={} pre={} post={}",
+        discount.source_entity,
+        discount.commodity,
+        discount.failure_ratio_permille,
+        discount.pre_discount_motive,
+        discount.post_discount_motive,
+    )
+}
+
 fn format_selected_plan(selected_plan: &SelectedPlanTrace) -> String {
     let step_kinds = selected_plan
         .steps
@@ -2002,6 +2038,16 @@ mod tests {
         }
     }
 
+    fn sample_source_reliability_discount() -> SourceReliabilityDiscount {
+        SourceReliabilityDiscount {
+            source_entity: entity(12),
+            commodity: CommodityKind::Bread,
+            failure_ratio_permille: 500,
+            pre_discount_motive: 700,
+            post_discount_motive: 350,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn goal_trace(
         tick: Tick,
@@ -2146,6 +2192,7 @@ mod tests {
                     priority_class: GoalPriorityClass::High,
                     motive_score: 900,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 },
@@ -2154,6 +2201,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Medium,
                     motive_score: 600,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 },
@@ -2472,6 +2520,7 @@ mod tests {
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
+                source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Uncertain,
             }],
@@ -2492,6 +2541,7 @@ mod tests {
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
                 provenance: None,
+                source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Uncertain,
             }],
@@ -2565,6 +2615,7 @@ mod tests {
                         priority_class: GoalPriorityClass::High,
                         motive_score: 800,
                         provenance: None,
+                        source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Uncertain,
                     },
@@ -2573,6 +2624,7 @@ mod tests {
                         priority_class: GoalPriorityClass::High,
                         motive_score: 790,
                         provenance: None,
+                        source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     },
@@ -2741,6 +2793,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
@@ -2932,6 +2985,7 @@ mod tests {
                     priority_class: GoalPriorityClass::High,
                     motive_score: 700,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Likely,
                 }],
@@ -2997,6 +3051,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: discount.post_discount_motive,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: Some(discount),
                     feasibility: FeasibilityHint::Uncertain,
                 }],
@@ -3043,6 +3098,71 @@ mod tests {
     }
 
     #[test]
+    fn summary_planning_includes_selected_source_reliability_discount() {
+        use worldwake_core::GoalKind;
+
+        let discount = sample_source_reliability_discount();
+        let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+            affordances: None,
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                ranked: vec![RankedGoalSummary {
+                    opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: discount.post_discount_motive,
+                    provenance: None,
+                    source_reliability_discount: Some(discount),
+                    competition_discount: None,
+                    feasibility: FeasibilityHint::Uncertain,
+                }],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_bandit: vec![],
+                omitted_social: vec![],
+                omitted_violation_detection: vec![],
+            },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
+            selection: SelectionTrace {
+                selected_opportunity: Some(default_opportunity(GoalKey::new(GoalKind::Sleep))),
+                selected_plan: None,
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            },
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            unknown_blockers: vec![],
+            exhaustion_snapshot: vec![],
+            frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
+            pursuit_invalidation: None,
+        }));
+
+        let summary = outcome.summary();
+
+        assert!(summary.contains("source_reliability=entity="));
+        assert!(summary.contains("commodity=Bread"));
+        assert!(summary.contains("failure=500"));
+        assert!(summary.contains("pre=700"));
+        assert!(summary.contains("post=350"));
+    }
+
+    #[test]
     fn summary_planning_omits_competition_discount_when_absent() {
         use worldwake_core::GoalKind;
 
@@ -3059,6 +3179,7 @@ mod tests {
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
@@ -3250,6 +3371,7 @@ mod tests {
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 800,
                         provenance: None,
+                        source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     },
@@ -3258,6 +3380,7 @@ mod tests {
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 600,
                         provenance: None,
+                        source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     },
@@ -3332,6 +3455,7 @@ mod tests {
                         has_wounds: true,
                         is_incapacitated: false,
                     })),
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
@@ -3418,6 +3542,7 @@ mod tests {
                             }],
                         },
                     )),
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
@@ -3487,6 +3612,7 @@ mod tests {
                     priority_class: GoalPriorityClass::High,
                     motive_score: 400,
                     provenance: None,
+                    source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
                 }],
@@ -4011,6 +4137,7 @@ mod tests {
                         priority_class: GoalPriorityClass::Medium,
                         motive_score: 100,
                         provenance: None,
+                        source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
                     }],

@@ -1,10 +1,10 @@
 # S38LRNPREF-007: Source reliability discount in opportunity ranking
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — ranking pipeline in worldwake-ai
-**Deps**: S38LRNPREF-001, S38LRNPREF-003
+**Deps**: S38LRNPREF-001, S38LRNPREF-003, S38LRNPREF-005
 
 ## Problem
 
@@ -17,8 +17,8 @@ All agents rank commodity sources identically regardless of personal trade/harve
 3. `apply_competition_discount` at line 163 returns `Option<CompetitionDiscount>` — adjusts motive post-computation.
 4. Source reliability discount inserts between these two steps (or alongside `apply_competition_discount`) as a separate discount step.
 5. `RankingContext` at ranking.rs provides `view: &dyn GoalBeliefView` — gives access to `source_reliability()` and `preference_profile()` after S38LRNPREF-003.
-6. `GroundedGoal` contains `GoalKind` and `OpportunityAnchor` — the anchor may contain the source entity for commodity goals.
-7. `GoalKind` variants like `RestockCommodity`, `AcquireCommodity` contain commodity information. The opportunity anchor (from S33) contains the source entity.
+6. `GroundedGoal` contains `GoalKind`, `OpportunityAnchor`, and `evidence_entities`. For commodity acquisition goals, the concrete source entity is derived from `evidence_entities`, while the anchor remains place-scoped for routing/planning.
+7. `GoalKind` variants like `RestockCommodity` and `AcquireCommodity` contain commodity information. The live source entity path for ranking is the grounded candidate's single concrete evidence entity, not the place anchor.
 8. Motive must never drop below 1 after discount (spec requirement).
 
 ## Architecture Check
@@ -42,7 +42,7 @@ All agents rank commodity sources identically regardless of personal trade/harve
 
 Add `fn apply_source_reliability_discount(candidate: &GroundedGoal, context: &RankingContext<'_>, motive_score: u32) -> Option<SourceReliabilityDiscount>` to `ranking.rs`:
 
-1. Extract source entity from `candidate`'s `OpportunityAnchor` and commodity from `GoalKind`. Return `None` if not a commodity-acquisition goal or no anchor entity.
+1. Extract source entity from `candidate.evidence_entities` and commodity from `GoalKind`. Return `None` if not a commodity-acquisition goal or the grounded candidate does not resolve to exactly one concrete source entity.
 2. Look up `SourceReliability` and `PreferenceProfile` from `context.view`. Return `None` if either absent.
 3. Look up `ReliabilityRecord` for the `SourceKey`. Return `None` if no experience.
 4. Compute `failure_ratio_permille`: `failed_attempts as u32 * 1000 / (successful_acquisitions + failed_attempts) as u32`.
@@ -109,3 +109,25 @@ Add `fn failure_ratio_permille(record: &ReliabilityRecord) -> u32` as a pure fun
 1. `cargo test -p worldwake-ai ranking`
 2. `cargo test -p worldwake-core experience`
 3. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-02
+
+- Added the shared `failure_ratio_permille` helper in `crates/worldwake-core/src/experience.rs` and re-exported it from `crates/worldwake-core/src/lib.rs`.
+- Added `SourceReliabilityDiscount` and threaded it through `RankedGoal`, `RankedGoalSummary`, decision-trace formatting, and planning summary handoff in `crates/worldwake-ai/src/decision_trace.rs`, `crates/worldwake-ai/src/goal_model.rs`, and `crates/worldwake-ai/src/agent_tick/planning.rs`.
+- Implemented `apply_source_reliability_discount` in `crates/worldwake-ai/src/ranking.rs`, using the grounded candidate's single concrete `evidence_entities` source plus the actor's `SourceReliability` and `PreferenceProfile` to discount `AcquireCommodity` and `RestockCommodity` motive scores without changing priority class.
+- Added focused coverage for no-experience passthrough, no-profile passthrough, proportional discounting, floor-at-one behavior, zero-failure passthrough, composition with competition discount, helper boundary values, and trace-summary preservation.
+
+Deviations from original plan:
+
+- The ticket's source-entity assumption was corrected before implementation: the live ranking boundary derives the concrete source entity from `GroundedGoal.evidence_entities`, not from `OpportunityAnchor`.
+- The implementation also updated sibling AI test constructors and trace literals outside the original `Files to Touch` list so the new optional discount field propagated cleanly through the existing shared ranked-goal and decision-trace surfaces.
+
+Verification results:
+
+- `cargo test -p worldwake-core experience -- --nocapture`
+- `cargo test -p worldwake-ai ranking -- --nocapture`
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

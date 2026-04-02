@@ -124,7 +124,7 @@ pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
 pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-    SourceReliability, danger_ratio_permille,
+    SourceReliability, danger_ratio_permille, failure_ratio_permille,
 };
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
