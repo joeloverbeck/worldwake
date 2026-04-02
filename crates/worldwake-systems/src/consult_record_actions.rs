@@ -208,6 +208,7 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
 fn start_consult_record(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -220,6 +221,7 @@ fn start_consult_record(
 fn tick_consult_record(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -229,6 +231,7 @@ fn tick_consult_record(
 fn commit_consult_record(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
@@ -285,7 +288,7 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, step_tick, tick_action,
-        ActionExecutionAuthority, ActionExecutionContext, ActionInstance, ActionInstanceId,
+        ActionExecutionAuthority, ActionInstance, ActionInstanceId,
         ActionPayload, ActionState, ActionTraceSink, ControllerState, ExternalAbortReason,
         InputKind, InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
         InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource, PerAgentBeliefView,
@@ -477,10 +480,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
         (instance_id, active_actions, log, rng)
@@ -640,10 +640,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap_err();
 
@@ -672,10 +669,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
         )
         .unwrap();
         assert_eq!(first, TickOutcome::Continuing);
@@ -690,10 +684,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
         )
         .unwrap();
         assert!(matches!(second, TickOutcome::Committed { .. }));
@@ -759,10 +750,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
             ExternalAbortReason::Other,
         )
         .unwrap();

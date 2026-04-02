@@ -11,7 +11,7 @@ pub fn start_action(
     handler_registry: &ActionHandlerRegistry,
     authority: ActionExecutionAuthority<'_>,
     next_instance_id: &mut ActionInstanceId,
-    context: ActionExecutionContext,
+    context: ActionExecutionContext<'_>,
 ) -> Result<ActionInstanceId, ActionError> {
     let ActionExecutionAuthority {
         active_actions,
@@ -91,7 +91,7 @@ pub fn start_action(
         reservation_ids,
     );
 
-    instance.local_state = match (handler.on_start)(def, &mut instance, rng, &mut txn) {
+    instance.local_state = match (handler.on_start)(def, &mut instance, &context, rng, &mut txn) {
         Ok(local_state) => local_state,
         Err(err) => {
             release_reservations(&mut txn, &instance.reservation_ids)?;
@@ -230,7 +230,7 @@ mod tests {
         ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionProgress, ActionState,
         Affordance, CombatActionPayload, Constraint, DeterministicRng, DurationExpr,
-        Interruptibility, Precondition, ReservationReq, TargetSpec,
+        Interruptibility, Precondition, RecipeRegistry, ReservationReq, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -239,6 +239,9 @@ mod tests {
         CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView,
         Quantity, Seed, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
     };
+    use std::sync::LazyLock;
+
+    static TEST_RECIPES: LazyLock<RecipeRegistry> = LazyLock::new(RecipeRegistry::new);
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -268,6 +271,7 @@ mod tests {
     fn start_empty(
         _def: &ActionDef,
         _instance: &mut crate::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -278,6 +282,7 @@ mod tests {
     fn start_none(
         _def: &ActionDef,
         _instance: &mut crate::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -288,6 +293,7 @@ mod tests {
     fn tick_continue(
         _def: &ActionDef,
         _instance: &mut crate::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -298,6 +304,7 @@ mod tests {
     fn commit_noop(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<crate::CommitOutcome, ActionError> {
@@ -415,6 +422,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap();
@@ -527,6 +535,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap();
@@ -625,6 +634,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap();
@@ -685,6 +695,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap();
@@ -745,6 +756,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap_err();
@@ -810,6 +822,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap_err();
@@ -908,6 +921,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap_err();
@@ -971,6 +985,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap();
@@ -988,6 +1003,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap();
@@ -1038,6 +1054,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap_err();
@@ -1075,6 +1092,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap_err();
@@ -1153,6 +1171,7 @@ mod tests {
             ActionExecutionContext {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
+                recipe_registry: &TEST_RECIPES,
             },
         )
         .unwrap_err();

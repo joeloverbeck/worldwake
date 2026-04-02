@@ -337,6 +337,7 @@ fn transfer_supply_lots_to_camp(
 fn start_establish_camp(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
@@ -353,6 +354,7 @@ fn start_establish_camp(
 fn tick_establish_camp(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -362,6 +364,7 @@ fn tick_establish_camp(
 fn commit_establish_camp(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -458,7 +461,7 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
         ActionPayload, DeterministicRng, EstablishCampActionPayload, PerAgentBeliefView,
         TickOutcome,
     };
@@ -564,10 +567,7 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_id,
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(10),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
             )
         }
 
@@ -582,10 +582,7 @@ mod tests {
                     event_log: &mut self.log,
                     rng: &mut self.rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(11),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
             )
             .unwrap()
         }
@@ -886,10 +883,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
             worldwake_sim::ExternalAbortReason::CancelledByInput { sequence_no: 1 },
         )
         .unwrap();

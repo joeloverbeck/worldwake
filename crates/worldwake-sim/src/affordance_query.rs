@@ -765,6 +765,7 @@ mod tests {
     fn noop_start(
         _def: &ActionDef,
         _instance: &mut crate::ActionInstance,
+        _context: &crate::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -775,6 +776,7 @@ mod tests {
     fn noop_tick(
         _def: &ActionDef,
         _instance: &mut crate::ActionInstance,
+        _context: &crate::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -785,6 +787,7 @@ mod tests {
     fn noop_commit(
         _def: &ActionDef,
         _instance: &crate::ActionInstance,
+        _context: &crate::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<crate::CommitOutcome, ActionError> {

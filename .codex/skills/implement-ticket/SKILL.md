@@ -33,6 +33,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
+   - when a ticket depends on shared static data such as recipe definitions, schemas, or other registry-backed content, confirm the live service bundle, execution context, or callback boundary that would need to carry that data; if the current runtime boundary does not expose it, correct the ticket before coding to name the real substrate change
    - when affordance generation depends on self-authoritative profile reads, those profile prerequisites are present in both production code and representative AI/planner test harnesses
    - for component-registration tickets, hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests that mirror the authoritative component set still match the live schema after the new entry lands
    - when a ticket extends a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or other generated surfaces that materialize that API indirectly; if they exist, distinguish the canonical consumer boundary from any implementation-detail mirror the live architecture requires
@@ -129,6 +130,8 @@ If a canonical interface is realized through a forwarding layer, prove both:
 Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
 
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
+
+If stronger lawful behavior now reaches completion earlier than an older focused test assumed, recalibrate the test inputs to preserve the intended proof surface instead of weakening the implementation to preserve stale timing or valuation assumptions.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 

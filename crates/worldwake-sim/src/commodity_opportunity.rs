@@ -1,4 +1,4 @@
-use crate::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
+use crate::{GoalBeliefView, RecipeDefinition};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     CommodityKind, CommodityValuationProfile, EntityId, Permille, RecipeId, WorkstationTag,
@@ -17,7 +17,6 @@ pub fn commodity_opportunity_score(
     actor: EntityId,
     commodity: CommodityKind,
     belief: &dyn GoalBeliefView,
-    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
 ) -> CommodityOpportunityBreakdown {
@@ -34,7 +33,6 @@ pub fn commodity_opportunity_score(
             actor,
             commodity,
             belief,
-            recipes,
             holdings,
             local_alternatives,
             &mut BTreeSet::new(),
@@ -119,7 +117,6 @@ fn indirect_recipe_score(
     actor: EntityId,
     commodity: CommodityKind,
     belief: &dyn GoalBeliefView,
-    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
     path: &mut BTreeSet<(CommodityKind, u8)>,
@@ -132,7 +129,6 @@ fn indirect_recipe_score(
         actor,
         commodity,
         belief,
-        recipes,
         holdings,
         local_alternatives,
         profile,
@@ -146,7 +142,6 @@ fn indirect_recipe_score_with_profile(
     actor: EntityId,
     commodity: CommodityKind,
     belief: &dyn GoalBeliefView,
-    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
     profile: CommodityValuationProfile,
@@ -161,7 +156,6 @@ fn indirect_recipe_score_with_profile(
         actor,
         commodity,
         belief,
-        recipes,
         holdings,
         local_alternatives,
         profile,
@@ -186,19 +180,20 @@ fn best_recipe_opportunity(
     actor: EntityId,
     commodity: CommodityKind,
     belief: &dyn GoalBeliefView,
-    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
     profile: CommodityValuationProfile,
     remaining_depth: u8,
     path: &mut BTreeSet<(CommodityKind, u8)>,
 ) -> Option<BestOpportunity> {
-    let known_recipes = belief.known_recipes(actor).into_iter().collect::<BTreeSet<_>>();
     let mut best = None;
 
-    for (recipe_id, recipe) in recipes.iter() {
-        if !known_recipes.contains(&recipe_id)
-            || !recipe
+    for recipe_id in belief.known_recipes(actor) {
+        let Some(recipe) = belief.recipe_definition(recipe_id) else {
+            continue;
+        };
+
+        if !recipe
                 .inputs
                 .iter()
                 .any(|(input_commodity, _)| *input_commodity == commodity)
@@ -206,9 +201,8 @@ fn best_recipe_opportunity(
             || !sibling_inputs_satisfiable(
                 actor,
                 commodity,
-                recipe,
+                &recipe,
                 belief,
-                recipes,
                 holdings,
                 local_alternatives,
                 profile,
@@ -221,9 +215,8 @@ fn best_recipe_opportunity(
 
         let Some(output_value) = recipe_output_value(
             actor,
-            recipe,
+            &recipe,
             belief,
-            recipes,
             holdings,
             local_alternatives,
             profile,
@@ -299,7 +292,6 @@ fn sibling_inputs_satisfiable(
     target_commodity: CommodityKind,
     recipe: &RecipeDefinition,
     belief: &dyn GoalBeliefView,
-    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
     profile: CommodityValuationProfile,
@@ -325,7 +317,6 @@ fn sibling_inputs_satisfiable(
             actor,
             *input_commodity,
             belief,
-            recipes,
             holdings,
             local_alternatives,
             profile,
@@ -340,7 +331,6 @@ fn recipe_output_value(
     actor: EntityId,
     recipe: &RecipeDefinition,
     belief: &dyn GoalBeliefView,
-    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
     profile: CommodityValuationProfile,
@@ -384,7 +374,6 @@ fn recipe_output_value(
                     actor,
                     *output_commodity,
                     belief,
-                    recipes,
                     &produced_holdings,
                     local_alternatives,
                     profile,
@@ -451,6 +440,7 @@ mod tests {
         demand_memory: Vec<DemandObservation>,
         commodity_valuation_profile: Option<CommodityValuationProfile>,
         known_recipes: Vec<RecipeId>,
+        recipe_definitions: BTreeMap<RecipeId, RecipeDefinition>,
         effective_places: BTreeMap<EntityId, EntityId>,
         adjacent_places: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         workstations_by_place: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
@@ -494,6 +484,10 @@ mod tests {
 
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
             self.known_recipes.clone()
+        }
+
+        fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+            self.recipe_definitions.get(&recipe).cloned()
         }
 
         fn unique_item_count(
@@ -688,10 +682,6 @@ mod tests {
         }
     }
 
-    fn recipes() -> RecipeRegistry {
-        RecipeRegistry::new()
-    }
-
     fn valuation_profile(depth: u8, horizon: u8, decay: u16) -> CommodityValuationProfile {
         CommodityValuationProfile {
             recipe_opportunity_depth: NonZeroU8::new(depth).unwrap(),
@@ -745,7 +735,6 @@ mod tests {
             actor(),
             CommodityKind::Bread,
             &view,
-            &recipes(),
             &holdings(&[(CommodityKind::Bread, 1)]),
             &BTreeMap::new(),
         );
@@ -772,7 +761,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes(),
             &holdings(&[(CommodityKind::Firewood, 2)]),
             &BTreeMap::new(),
         );
@@ -791,7 +779,6 @@ mod tests {
             actor(),
             CommodityKind::Medicine,
             &view,
-            &recipes(),
             &holdings(&[(CommodityKind::Medicine, 1)]),
             &holdings(&[(CommodityKind::Medicine, 1)]),
         );
@@ -806,7 +793,6 @@ mod tests {
             actor(),
             CommodityKind::Medicine,
             &StubBeliefView::default(),
-            &recipes(),
             &holdings(&[(CommodityKind::Medicine, 3)]),
             &BTreeMap::new(),
         );
@@ -828,7 +814,6 @@ mod tests {
             actor(),
             CommodityKind::Bread,
             &view,
-            &recipes(),
             &holdings(&[(CommodityKind::Bread, 1)]),
             &holdings(&[(CommodityKind::Bread, 1)]),
         );
@@ -864,6 +849,10 @@ mod tests {
                 )),
                 commodity_valuation_profile: Some(valuation_profile(3, 1, 100)),
                 known_recipes: vec![bake_bread],
+                recipe_definitions: BTreeMap::from([(
+                    bake_bread,
+                    recipes.get(bake_bread).unwrap().clone(),
+                )]),
                 ..Default::default()
             },
             origin,
@@ -877,7 +866,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes,
             &holdings(&[(CommodityKind::Grain, 1)]),
             &BTreeMap::new(),
         );
@@ -910,6 +898,10 @@ mod tests {
                 )),
                 commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
                 known_recipes: vec![bake_bread],
+                recipe_definitions: BTreeMap::from([(
+                    bake_bread,
+                    recipes.get(bake_bread).unwrap().clone(),
+                )]),
                 ..Default::default()
             },
             origin,
@@ -919,7 +911,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes,
             &holdings(&[(CommodityKind::Grain, 1)]),
             &BTreeMap::new(),
         );
@@ -934,7 +925,7 @@ mod tests {
             generation: 0,
         };
         let mut recipes = RecipeRegistry::new();
-        recipes.register(recipe(
+        let bake_bread = recipes.register(recipe(
             "Bake Bread",
             vec![(CommodityKind::Grain, 1), (CommodityKind::Firewood, 1)],
             vec![(CommodityKind::Bread, 1)],
@@ -950,6 +941,10 @@ mod tests {
                     Permille::new(0).unwrap(),
                 )),
                 commodity_valuation_profile: Some(valuation_profile(3, 1, 100)),
+                recipe_definitions: BTreeMap::from([(
+                    bake_bread,
+                    recipes.get(bake_bread).unwrap().clone(),
+                )]),
                 ..Default::default()
             },
             origin,
@@ -961,7 +956,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes,
             &holdings(&[(CommodityKind::Grain, 1)]),
             &BTreeMap::new(),
         );
@@ -993,6 +987,10 @@ mod tests {
                 )),
                 commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
                 known_recipes: vec![bake_bread],
+                recipe_definitions: BTreeMap::from([(
+                    bake_bread,
+                    recipes.get(bake_bread).unwrap().clone(),
+                )]),
                 ..Default::default()
             },
             origin,
@@ -1004,7 +1002,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -1042,6 +1039,10 @@ mod tests {
                 )),
                 commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
                 known_recipes: vec![bake_bread, make_waste],
+                recipe_definitions: BTreeMap::from([
+                    (bake_bread, recipes.get(bake_bread).unwrap().clone()),
+                    (make_waste, recipes.get(make_waste).unwrap().clone()),
+                ]),
                 ..Default::default()
             },
             origin,
@@ -1059,7 +1060,6 @@ mod tests {
             actor(),
             CommodityKind::Waste,
             &deep_view,
-            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -1067,7 +1067,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &deep_view,
-            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -1080,7 +1079,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &shallow_view,
-            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -1121,6 +1119,10 @@ mod tests {
                 )),
                 commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
                 known_recipes: vec![bake_bread, boil_water],
+                recipe_definitions: BTreeMap::from([
+                    (bake_bread, recipes.get(bake_bread).unwrap().clone()),
+                    (boil_water, recipes.get(boil_water).unwrap().clone()),
+                ]),
                 ..Default::default()
             },
             origin,
@@ -1138,7 +1140,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -1146,7 +1147,6 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -1171,13 +1171,10 @@ mod tests {
         };
         let held = holdings(&[(CommodityKind::Bread, 1), (CommodityKind::Medicine, 1)]);
         let alternatives = holdings(&[(CommodityKind::Bread, 1)]);
-        let recipes = recipes();
-
         let first = commodity_opportunity_score(
             actor(),
             CommodityKind::Bread,
             &view,
-            &recipes,
             &held,
             &alternatives,
         );
@@ -1185,7 +1182,6 @@ mod tests {
             actor(),
             CommodityKind::Bread,
             &view,
-            &recipes,
             &held,
             &alternatives,
         );

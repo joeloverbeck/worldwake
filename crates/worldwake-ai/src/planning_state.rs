@@ -2487,6 +2487,7 @@ mod tests {
     fn noop_start(
         _def: &ActionDef,
         _instance: &mut worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -2497,6 +2498,7 @@ mod tests {
     fn noop_tick(
         _def: &ActionDef,
         _instance: &mut worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -2507,6 +2509,7 @@ mod tests {
     fn noop_commit(
         _def: &ActionDef,
         _instance: &worldwake_sim::ActionInstance,
+        _context: &worldwake_sim::ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut worldwake_core::WorldTxn<'_>,
     ) -> Result<worldwake_sim::CommitOutcome, ActionError> {

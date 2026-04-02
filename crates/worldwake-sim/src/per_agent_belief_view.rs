@@ -1,6 +1,7 @@
 use crate::{
     estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionInstance,
-    ActionInstanceId, ActionPayload, DurationExpr, RuntimeBeliefView,
+    ActionInstanceId, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -40,6 +41,7 @@ pub struct PerAgentBeliefView<'w> {
     agent: EntityId,
     current_tick: Tick,
     world: &'w World,
+    recipe_registry: Option<&'w RecipeRegistry>,
     belief_store: &'w AgentBeliefStore,
     runtime: Option<PerAgentBeliefRuntime<'w>>,
 }
@@ -61,10 +63,32 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         belief_store: &'w AgentBeliefStore,
     ) -> Self {
+        Self::new_at_tick_with_recipes(agent, current_tick, world, None, belief_store)
+    }
+
+    #[must_use]
+    pub const fn new_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+        belief_store: &'w AgentBeliefStore,
+    ) -> Self {
+        Self::new_at_tick_with_recipes(agent, Tick(0), world, Some(recipe_registry), belief_store)
+    }
+
+    #[must_use]
+    pub const fn new_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+        belief_store: &'w AgentBeliefStore,
+    ) -> Self {
         Self {
             agent,
             current_tick,
             world,
+            recipe_registry,
             belief_store,
             runtime: None,
         }
@@ -88,10 +112,48 @@ impl<'w> PerAgentBeliefView<'w> {
         belief_store: &'w AgentBeliefStore,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
+        Self::with_runtime_at_tick_with_recipes(
+            agent,
+            current_tick,
+            world,
+            None,
+            belief_store,
+            runtime,
+        )
+    }
+
+    #[must_use]
+    pub const fn with_runtime_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+        belief_store: &'w AgentBeliefStore,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
+        Self::with_runtime_at_tick_with_recipes(
+            agent,
+            Tick(0),
+            world,
+            Some(recipe_registry),
+            belief_store,
+            runtime,
+        )
+    }
+
+    #[must_use]
+    pub const fn with_runtime_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+        belief_store: &'w AgentBeliefStore,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
         Self {
             agent,
             current_tick,
             world,
+            recipe_registry,
             belief_store,
             runtime: Some(runtime),
         }
@@ -104,10 +166,29 @@ impl<'w> PerAgentBeliefView<'w> {
 
     #[must_use]
     pub fn from_world_at_tick(agent: EntityId, current_tick: Tick, world: &'w World) -> Self {
+        Self::from_world_at_tick_with_recipes(agent, current_tick, world, None)
+    }
+
+    #[must_use]
+    pub fn from_world_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+    ) -> Self {
+        Self::from_world_at_tick_with_recipes(agent, Tick(0), world, Some(recipe_registry))
+    }
+
+    #[must_use]
+    pub fn from_world_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+    ) -> Self {
         let belief_store = world
             .get_component_agent_belief_store(agent)
             .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
-        Self::new_at_tick(agent, current_tick, world, belief_store)
+        Self::new_at_tick_with_recipes(agent, current_tick, world, recipe_registry, belief_store)
     }
 
     #[must_use]
@@ -126,10 +207,44 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
+        Self::with_runtime_from_world_at_tick_with_recipes(agent, current_tick, world, None, runtime)
+    }
+
+    #[must_use]
+    pub fn with_runtime_from_world_with_recipes(
+        agent: EntityId,
+        world: &'w World,
+        recipe_registry: &'w RecipeRegistry,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
+        Self::with_runtime_from_world_at_tick_with_recipes(
+            agent,
+            Tick(0),
+            world,
+            Some(recipe_registry),
+            runtime,
+        )
+    }
+
+    #[must_use]
+    pub fn with_runtime_from_world_at_tick_with_recipes(
+        agent: EntityId,
+        current_tick: Tick,
+        world: &'w World,
+        recipe_registry: Option<&'w RecipeRegistry>,
+        runtime: PerAgentBeliefRuntime<'w>,
+    ) -> Self {
         let belief_store = world
             .get_component_agent_belief_store(agent)
             .expect("agents must have AgentBeliefStore before constructing PerAgentBeliefView");
-        Self::with_runtime_at_tick(agent, current_tick, world, belief_store, runtime)
+        Self::with_runtime_at_tick_with_recipes(
+            agent,
+            current_tick,
+            world,
+            recipe_registry,
+            belief_store,
+            runtime,
+        )
     }
 
     fn believed_entity(&self, entity: EntityId) -> Option<&BelievedEntityState> {
@@ -398,6 +513,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                 .world
                 .get_component_known_recipes(actor)
                 .is_some_and(|known| known.recipes.contains(&recipe))
+    }
+
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        self.recipe_registry.and_then(|registry| registry.get(recipe)).cloned()
     }
 
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {

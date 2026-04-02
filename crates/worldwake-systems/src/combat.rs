@@ -573,6 +573,7 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
 fn start_defend(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -593,6 +594,7 @@ fn start_defend(
 fn tick_defend(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -603,6 +605,7 @@ fn tick_defend(
 fn commit_defend(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1002,6 +1005,7 @@ fn resolve_attack_wound(
 fn start_attack(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1015,6 +1019,7 @@ fn start_attack(
 fn start_heal(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1082,6 +1087,7 @@ fn transferable_loot_entity(
 fn start_loot(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1094,6 +1100,7 @@ fn start_loot(
 fn start_bury(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1105,6 +1112,7 @@ fn start_bury(
 fn tick_loot(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1115,6 +1123,7 @@ fn tick_loot(
 fn tick_bury(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1124,6 +1133,7 @@ fn tick_bury(
 fn tick_heal(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1181,6 +1191,7 @@ fn tick_heal(
 fn commit_loot(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1213,6 +1224,7 @@ fn create_grave_container(
 fn commit_bury(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1227,6 +1239,7 @@ fn commit_bury(
 fn tick_attack(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1236,6 +1249,7 @@ fn tick_attack(
 fn commit_attack(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1333,6 +1347,7 @@ fn abort_bury(
 fn commit_heal(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1371,7 +1386,7 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDuration, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
         ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
         DurationExpr, Interruptibility, PerAgentBeliefView, SystemExecutionContext, SystemId,
         TickOutcome,
@@ -1820,10 +1835,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(10),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
 
@@ -1842,10 +1854,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
         )
         .unwrap();
 
@@ -1869,10 +1878,7 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if matches!(final_outcome, TickOutcome::Committed { .. }) {
@@ -1930,10 +1936,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(10),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
 
@@ -1947,10 +1950,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
         )
         .unwrap();
 
@@ -2044,10 +2044,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(10),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
 
@@ -2066,10 +2063,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
         )
         .unwrap();
 
@@ -2091,10 +2085,7 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -2148,10 +2139,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(10),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
 
@@ -2177,10 +2165,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
         )
         .unwrap();
 
@@ -2259,10 +2244,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
         )
         .unwrap();
 
@@ -2276,10 +2258,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
         )
         .unwrap();
 
@@ -2343,10 +2322,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
         )
         .unwrap();
 
@@ -2360,10 +2336,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
         )
         .unwrap();
 
@@ -2437,10 +2410,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
         )
         .unwrap();
         let outcome = tick_action(
@@ -2453,10 +2423,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
         )
         .unwrap();
 
@@ -2514,10 +2481,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
         )
         .unwrap();
 
@@ -2531,10 +2495,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(7),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
         )
         .unwrap();
 
@@ -2566,10 +2527,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(8),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(8)),
         )
         .unwrap_err();
         assert_eq!(
@@ -2642,10 +2600,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(9),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(9)),
         )
         .unwrap_err();
         assert_eq!(
@@ -2676,10 +2631,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
         )
         .unwrap_err();
         assert_eq!(
@@ -2704,10 +2656,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(12),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(12)),
         )
         .unwrap_err();
         assert_eq!(
@@ -2789,10 +2738,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -2813,10 +2759,7 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if outcome != TickOutcome::Continuing {
@@ -2874,10 +2817,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -2901,10 +2841,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(6),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
         )
         .unwrap();
 
@@ -2924,10 +2861,7 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
 
@@ -3306,10 +3240,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap_err();
         assert_eq!(
@@ -3334,10 +3265,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap_err();
         assert_eq!(
@@ -3877,10 +3805,7 @@ mod tests {
                 rng: &mut action_rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(4),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap();
 

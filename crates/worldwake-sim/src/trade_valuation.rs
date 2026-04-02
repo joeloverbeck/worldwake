@@ -1,4 +1,4 @@
-use crate::RuntimeBeliefView;
+use crate::{commodity_opportunity_score, GoalBeliefView};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -30,37 +30,26 @@ struct ValuationSnapshot {
 #[must_use]
 pub fn evaluate_trade_bundle(
     actor: EntityId,
-    belief: &dyn RuntimeBeliefView,
-    needs: Option<&HomeostaticNeeds>,
-    wounds: Option<&WoundList>,
+    belief: &dyn GoalBeliefView,
+    _needs: Option<&HomeostaticNeeds>,
+    _wounds: Option<&WoundList>,
     current_coin: Quantity,
     offered: &[(CommodityKind, Quantity)],
     received: &[(CommodityKind, Quantity)],
     local_alternatives: &[(EntityId, CommodityKind, Quantity)],
-    demand_memory: Option<&DemandMemory>,
+    _demand_memory: Option<&DemandMemory>,
 ) -> TradeAcceptance {
     let current_holdings = build_current_holdings(actor, belief, current_coin);
     let alternative_supply = aggregate_local_alternatives(actor, local_alternatives);
-    let current_snapshot = snapshot(
-        &current_holdings,
-        &alternative_supply,
-        needs,
-        wounds,
-        demand_memory,
-    );
+    let current_snapshot = snapshot(actor, belief, &current_holdings, &alternative_supply);
 
     let Some(receipt_only_holdings) = apply_bundle_changes(&current_holdings, received, &[]) else {
         return TradeAcceptance::Reject {
             reason: TradeRejectionReason::PostTradeStateWorse,
         };
     };
-    let receipt_only_snapshot = snapshot(
-        &receipt_only_holdings,
-        &alternative_supply,
-        needs,
-        wounds,
-        demand_memory,
-    );
+    let receipt_only_snapshot =
+        snapshot(actor, belief, &receipt_only_holdings, &alternative_supply);
 
     let Some(post_trade_holdings) = apply_bundle_changes(&current_holdings, received, offered)
     else {
@@ -68,13 +57,7 @@ pub fn evaluate_trade_bundle(
             reason: insufficient_payment_reason(offered),
         };
     };
-    let post_trade_snapshot = snapshot(
-        &post_trade_holdings,
-        &alternative_supply,
-        needs,
-        wounds,
-        demand_memory,
-    );
+    let post_trade_snapshot = snapshot(actor, belief, &post_trade_holdings, &alternative_supply);
 
     if post_trade_snapshot > current_snapshot {
         return TradeAcceptance::Accept;
@@ -102,7 +85,7 @@ pub fn evaluate_trade_bundle(
 
 fn build_current_holdings(
     actor: EntityId,
-    belief: &dyn RuntimeBeliefView,
+    belief: &dyn GoalBeliefView,
     current_coin: Quantity,
 ) -> BTreeMap<CommodityKind, u32> {
     let mut holdings = BTreeMap::new();
@@ -152,107 +135,36 @@ fn apply_bundle_changes(
 }
 
 fn snapshot(
+    actor: EntityId,
+    belief: &dyn GoalBeliefView,
     holdings: &BTreeMap<CommodityKind, u32>,
     alternative_supply: &BTreeMap<CommodityKind, u32>,
-    needs: Option<&HomeostaticNeeds>,
-    wounds: Option<&WoundList>,
-    demand_memory: Option<&DemandMemory>,
 ) -> ValuationSnapshot {
+    let mut survival = 0_u64;
+    let mut wound = 0_u64;
+    let mut demand = 0_u64;
+    for kind in CommodityKind::ALL {
+        let breakdown =
+            commodity_opportunity_score(actor, kind, belief, holdings, alternative_supply);
+        survival += u64::from(breakdown.direct_survival_score);
+        wound += u64::from(breakdown.treatment_score);
+        demand += u64::from(
+            breakdown
+                .enterprise_score
+                .saturating_add(breakdown.indirect_recipe_score),
+        );
+    }
+
     ValuationSnapshot {
-        survival: survival_score(holdings, alternative_supply, needs),
-        wound: wound_score(holdings, alternative_supply, wounds),
-        demand: demand_score(holdings, alternative_supply, demand_memory),
+        survival,
+        wound,
+        demand,
         coin: holdings
             .get(&CommodityKind::Coin)
             .copied()
             .unwrap_or(0)
             .into(),
     }
-}
-
-fn survival_score(
-    holdings: &BTreeMap<CommodityKind, u32>,
-    alternative_supply: &BTreeMap<CommodityKind, u32>,
-    needs: Option<&HomeostaticNeeds>,
-) -> u64 {
-    let Some(needs) = needs else {
-        return 0;
-    };
-
-    let mut hunger_relief = 0_u64;
-    let mut thirst_relief = 0_u64;
-
-    for kind in CommodityKind::ALL {
-        let Some(profile) = kind.spec().consumable_profile else {
-            continue;
-        };
-        let quantity = accessible_quantity(holdings, alternative_supply, kind);
-        hunger_relief += quantity * u64::from(profile.hunger_relief_per_unit.value());
-        thirst_relief += quantity * u64::from(profile.thirst_relief_per_unit.value());
-    }
-
-    hunger_relief.min(u64::from(needs.hunger.value()))
-        + thirst_relief.min(u64::from(needs.thirst.value()))
-}
-
-fn wound_score(
-    holdings: &BTreeMap<CommodityKind, u32>,
-    alternative_supply: &BTreeMap<CommodityKind, u32>,
-    wounds: Option<&WoundList>,
-) -> u64 {
-    let Some(wounds) = wounds else {
-        return 0;
-    };
-    if wounds.wounds.is_empty() {
-        return 0;
-    }
-
-    let total_severity = wounds
-        .wounds
-        .iter()
-        .map(|wound| u64::from(wound.severity.value()))
-        .sum::<u64>();
-    let wound_count = wounds.wounds.len() as u64;
-    let accessible_medicine =
-        accessible_quantity(holdings, alternative_supply, CommodityKind::Medicine);
-
-    accessible_medicine.min(wound_count) * total_severity
-}
-
-fn demand_score(
-    holdings: &BTreeMap<CommodityKind, u32>,
-    alternative_supply: &BTreeMap<CommodityKind, u32>,
-    demand_memory: Option<&DemandMemory>,
-) -> u64 {
-    let Some(demand_memory) = demand_memory else {
-        return 0;
-    };
-
-    let mut remembered = BTreeMap::<CommodityKind, u64>::new();
-    for observation in &demand_memory.observations {
-        *remembered.entry(observation.commodity).or_insert(0) += u64::from(observation.quantity.0);
-    }
-
-    remembered
-        .into_iter()
-        .map(|(kind, remembered_quantity)| {
-            accessible_quantity(holdings, alternative_supply, kind).min(remembered_quantity)
-        })
-        .sum()
-}
-
-fn accessible_quantity(
-    holdings: &BTreeMap<CommodityKind, u32>,
-    alternative_supply: &BTreeMap<CommodityKind, u32>,
-    kind: CommodityKind,
-) -> u64 {
-    let held = u64::from(holdings.get(&kind).copied().unwrap_or(0));
-    let alternatives = if kind == CommodityKind::Coin {
-        0
-    } else {
-        u64::from(alternative_supply.get(&kind).copied().unwrap_or(0))
-    };
-    held + alternatives
 }
 
 fn insufficient_payment_reason(offered: &[(CommodityKind, Quantity)]) -> TradeRejectionReason {
@@ -266,7 +178,7 @@ fn insufficient_payment_reason(offered: &[(CommodityKind, Quantity)]) -> TradeRe
 #[cfg(test)]
 mod tests {
     use super::{evaluate_trade_bundle, TradeAcceptance, TradeRejectionReason};
-    use crate::RuntimeBeliefView;
+    use crate::{RecipeDefinition, RuntimeBeliefView};
     use std::collections::BTreeMap;
     use worldwake_core::{
         BelievedEntityState, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
@@ -280,6 +192,9 @@ mod tests {
     #[derive(Default)]
     struct StubBeliefView {
         commodities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        needs: Option<HomeostaticNeeds>,
+        wounds: Vec<Wound>,
+        demand_memory: Vec<DemandObservation>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -416,11 +331,11 @@ mod tests {
         }
 
         fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
+            !self.wounds.is_empty()
         }
 
         fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
+            self.needs
         }
 
         fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
@@ -462,7 +377,7 @@ mod tests {
         }
 
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
-            Vec::new()
+            self.wounds.clone()
         }
 
         fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
@@ -489,6 +404,10 @@ mod tests {
             Vec::new()
         }
 
+        fn recipe_definition(&self, _recipe: RecipeId) -> Option<RecipeDefinition> {
+            None
+        }
+
         fn matching_workstations_at(
             &self,
             _place: EntityId,
@@ -506,7 +425,7 @@ mod tests {
         }
 
         fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-            Vec::new()
+            self.demand_memory.clone()
         }
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
@@ -538,6 +457,8 @@ mod tests {
             duration.fixed_ticks().map(crate::ActionDuration::new)
         }
     }
+
+    crate::impl_goal_belief_view!(StubBeliefView);
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug>() {}
 
@@ -600,7 +521,10 @@ mod tests {
     fn accepts_trade_when_post_trade_state_is_better() {
         let actor = entity(1);
 
-        let view = StubBeliefView::default();
+        let view = StubBeliefView {
+            needs: Some(hunger(900)),
+            ..Default::default()
+        };
 
         let acceptance = evaluate_trade_bundle(
             actor,
@@ -620,7 +544,10 @@ mod tests {
     #[test]
     fn rejects_trade_when_post_trade_state_is_worse() {
         let actor = entity(2);
-        let mut view = StubBeliefView::default();
+        let mut view = StubBeliefView {
+            needs: Some(hunger(900)),
+            ..Default::default()
+        };
         view.commodities.insert((actor, CommodityKind::Bread), q(1));
 
         let acceptance = evaluate_trade_bundle(
@@ -671,13 +598,20 @@ mod tests {
     #[test]
     fn high_need_accepts_survival_trade_that_no_need_actor_rejects() {
         let actor = entity(4);
-        let view = StubBeliefView::default();
+        let no_need_view = StubBeliefView {
+            needs: Some(HomeostaticNeeds::new_sated()),
+            ..Default::default()
+        };
+        let high_need_view = StubBeliefView {
+            needs: Some(hunger(900)),
+            ..Default::default()
+        };
         let offered = &[(CommodityKind::Coin, q(1))];
         let received = &[(CommodityKind::Bread, q(1))];
 
         let no_need = evaluate_trade_bundle(
             actor,
-            &view,
+            &no_need_view,
             Some(&HomeostaticNeeds::new_sated()),
             None,
             q(1),
@@ -688,7 +622,7 @@ mod tests {
         );
         let high_need = evaluate_trade_bundle(
             actor,
-            &view,
+            &high_need_view,
             Some(&hunger(900)),
             None,
             q(1),
@@ -735,7 +669,10 @@ mod tests {
     #[test]
     fn demand_memory_can_make_non_consumable_stock_worth_acquiring() {
         let actor = entity(6);
-        let view = StubBeliefView::default();
+        let view = StubBeliefView {
+            demand_memory: demand_memory(CommodityKind::Firewood, 2).observations,
+            ..Default::default()
+        };
 
         let acceptance = evaluate_trade_bundle(
             actor,
@@ -755,7 +692,10 @@ mod tests {
     #[test]
     fn wounds_make_medicine_worth_acquiring() {
         let actor = entity(7);
-        let view = StubBeliefView::default();
+        let view = StubBeliefView {
+            wounds: wound_list().wounds,
+            ..Default::default()
+        };
 
         let acceptance = evaluate_trade_bundle(
             actor,

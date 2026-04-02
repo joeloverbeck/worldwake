@@ -252,6 +252,7 @@ fn set_actor_needs(
 fn start_noop(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -262,6 +263,7 @@ fn start_noop(
 fn tick_continue(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -272,6 +274,7 @@ fn tick_continue(
 fn commit_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -292,6 +295,7 @@ fn abort_noop(
 fn tick_sleep(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -311,6 +315,7 @@ fn tick_sleep(
 fn commit_eat(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -321,6 +326,7 @@ fn commit_eat(
 fn commit_drink(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -364,6 +370,7 @@ fn apply_consumable_effects(
 fn commit_toilet(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -393,6 +400,7 @@ fn commit_toilet(
 fn commit_relieve_wilderness(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -424,6 +432,7 @@ fn commit_relieve_wilderness(
 fn commit_wash(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -465,7 +474,7 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
         ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome,
     };
 
@@ -597,10 +606,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(10),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
 
@@ -615,10 +621,7 @@ mod tests {
                     event_log: log,
                     rng: &mut rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap()
             {
@@ -750,10 +753,7 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_id,
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(10),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
 
@@ -767,10 +767,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(11),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
             worldwake_sim::ExternalAbortReason::Other,
         )
         .unwrap();

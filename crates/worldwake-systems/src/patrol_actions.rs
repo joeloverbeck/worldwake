@@ -124,6 +124,7 @@ fn enumerate_patrol_targets(
 fn start_patrol(
     _def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
@@ -152,6 +153,7 @@ fn start_patrol(
 fn tick_patrol(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -161,6 +163,7 @@ fn tick_patrol(
 fn commit_patrol(
     _def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -210,7 +213,7 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, interrupt_action, start_action, tick_action, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry, ActionInstance,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
         ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason, TickOutcome,
     };
 
@@ -312,10 +315,7 @@ mod tests {
                 rng,
             },
             next_instance_id,
-            ActionExecutionContext {
-                tick: Tick(2),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
         )
     }
 
@@ -423,10 +423,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(3),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
         )
         .unwrap();
 
@@ -484,10 +481,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(3),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
         )
         .unwrap();
 
@@ -539,10 +533,7 @@ mod tests {
                 event_log: &mut log,
                 rng: &mut rng,
             },
-            ActionExecutionContext {
-                tick: Tick(3),
-                cause: CauseRef::Bootstrap,
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
             InterruptReason::Reprioritized,
         )
         .unwrap();

@@ -252,6 +252,7 @@ fn apply_input(
         } => {
             let resolution = resolve_affordance(
                 runtime.world,
+                services.recipe_registry,
                 services.action_defs,
                 services.action_handlers,
                 RequestedAction {
@@ -315,6 +316,7 @@ fn apply_input(
                 ActionExecutionContext {
                     cause: CauseRef::ExternalInput(sequence_no),
                     tick,
+                    recipe_registry: services.recipe_registry,
                 },
             ) {
                 if mode == crate::ActionRequestMode::BestEffort
@@ -415,6 +417,7 @@ fn apply_input(
                     ActionExecutionContext {
                         cause: CauseRef::ExternalInput(sequence_no),
                         tick,
+                        recipe_registry: services.recipe_registry,
                     },
                     ExternalAbortReason::CancelledByInput { sequence_no },
                 )
@@ -459,6 +462,7 @@ fn is_best_effort_start_failure(error: &ActionError) -> bool {
 
 fn resolve_affordance(
     world: &World,
+    recipe_registry: &RecipeRegistry,
     action_defs: &ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
     request: RequestedAction<'_>,
@@ -470,7 +474,7 @@ fn resolve_affordance(
         payload_override,
         mode,
     } = request;
-    let view = crate::PerAgentBeliefView::from_world(actor, world);
+    let view = crate::PerAgentBeliefView::from_world_with_recipes(actor, world, recipe_registry);
     let Some(def) = action_defs.get(def_id) else {
         return Err(RequestResolutionRejectionReason::UnknownActionDef);
     };
@@ -584,6 +588,7 @@ fn progress_active_actions(
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(tick),
                     tick,
+                    recipe_registry: services.recipe_registry,
                 },
             )
             .map_err(TickStepError::Action)?
@@ -736,6 +741,7 @@ fn abort_actions_for_dead_actors(
                 ActionExecutionContext {
                     cause: CauseRef::SystemTick(tick),
                     tick,
+                    recipe_registry: services.recipe_registry,
                 },
                 ExternalAbortReason::ActorMarkedDead,
             )
@@ -848,15 +854,15 @@ mod tests {
         TickStepServices,
     };
     use crate::{
-        get_affordances, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionRequestMode, ActionState, ActionStatus, ActionTraceDetail, ActionTraceKind,
-        ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng, DurationExpr, InputKind,
-        Interruptibility, Precondition, RecipeRegistry, RequestBindingKind, RequestProvenance,
-        RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceSink,
-        ReservationReq, Scheduler, SystemDispatchTable, SystemError, SystemExecutionContext,
-        SystemManifest, TargetSpec, TellActionPayload, TickInputContext, TickInputError,
-        TickInputProducer,
+        get_affordances, ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext,
+        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionProgress, ActionRequestMode, ActionState, ActionStatus,
+        ActionTraceDetail, ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState,
+        DeterministicRng, DurationExpr, InputKind, Interruptibility, Precondition,
+        RecipeRegistry, RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
+        RequestResolutionRejectionReason, RequestResolutionTraceSink, ReservationReq, Scheduler,
+        SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
+        TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -885,6 +891,11 @@ mod tests {
     fn hook_log() -> &'static Mutex<HookLog> {
         static HOOK_LOG: OnceLock<Mutex<HookLog>> = OnceLock::new();
         HOOK_LOG.get_or_init(|| Mutex::new(HookLog::default()))
+    }
+
+    fn test_recipes() -> &'static RecipeRegistry {
+        static TEST_RECIPES: OnceLock<RecipeRegistry> = OnceLock::new();
+        TEST_RECIPES.get_or_init(RecipeRegistry::new)
     }
 
     fn reset_hooks() {
@@ -924,6 +935,7 @@ mod tests {
     fn start_record(
         _def: &ActionDef,
         instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -934,6 +946,7 @@ mod tests {
     fn start_abort_requested(
         _def: &ActionDef,
         instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<Option<ActionState>, ActionError> {
@@ -949,6 +962,7 @@ mod tests {
     fn tick_continue(
         _def: &ActionDef,
         instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -960,6 +974,7 @@ mod tests {
     fn tick_complete(
         _def: &ActionDef,
         instance: &mut ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<ActionProgress, ActionError> {
@@ -971,6 +986,7 @@ mod tests {
     fn commit_noop(
         _def: &ActionDef,
         _instance: &ActionInstance,
+        _context: &ActionExecutionContext<'_>,
         _rng: &mut DeterministicRng,
         _txn: &mut WorldTxn<'_>,
     ) -> Result<CommitOutcome, ActionError> {
@@ -1967,7 +1983,7 @@ mod tests {
         let (world, _event_log, _scheduler, controller, _rng, _recipes, defs, handlers) =
             build_state();
         let actor = controlled_actor(&controller);
-        let view = crate::PerAgentBeliefView::from_world(actor, &world);
+        let view = crate::PerAgentBeliefView::from_world_with_recipes(actor, &world, test_recipes());
         let def = defs.get(ActionDefId(0)).unwrap();
         let affordance = get_affordances(&view, actor, &defs, &handlers)
             .into_iter()
@@ -1976,6 +1992,7 @@ mod tests {
 
         let resolved = resolve_affordance(
             &world,
+            test_recipes(),
             &defs,
             &handlers,
             RequestedAction {
@@ -1993,6 +2010,7 @@ mod tests {
 
         let error = resolve_affordance(
             &world,
+            test_recipes(),
             &defs,
             &handlers,
             RequestedAction {

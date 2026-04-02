@@ -1,5 +1,6 @@
 use crate::{
     action_semantics::consultation_duration_ticks, ActionDuration, ActionPayload, DurationExpr,
+    RecipeDefinition,
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
@@ -90,6 +91,10 @@ pub trait GoalBeliefView {
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        let _ = recipe;
+        None
+    }
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
     fn locally_observed_commodity_quantity(
@@ -382,6 +387,10 @@ pub trait RuntimeBeliefView {
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        let _ = recipe;
+        None
+    }
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
     fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
     fn locally_observed_commodity_quantity(
@@ -806,6 +815,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::RecipeId> {
                 $crate::RuntimeBeliefView::known_recipes(self, agent)
+            }
+
+            fn recipe_definition(
+                &self,
+                recipe: worldwake_core::RecipeId,
+            ) -> Option<$crate::RecipeDefinition> {
+                $crate::RuntimeBeliefView::recipe_definition(self, recipe)
             }
 
             fn unique_item_count(

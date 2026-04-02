@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, num::NonZeroU32};
+use std::{collections::{BTreeMap, BTreeSet}, num::NonZeroU32};
 use worldwake_core::{
     ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
     CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
@@ -6,10 +6,11 @@ use worldwake_core::{
     WorldTxn, WoundList,
 };
 use worldwake_sim::{
-    evaluate_trade_bundle, AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
-    ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
-    ActionPayload, ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr,
-    Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RuntimeBeliefView,
+    commodity_opportunity_score, evaluate_trade_bundle, AbortReason, ActionAbortRequestReason,
+    ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
+    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
+    CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
+    PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry, RuntimeBeliefView,
     StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
 };
 
@@ -169,6 +170,7 @@ pub struct SubstituteTradeCandidate {
 fn start_trade(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -186,6 +188,7 @@ fn start_trade(
 fn tick_trade(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -228,6 +231,7 @@ fn tick_trade(
     })?;
     let reservation = reservation_price_for_actor(
         txn,
+        context.recipe_registry,
         current_actor,
         current_role,
         payload.offered_commodity,
@@ -337,6 +341,7 @@ fn tick_trade(
 fn commit_trade(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -823,8 +828,10 @@ fn offer_satisfies_reservation(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn reservation_price_for_actor(
     txn: &WorldTxn<'_>,
+    recipe_registry: &RecipeRegistry,
     actor: EntityId,
     role: worldwake_core::TradeRole,
     offered_commodity: CommodityKind,
@@ -832,31 +839,19 @@ fn reservation_price_for_actor(
     place: EntityId,
     counterparty: EntityId,
 ) -> Quantity {
+    let belief = PerAgentBeliefView::from_world_with_recipes(actor, txn, recipe_registry);
     match role {
-        worldwake_core::TradeRole::Buyer => buyer_reservation_price(
-            txn.get_component_homeostatic_needs(actor),
-            txn.get_component_wound_list(actor),
+        worldwake_core::TradeRole::Buyer => {
+            buyer_reservation_price_for_view(&belief, actor, counterparty, place, requested_commodity)
+        }
+        worldwake_core::TradeRole::Seller => seller_reservation_price_for_view(
+            &belief,
+            actor,
+            counterparty,
+            place,
+            offered_commodity,
             requested_commodity,
-            txn.controlled_commodity_quantity(actor, CommodityKind::Coin),
-            local_alternatives(txn, actor, counterparty, place)
-                .into_iter()
-                .filter(|(_, commodity, quantity)| {
-                    *commodity == requested_commodity && *quantity > Quantity(0)
-                })
-                .count() as u32,
         ),
-        worldwake_core::TradeRole::Seller => seller_reservation_price(
-            txn.get_component_homeostatic_needs(actor),
-            requested_commodity,
-            txn.controlled_commodity_quantity(actor, requested_commodity),
-            txn.get_component_demand_memory(actor),
-        )
-        .max(Quantity(1))
-        .max(if offered_commodity == CommodityKind::Coin {
-            Quantity(1)
-        } else {
-            Quantity(0)
-        }),
     }
 }
 
@@ -888,13 +883,14 @@ fn record_trade_observation(
 
 fn evaluate_for_participant(
     txn: &WorldTxn<'_>,
+    recipe_registry: &RecipeRegistry,
     actor: EntityId,
     excluded_counterparty: EntityId,
     place: EntityId,
     offered: [(CommodityKind, Quantity); 1],
     received: [(CommodityKind, Quantity); 1],
 ) -> TradeAcceptance {
-    let belief = PerAgentBeliefView::from_world(actor, txn);
+    let belief = PerAgentBeliefView::from_world_with_recipes(actor, txn, recipe_registry);
     let alternatives = local_alternatives(txn, actor, excluded_counterparty, place);
     evaluate_trade_bundle(
         actor,
@@ -942,6 +938,7 @@ pub fn select_substitute_trade_candidate(
 
             let acceptance = evaluate_for_participant(
                 txn,
+                &RecipeRegistry::new(),
                 buyer,
                 seller,
                 place,
@@ -959,6 +956,110 @@ pub fn select_substitute_trade_candidate(
     }
 
     None
+}
+
+fn holdings_from_view(
+    view: &dyn GoalBeliefView,
+    actor: EntityId,
+) -> BTreeMap<CommodityKind, u32> {
+    CommodityKind::ALL
+        .into_iter()
+        .map(|kind| (kind, view.commodity_quantity(actor, kind).0))
+        .collect()
+}
+
+fn alternative_supply_map(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    excluded_counterparty: EntityId,
+    place: EntityId,
+) -> BTreeMap<CommodityKind, u32> {
+    let mut by_kind = BTreeMap::new();
+    for (_, commodity, quantity) in local_trade_alternatives(view, actor, excluded_counterparty, place) {
+        *by_kind.entry(commodity).or_insert(0) += quantity.0;
+    }
+    by_kind
+}
+
+fn total_commodity_opportunity<V: RuntimeBeliefView + GoalBeliefView>(
+    view: &V,
+    actor: EntityId,
+    holdings: &BTreeMap<CommodityKind, u32>,
+    alternatives: &BTreeMap<CommodityKind, u32>,
+) -> u32 {
+    CommodityKind::ALL
+        .into_iter()
+        .map(|kind| {
+            let breakdown = commodity_opportunity_score(actor, kind, view, holdings, alternatives);
+            breakdown
+                .direct_survival_score
+                .saturating_add(breakdown.treatment_score)
+                .saturating_add(breakdown.enterprise_score)
+                .saturating_add(breakdown.indirect_recipe_score)
+        })
+        .sum()
+}
+
+fn buyer_reservation_price_for_view<V: RuntimeBeliefView + GoalBeliefView>(
+    view: &V,
+    actor: EntityId,
+    excluded_counterparty: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Quantity {
+    let current_coin = GoalBeliefView::commodity_quantity(view, actor, CommodityKind::Coin);
+    if current_coin == Quantity(0) {
+        return Quantity(0);
+    }
+
+    let baseline = buyer_reservation_price(
+        GoalBeliefView::homeostatic_needs(view, actor).as_ref(),
+        wounds_for(view, actor).as_ref(),
+        commodity,
+        current_coin,
+        count_local_alternatives(view, actor, excluded_counterparty, place, commodity),
+    );
+    let mut holdings = holdings_from_view(view, actor);
+    let alternatives = alternative_supply_map(view, actor, excluded_counterparty, place);
+    let current = total_commodity_opportunity(view, actor, &holdings, &alternatives);
+    *holdings.entry(commodity).or_insert(0) += 1;
+    let improved = total_commodity_opportunity(view, actor, &holdings, &alternatives);
+    Quantity(improved.saturating_sub(current).max(baseline.0)).min(current_coin)
+}
+
+fn seller_reservation_price_for_view<V: RuntimeBeliefView + GoalBeliefView>(
+    view: &V,
+    actor: EntityId,
+    excluded_counterparty: EntityId,
+    place: EntityId,
+    offered_commodity: CommodityKind,
+    requested_commodity: CommodityKind,
+) -> Quantity {
+    let mut holdings = holdings_from_view(view, actor);
+    let current_stock = holdings.get(&requested_commodity).copied().unwrap_or(0);
+    if current_stock == 0 {
+        return Quantity(1);
+    }
+    let remembered_demand = DemandMemory {
+        observations: GoalBeliefView::demand_memory(view, actor),
+    };
+    let baseline = seller_reservation_price(
+        GoalBeliefView::homeostatic_needs(view, actor).as_ref(),
+        requested_commodity,
+        Quantity(current_stock),
+        Some(&remembered_demand),
+    );
+    let alternatives = alternative_supply_map(view, actor, excluded_counterparty, place);
+    let current = total_commodity_opportunity(view, actor, &holdings, &alternatives);
+    holdings.insert(requested_commodity, current_stock.saturating_sub(1));
+    let reduced = total_commodity_opportunity(view, actor, &holdings, &alternatives);
+    Quantity(current.saturating_sub(reduced).max(baseline.0)).max(
+        if offered_commodity == CommodityKind::Coin {
+            Quantity(1)
+        } else {
+            Quantity(0)
+        },
+    )
 }
 
 fn execute_trade_transfers(
@@ -1306,6 +1407,7 @@ fn displayed_sale_lots_at_facility(
 fn start_staff_market(
     def: &ActionDef,
     instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
@@ -1321,6 +1423,7 @@ fn start_staff_market(
 fn tick_staff_market(
     _def: &ActionDef,
     _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
@@ -1330,6 +1433,7 @@ fn tick_staff_market(
 fn commit_staff_market(
     def: &ActionDef,
     instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1441,7 +1545,7 @@ mod tests {
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
-        ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
+        ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
         ActionInstanceId, ActionPayload, ActionState, ActionStatus, Affordance, DeterministicRng,
         PayloadEntityRole, PerAgentBeliefView, TickOutcome, TradeActionPayload,
     };
@@ -2143,10 +2247,7 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(3),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
             )
             .unwrap();
             (instance_id, active)
@@ -2172,10 +2273,7 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(3),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
             )
         }
 
@@ -2224,10 +2322,7 @@ mod tests {
                     event_log: &mut self.log,
                     rng: &mut self.rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
         }
     }
@@ -2493,10 +2588,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(4),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap();
 
@@ -2661,16 +2753,16 @@ mod tests {
         harness.payload.offered_quantity = Quantity(1);
         harness.set_actor_trade_profile(TradeDispositionProfile {
             negotiation_round_ticks: nz(100),
-            initial_offer_bias: pm(500),
-            concession_rate: pm(700),
+            initial_offer_bias: pm(0),
+            concession_rate: pm(300),
             rejection_escalation_rate: pm(200),
             demand_memory_retention_ticks: 10,
             market_presence_ticks: nz(30),
         });
         harness.set_counterparty_trade_profile(TradeDispositionProfile {
             negotiation_round_ticks: nz(6),
-            initial_offer_bias: pm(500),
-            concession_rate: pm(300),
+            initial_offer_bias: pm(1000),
+            concession_rate: pm(100),
             rejection_escalation_rate: pm(200),
             demand_memory_retention_ticks: 10,
             market_presence_ticks: nz(30),
@@ -2792,10 +2884,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(4),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap();
 
@@ -2832,10 +2921,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -2866,10 +2952,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(4),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap();
 
@@ -3249,10 +3332,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -3295,10 +3375,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -3332,10 +3409,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -3373,10 +3447,7 @@ mod tests {
                 event_log: &mut harness.log,
                 rng: &mut harness.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(5),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap();
 
@@ -3525,10 +3596,7 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(3),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
             )
             .unwrap();
             (instance_id, active)
@@ -3563,10 +3631,7 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(3),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
             )
         }
     }
@@ -3627,10 +3692,7 @@ mod tests {
                     event_log: &mut h.log,
                     rng: &mut h.rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3662,10 +3724,7 @@ mod tests {
                     event_log: &mut h.log,
                     rng: &mut h.rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3698,10 +3757,7 @@ mod tests {
                     event_log: &mut h.log,
                     rng: &mut h.rng,
                 },
-                ActionExecutionContext {
-                    cause: CauseRef::Bootstrap,
-                    tick: Tick(tick),
-                },
+                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3747,10 +3803,7 @@ mod tests {
                 event_log: &mut h.log,
                 rng: &mut h.rng,
             },
-            ActionExecutionContext {
-                cause: CauseRef::Bootstrap,
-                tick: Tick(4),
-            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
         )
         .unwrap();
         assert!(matches!(outcome, TickOutcome::Continuing));
