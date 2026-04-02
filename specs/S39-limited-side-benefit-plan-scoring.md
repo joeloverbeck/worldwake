@@ -19,14 +19,14 @@ Phase 4+: Economy & Trade
 
 ## Dependencies
 
-- S33 (opportunity-scoped goal identity — multi-desire awareness requires separate opportunity tracking to know which other goals the agent is pursuing)
+- S33 ✅ (opportunity-scoped goal identity — multi-desire awareness requires separate opportunity tracking to know which other goals the agent is pursuing)
 - S22 ✅ (intention frames — side-benefit scoring respects frame commitment)
 
 ## FOUNDATIONS Alignment
 
-- **P18** (Resource-Bounded Practical Reasoning): Real agents combine errands. A merchant traveling to market would naturally also sell surplus while there. Single-goal planning produces unrealistically inefficient behavior.
+- **P20** (Resource-Bounded Practical Reasoning): Real agents combine errands. A merchant traveling to market would naturally also sell surplus while there. Single-goal planning produces unrealistically inefficient behavior.
 - **P5** (Simulate Carriers of Consequence): Combined trips create more interaction opportunities — an agent at market for food might also encounter a trader, hear a rumor, or witness an event. More co-location = more emergent interactions.
-- **P20** (Agent Diversity): Per-agent `side_benefit_weight` on `UtilityProfile` means some agents are better at combining goals (efficient merchants) while others are single-minded (focused warriors).
+- **P22** (Agent Diversity): Per-agent `side_benefit_weight` on `UtilityProfile` means some agents are better at combining goals (efficient merchants) while others are single-minded (focused warriors).
 
 ## Design Goals
 
@@ -50,24 +50,29 @@ pub struct SideBenefit {
     /// The place where this benefit exists, which is on the plan's path.
     pub at_place: EntityId,
     /// Estimated value of pursuing this secondary goal.
-    /// Derived from the secondary goal's motive score.
-    pub estimated_value: Permille,
+    /// Derived from: candidate.motive_score * side_benefit_weight.value() as u32 / 1000
+    pub estimated_value: u32,
 }
 ```
 
 ### 2. `PlanValue` wrapper (worldwake-ai)
 
+`PlanValue` is an internal scoring struct used only during plan selection. `select_best_plan()` continues to return `Option<PlannedPlan>` — callers are unaffected.
+
 ```rust
 /// A scored plan including primary motive and secondary side-benefits.
+/// Internal to plan selection; never stored or returned to callers.
 #[derive(Debug, Clone)]
 pub struct PlanValue {
     pub plan: PlannedPlan,
-    /// Motive score from the primary goal's ranking.
-    pub primary_motive: Permille,
+    pub priority_class: GoalPriorityClass,
+    /// Motive score from the primary goal's ranking (u32, same type as RankedGoal.motive_score).
+    pub primary_motive: u32,
     /// Detected side-benefits at locations along the plan path.
     pub side_benefits: Vec<SideBenefit>,
-    /// Combined score: primary + weighted side-benefits.
-    pub total_value: Permille,
+    /// Combined score: primary_motive + sum(side_benefit.estimated_value),
+    /// capped at primary_motive * 3 / 2.
+    pub total_value: u32,
 }
 ```
 
@@ -87,10 +92,10 @@ pub fn detect_side_benefits(
 ```
 
 Logic:
-1. Collect all distinct places the plan visits (from step targets, travel destinations).
+1. Collect all distinct places the plan visits: iterate `plan.steps`, filter to steps with `op_kind == PlannerOpKind::Travel`, extract `Authoritative(id)` targets as place EntityIds. Skip `Hypothetical` targets.
 2. For each ranked candidate that is NOT the primary goal:
-   - Check if the candidate's target place (from `OpportunityAnchor::Place` or `GoalKey::place`) appears in the plan's visited places.
-   - If yes: create `SideBenefit { goal_key, at_place, estimated_value: candidate.motive * side_benefit_weight }`.
+   - Extract the candidate's target place: first try `candidate.grounded.anchor` — if `OpportunityAnchor::Place(id)`, use that. Otherwise fall back to `candidate.grounded.key.place` (which is `Option<EntityId>`).
+   - If the target place appears in the plan's visited places: create `SideBenefit { goal_key: candidate.grounded.key, at_place, estimated_value: candidate.motive_score * side_benefit_weight.value() as u32 / 1000 }`.
 3. Deduplicate: at most one `SideBenefit` per `GoalKey`.
 4. Cap at 3 side-benefits (avoid excessive scoring for agents with many pending goals).
 
@@ -103,14 +108,17 @@ Add `side_benefit_weight: Permille` to `UtilityProfile`:
 
 ### 5. Integration in `select_best_plan()` (worldwake-ai)
 
+Add `side_benefit_weight: Permille` as a new parameter to `select_best_plan()`, matching the existing pattern of passing per-agent parameters (like `default_switch_margin`, `frame_switch_margin`). Callers pass the agent's `UtilityProfile.side_benefit_weight`.
+
 In `plan_selection.rs`, after plan search produces candidate plans:
 
 1. For each plan, compute `PlanValue` with side-benefit detection.
-2. `total_value = primary_motive + sum(side_benefit.estimated_value)`, capped at `primary_motive * Permille(1500)` (side-benefits never more than 50% bonus).
+2. `total_value = primary_motive + sum(side_benefit.estimated_value)`, capped at `primary_motive * 3 / 2` (side-benefits never more than 50% bonus). All values are `u32`.
 3. Selection logic:
    - **Priority class comparison**: Unchanged. Higher priority class always wins regardless of side-benefits.
-   - **Same priority class, same motive tier**: Use `total_value` for tie-breaking.
+   - **Same priority class, same motive tier**: Use `total_value` for tie-breaking in the `compare_ranked_plans` sort.
    - **Goal switching margin**: Uses `primary_motive` only, not `total_value` (side-benefits don't trigger goal switches).
+4. Return type remains `Option<PlannedPlan>` — `PlanValue` is used internally for scoring only.
 
 ### 6. Decision trace extension
 
@@ -120,8 +128,8 @@ Add side-benefit information to `SelectionTrace`:
 pub struct SideBenefitTrace {
     pub plan_goal: GoalKey,
     pub side_benefits: Vec<SideBenefit>,
-    pub total_value: Permille,
-    pub primary_motive: Permille,
+    pub total_value: u32,
+    pub primary_motive: u32,
 }
 ```
 
@@ -138,7 +146,7 @@ No new information paths. Side-benefit detection reads existing ranked candidate
 No amplifying loops. Side-benefit scoring is a read-only overlay on existing plan selection. It does not create new goals, plans, or world state.
 
 ### Concrete dampeners
-- Side-benefit cap: `total_value` capped at 150% of `primary_motive`.
+- Side-benefit cap: `total_value` capped at `primary_motive * 3 / 2` (150% of primary).
 - Max 3 side-benefits per plan.
 - `side_benefit_weight` per-agent control.
 - Side-benefits never override priority class (survival > danger > normal hierarchy preserved).
@@ -152,7 +160,7 @@ No amplifying loops. Side-benefit scoring is a read-only overlay on existing pla
 ### Focused tests
 - [ ] Side-benefit detected when pending candidate's target place matches plan destination
 - [ ] Side-benefit NOT detected for the primary goal itself
-- [ ] Side-benefit estimated_value = candidate.motive * side_benefit_weight
+- [ ] Side-benefit estimated_value = candidate.motive_score * side_benefit_weight.value() as u32 / 1000
 - [ ] At most 3 side-benefits per plan
 - [ ] total_value capped at 150% of primary_motive
 - [ ] Side-benefits break ties between plans of equal primary motive

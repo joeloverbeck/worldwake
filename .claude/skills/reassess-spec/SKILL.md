@@ -59,14 +59,14 @@ Build a checklist of every reference to validate in Step 3. Prioritize reference
 For every reference extracted in Step 2, validate against the actual codebase:
 
 1. **File paths**: Glob/Grep to confirm they exist at the stated location. If a file was moved, renamed, or deleted, record the discrepancy and the actual location (if found).
-2. **Types and interfaces**: Grep for each type name. Confirm it exists, check its current shape (fields, members). If the spec assumes a field that does not exist or has a different name/type, record the discrepancy.
+2. **Types and interfaces**: Grep for each type name. Confirm it exists, check its current shape (fields, members). If the spec assumes a field that does not exist or has a different name/type, record the discrepancy. For types the spec uses in formulas or struct definitions (not just extends), verify that the assumed field types match the actual types. Pay particular attention to numeric types (`u32` vs `Permille` vs `i32`) — the spec may assume a different numeric representation than what exists.
 3. **Functions and methods**: Grep for each function. Confirm signature, module location, and export status. Note any signature differences from what the spec assumes.
 4. **Dependencies (specs/tickets)**: For each dependency, verify whether it lives in `specs/`, `archive/specs/`, `tickets/`, or `archive/tickets/`. Record the correct path. If a dependency is listed as incomplete but has since been implemented, note this.
-5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration. For types or enums the spec proposes to extend (new variants, new fields), check the existing derive macros and trait bounds. Record any constraints that new additions must satisfy (e.g., `Copy`, `Serialize`, `Ord`).
+5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration. For types or enums the spec proposes to extend (new variants, new fields), check the existing derive macros and trait bounds. Record any constraints that new additions must satisfy (e.g., `Copy`, `Serialize`, `Ord`). For field additions to existing structs, focus on the `Default` impl and any builder/constructor functions. For field type changes or removals, perform full downstream consumer analysis (Step 3.6).
 6. **Downstream consumers**: For types or interfaces the spec proposes to modify, grep for all import sites and usage points. Record the blast radius — files that would need updating.
 7. **Upstream spec references**: Grep active specs in `specs/` for references to the target spec's deliverables (type names, component names, interfaces it introduces). Note any active specs that would be affected by proposed changes.
 
-For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation.
+For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32).
 
 Do not present findings yet. Collect everything for Step 4.
 
@@ -98,7 +98,7 @@ For each finding, record:
 - What the codebase actually has (with file paths and line references)
 - The recommended change to the spec
 
-Optionally tag findings by severity: CRITICAL (blocks ticket decomposition), HIGH (should fix before tickets), MEDIUM (improves quality), LOW (nice to fix). This helps users prioritize when the finding list is long.
+Tag each finding by severity: CRITICAL (blocks ticket decomposition), HIGH (should fix before tickets), MEDIUM (improves quality), LOW (nice to fix). This helps users prioritize when the finding list is long.
 
 ### Step 6: Present Findings
 
@@ -109,15 +109,15 @@ Present all findings to the user in a structured report:
 
 ### Issues (must fix)
 [If none: "No issues found."]
-1. **<title>** — <what the spec says> vs. <what the codebase has>. Recommendation: <change>.
+1. **[SEVERITY] <title>** — <what the spec says> vs. <what the codebase has>. Recommendation: <change>.
 
 ### Improvements (should fix)
 [If none: "No improvements found."]
-1. **<title>** — <current spec text> could be improved because <reason>. Recommendation: <change>.
+1. **[SEVERITY] <title>** — <current spec text> could be improved because <reason>. Recommendation: <change>.
 
 ### Additions (consider adding)
 [If none: "No additions proposed."]
-1. **<title>** — <what's missing> would be beneficial because <reason>. Recommendation: <new section or deliverable>.
+1. **[SEVERITY] <title>** — <what's missing> would be beneficial because <reason>. Recommendation: <new section or deliverable>.
 
 ### FOUNDATIONS.md Alignment
 - <Foundation N>: <aligned | issue description>
@@ -127,11 +127,9 @@ Present all findings to the user in a structured report:
 1. <question>
 ```
 
-**Question discipline**: Ask at most 3 questions in this initial report. If you have more than 3, prioritize the ones that block further reassessment and defer the rest to a follow-up round after the user responds. If two questions are interdependent (the answer to one constrains the other), present them as a single combined question with clearly labeled option combinations, rather than asking sequentially and potentially invalidating the first answer.
+**Question discipline**: Ask at most 3 questions in this initial report. If you have more than 3, prioritize the ones that block further reassessment and defer the rest to a follow-up round after the user responds. If two questions are interdependent (the answer to one constrains the other), present them as a single combined question with clearly labeled option combinations, rather than asking sequentially and potentially invalidating the first answer. When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options and a recommended default. When a question is open-ended, present it as plain text in the report.
 
-**Wait for user response.** Do not proceed to Step 7 until the user has:
-- Approved, rejected, or modified each finding
-- Answered all questions
+**Wait for user response.** Do not proceed to Step 7 until the user has answered all questions. Treat findings as approved unless the user explicitly objects or modifies them. If the user's response addresses only questions and does not mention specific findings, implicit approval is assumed.
 
 If the user delegates question resolution (e.g., "you decide based on FOUNDATIONS," "reassess and determine the best choice"), resolve each question by reasoning against the referenced constraint (typically `docs/FOUNDATIONS.md`). Present the resolution with justification for each question and wait for user confirmation before proceeding to Step 7.
 
