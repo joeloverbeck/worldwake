@@ -1,6 +1,8 @@
-use crate::{GoalBeliefView, RecipeRegistry};
-use std::collections::BTreeMap;
-use worldwake_core::{CommodityKind, EntityId};
+use crate::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use worldwake_core::{
+    CommodityKind, CommodityValuationProfile, EntityId, Permille, RecipeId, WorkstationTag,
+};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommodityOpportunityBreakdown {
@@ -15,21 +17,28 @@ pub fn commodity_opportunity_score(
     actor: EntityId,
     commodity: CommodityKind,
     belief: &dyn GoalBeliefView,
-    _recipes: &RecipeRegistry,
+    recipes: &RecipeRegistry,
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
 ) -> CommodityOpportunityBreakdown {
+    let direct_survival_score =
+        direct_survival_score(actor, commodity, belief, holdings, local_alternatives);
+    let treatment_score = treatment_score(actor, commodity, belief, holdings, local_alternatives);
+    let enterprise_score = enterprise_score(actor, commodity, belief, holdings, local_alternatives);
+
     CommodityOpportunityBreakdown {
-        direct_survival_score: direct_survival_score(
+        direct_survival_score,
+        treatment_score,
+        enterprise_score,
+        indirect_recipe_score: indirect_recipe_score(
             actor,
             commodity,
             belief,
+            recipes,
             holdings,
             local_alternatives,
+            &mut BTreeSet::new(),
         ),
-        treatment_score: treatment_score(actor, commodity, belief, holdings, local_alternatives),
-        enterprise_score: enterprise_score(actor, commodity, belief, holdings, local_alternatives),
-        indirect_recipe_score: 0,
     }
 }
 
@@ -106,6 +115,299 @@ fn enterprise_score(
     )
 }
 
+fn indirect_recipe_score(
+    actor: EntityId,
+    commodity: CommodityKind,
+    belief: &dyn GoalBeliefView,
+    recipes: &RecipeRegistry,
+    holdings: &BTreeMap<CommodityKind, u32>,
+    local_alternatives: &BTreeMap<CommodityKind, u32>,
+    path: &mut BTreeSet<(CommodityKind, u8)>,
+) -> u32 {
+    let Some(profile) = belief.commodity_valuation_profile(actor) else {
+        return 0;
+    };
+
+    indirect_recipe_score_with_profile(
+        actor,
+        commodity,
+        belief,
+        recipes,
+        holdings,
+        local_alternatives,
+        profile,
+        profile.recipe_opportunity_depth.get(),
+        path,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn indirect_recipe_score_with_profile(
+    actor: EntityId,
+    commodity: CommodityKind,
+    belief: &dyn GoalBeliefView,
+    recipes: &RecipeRegistry,
+    holdings: &BTreeMap<CommodityKind, u32>,
+    local_alternatives: &BTreeMap<CommodityKind, u32>,
+    profile: CommodityValuationProfile,
+    remaining_depth: u8,
+    path: &mut BTreeSet<(CommodityKind, u8)>,
+) -> u32 {
+    if remaining_depth == 0 || !path.insert((commodity, remaining_depth)) {
+        return 0;
+    }
+
+    let result = best_recipe_opportunity(
+        actor,
+        commodity,
+        belief,
+        recipes,
+        holdings,
+        local_alternatives,
+        profile,
+        remaining_depth,
+        path,
+    )
+    .map_or(0, |best| best.value);
+
+    path.remove(&(commodity, remaining_depth));
+    result
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct BestOpportunity {
+    value: u32,
+    steps: u8,
+    recipe_id: RecipeId,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn best_recipe_opportunity(
+    actor: EntityId,
+    commodity: CommodityKind,
+    belief: &dyn GoalBeliefView,
+    recipes: &RecipeRegistry,
+    holdings: &BTreeMap<CommodityKind, u32>,
+    local_alternatives: &BTreeMap<CommodityKind, u32>,
+    profile: CommodityValuationProfile,
+    remaining_depth: u8,
+    path: &mut BTreeSet<(CommodityKind, u8)>,
+) -> Option<BestOpportunity> {
+    let known_recipes = belief.known_recipes(actor).into_iter().collect::<BTreeSet<_>>();
+    let mut best = None;
+
+    for (recipe_id, recipe) in recipes.iter() {
+        if !known_recipes.contains(&recipe_id)
+            || !recipe
+                .inputs
+                .iter()
+                .any(|(input_commodity, _)| *input_commodity == commodity)
+            || !workstation_reachable(actor, recipe.required_workstation_tag, belief, profile)
+            || !sibling_inputs_satisfiable(
+                actor,
+                commodity,
+                recipe,
+                belief,
+                recipes,
+                holdings,
+                local_alternatives,
+                profile,
+                remaining_depth,
+                path,
+            )
+        {
+            continue;
+        }
+
+        let Some(output_value) = recipe_output_value(
+            actor,
+            recipe,
+            belief,
+            recipes,
+            holdings,
+            local_alternatives,
+            profile,
+            remaining_depth,
+            path,
+        ) else {
+            continue;
+        };
+
+        let candidate = BestOpportunity {
+            value: apply_decay(output_value, profile.indirect_value_decay_per_step),
+            steps: profile
+                .recipe_opportunity_depth
+                .get()
+                .saturating_sub(remaining_depth)
+                .saturating_add(1),
+            recipe_id,
+        };
+
+        best = match best {
+            None => Some(candidate),
+            Some(current) if better_opportunity(candidate, current) => Some(candidate),
+            Some(current) => Some(current),
+        };
+    }
+
+    best
+}
+
+fn workstation_reachable(
+    actor: EntityId,
+    workstation_tag: Option<WorkstationTag>,
+    belief: &dyn GoalBeliefView,
+    profile: CommodityValuationProfile,
+) -> bool {
+    let Some(tag) = workstation_tag else {
+        return true;
+    };
+    let Some(origin) = belief.effective_place(actor) else {
+        return false;
+    };
+
+    if !belief.matching_workstations_at(origin, tag).is_empty() {
+        return true;
+    }
+    if profile.recipe_place_horizon == 0 {
+        return false;
+    }
+
+    let mut seen = BTreeSet::from([origin]);
+    let mut frontier = VecDeque::from([(origin, 0_u8)]);
+    while let Some((place, hops)) = frontier.pop_front() {
+        if hops >= profile.recipe_place_horizon {
+            continue;
+        }
+        for (adjacent, _) in belief.adjacent_places_with_travel_ticks(place) {
+            if !seen.insert(adjacent) {
+                continue;
+            }
+            if !belief.matching_workstations_at(adjacent, tag).is_empty() {
+                return true;
+            }
+            frontier.push_back((adjacent, hops.saturating_add(1)));
+        }
+    }
+
+    false
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sibling_inputs_satisfiable(
+    actor: EntityId,
+    target_commodity: CommodityKind,
+    recipe: &RecipeDefinition,
+    belief: &dyn GoalBeliefView,
+    recipes: &RecipeRegistry,
+    holdings: &BTreeMap<CommodityKind, u32>,
+    local_alternatives: &BTreeMap<CommodityKind, u32>,
+    profile: CommodityValuationProfile,
+    remaining_depth: u8,
+    path: &mut BTreeSet<(CommodityKind, u8)>,
+) -> bool {
+    recipe.inputs.iter().all(|(input_commodity, quantity)| {
+        if *input_commodity == target_commodity {
+            return true;
+        }
+
+        if accessible_quantity(holdings, local_alternatives, *input_commodity)
+            >= u64::from(quantity.0)
+        {
+            return true;
+        }
+
+        if remaining_depth <= 1 {
+            return false;
+        }
+
+        indirect_recipe_score_with_profile(
+            actor,
+            *input_commodity,
+            belief,
+            recipes,
+            holdings,
+            local_alternatives,
+            profile,
+            remaining_depth.saturating_sub(1),
+            path,
+        ) > 0
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn recipe_output_value(
+    actor: EntityId,
+    recipe: &RecipeDefinition,
+    belief: &dyn GoalBeliefView,
+    recipes: &RecipeRegistry,
+    holdings: &BTreeMap<CommodityKind, u32>,
+    local_alternatives: &BTreeMap<CommodityKind, u32>,
+    profile: CommodityValuationProfile,
+    remaining_depth: u8,
+    path: &mut BTreeSet<(CommodityKind, u8)>,
+) -> Option<u32> {
+    let mut produced_holdings = holdings.clone();
+    for (output_commodity, quantity) in &recipe.outputs {
+        let entry = produced_holdings.entry(*output_commodity).or_insert(0);
+        *entry = entry.saturating_add(quantity.0);
+    }
+
+    recipe
+        .outputs
+        .iter()
+        .map(|(output_commodity, _)| {
+            let direct_total = direct_survival_score(
+                actor,
+                *output_commodity,
+                belief,
+                &produced_holdings,
+                local_alternatives,
+            )
+            .saturating_add(treatment_score(
+                actor,
+                *output_commodity,
+                belief,
+                &produced_holdings,
+                local_alternatives,
+            ))
+            .saturating_add(enterprise_score(
+                actor,
+                *output_commodity,
+                belief,
+                &produced_holdings,
+                local_alternatives,
+            ));
+
+            let recursive_total = if remaining_depth > 1 {
+                indirect_recipe_score_with_profile(
+                    actor,
+                    *output_commodity,
+                    belief,
+                    recipes,
+                    &produced_holdings,
+                    local_alternatives,
+                    profile,
+                    remaining_depth.saturating_sub(1),
+                    path,
+                )
+            } else {
+                0
+            };
+
+            direct_total.max(recursive_total)
+        })
+        .max()
+        .filter(|value| *value > 0)
+}
+
+fn better_opportunity(candidate: BestOpportunity, current: BestOpportunity) -> bool {
+    candidate.value > current.value
+        || (candidate.value == current.value
+            && (candidate.steps < current.steps
+                || (candidate.steps == current.steps && candidate.recipe_id < current.recipe_id)))
+}
+
 fn accessible_quantity(
     holdings: &BTreeMap<CommodityKind, u32>,
     local_alternatives: &BTreeMap<CommodityKind, u32>,
@@ -120,6 +422,11 @@ fn accessible_quantity(
     held + alternatives
 }
 
+fn apply_decay(value: u32, decay: Permille) -> u32 {
+    let retained = 1000_u64.saturating_sub(u64::from(decay.value()));
+    saturating_u64_to_u32((u64::from(value) * retained) / 1000)
+}
+
 fn saturating_u64_to_u32(value: u64) -> u32 {
     value.try_into().unwrap_or(u32::MAX)
 }
@@ -127,14 +434,14 @@ fn saturating_u64_to_u32(value: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{commodity_opportunity_score, CommodityOpportunityBreakdown};
-    use crate::{GoalBeliefView, RecipeRegistry};
+    use crate::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
     use std::collections::BTreeMap;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU32, NonZeroU8};
     use worldwake_core::{
-        BeliefConfidencePolicy, BodyPart, CommodityKind, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        LoadUnits, MerchandiseProfile, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        Wound, WoundCause,
+        BeliefConfidencePolicy, BodyCostPerTick, BodyPart, CommodityKind,
+        CommodityValuationProfile, DemandObservation, DemandObservationReason, DriveThresholds,
+        EntityId, EntityKind, HomeostaticNeeds, LoadUnits, MerchandiseProfile, Permille,
+        Quantity, RecipeId, ResourceSource, Tick, WorkstationTag, Wound, WoundCause,
     };
 
     #[derive(Default)]
@@ -142,6 +449,11 @@ mod tests {
         needs: Option<HomeostaticNeeds>,
         wounds: Vec<Wound>,
         demand_memory: Vec<DemandObservation>,
+        commodity_valuation_profile: Option<CommodityValuationProfile>,
+        known_recipes: Vec<RecipeId>,
+        effective_places: BTreeMap<EntityId, EntityId>,
+        adjacent_places: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+        workstations_by_place: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
     }
 
     impl GoalBeliefView for StubBeliefView {
@@ -157,8 +469,8 @@ mod tests {
             Some(EntityKind::Agent)
         }
 
-        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
+            self.effective_places.get(&entity).copied()
         }
 
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
@@ -171,20 +483,24 @@ mod tests {
 
         fn adjacent_places_with_travel_ticks(
             &self,
-            _place: EntityId,
+            place: EntityId,
         ) -> Vec<(EntityId, NonZeroU32)> {
-            Vec::new()
+            self.adjacent_places.get(&place).cloned().unwrap_or_default()
         }
 
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
-            false
+        fn knows_recipe(&self, _actor: EntityId, recipe: RecipeId) -> bool {
+            self.known_recipes.contains(&recipe)
         }
 
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            Vec::new()
+            self.known_recipes.clone()
         }
 
-        fn unique_item_count(&self, _holder: EntityId, _kind: worldwake_core::UniqueItemKind) -> u32 {
+        fn unique_item_count(
+            &self,
+            _holder: EntityId,
+            _kind: worldwake_core::UniqueItemKind,
+        ) -> u32 {
             0
         }
 
@@ -233,7 +549,7 @@ mod tests {
             None
         }
 
-        fn workstation_tag(&self, _entity: EntityId) -> Option<worldwake_core::WorkstationTag> {
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
 
@@ -249,12 +565,11 @@ mod tests {
             Vec::new()
         }
 
-        fn matching_workstations_at(
-            &self,
-            _place: EntityId,
-            _tag: worldwake_core::WorkstationTag,
-        ) -> Vec<EntityId> {
-            Vec::new()
+        fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+            self.workstations_by_place
+                .get(&(place, tag))
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
@@ -295,6 +610,13 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
+        }
+
+        fn commodity_valuation_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<CommodityValuationProfile> {
+            self.commodity_valuation_profile
         }
 
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
@@ -368,6 +690,42 @@ mod tests {
 
     fn recipes() -> RecipeRegistry {
         RecipeRegistry::new()
+    }
+
+    fn valuation_profile(depth: u8, horizon: u8, decay: u16) -> CommodityValuationProfile {
+        CommodityValuationProfile {
+            recipe_opportunity_depth: NonZeroU8::new(depth).unwrap(),
+            recipe_place_horizon: horizon,
+            indirect_value_decay_per_step: Permille::new(decay).unwrap(),
+        }
+    }
+
+    fn recipe(
+        name: &str,
+        inputs: Vec<(CommodityKind, u32)>,
+        outputs: Vec<(CommodityKind, u32)>,
+        workstation: Option<WorkstationTag>,
+    ) -> RecipeDefinition {
+        RecipeDefinition {
+            name: name.to_string(),
+            inputs: inputs
+                .into_iter()
+                .map(|(commodity, qty)| (commodity, Quantity(qty)))
+                .collect(),
+            outputs: outputs
+                .into_iter()
+                .map(|(commodity, qty)| (commodity, Quantity(qty)))
+                .collect(),
+            work_ticks: NonZeroU32::new(4).unwrap(),
+            required_workstation_tag: workstation,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        }
+    }
+
+    fn with_actor_place(mut view: StubBeliefView, place: EntityId) -> StubBeliefView {
+        view.effective_places.insert(actor(), place);
+        view
     }
 
     #[test]
@@ -479,17 +837,322 @@ mod tests {
     }
 
     #[test]
-    fn commodity_opportunity_indirect_recipe_score_is_stub_zero() {
+    fn firewood_gains_indirect_value_for_known_reachable_bread_recipe() {
+        let origin = EntityId {
+            slot: 10,
+            generation: 0,
+        };
+        let mill = EntityId {
+            slot: 11,
+            generation: 0,
+        };
+        let mut recipes = RecipeRegistry::new();
+        let bake_bread = recipes.register(recipe(
+            "Bake Bread",
+            vec![(CommodityKind::Grain, 1), (CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Bread, 1)],
+            Some(WorkstationTag::Mill),
+        ));
+        let mut view = with_actor_place(
+            StubBeliefView {
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(300).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                )),
+                commodity_valuation_profile: Some(valuation_profile(3, 1, 100)),
+                known_recipes: vec![bake_bread],
+                ..Default::default()
+            },
+            origin,
+        );
+        view.adjacent_places
+            .insert(origin, vec![(mill, NonZeroU32::new(1).unwrap())]);
+        view.workstations_by_place
+            .insert((mill, WorkstationTag::Mill), vec![EntityId { slot: 12, generation: 0 }]);
+
         let breakdown = commodity_opportunity_score(
             actor(),
-            CommodityKind::Grain,
-            &StubBeliefView::default(),
-            &recipes(),
+            CommodityKind::Firewood,
+            &view,
+            &recipes,
+            &holdings(&[(CommodityKind::Grain, 1)]),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(breakdown.direct_survival_score, 0);
+        assert_eq!(breakdown.indirect_recipe_score, 234);
+    }
+
+    #[test]
+    fn no_indirect_value_when_required_workstation_not_reachable() {
+        let origin = EntityId {
+            slot: 20,
+            generation: 0,
+        };
+        let mut recipes = RecipeRegistry::new();
+        let bake_bread = recipes.register(recipe(
+            "Bake Bread",
+            vec![(CommodityKind::Grain, 1), (CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Bread, 1)],
+            Some(WorkstationTag::Mill),
+        ));
+        let view = with_actor_place(
+            StubBeliefView {
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(300).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                )),
+                commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+                known_recipes: vec![bake_bread],
+                ..Default::default()
+            },
+            origin,
+        );
+
+        let breakdown = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &view,
+            &recipes,
+            &holdings(&[(CommodityKind::Grain, 1)]),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(breakdown.indirect_recipe_score, 0);
+    }
+
+    #[test]
+    fn no_indirect_value_when_recipe_is_unknown() {
+        let origin = EntityId {
+            slot: 30,
+            generation: 0,
+        };
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(recipe(
+            "Bake Bread",
+            vec![(CommodityKind::Grain, 1), (CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Bread, 1)],
+            Some(WorkstationTag::Mill),
+        ));
+        let mut view = with_actor_place(
+            StubBeliefView {
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(300).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                )),
+                commodity_valuation_profile: Some(valuation_profile(3, 1, 100)),
+                ..Default::default()
+            },
+            origin,
+        );
+        view.workstations_by_place
+            .insert((origin, WorkstationTag::Mill), vec![EntityId { slot: 31, generation: 0 }]);
+
+        let breakdown = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &view,
+            &recipes,
+            &holdings(&[(CommodityKind::Grain, 1)]),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(breakdown.indirect_recipe_score, 0);
+    }
+
+    #[test]
+    fn sibling_input_unavailability_blocks_indirect_value() {
+        let origin = EntityId {
+            slot: 40,
+            generation: 0,
+        };
+        let mut recipes = RecipeRegistry::new();
+        let bake_bread = recipes.register(recipe(
+            "Bake Bread",
+            vec![(CommodityKind::Grain, 1), (CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Bread, 1)],
+            Some(WorkstationTag::Mill),
+        ));
+        let mut view = with_actor_place(
+            StubBeliefView {
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(300).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                )),
+                commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+                known_recipes: vec![bake_bread],
+                ..Default::default()
+            },
+            origin,
+        );
+        view.workstations_by_place
+            .insert((origin, WorkstationTag::Mill), vec![EntityId { slot: 41, generation: 0 }]);
+
+        let breakdown = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &view,
+            &recipes,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
 
         assert_eq!(breakdown.indirect_recipe_score, 0);
+    }
+
+    #[test]
+    fn multistep_chain_propagates_with_decay_and_respects_depth_limit() {
+        let origin = EntityId {
+            slot: 50,
+            generation: 0,
+        };
+        let mut recipes = RecipeRegistry::new();
+        let bake_bread = recipes.register(recipe(
+            "Bake Bread",
+            vec![(CommodityKind::Waste, 1)],
+            vec![(CommodityKind::Bread, 1)],
+            Some(WorkstationTag::Mill),
+        ));
+        let make_waste = recipes.register(recipe(
+            "Make Waste",
+            vec![(CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Waste, 1)],
+            Some(WorkstationTag::Forge),
+        ));
+        let mut deep_view = with_actor_place(
+            StubBeliefView {
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(300).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                )),
+                commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+                known_recipes: vec![bake_bread, make_waste],
+                ..Default::default()
+            },
+            origin,
+        );
+        deep_view.workstations_by_place.insert(
+            (origin, WorkstationTag::Mill),
+            vec![EntityId { slot: 51, generation: 0 }],
+        );
+        deep_view.workstations_by_place.insert(
+            (origin, WorkstationTag::Forge),
+            vec![EntityId { slot: 52, generation: 0 }],
+        );
+
+        let waste = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Waste,
+            &deep_view,
+            &recipes,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        let firewood = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &deep_view,
+            &recipes,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+
+        let shallow_view = StubBeliefView {
+            commodity_valuation_profile: Some(valuation_profile(1, 0, 100)),
+            ..deep_view
+        };
+        let shallow = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &shallow_view,
+            &recipes,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(waste.indirect_recipe_score, 234);
+        assert_eq!(firewood.indirect_recipe_score, 210);
+        assert!(firewood.indirect_recipe_score < waste.indirect_recipe_score);
+        assert_eq!(shallow.indirect_recipe_score, 0);
+    }
+
+    #[test]
+    fn deterministic_best_path_prefers_higher_value_and_does_not_sum_paths() {
+        let origin = EntityId {
+            slot: 60,
+            generation: 0,
+        };
+        let mut recipes = RecipeRegistry::new();
+        let bake_bread = recipes.register(recipe(
+            "Bake Bread",
+            vec![(CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Bread, 1)],
+            Some(WorkstationTag::Mill),
+        ));
+        let boil_water = recipes.register(recipe(
+            "Boil Water",
+            vec![(CommodityKind::Firewood, 1)],
+            vec![(CommodityKind::Water, 1)],
+            Some(WorkstationTag::Forge),
+        ));
+        let mut view = with_actor_place(
+            StubBeliefView {
+                needs: Some(HomeostaticNeeds::new(
+                    Permille::new(300).unwrap(),
+                    Permille::new(200).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                    Permille::new(0).unwrap(),
+                )),
+                commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+                known_recipes: vec![bake_bread, boil_water],
+                ..Default::default()
+            },
+            origin,
+        );
+        view.workstations_by_place.insert(
+            (origin, WorkstationTag::Mill),
+            vec![EntityId { slot: 61, generation: 0 }],
+        );
+        view.workstations_by_place.insert(
+            (origin, WorkstationTag::Forge),
+            vec![EntityId { slot: 62, generation: 0 }],
+        );
+
+        let first = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &view,
+            &recipes,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        let second = commodity_opportunity_score(
+            actor(),
+            CommodityKind::Firewood,
+            &view,
+            &recipes,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(first, second);
+        assert_eq!(first.indirect_recipe_score, 234);
     }
 
     #[test]
@@ -504,6 +1167,7 @@ mod tests {
             )),
             wounds: vec![wound(250)],
             demand_memory: vec![demand_observation(CommodityKind::Bread, 2)],
+            ..Default::default()
         };
         let held = holdings(&[(CommodityKind::Bread, 1), (CommodityKind::Medicine, 1)]);
         let alternatives = holdings(&[(CommodityKind::Bread, 1)]);

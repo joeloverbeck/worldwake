@@ -1,6 +1,6 @@
 # S06COMOPPVAL-004: Recipe opportunity propagation (indirect value)
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-sim` (commodity_opportunity.rs — indirect recipe value propagation)
@@ -128,3 +128,20 @@ When multiple recipes could provide indirect value for the same commodity:
 
 1. `cargo test -p worldwake-sim -- commodity_opportunity` — targeted tests
 2. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+- **Completed**: 2026-04-02
+- **What changed**:
+  - replaced the `indirect_recipe_score: 0` stub in `crates/worldwake-sim/src/commodity_opportunity.rs` with bounded indirect recipe propagation
+  - added deterministic workstation reachability, sibling-input satisfiability, recursive best-path selection, decay per step, and loop prevention
+  - extended focused tests in `crates/worldwake-sim/src/commodity_opportunity.rs` to cover reachable indirect value, unknown recipe suppression, unreachable workstation suppression, sibling-input blocking, multi-step decay, depth limits, best-path selection, and determinism
+- **Deviations from original plan**:
+  - output valuation is computed against a produced-holdings view so recipe outputs are scored in the post-craft commodity context rather than only against pre-craft holdings
+  - deterministic tie-breaking is implemented as best value, then fewer steps, then lower `RecipeId`, which preserves the intended stable best-path contract
+- **Verification results**:
+  - `cargo test -p worldwake-sim commodity_opportunity -- --nocapture`
+  - `cargo test -p worldwake-sim belief_view -- --nocapture`
+  - `cargo test -p worldwake-sim`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
