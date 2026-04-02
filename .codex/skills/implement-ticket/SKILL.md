@@ -28,6 +28,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
 3. Validate the ticket's concrete claims:
    - referenced files exist
    - referenced types, functions, modules, commands, and tests exist
+   - when a ticket extracts or reuses private helper logic, confirm the exact current crate/file ownership of that helper before finalizing the implementation plan or `Files to Touch`
    - described architecture still matches the live code
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
@@ -85,6 +86,8 @@ For component-registration work, distinguish:
 Do not assume every file that references the schema macro needs a new top-level import; verify actual local type use first.
 
 For trait-surface tickets, do not assume the named trait is implemented directly at each consumer. Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits, and correct the ticket if the implementation boundary is broader than the original prose.
+
+When a ticket is an explicit staged extraction step, temporary duplicated logic is acceptable only if the caller-rewire or old-path removal step is already owned by a named follow-up ticket. Correct the current ticket to state that boundary explicitly instead of leaving the duplication looking accidental.
 
 ### 5. Implement with Worldwake discipline
 
