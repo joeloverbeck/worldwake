@@ -1,6 +1,6 @@
 # S10BILTRANEG-005: Negotiation protocol in trade action lifecycle
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-systems` (trade action handlers: start, tick, commit, abort)
@@ -152,3 +152,29 @@ The second approach is cleaner — it keeps `execute_trade_transfers` unchanged.
 2. `cargo test -p worldwake-systems -- trade` — all trade tests
 3. `cargo test -p worldwake-ai` — golden tests (regression check)
 4. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings` — full suite
+
+## Outcome
+
+Completed: 2026-04-02
+
+What changed:
+- `start_trade` now initializes `ActionState::Trade` and validates negotiation context without requiring mutual bundle acceptance up front.
+- `tick_trade` now runs the alternating-offer protocol using reservation pricing, concession shaping, deadline modulation, and monotonic buyer/seller concession.
+- `commit_trade` now executes transfers at the agreed price from negotiation state and records `TradeAgreed` demand observations for both participants.
+- `abort_trade` now records failed-negotiation aftermath as `WantedToBuyButTooExpensive` and `WantedToSellButNoBuyer` when the trade context remains resolvable.
+- focused negotiation lifecycle tests were added in `crates/worldwake-systems/src/trade_actions.rs`.
+
+Deviations from original plan:
+- no additional production files needed changes beyond `crates/worldwake-systems/src/trade_actions.rs`; the downstream AI and workspace verification passed without requiring behavioral follow-up code.
+- after the main test passes, clippy required small mechanical cleanup in the same file; the affected trade suite was rerun afterward.
+
+Verification results:
+- `cargo test -p worldwake-systems negotiation_ -- --nocapture`
+- `cargo test -p worldwake-systems trade_start_initializes_negotiation_state_without_bundle_acceptance -- --nocapture`
+- `cargo test -p worldwake-systems successful_trade_transfers_goods_and_coin_with_trade_tags_and_provenance -- --nocapture`
+- `cargo test -p worldwake-systems partial_lot_trade_splits_and_preserves_conservation -- --nocapture`
+- `cargo test -p worldwake-systems trade_aborts_when_counterparty_leaves_before_commit -- --nocapture`
+- `cargo test -p worldwake-systems -- trade`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

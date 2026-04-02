@@ -95,6 +95,7 @@ When a shared type changes, treat helper factories, sample fixtures, serialized 
 7. If authoritative validation, control checks, action preconditions, target specs, or other affordance-surface behavior changes, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md). If the change removes candidates earlier in that pipeline, update stale downstream planner/search harness expectations to the new admission contract instead of weakening the implementation to preserve obsolete traces.
 8. When widening an existing action into a new custody or state regime, audit all related stored state carriers so the moved entity does not keep stale assignment, listing, queue, or other regime-specific markers after the transition.
 9. When adding a new enum variant, search for exhaustive matches, pattern arms, and state validators in dependent crates and update the non-owning handlers explicitly before broad verification.
+10. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
 
 ### 6. Verify at the right boundary
 
@@ -109,7 +110,7 @@ When the change touches more than one focused proof surface inside the same crat
 
 Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
 
-If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale.
+If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 

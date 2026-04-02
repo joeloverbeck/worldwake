@@ -10,7 +10,7 @@ use worldwake_sim::{
     ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
     ActionPayload, ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr,
     Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RuntimeBeliefView,
-    StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
+    StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
 };
 
 pub fn register_trade_action(
@@ -173,17 +173,164 @@ fn start_trade(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
     let payload = trade_payload(def, instance)?;
-    let _ = validate_trade_bundle_context(txn, instance, payload)?;
-    Ok(Some(ActionState::Empty))
+    let _ = validate_trade_context_for_negotiation(txn, instance, payload)?;
+    Ok(Some(ActionState::Trade {
+        round: 0,
+        initiator_role: worldwake_core::TradeRole::Buyer,
+        initiator_last_offer: Some(payload.offered_quantity),
+        responder_last_offer: None,
+        agreed_price: None,
+    }))
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn tick_trade(
-    _def: &ActionDef,
-    _instance: &mut ActionInstance,
+    def: &ActionDef,
+    instance: &mut ActionInstance,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
+    let payload = trade_payload(def, instance)?;
+    let (counterparty, place, requested_commodity) =
+        validate_trade_context_for_negotiation(txn, instance, payload)?;
+    let state = match instance.local_state {
+        Some(ActionState::Trade {
+            round,
+            initiator_role,
+            initiator_last_offer,
+            responder_last_offer,
+            agreed_price,
+        }) => (
+            round,
+            initiator_role,
+            initiator_last_offer,
+            responder_last_offer,
+            agreed_price,
+        ),
+        _ => {
+            return Err(ActionError::InternalError(
+                "trade action missing negotiation state".to_string(),
+            ))
+        }
+    };
+    let (round, initiator_role, initiator_last_offer, responder_last_offer, agreed_price) = state;
+    if agreed_price.is_some() {
+        return Ok(ActionProgress::Complete);
+    }
+
+    let responder_role = opposite_trade_role(initiator_role);
+    let (current_actor, current_role, current_offer) = if round % 2 == 0 {
+        (counterparty, responder_role, initiator_last_offer)
+    } else {
+        (instance.actor, initiator_role, responder_last_offer)
+    };
+    let current_offer = current_offer.ok_or_else(|| {
+        ActionError::InternalError("trade negotiation lost current offer".to_string())
+    })?;
+    let reservation = reservation_price_for_actor(
+        txn,
+        current_actor,
+        current_role,
+        payload.offered_commodity,
+        requested_commodity,
+        place,
+        if current_actor == instance.actor {
+            counterparty
+        } else {
+            instance.actor
+        },
+    );
+
+    if offer_satisfies_reservation(current_role, current_offer, reservation) {
+        instance.local_state = Some(ActionState::Trade {
+            round,
+            initiator_role,
+            initiator_last_offer,
+            responder_last_offer,
+            agreed_price: Some(current_offer),
+        });
+        return Ok(ActionProgress::Complete);
+    }
+
+    let profile = txn
+        .get_component_trade_disposition_profile(current_actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::AbortRequested(ActionAbortRequestReason::TradeBundleRejected {
+                participant: current_actor,
+                acceptance: TradeAcceptance::Reject {
+                    reason: TradeRejectionReason::InsufficientPayment,
+                },
+            })
+        })?;
+    let deadline = urgency_modulated_deadline(
+        profile.negotiation_round_ticks,
+        txn.get_component_homeostatic_needs(current_actor),
+        requested_commodity,
+    );
+    if round >= deadline {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TradeBundleRejected {
+                participant: current_actor,
+                acceptance: TradeAcceptance::Reject {
+                    reason: TradeRejectionReason::InsufficientPayment,
+                },
+            },
+        ));
+    }
+
+    let opening = if current_role == initiator_role {
+        initiator_last_offer.unwrap_or_else(|| {
+            derive_opening_offer(
+                current_role,
+                reservation,
+                profile.initial_offer_bias,
+                profile.rejection_escalation_rate,
+                0,
+            )
+        })
+    } else {
+        responder_last_offer.unwrap_or_else(|| {
+            derive_opening_offer(
+                current_role,
+                reservation,
+                profile.initial_offer_bias,
+                profile.rejection_escalation_rate,
+                0,
+            )
+        })
+    };
+    let generated = generate_offer(
+        current_role,
+        reservation,
+        opening,
+        round,
+        deadline,
+        profile.concession_rate,
+    );
+    let next_offer = match current_role {
+        worldwake_core::TradeRole::Buyer => initiator_last_offer.map_or(generated, |prev| {
+            Quantity(generated.0.max(prev.0))
+        }),
+        worldwake_core::TradeRole::Seller => responder_last_offer.map_or(generated, |prev| {
+            Quantity(generated.0.min(prev.0))
+        }),
+    };
+
+    instance.local_state = Some(ActionState::Trade {
+        round: round.saturating_add(1),
+        initiator_role,
+        initiator_last_offer: if current_role == initiator_role {
+            Some(next_offer)
+        } else {
+            initiator_last_offer
+        },
+        responder_last_offer: if current_role == responder_role {
+            Some(next_offer)
+        } else {
+            responder_last_offer
+        },
+        agreed_price: None,
+    });
     Ok(ActionProgress::Continue)
 }
 
@@ -194,19 +341,79 @@ fn commit_trade(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let payload = trade_payload(def, instance)?;
-    let (counterparty, place) = validate_trade_bundle_context(txn, instance, payload)?;
-    execute_trade_transfers(txn, instance.actor, counterparty, payload, place)?;
+    let Some(ActionState::Trade {
+        agreed_price: Some(agreed_price),
+        ..
+    }) = instance.local_state
+    else {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::TradeBundleRejected {
+                participant: instance.actor,
+                acceptance: TradeAcceptance::Reject {
+                    reason: TradeRejectionReason::InsufficientPayment,
+                },
+            },
+        ));
+    };
+    let mut agreed_payload = payload.clone();
+    agreed_payload.offered_quantity = agreed_price;
+    let (counterparty, place, requested_commodity) =
+        validate_trade_context_for_negotiation(txn, instance, &agreed_payload)?;
+    execute_trade_transfers(txn, instance.actor, counterparty, &agreed_payload, place)?;
+    record_trade_observation(
+        txn,
+        instance.actor,
+        requested_commodity,
+        agreed_price,
+        place,
+        Some(counterparty),
+        DemandObservationReason::TradeAgreed,
+    );
+    record_trade_observation(
+        txn,
+        counterparty,
+        requested_commodity,
+        agreed_price,
+        place,
+        Some(instance.actor),
+        DemandObservationReason::TradeAgreed,
+    );
     Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_trade(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _reason: &AbortReason,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    let Some(payload) = instance.payload.as_trade() else {
+        return Ok(());
+    };
+    let Ok((counterparty, place)) = validate_trade_context(txn, instance, payload) else {
+        return Ok(());
+    };
+    let commodity = sale_lot_commodity(txn, payload.sale_lot).unwrap_or(CommodityKind::Coin);
+    record_trade_observation(
+        txn,
+        instance.actor,
+        commodity,
+        payload.requested_quantity,
+        place,
+        Some(counterparty),
+        DemandObservationReason::WantedToBuyButTooExpensive,
+    );
+    record_trade_observation(
+        txn,
+        counterparty,
+        commodity,
+        payload.requested_quantity,
+        place,
+        Some(instance.actor),
+        DemandObservationReason::WantedToSellButNoBuyer,
+    );
     Ok(())
 }
 
@@ -244,15 +451,13 @@ fn validate_trade_context(
     Ok((counterparty, place))
 }
 
-fn validate_trade_bundle_context(
+fn validate_trade_context_for_negotiation(
     txn: &WorldTxn<'_>,
     instance: &ActionInstance,
     payload: &TradeActionPayload,
-) -> Result<(EntityId, EntityId), ActionError> {
+) -> Result<(EntityId, EntityId, CommodityKind), ActionError> {
     let (counterparty, place) = validate_trade_context(txn, instance, payload)?;
-    // sale_lot_commodity validates the lot entity still exists.
     let requested_commodity = sale_lot_commodity(txn, payload.sale_lot)?;
-    // The sale lot must still be listed.
     if txn.get_component_sale_listing(payload.sale_lot).is_none() {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::SaleLotNotListed {
@@ -260,8 +465,6 @@ fn validate_trade_bundle_context(
             },
         ));
     }
-    // The seller must control the sale lot (either via direct possession or
-    // via facility display container ownership).
     if txn.can_exercise_control(counterparty, payload.sale_lot).is_err() {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::SaleLotNotPossessedBySeller {
@@ -282,60 +485,7 @@ fn validate_trade_bundle_context(
         requested_commodity,
         payload.requested_quantity,
     )?;
-    ensure_bundle_accepted(
-        txn,
-        instance.actor,
-        counterparty,
-        requested_commodity,
-        payload,
-        place,
-    )?;
-    Ok((counterparty, place))
-}
-
-fn ensure_bundle_accepted(
-    txn: &WorldTxn<'_>,
-    actor: EntityId,
-    counterparty: EntityId,
-    requested_commodity: CommodityKind,
-    payload: &TradeActionPayload,
-    place: EntityId,
-) -> Result<(), ActionError> {
-    let actor_acceptance = evaluate_for_participant(
-        txn,
-        actor,
-        counterparty,
-        place,
-        [(payload.offered_commodity, payload.offered_quantity)],
-        [(requested_commodity, payload.requested_quantity)],
-    );
-    if actor_acceptance != TradeAcceptance::Accept {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::TradeBundleRejected {
-                participant: actor,
-                acceptance: actor_acceptance,
-            },
-        ));
-    }
-
-    let counterparty_acceptance = evaluate_for_participant(
-        txn,
-        counterparty,
-        actor,
-        place,
-        [(requested_commodity, payload.requested_quantity)],
-        [(payload.offered_commodity, payload.offered_quantity)],
-    );
-    if counterparty_acceptance != TradeAcceptance::Accept {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::TradeBundleRejected {
-                participant: counterparty,
-                acceptance: counterparty_acceptance,
-            },
-        ));
-    }
-
-    Ok(())
+    Ok((counterparty, place, requested_commodity))
 }
 
 fn validate_trade_payload_override(
@@ -653,6 +803,87 @@ fn demand_memory_for(
 ) -> Option<worldwake_core::DemandMemory> {
     let observations = view.demand_memory(actor);
     (!observations.is_empty()).then_some(worldwake_core::DemandMemory { observations })
+}
+
+fn opposite_trade_role(role: worldwake_core::TradeRole) -> worldwake_core::TradeRole {
+    match role {
+        worldwake_core::TradeRole::Buyer => worldwake_core::TradeRole::Seller,
+        worldwake_core::TradeRole::Seller => worldwake_core::TradeRole::Buyer,
+    }
+}
+
+fn offer_satisfies_reservation(
+    role: worldwake_core::TradeRole,
+    offer: Quantity,
+    reservation: Quantity,
+) -> bool {
+    match role {
+        worldwake_core::TradeRole::Buyer => offer <= reservation,
+        worldwake_core::TradeRole::Seller => offer >= reservation,
+    }
+}
+
+fn reservation_price_for_actor(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    role: worldwake_core::TradeRole,
+    offered_commodity: CommodityKind,
+    requested_commodity: CommodityKind,
+    place: EntityId,
+    counterparty: EntityId,
+) -> Quantity {
+    match role {
+        worldwake_core::TradeRole::Buyer => buyer_reservation_price(
+            txn.get_component_homeostatic_needs(actor),
+            txn.get_component_wound_list(actor),
+            requested_commodity,
+            txn.controlled_commodity_quantity(actor, CommodityKind::Coin),
+            local_alternatives(txn, actor, counterparty, place)
+                .into_iter()
+                .filter(|(_, commodity, quantity)| {
+                    *commodity == requested_commodity && *quantity > Quantity(0)
+                })
+                .count() as u32,
+        ),
+        worldwake_core::TradeRole::Seller => seller_reservation_price(
+            txn.get_component_homeostatic_needs(actor),
+            requested_commodity,
+            txn.controlled_commodity_quantity(actor, requested_commodity),
+            txn.get_component_demand_memory(actor),
+        )
+        .max(Quantity(1))
+        .max(if offered_commodity == CommodityKind::Coin {
+            Quantity(1)
+        } else {
+            Quantity(0)
+        }),
+    }
+}
+
+fn record_trade_observation(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    commodity: CommodityKind,
+    quantity: Quantity,
+    place: EntityId,
+    counterparty: Option<EntityId>,
+    reason: DemandObservationReason,
+) {
+    let mut memory = txn
+        .get_component_demand_memory(actor)
+        .cloned()
+        .unwrap_or(DemandMemory {
+            observations: Vec::new(),
+        });
+    memory.observations.push(DemandObservation {
+        commodity,
+        quantity,
+        place,
+        tick: txn.tick(),
+        counterparty,
+        reason,
+    });
+    let _ = txn.set_component_demand_memory(actor, memory);
 }
 
 fn evaluate_for_participant(
@@ -1211,8 +1442,8 @@ mod tests {
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
         ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionStatus, Affordance, DeterministicRng,
-        PayloadEntityRole, PerAgentBeliefView, TickOutcome, TradeAcceptance, TradeActionPayload,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Affordance, DeterministicRng,
+        PayloadEntityRole, PerAgentBeliefView, TickOutcome, TradeActionPayload,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1955,6 +2186,50 @@ mod tests {
             txn.archive_entity(self.counterparty_offer).unwrap();
             commit_txn(txn);
         }
+
+        fn set_counterparty_demand_memory(&mut self, observations: Vec<DemandObservation>) {
+            let mut txn = new_txn(&mut self.world, 3);
+            txn.set_component_demand_memory(self.counterparty, DemandMemory { observations })
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        fn set_actor_trade_profile(&mut self, profile: TradeDispositionProfile) {
+            let mut txn = new_txn(&mut self.world, 3);
+            txn.set_component_trade_disposition_profile(self.actor, profile)
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        fn set_counterparty_trade_profile(&mut self, profile: TradeDispositionProfile) {
+            let mut txn = new_txn(&mut self.world, 3);
+            txn.set_component_trade_disposition_profile(self.counterparty, profile)
+                .unwrap();
+            commit_txn(txn);
+        }
+
+        fn tick(
+            &mut self,
+            instance_id: ActionInstanceId,
+            active: &mut BTreeMap<ActionInstanceId, worldwake_sim::ActionInstance>,
+            tick: u64,
+        ) -> Result<TickOutcome, ActionError> {
+            tick_action(
+                instance_id,
+                &self.defs,
+                &self.handlers,
+                ActionExecutionAuthority {
+                    active_actions: active,
+                    world: &mut self.world,
+                    event_log: &mut self.log,
+                    rng: &mut self.rng,
+                },
+                ActionExecutionContext {
+                    cause: CauseRef::Bootstrap,
+                    tick: Tick(tick),
+                },
+            )
+        }
     }
 
     #[test]
@@ -2266,6 +2541,181 @@ mod tests {
     }
 
     #[test]
+    fn negotiation_converges_and_commits_at_agreed_price() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(5),
+            CommodityKind::Bread,
+            Quantity(1),
+            20,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.payload.offered_quantity = Quantity(1);
+        harness.set_actor_trade_profile(TradeDispositionProfile {
+            negotiation_round_ticks: nz(20),
+            initial_offer_bias: pm(500),
+            concession_rate: pm(700),
+            rejection_escalation_rate: pm(200),
+            demand_memory_retention_ticks: 10,
+            market_presence_ticks: nz(30),
+        });
+        harness.set_counterparty_trade_profile(TradeDispositionProfile {
+            negotiation_round_ticks: nz(5),
+            initial_offer_bias: pm(500),
+            concession_rate: pm(200),
+            rejection_escalation_rate: pm(200),
+            demand_memory_retention_ticks: 10,
+            market_presence_ticks: nz(30),
+        });
+        harness.set_counterparty_demand_memory(vec![
+            expensive_rejection(CommodityKind::Bread, harness.actor, 1),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 2),
+        ]);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let first = harness.tick(instance_id, &mut active, 4).unwrap();
+        assert!(matches!(first, TickOutcome::Continuing));
+        let second = harness.tick(instance_id, &mut active, 5).unwrap();
+
+        assert!(matches!(second, TickOutcome::Committed { .. }));
+        assert_eq!(
+            harness.world.controlled_commodity_quantity(harness.counterparty, CommodityKind::Coin),
+            Quantity(4)
+        );
+        assert_eq!(
+            harness.world.controlled_commodity_quantity(harness.actor, CommodityKind::Coin),
+            Quantity(1)
+        );
+        let buyer_memory = harness.world.get_component_demand_memory(harness.actor).unwrap();
+        let seller_memory = harness
+            .world
+            .get_component_demand_memory(harness.counterparty)
+            .unwrap();
+        assert!(buyer_memory
+            .observations
+            .iter()
+            .any(|obs| obs.reason == DemandObservationReason::TradeAgreed && obs.quantity == Quantity(4)));
+        assert!(seller_memory
+            .observations
+            .iter()
+            .any(|obs| obs.reason == DemandObservationReason::TradeAgreed && obs.quantity == Quantity(4)));
+    }
+
+    #[test]
+    fn negotiation_walkaway_records_failed_trade_observations() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+            Quantity(1),
+            3,
+            HomeostaticNeeds::new_sated(),
+        );
+        harness.set_counterparty_trade_profile(TradeDispositionProfile {
+            negotiation_round_ticks: nz(1),
+            initial_offer_bias: pm(500),
+            concession_rate: pm(200),
+            rejection_escalation_rate: pm(200),
+            demand_memory_retention_ticks: 10,
+            market_presence_ticks: nz(30),
+        });
+        harness.set_counterparty_demand_memory(vec![
+            expensive_rejection(CommodityKind::Bread, harness.actor, 1),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 2),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 3),
+        ]);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let first = harness.tick(instance_id, &mut active, 4).unwrap();
+        assert!(matches!(first, TickOutcome::Continuing));
+        let second = harness.tick(instance_id, &mut active, 5).unwrap();
+        let third = harness.tick(instance_id, &mut active, 6).unwrap();
+
+        assert!(matches!(second, TickOutcome::Continuing));
+        assert!(matches!(third, TickOutcome::Aborted { .. }));
+        let buyer_memory = harness.world.get_component_demand_memory(harness.actor).unwrap();
+        let seller_memory = harness
+            .world
+            .get_component_demand_memory(harness.counterparty)
+            .unwrap();
+        assert!(buyer_memory.observations.iter().any(|obs| {
+            obs.reason == DemandObservationReason::WantedToBuyButTooExpensive
+                && obs.counterparty == Some(harness.counterparty)
+        }));
+        assert!(seller_memory.observations.iter().any(|obs| {
+            obs.reason == DemandObservationReason::WantedToSellButNoBuyer
+                && obs.counterparty == Some(harness.actor)
+        }));
+    }
+
+    #[test]
+    fn negotiation_tick_advances_round_and_preserves_monotonic_concession() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(8),
+            CommodityKind::Bread,
+            Quantity(1),
+            100,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.payload.offered_quantity = Quantity(1);
+        harness.set_actor_trade_profile(TradeDispositionProfile {
+            negotiation_round_ticks: nz(100),
+            initial_offer_bias: pm(500),
+            concession_rate: pm(700),
+            rejection_escalation_rate: pm(200),
+            demand_memory_retention_ticks: 10,
+            market_presence_ticks: nz(30),
+        });
+        harness.set_counterparty_trade_profile(TradeDispositionProfile {
+            negotiation_round_ticks: nz(6),
+            initial_offer_bias: pm(500),
+            concession_rate: pm(300),
+            rejection_escalation_rate: pm(200),
+            demand_memory_retention_ticks: 10,
+            market_presence_ticks: nz(30),
+        });
+        harness.set_counterparty_demand_memory(vec![
+            expensive_rejection(CommodityKind::Bread, harness.actor, 1),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 2),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 3),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 4),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 5),
+        ]);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let outcome_one = harness.tick(instance_id, &mut active, 4).unwrap();
+        assert!(matches!(outcome_one, TickOutcome::Continuing));
+        let state_one = active.get(&instance_id).unwrap().local_state;
+        let ActionState::Trade {
+            round: round_one,
+            initiator_last_offer: initiator_one,
+            responder_last_offer: responder_one,
+            ..
+        } = state_one.unwrap()
+        else {
+            panic!("trade state should be present after first negotiation tick");
+        };
+        assert_eq!(round_one, 1);
+
+        let outcome_two = harness.tick(instance_id, &mut active, 5).unwrap();
+        assert!(matches!(outcome_two, TickOutcome::Continuing));
+        let state_two = active.get(&instance_id).unwrap().local_state;
+        let ActionState::Trade {
+            round: round_two,
+            initiator_last_offer: initiator_two,
+            responder_last_offer: responder_two,
+            ..
+        } = state_two.unwrap()
+        else {
+            panic!("trade state should be present after second negotiation tick");
+        };
+        assert_eq!(round_two, 2);
+        assert!(initiator_two.unwrap() >= initiator_one.unwrap());
+        assert!(responder_two.unwrap() <= responder_one.unwrap());
+    }
+
+    #[test]
     fn trade_start_rejects_when_counterparty_lacks_requested_commodity() {
         let mut harness = TradeHarness::new(
             CommodityKind::Coin,
@@ -2429,35 +2879,43 @@ mod tests {
     }
 
     #[test]
-    fn trade_start_rejects_when_bundle_is_rejected() {
+    fn trade_start_initializes_negotiation_state_without_bundle_acceptance() {
         let mut harness = TradeHarness::new(
             CommodityKind::Coin,
             Quantity(1),
             CommodityKind::Bread,
             Quantity(1),
-            1,
+            3,
             HomeostaticNeeds::new_sated(),
         );
-        let error = harness.start_result().unwrap_err();
+        harness.set_counterparty_demand_memory(vec![
+            expensive_rejection(CommodityKind::Bread, harness.actor, 1),
+            expensive_rejection(CommodityKind::Bread, harness.actor, 2),
+        ]);
 
-        assert!(matches!(
-            error,
-            ActionError::AbortRequested(ActionAbortRequestReason::TradeBundleRejected {
-                participant,
-                acceptance: TradeAcceptance::Reject { .. },
-            }) if participant == harness.actor
-        ));
+        let (_instance_id, active) = harness.start_with_active();
+        let instance = active.values().next().unwrap();
+
+        assert_eq!(
+            instance.local_state,
+            Some(ActionState::Trade {
+                round: 0,
+                initiator_role: worldwake_core::TradeRole::Buyer,
+                initiator_last_offer: Some(Quantity(1)),
+                responder_last_offer: None,
+                agreed_price: None,
+            })
+        );
         assert_eq!(
             harness.world.possessor_of(harness.actor_offer),
             Some(harness.actor)
         );
-        // Counterparty's lot stays in its display container (not possessed directly).
         assert!(
             harness
                 .world
                 .can_exercise_control(harness.counterparty, harness.counterparty_offer)
                 .is_ok(),
-            "counterparty should still control the sale lot after rejected trade"
+            "counterparty should still control the sale lot after trade start"
         );
     }
 
