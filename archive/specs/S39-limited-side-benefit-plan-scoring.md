@@ -1,5 +1,7 @@
 # S39: Limited Side-Benefit Plan Scoring
 
+**Status**: ✅ COMPLETED
+
 ## Summary
 
 Allow plan selection to consider secondary benefits of a plan without modifying plan search. Currently plans are strictly single-goal — a trip to market to buy food cannot accrue benefit from also being near a place where the agent could sell surplus or deliver a report. This produces suboptimal multi-trip behavior where agents make separate journeys for goals that could be combined. Introduce lightweight post-search side-benefit detection that scores secondary goal satisfaction at plan destinations for tie-breaking in `select_best_plan()`.
@@ -182,3 +184,32 @@ No amplifying loops. Side-benefit scoring is a read-only overlay on existing pla
 5. Agents with `side_benefit_weight = Permille(0)` behave identically to pre-spec behavior.
 6. Goal switching logic is unaffected (uses primary_motive only).
 7. All existing golden tests pass unchanged.
+
+## Outcome
+
+- **Completed**: 2026-04-03
+- **What changed**:
+  - Added `side_benefit_weight` to `UtilityProfile` in `worldwake-core`.
+  - Added the pure side-benefit substrate in `worldwake-ai` (`SideBenefit`, `PlanValue`, `detect_side_benefits`, `build_plan_value`).
+  - Integrated side-benefit-aware tie-breaking into post-search plan selection while preserving priority-class ordering and primary-motive-based goal switching.
+  - Extended selected-plan trace summaries with primary motive, total value, and side-benefit provenance.
+  - Added the end-to-end merchant-market golden proof and deterministic replay companion showing a combined market trip wins because it also captures a lawful `SellCommodity(Firewood)` side benefit.
+- **Deviations from original plan**:
+  - The shipped golden scenario uses firewood rather than apples for the secondary sell-at-market benefit so the setup stays focused on side-benefit selection instead of directly satisfying the primary hunger need.
+  - The final golden used simplified seller fixtures to avoid negotiation-price noise obscuring the selection contract.
+  - Repo-global scenario numbering required assigning the new S39 proof to Scenario `95` and shifting the adjacent merchant scenario to `96`.
+- **Verification results**:
+  - `cargo test -p worldwake-core utility_profile::tests::utility_profile_roundtrips_through_bincode -- --exact --nocapture`
+  - `cargo test -p worldwake-core component_tables::tests::insert_and_get_utility_profile -- --exact --nocapture`
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-ai --lib`
+  - `cargo test -p worldwake-ai plan_selection -- --nocapture`
+  - `cargo test -p worldwake-ai decision_trace -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit -- --exact --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit_replays_deterministically -- --exact --nocapture`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full -- --exact --nocapture`
+  - `cargo test -p worldwake-cli`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

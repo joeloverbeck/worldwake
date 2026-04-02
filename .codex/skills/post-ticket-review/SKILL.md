@@ -37,6 +37,7 @@ This skill must not modify production code or tests. It is a post-implementation
    - inaccurate verification notes
    - archival mechanics required by [docs/archival-workflow.md](../../../docs/archival-workflow.md)
 4. If the ticket still has unresolved in-scope deliverables relative to its current text, stop and report archival as blocked. Do not write completion handoff text yet; implementation must resume first.
+   - This includes stale source-golden headers, generated scenario docs, or other owned proof-surface prose when they no longer match the implemented contract. Treat that as incomplete handoff work, not as a separate follow-up ticket by default.
 5. If the ticket is still active and the scoped work is complete, apply the archival checks above before moving it to the archive.
 6. If the ticket is already archived, validate the archived handoff content rather than reopening or moving it again.
 7. Do not revise the completed ticket's problem statement, scope, or acceptance criteria except where archival mechanics require factual completion notes.

@@ -182,6 +182,8 @@ When a valid architecture change makes an existing golden scenario stale, update
 
 If the architecture change invalidates the old scenario invariant itself rather than just a timing detail or output shape, rewrite the scenario to prove the new contract and update the scenario header/comments to match.
 
+When adding or renumbering a `// Scenario N:` block in a golden file, treat scenario identifiers as repo-global. Pre-scan nearby or highest live scenario IDs when practical, and be prepared to resolve collisions before the golden inventory refresh can pass.
+
 When a ticket intentionally lands pure scaffolding ahead of downstream integration, either wire the immediate call sites if they are in scope or mark the temporary unused surface deliberately and record why. Do not let staged helper work fail later CI clippy passes by accident.
 
 ### 7. Close the loop on the ticket

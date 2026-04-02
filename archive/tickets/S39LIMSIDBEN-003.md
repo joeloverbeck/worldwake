@@ -1,6 +1,6 @@
 # S39LIMSIDBEN-003: Golden proof for combined-trip side-benefit selection
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -86,3 +86,22 @@ Run the inventory refresh so [`golden-e2e-inventory.md`](/home/joeloverbeck/proj
 1. `cargo test -p worldwake-ai --test golden_merchant_selling -- --nocapture`
 2. `python3 scripts/golden_inventory.py --write --check-docs`
 3. `cargo test -p worldwake-ai`
+
+## Outcome
+
+- **Completed**: 2026-04-03
+- **What changed**:
+  - Added Scenario `95` in [`golden_merchant_selling.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_merchant_selling.rs) proving that equal primary bread-acquisition branches are broken by a lawful `SellCommodity(Firewood)` side benefit at the home market.
+  - Added the deterministic replay companion for the same scenario.
+  - Refreshed [`golden-e2e-inventory.md`](/home/joeloverbeck/projects/worldwake/docs/generated/golden-e2e-inventory.md), [`golden-scenario-map.md`](/home/joeloverbeck/projects/worldwake/docs/generated/golden-scenario-map.md), and [`golden-coverage-matrix.md`](/home/joeloverbeck/projects/worldwake/docs/generated/golden-coverage-matrix.md).
+- **Deviations from original plan**:
+  - The first draft used apples as the secondary sell-at-market cargo, but that distorted the primary-goal setup. The final scenario uses firewood for the side benefit while keeping the same owned contract.
+  - The scenario numbering had to be adjusted to repo-global IDs `95` and `96` after the inventory refresh exposed a collision with an existing Scenario `88`.
+  - The seller fixtures were simplified so the scenario proves side-benefit route selection rather than seller-side demand-memory or negotiation-price behavior.
+- **Verification results**:
+  - `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit -- --exact --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit_replays_deterministically -- --exact --nocapture`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

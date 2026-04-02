@@ -10,13 +10,14 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, AgentData, CommodityKind, ControlSource,
-    DemandMemory, DemandObservation, DemandObservationReason, EventTag, GoalKind,
-    HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    PerceptionProfile, Quantity, SaleListing, Seed, StockAssignmentKind, Tick,
-    TradeDispositionProfile, UtilityProfile,
+    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
+    CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
+    EventTag, GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionProfile, PrototypePlace,
+    Quantity, SaleListing, Seed, StockAssignmentKind, Tick, TradeDispositionProfile,
+    UtilityProfile,
 };
-use worldwake_ai::DecisionOutcome;
+use worldwake_ai::{CommodityPurpose, DecisionOutcome, SelectedPlanSource};
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
     RequestProvenance, RuntimeBeliefView,
@@ -40,6 +41,14 @@ fn merchant_trade_disposition() -> TradeDispositionProfile {
 fn merchant_utility() -> UtilityProfile {
     UtilityProfile {
         enterprise_weight: pm(800),
+        ..UtilityProfile::default()
+    }
+}
+
+fn side_benefit_merchant_utility() -> UtilityProfile {
+    UtilityProfile {
+        enterprise_weight: pm(800),
+        side_benefit_weight: pm(1000),
         ..UtilityProfile::default()
     }
 }
@@ -82,6 +91,25 @@ fn request_simple_action(
             provenance: RequestProvenance::External,
         },
     );
+}
+
+fn decision_trace_summaries(h: &GoldenHarness, agent: worldwake_core::EntityId) -> Vec<String> {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .traces_for(agent)
+        .into_iter()
+        .map(|trace| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
+        .collect()
+}
+
+fn action_trace_summaries(h: &GoldenHarness, agent: worldwake_core::EntityId) -> Vec<String> {
+    h.action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(agent)
+        .into_iter()
+        .map(worldwake_sim::ActionTraceEvent::summary)
+        .collect()
 }
 
 /// Seed a merchant at `place` with `MerchandiseProfile`, trade disposition,
@@ -352,6 +380,12 @@ fn seed_buyer(
     commit_txn(txn, &mut h.event_log);
 
     buyer
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SideBenefitSelectionOutcome {
+    world_hash: worldwake_core::StateHash,
+    log_hash: worldwake_core::StateHash,
 }
 
 // ---------------------------------------------------------------------------
@@ -1361,7 +1395,372 @@ fn planning_state_preserves_listing_determinism() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 87: Hungry Merchant Eats Own Listed Sale Stock
+// Scenario 95: Side-Benefit Selection Prefers Home Market Combined Trip
+// Systems: Trade, AI, Needs
+// GoalKinds: AcquireCommodity, SellCommodity
+// ActionDomains: Travel, Trade
+// Principles: P1, P3, P20, P22
+// Proves: a remote merchant with equal primary bread opportunities prefers the
+//         home-market seller because the selected path also carries a lawful
+//         SellCommodity side benefit at that destination; after acquisition the
+//         merchant stages firewood for sale there without a second market trip
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn run_side_benefit_market_trip_selection(seed: Seed) -> SideBenefitSelectionOutcome {
+    fn seed_simple_seller(
+        h: &mut GoldenHarness,
+        name: &str,
+        place: worldwake_core::EntityId,
+        commodity: CommodityKind,
+        quantity: Quantity,
+    ) -> (worldwake_core::EntityId, worldwake_core::EntityId) {
+        use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+
+        let seller = seed_agent_with_recipes(
+            &mut h.world,
+            &mut h.event_log,
+            name,
+            place,
+            HomeostaticNeeds::new_sated(),
+            MetabolismProfile::default(),
+            UtilityProfile::default(),
+            KnownRecipes::new(),
+        );
+
+        let stock_lot = give_commodity(
+            &mut h.world,
+            &mut h.event_log,
+            seller,
+            place,
+            commodity,
+            quantity,
+        );
+
+        let mut txn = new_txn(&mut h.world, 0);
+        let (facility, _stock_container, display) = txn
+            .create_merchant_facility(place, seller, LoadUnits(500), Some(LoadUnits(300)))
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([commodity]),
+                home_facility: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(seller, merchant_trade_disposition())
+            .unwrap();
+        txn.set_component_perception_profile(seller, PerceptionProfile::default())
+            .unwrap();
+        let display_container = display.unwrap();
+        txn.clear_possessor(stock_lot).unwrap();
+        txn.put_into_container(stock_lot, display_container).unwrap();
+        txn.set_component_stock_assignment(
+            stock_lot,
+            StockAssignment {
+                facility,
+                kind: StockAssignmentKind::Displayed,
+            },
+        )
+        .unwrap();
+        txn.set_component_sale_listing(stock_lot, SaleListing { listed_at: Tick(0) })
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+
+        (seller, stock_lot)
+    }
+
+    let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let common_house = prototype_place_entity(PrototypePlace::CommonHouse);
+
+    let (market_seller, _market_bread_lot) = seed_simple_seller(
+        &mut h,
+        "Market Seller",
+        general_store,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    let (inn_seller, _inn_bread_lot) = seed_simple_seller(
+        &mut h,
+        "Inn Seller",
+        common_house,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    set_control_source(&mut h, market_seller, ControlSource::Human, 0);
+    set_control_source(&mut h, inn_seller, ControlSource::Human, 0);
+
+    let merchant = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Traveler Merchant",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        side_benefit_merchant_utility(),
+        KnownRecipes::new(),
+    );
+    let firewood_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ORCHARD_FARM,
+        CommodityKind::Firewood,
+        Quantity(3),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ORCHARD_FARM,
+        CommodityKind::Coin,
+        Quantity(500),
+    );
+
+    let home_facility = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let (facility, _stock_container, _display_container) = txn
+            .create_merchant_facility(
+                general_store,
+                merchant,
+                LoadUnits(500),
+                Some(LoadUnits(300)),
+            )
+            .unwrap();
+        txn.set_component_merchandise_profile(
+            merchant,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Firewood]),
+                home_facility: Some(facility),
+            },
+        )
+        .unwrap();
+        txn.set_component_trade_disposition_profile(merchant, merchant_trade_disposition())
+            .unwrap();
+        txn.set_component_perception_profile(merchant, PerceptionProfile::default())
+            .unwrap();
+        txn.set_component_demand_memory(
+            merchant,
+            DemandMemory {
+                observations: vec![DemandObservation {
+                    commodity: CommodityKind::Firewood,
+                    quantity: Quantity(5),
+                    place: general_store,
+                    tick: Tick(0),
+                    counterparty: None,
+                    reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+        facility
+    };
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let bread_goal = worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let market_opportunity = OpportunityKey {
+        goal_key: bread_goal,
+        anchor: OpportunityAnchor::Place(general_store),
+    };
+    let inn_opportunity = OpportunityKey {
+        goal_key: bread_goal,
+        anchor: OpportunityAnchor::Place(common_house),
+    };
+
+    h.step_once();
+
+    let opening_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled")
+        .trace_at(merchant, Tick(0))
+        .expect("merchant should plan on the opening tick");
+    let opening_planning = match &opening_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected opening planning trace, got {other:?}"),
+    };
+    assert_eq!(
+        opening_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "opening selection should come from fresh search",
+    );
+    assert!(
+        opening_planning.selection.selected_goal_is(bread_goal),
+        "opening plan should still be driven by bread acquisition as the primary goal",
+    );
+    assert!(
+        opening_planning
+            .selection
+            .selected_opportunity_is(market_opportunity),
+        "side-benefit-aware selection should choose the home-market seller over the equally valuable inn seller",
+    );
+
+    let ranked_summaries = opening_planning.candidates.ranked_summaries_for_goal(bread_goal);
+    let market_summary = ranked_summaries
+        .iter()
+        .find(|summary| summary.opportunity == market_opportunity)
+        .expect("market seller opportunity should remain ranked");
+    let inn_summary = ranked_summaries
+        .iter()
+        .find(|summary| summary.opportunity == inn_opportunity)
+        .expect("inn seller opportunity should remain ranked");
+    assert_eq!(
+        market_summary.motive_score, inn_summary.motive_score,
+        "the two bread opportunities should be symmetric on primary motive so side benefits, not motive, decide the winner",
+    );
+
+    let selected_plan = opening_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("search selection should expose the winning selected plan");
+    assert!(
+        selected_plan.total_value > selected_plan.primary_motive,
+        "the winning plan should gain bounded total value from a recognized side benefit",
+    );
+    assert!(
+        selected_plan.side_benefits.iter().any(|benefit| {
+            benefit.at_place == general_store
+                && matches!(
+                    benefit.goal_key.kind,
+                    GoalKind::SellCommodity {
+                        commodity: CommodityKind::Firewood
+                    }
+                )
+        }),
+        "the selected plan should report SellCommodity(Firewood) as a side benefit at the home market",
+    );
+    assert!(
+        selected_plan
+            .steps
+            .iter()
+            .any(|step| step.targets == vec![general_store]),
+        "the winning selected path should actually route to the home market",
+    );
+    assert!(
+        !selected_plan
+            .steps
+            .iter()
+            .any(|step| step.targets == vec![common_house]),
+        "the winning selected path should not route to the losing inn seller branch",
+    );
+
+    let mut trade_started_against_market = false;
+    let mut trade_started_against_inn = false;
+    let mut trade_committed = false;
+    let mut firewood_listing_created = false;
+    for _ in 0..160 {
+        let tick_before = h.scheduler.current_tick();
+        h.step_once();
+
+        if let Some(sink) = h.action_trace_sink() {
+            for event in sink.events_for_at(merchant, tick_before) {
+                if event.action_name != "trade" {
+                    continue;
+                }
+                match &event.kind {
+                    ActionTraceKind::Started { targets } => {
+                        trade_started_against_market |= targets == &vec![market_seller];
+                        trade_started_against_inn |= targets == &vec![inn_seller];
+                    }
+                    ActionTraceKind::Committed { .. } => {
+                        trade_committed = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        firewood_listing_created |= h.world.get_component_sale_listing(firewood_lot).is_some();
+
+        if trade_started_against_market
+            && trade_committed
+            && firewood_listing_created
+        {
+            break;
+        }
+    }
+
+    assert!(
+        trade_started_against_market,
+        "the executed trade branch should start against the home-market seller; decision_traces={:?}; action_traces={:?}",
+        decision_trace_summaries(&h, merchant),
+        action_trace_summaries(&h, merchant),
+    );
+    assert!(
+        !trade_started_against_inn,
+        "the losing inn seller branch should never execute after side-benefit-aware selection",
+    );
+    assert!(
+        trade_committed,
+        "the primary bread-acquisition trade should commit on the selected home-market branch; decision_traces={:?}; action_traces={:?}",
+        decision_trace_summaries(&h, merchant),
+        action_trace_summaries(&h, merchant),
+    );
+    assert!(
+        firewood_listing_created,
+        "the merchant should eventually stage and list firewood at the chosen home market after the combined trip; decision_traces={:?}; action_traces={:?}",
+        decision_trace_summaries(&h, merchant),
+        action_trace_summaries(&h, merchant),
+    );
+    assert_eq!(
+        h.world.effective_place(merchant),
+        Some(general_store),
+        "the combined-trip branch should leave the merchant at the home market where the side benefit materializes",
+    );
+    let assignment = h
+        .world
+        .get_component_stock_assignment(firewood_lot)
+        .expect("the listed firewood lot should carry a stock assignment");
+    assert_eq!(
+        assignment.facility, home_facility,
+        "the staged firewood lot should belong to the merchant's home market facility",
+    );
+    assert_eq!(
+        assignment.kind,
+        StockAssignmentKind::Displayed,
+        "the side-benefit follow-through should stage firewood into displayed stock",
+    );
+
+    SideBenefitSelectionOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+    }
+}
+
+#[test]
+fn combined_market_trip_selected_for_side_benefit() {
+    let _ = run_side_benefit_market_trip_selection(Seed([79; 32]));
+}
+
+#[test]
+fn combined_market_trip_selected_for_side_benefit_replays_deterministically() {
+    let first = run_side_benefit_market_trip_selection(Seed([80; 32]));
+    let second = run_side_benefit_market_trip_selection(Seed([80; 32]));
+    assert_eq!(
+        first, second,
+        "combined market-trip side-benefit scenario should replay deterministically",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 // Systems: Needs, Trade, AI
 // GoalKinds: ConsumeOwnedCommodity, SellCommodity
 // ActionDomains: Needs (eat), Trade (staff_market)
