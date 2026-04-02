@@ -19,7 +19,8 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - docs
    - code symbols
    - test files
-3. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all reads, writes, searches, moves, and archival actions.
+3. When the user supplies a glob or shorthand spec reference, confirm the exact live matching file path before reading, citing, or relying on it.
+4. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all reads, writes, searches, moves, and archival actions.
 
 ### 2. Reassess assumptions before coding
 

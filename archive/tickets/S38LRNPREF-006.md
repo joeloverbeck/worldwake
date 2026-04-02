@@ -1,6 +1,6 @@
 # S38LRNPREF-006: Route cost penalty in travel estimation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — travel cost estimation in worldwake-sim (PerAgentBeliefView)
@@ -97,3 +97,25 @@ Extract `fn danger_ratio_permille(experience: &EdgeExperience) -> u32` as a pure
 1. `cargo test -p worldwake-sim per_agent_belief_view`
 2. `cargo test -p worldwake-core experience`
 3. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-02
+
+What changed:
+- Added shared `danger_ratio_permille` in `crates/worldwake-core/src/experience.rs` and exported it through `worldwake-core`.
+- Updated `PerAgentBeliefView::adjacent_places_with_travel_ticks` in `crates/worldwake-sim/src/per_agent_belief_view.rs` to apply an additive hostile-route penalty derived from the actor's own `RouteExperience` and `PreferenceProfile`.
+- Left raw topology costs unchanged when the actor has no `RouteExperience`, no `PreferenceProfile`, or only safe travel history for a given edge.
+- Added focused belief-view tests covering no-experience passthrough, no-profile passthrough, safe-route passthrough, proportional hostile penalty, and maximum hostile penalty.
+- Added focused learned-experience helper tests covering zero, partial, and full hostile danger ratios.
+
+Deviations from original plan:
+- No architecture correction was required after reassessment; the ticket remained a clean `worldwake-core` + `worldwake-sim` slice.
+- The helper was exported from `worldwake-core` so downstream S38 work can reuse the same ratio logic rather than duplicating it.
+
+Verification results:
+- `cargo test -p worldwake-core experience -- --nocapture`
+- `cargo test -p worldwake-sim per_agent_belief_view -- --nocapture`
+- `cargo test -p worldwake-sim`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

@@ -49,6 +49,16 @@ impl RouteExperience {
     }
 }
 
+#[must_use]
+pub fn danger_ratio_permille(experience: &EdgeExperience) -> u32 {
+    let total = u32::from(experience.safe_trips) + u32::from(experience.hostile_encounters);
+    if total == 0 {
+        0
+    } else {
+        u32::from(experience.hostile_encounters) * 1000 / total
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SourceKey {
     pub entity: EntityId,
@@ -112,7 +122,7 @@ impl Component for PreferenceProfile {}
 mod tests {
     use super::{
         EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-        SourceReliability,
+        SourceReliability, danger_ratio_permille,
     };
     use crate::{
         test_utils::{
@@ -275,6 +285,46 @@ mod tests {
                 failed_attempts: 1,
                 last_attempt_tick: Tick(21),
             })
+        );
+    }
+
+    #[test]
+    fn danger_ratio_permille_returns_zero_when_total_trips_is_zero() {
+        assert_eq!(
+            danger_ratio_permille(&EdgeExperience {
+                safe_trips: 0,
+                hostile_encounters: 0,
+                last_travel_tick: Tick(0),
+            }),
+            0
+        );
+    }
+
+    #[test]
+    fn danger_ratio_permille_returns_expected_boundary_values() {
+        assert_eq!(
+            danger_ratio_permille(&EdgeExperience {
+                safe_trips: 5,
+                hostile_encounters: 0,
+                last_travel_tick: Tick(0),
+            }),
+            0
+        );
+        assert_eq!(
+            danger_ratio_permille(&EdgeExperience {
+                safe_trips: 1,
+                hostile_encounters: 1,
+                last_travel_tick: Tick(0),
+            }),
+            500
+        );
+        assert_eq!(
+            danger_ratio_permille(&EdgeExperience {
+                safe_trips: 0,
+                hostile_encounters: 3,
+                last_travel_tick: Tick(0),
+            }),
+            1000
         );
     }
 

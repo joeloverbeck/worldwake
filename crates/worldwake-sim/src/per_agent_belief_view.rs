@@ -6,17 +6,17 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    is_incapacitated, load_of_entity, AgentBeliefStore, BeliefConfidencePolicy,
-    BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ControlSource,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, GrantedFacilityUse,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    WorkstationTag, World, Wound,
+    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
+    CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityValuationProfile, ControlSource, DemandObservation, DriveThresholds, EntityId,
+    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
+    load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -316,6 +316,29 @@ impl<'w> PerAgentBeliefView<'w> {
                 && self.world.can_exercise_control(*entity, facility).is_ok()
         })
     }
+}
+
+fn adjusted_travel_ticks(
+    base_ticks: NonZeroU32,
+    edge_id: worldwake_core::TravelEdgeId,
+    route_experience: Option<&RouteExperience>,
+    preference_profile: Option<PreferenceProfile>,
+) -> NonZeroU32 {
+    let Some(profile) = preference_profile else {
+        return base_ticks;
+    };
+    let Some(experience) = route_experience.and_then(|route| route.edges.get(&edge_id)) else {
+        return base_ticks;
+    };
+
+    let danger_ratio = danger_ratio_permille(experience);
+    if danger_ratio == 0 {
+        return base_ticks;
+    }
+
+    let penalty_permille = u32::from(profile.route_caution_weight.value()) * danger_ratio / 1000;
+    let effective_ticks = base_ticks.get() * (1000 + penalty_permille) / 1000;
+    NonZeroU32::new(effective_ticks).unwrap()
 }
 
 impl RuntimeBeliefView for PerAgentBeliefView<'_> {
@@ -1360,15 +1383,24 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        let route_experience = self.route_experience(self.agent);
+        let preference_profile = self.preference_profile(self.agent);
+
         self.world
             .topology()
             .outgoing_edges(place)
             .iter()
             .filter_map(|edge_id| self.world.topology().edge(*edge_id))
             .map(|edge| {
+                let base_ticks = NonZeroU32::new(edge.travel_time_ticks()).unwrap();
                 (
                     edge.to(),
-                    NonZeroU32::new(edge.travel_time_ticks()).unwrap(),
+                    adjusted_travel_ticks(
+                        base_ticks,
+                        edge.id(),
+                        route_experience.as_ref(),
+                        preference_profile,
+                    ),
                 )
             })
             .collect()
@@ -1398,15 +1430,16 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, ActionDefId, ActionDomain,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
-        CauseRef, CombatProfile, CommodityKind, ControlSource, EntityKind, EventLog, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Quantity,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SuccessionLaw,
-        TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, UtilityProfile, VisibilitySpec,
+        ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource,
+        EdgeExperience, EntityId, EntityKind, EventLog, FactionData, FactionPurpose,
+        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Place, PlaceTag,
+        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
+        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId,
+        WoundId, build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_commodity_valuation_profile, sample_preference_profile,
             sample_route_experience, sample_source_reliability,
@@ -2333,6 +2366,214 @@ mod tests {
                 last_regeneration_tick: None,
             }),
             "belief-side facility/resource knowledge should remain stale until refreshed"
+        );
+    }
+
+    fn place(name: &str, tag: PlaceTag) -> Place {
+        Place {
+            name: name.to_string(),
+            capacity: None,
+            tags: [tag].into_iter().collect(),
+        }
+    }
+
+    fn travel_cost_test_world() -> (World, EntityId, EntityId, TravelEdgeId, NonZeroU32) {
+        let origin = entity(1);
+        let destination = entity(2);
+        let edge_id = TravelEdgeId(10);
+        let base_ticks = NonZeroU32::new(10).unwrap();
+        let mut topology = Topology::new();
+        topology
+            .add_place(origin, place("Origin", PlaceTag::Village))
+            .unwrap();
+        topology
+            .add_place(destination, place("Destination", PlaceTag::Farm))
+            .unwrap();
+        topology
+            .add_edge(
+                TravelEdge::new(edge_id, origin, destination, base_ticks.get(), None).unwrap(),
+            )
+            .unwrap();
+
+        (
+            World::new(topology).unwrap(),
+            origin,
+            destination,
+            edge_id,
+            base_ticks,
+        )
+    }
+
+    #[test]
+    fn adjacent_places_with_travel_ticks_returns_raw_cost_without_route_experience() {
+        let (mut world, origin, destination, _edge_id, base_ticks) = travel_cost_test_world();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_component_preference_profile(agent, sample_preference_profile())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            vec![(destination, base_ticks)]
+        );
+    }
+
+    #[test]
+    fn adjacent_places_with_travel_ticks_returns_raw_cost_without_preference_profile() {
+        let (mut world, origin, destination, edge_id, base_ticks) = travel_cost_test_world();
+        let route_experience = RouteExperience {
+            edges: BTreeMap::from([(
+                edge_id,
+                EdgeExperience {
+                    safe_trips: 1,
+                    hostile_encounters: 1,
+                    last_travel_tick: Tick(9),
+                },
+            )]),
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_component_route_experience(agent, route_experience)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            vec![(destination, base_ticks)]
+        );
+    }
+
+    #[test]
+    fn adjacent_places_with_travel_ticks_leaves_safe_routes_unpenalized() {
+        let (mut world, origin, destination, edge_id, base_ticks) = travel_cost_test_world();
+        let route_experience = RouteExperience {
+            edges: BTreeMap::from([(
+                edge_id,
+                EdgeExperience {
+                    safe_trips: 5,
+                    hostile_encounters: 0,
+                    last_travel_tick: Tick(9),
+                },
+            )]),
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_component_route_experience(agent, route_experience)
+                .unwrap();
+            txn.set_component_preference_profile(agent, sample_preference_profile())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            vec![(destination, base_ticks)]
+        );
+    }
+
+    #[test]
+    fn adjacent_places_with_travel_ticks_applies_hostile_route_penalty() {
+        let (mut world, origin, destination, edge_id, base_ticks) = travel_cost_test_world();
+        let route_experience = RouteExperience {
+            edges: BTreeMap::from([(
+                edge_id,
+                EdgeExperience {
+                    safe_trips: 1,
+                    hostile_encounters: 1,
+                    last_travel_tick: Tick(9),
+                },
+            )]),
+        };
+        let profile = sample_preference_profile();
+        let expected_ticks = NonZeroU32::new(
+            base_ticks.get()
+                * (1000 + u32::from(profile.route_caution_weight.value()) * 500 / 1000)
+                / 1000,
+        )
+        .unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_component_route_experience(agent, route_experience)
+                .unwrap();
+            txn.set_component_preference_profile(agent, profile)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            vec![(destination, expected_ticks)]
+        );
+    }
+
+    #[test]
+    fn adjacent_places_with_travel_ticks_applies_maximum_hostile_penalty() {
+        let (mut world, origin, destination, edge_id, base_ticks) = travel_cost_test_world();
+        let route_experience = RouteExperience {
+            edges: BTreeMap::from([(
+                edge_id,
+                EdgeExperience {
+                    safe_trips: 0,
+                    hostile_encounters: 3,
+                    last_travel_tick: Tick(9),
+                },
+            )]),
+        };
+        let profile = PreferenceProfile {
+            route_caution_weight: Permille::new(800).unwrap(),
+            ..sample_preference_profile()
+        };
+        let expected_ticks = NonZeroU32::new(
+            base_ticks.get()
+                * (1000 + u32::from(profile.route_caution_weight.value()) * 1000 / 1000)
+                / 1000,
+        )
+        .unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            txn.set_component_route_experience(agent, route_experience)
+                .unwrap();
+            txn.set_component_preference_profile(agent, profile)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            vec![(destination, expected_ticks)]
         );
     }
 
