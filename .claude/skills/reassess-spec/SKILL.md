@@ -51,7 +51,7 @@ From the spec, extract every concrete codebase reference:
 - **Test file paths or test names** referenced (e.g., `golden_merchant_selling.rs`, `golden_emergent.rs`)
 - **Other specs or tickets** listed in Dependencies (e.g., `S04`, `E19`, `specs/S04-merchant-selling*.md`)
 
-Build a checklist of every reference to validate in Step 3.
+Build a checklist of every reference to validate in Step 3. Prioritize references most likely to have drifted: dependency paths (specs may have been archived), function signatures (may have changed with recent implementations), and types the spec proposes to extend (may have new constraints). Stable types like `EntityId`, `Permille`, `Quantity` can be spot-checked rather than fully validated.
 
 ### Step 3: Codebase Validation
 
@@ -135,8 +135,7 @@ If the user's answers raise new questions or invalidate previous findings, prese
 
 After all findings are resolved and the user has approved the changes:
 
-1. **Write the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon.
-2. **Present a post-write diff summary**: list each section that changed and what the change was. This confirms what was written — the user already approved each finding individually in Step 6, so a separate pre-write approval gate is not required.
+**Write the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon.
 
 If the user requests corrections after reviewing, apply them and re-present the affected sections.
 
@@ -145,6 +144,7 @@ If the user requests corrections after reviewing, apply them and re-present the 
 After writing the updated spec, present:
 
 - Number of issues fixed, improvements applied, and additions incorporated
+- Per-section change list: which sections changed and what each change was
 - Any deferred items the user chose not to address now
 - 1-3 sections that changed most substantially, with a note to review them before proceeding
 - Suggested next step: `/spec-to-tickets <spec-path> <NAMESPACE>` to decompose into tickets
