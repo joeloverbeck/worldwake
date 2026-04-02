@@ -4,7 +4,10 @@ use rustyline::DefaultEditor;
 use std::error::Error;
 use worldwake_ai::AgentTickDriver;
 use worldwake_core::Name;
-use worldwake_sim::{Affordance, SimulationState, SystemDispatchTable};
+use worldwake_sim::{
+    get_affordances, Affordance, PerAgentBeliefRuntime, PerAgentBeliefView, SimulationState,
+    SystemDispatchTable,
+};
 use worldwake_systems::ActionRegistries;
 
 use crate::commands::{CommandOutcome, CommandParser};
@@ -55,10 +58,62 @@ pub fn format_prompt(sim: &SimulationState) -> String {
     format!("[tick {tick}] {agent_name} @ {place_name} > ")
 }
 
+/// Run a single command in non-interactive mode (`--exec`).
+///
+/// Parses the command string, dispatches it, and returns. If the command is
+/// `do N` and no prior `actions` call populated affordances, automatically
+/// runs `actions` first to populate the affordance list.
+pub fn run_single_command(
+    sim: &mut SimulationState,
+    driver: &mut AgentTickDriver,
+    registries: &ActionRegistries,
+    dispatch_table: &SystemDispatchTable,
+    command_str: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut repl_state = ReplState::new();
+
+    let trimmed = command_str.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+
+    // Auto-populate affordances if command is `do N` (affordances are empty
+    // in a fresh ReplState). Call get_affordances directly to avoid printing
+    // the action list — the user only wants the `do` output.
+    if words.first().is_some_and(|w| w.eq_ignore_ascii_case("do")) {
+        if let Some(entity) = sim.controller_state().controlled_entity() {
+            let runtime =
+                PerAgentBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
+            let view =
+                PerAgentBeliefView::with_runtime_from_world(entity, sim.world(), runtime);
+            repl_state.last_affordances =
+                get_affordances(&view, entity, &registries.defs, &registries.handlers);
+        }
+    }
+
+    let parsed = CommandParser::try_parse_from(words)?;
+
+    match dispatch_command(
+        parsed.command,
+        sim,
+        driver,
+        registries,
+        dispatch_table,
+        &mut repl_state,
+    ) {
+        Ok(CommandOutcome::Continue | CommandOutcome::Quit) => Ok(()),
+        Err(e) => {
+            println!("error: {e}");
+            Ok(())
+        }
+    }
+}
+
 /// Run the interactive REPL loop.
 ///
 /// Reads commands from stdin, dispatches them, and loops until quit/EOF/interrupt.
-/// Actual command parsing and dispatch are deferred to later tickets (004+).
 pub fn run_repl(
     sim: &mut SimulationState,
     driver: &mut AgentTickDriver,
