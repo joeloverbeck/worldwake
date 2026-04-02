@@ -83,6 +83,8 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 
 For golden tickets, remove duplicate proof from scope unless the new scenario proves a materially different contract from the existing coverage.
 
+When a golden-driven ticket mixes still-valid negative coverage gaps with an over-claimed positive agreement proof, preserve the honest golden slice and correct the ticket to include any bounded production fix needed for the exposed contradiction instead of dropping the remaining golden work entirely.
+
 When a shared type changes, treat helper factories, sample fixtures, serialized scenario/config inputs, and schema examples as part of the construction-site sweep, not just direct Rust struct literals.
 
 For component-registration work, distinguish:
@@ -152,6 +154,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 For AI, planner, golden, or start-failure work, prove behavior at the strongest available layer instead of relying on a weaker downstream proxy.
+
+When a ticket claims cross-layer valuation agreement, explicitly check whether the shared scorer is computing marginal value over the actor's current accessible stock, especially when the proof depends on current-vs-receipt or retain-vs-transfer snapshots.
 
 When a ticket changes whether an action should be available at all, include at least one focused proof that goes through real affordance enumeration rather than only constructing action instances directly.
 

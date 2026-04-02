@@ -186,6 +186,10 @@ fn best_recipe_opportunity(
     remaining_depth: u8,
     path: &mut BTreeSet<(CommodityKind, u8)>,
 ) -> Option<BestOpportunity> {
+    if accessible_quantity(holdings, local_alternatives, commodity) == 0 {
+        return None;
+    }
+
     let mut best = None;
 
     for recipe_id in belief.known_recipes(actor) {
@@ -866,7 +870,7 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &holdings(&[(CommodityKind::Grain, 1)]),
+            &holdings(&[(CommodityKind::Grain, 1), (CommodityKind::Firewood, 1)]),
             &BTreeMap::new(),
         );
 
@@ -1060,14 +1064,14 @@ mod tests {
             actor(),
             CommodityKind::Waste,
             &deep_view,
-            &BTreeMap::new(),
+            &holdings(&[(CommodityKind::Waste, 1)]),
             &BTreeMap::new(),
         );
         let firewood = commodity_opportunity_score(
             actor(),
             CommodityKind::Firewood,
             &deep_view,
-            &BTreeMap::new(),
+            &holdings(&[(CommodityKind::Firewood, 1)]),
             &BTreeMap::new(),
         );
 
@@ -1079,7 +1083,7 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &shallow_view,
-            &BTreeMap::new(),
+            &holdings(&[(CommodityKind::Firewood, 1)]),
             &BTreeMap::new(),
         );
 
@@ -1140,14 +1144,14 @@ mod tests {
             actor(),
             CommodityKind::Firewood,
             &view,
-            &BTreeMap::new(),
+            &holdings(&[(CommodityKind::Firewood, 1)]),
             &BTreeMap::new(),
         );
         let second = commodity_opportunity_score(
             actor(),
             CommodityKind::Firewood,
             &view,
-            &BTreeMap::new(),
+            &holdings(&[(CommodityKind::Firewood, 1)]),
             &BTreeMap::new(),
         );
 

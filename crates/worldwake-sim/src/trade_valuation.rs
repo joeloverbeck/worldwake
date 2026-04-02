@@ -177,16 +177,20 @@ fn insufficient_payment_reason(offered: &[(CommodityKind, Quantity)]) -> TradeRe
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate_trade_bundle, TradeAcceptance, TradeRejectionReason};
-    use crate::{RecipeDefinition, RuntimeBeliefView};
+    use super::{
+        apply_bundle_changes, build_current_holdings, evaluate_trade_bundle, snapshot,
+        TradeAcceptance, TradeRejectionReason,
+    };
+    use crate::{commodity_opportunity_score, RecipeDefinition, RuntimeBeliefView};
     use std::collections::BTreeMap;
+    use std::num::NonZeroU8;
     use worldwake_core::{
         BelievedEntityState, BodyPart, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandMemory, DemandObservation, DemandObservationReason, DriveThresholds, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, WoundCause,
-        WoundList,
+        CommodityValuationProfile, DemandMemory, DemandObservation, DemandObservationReason,
+        DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound, WoundCause, WoundList,
     };
 
     #[derive(Default)]
@@ -195,6 +199,11 @@ mod tests {
         needs: Option<HomeostaticNeeds>,
         wounds: Vec<Wound>,
         demand_memory: Vec<DemandObservation>,
+        effective_place: Option<EntityId>,
+        commodity_valuation_profile: Option<CommodityValuationProfile>,
+        known_recipes: Vec<RecipeId>,
+        recipe_definitions: BTreeMap<RecipeId, RecipeDefinition>,
+        matching_workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -207,7 +216,7 @@ mod tests {
         }
 
         fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+            self.effective_place
         }
 
         fn is_in_transit(&self, _entity: EntityId) -> bool {
@@ -350,6 +359,13 @@ mod tests {
             None
         }
 
+        fn commodity_valuation_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<CommodityValuationProfile> {
+            self.commodity_valuation_profile
+        }
+
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
@@ -401,19 +417,22 @@ mod tests {
         }
 
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            Vec::new()
+            self.known_recipes.clone()
         }
 
-        fn recipe_definition(&self, _recipe: RecipeId) -> Option<RecipeDefinition> {
-            None
+        fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+            self.recipe_definitions.get(&recipe).cloned()
         }
 
         fn matching_workstations_at(
             &self,
-            _place: EntityId,
-            _tag: WorkstationTag,
+            place: EntityId,
+            tag: WorkstationTag,
         ) -> Vec<EntityId> {
-            Vec::new()
+            self.matching_workstations
+                .get(&(place, tag))
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn resource_sources_at(
@@ -495,6 +514,37 @@ mod tests {
                 counterparty: Some(entity(55)),
                 reason: DemandObservationReason::WantedToBuyButNoSeller,
             }],
+        }
+    }
+
+    fn valuation_profile(depth: u8, horizon: u8, decay: u16) -> CommodityValuationProfile {
+        CommodityValuationProfile {
+            recipe_opportunity_depth: NonZeroU8::new(depth).unwrap(),
+            recipe_place_horizon: horizon,
+            indirect_value_decay_per_step: pm(decay),
+        }
+    }
+
+    fn recipe(
+        name: &str,
+        inputs: Vec<(CommodityKind, u32)>,
+        outputs: Vec<(CommodityKind, u32)>,
+        workstation: Option<WorkstationTag>,
+    ) -> RecipeDefinition {
+        RecipeDefinition {
+            name: name.to_string(),
+            inputs: inputs
+                .into_iter()
+                .map(|(kind, quantity)| (kind, q(quantity)))
+                .collect(),
+            outputs: outputs
+                .into_iter()
+                .map(|(kind, quantity)| (kind, q(quantity)))
+                .collect(),
+            work_ticks: std::num::NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: workstation,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         }
     }
 
@@ -735,5 +785,170 @@ mod tests {
                 reason: TradeRejectionReason::InsufficientPayment,
             }
         );
+    }
+
+    #[test]
+    fn accepts_recipe_input_when_reachable_output_opportunity_is_positive() {
+        let actor = entity(9);
+        let place = entity(90);
+        let recipe_id = RecipeId(0);
+        let view = StubBeliefView {
+            needs: Some(hunger(900)),
+            effective_place: Some(place),
+            commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+            known_recipes: vec![recipe_id],
+            recipe_definitions: BTreeMap::from([(
+                recipe_id,
+                recipe(
+                    "Bake Bread",
+                    vec![(CommodityKind::Firewood, 1)],
+                    vec![(CommodityKind::Bread, 1)],
+                    Some(WorkstationTag::Mill),
+                ),
+            )]),
+            matching_workstations: BTreeMap::from([(
+                (place, WorkstationTag::Mill),
+                vec![entity(91)],
+            )]),
+            ..Default::default()
+        };
+        let mut holdings = BTreeMap::new();
+        holdings.insert(CommodityKind::Coin, 3);
+        holdings.insert(CommodityKind::Firewood, 1);
+        let breakdown = commodity_opportunity_score(
+            actor,
+            CommodityKind::Firewood,
+            &view,
+            &holdings,
+            &BTreeMap::new(),
+        );
+        assert!(
+            breakdown.indirect_recipe_score > 0,
+            "reachable bread opportunity should give firewood positive indirect value; breakdown={breakdown:?}"
+        );
+        let current_holdings = build_current_holdings(actor, &view, q(3));
+        let receipt_only_holdings =
+            apply_bundle_changes(&current_holdings, &[(CommodityKind::Firewood, q(1))], &[])
+                .expect("receiving firewood should be possible");
+        let post_trade_holdings = apply_bundle_changes(
+            &current_holdings,
+            &[(CommodityKind::Firewood, q(1))],
+            &[(CommodityKind::Coin, q(1))],
+        )
+        .expect("coin-for-firewood exchange should be possible");
+        let current_snapshot = snapshot(actor, &view, &current_holdings, &BTreeMap::new());
+        let receipt_only_snapshot =
+            snapshot(actor, &view, &receipt_only_holdings, &BTreeMap::new());
+        let post_trade_snapshot = snapshot(actor, &view, &post_trade_holdings, &BTreeMap::new());
+        assert!(
+            receipt_only_snapshot > current_snapshot,
+            "receiving firewood should improve the receipt-only snapshot; current={current_snapshot:?} receipt={receipt_only_snapshot:?}"
+        );
+        assert!(
+            post_trade_snapshot > current_snapshot,
+            "coin-for-firewood exchange should improve the post-trade snapshot; current={current_snapshot:?} post={post_trade_snapshot:?}"
+        );
+
+        let acceptance = evaluate_trade_bundle(
+            actor,
+            &view,
+            Some(&hunger(900)),
+            None,
+            q(3),
+            &[(CommodityKind::Coin, q(1))],
+            &[(CommodityKind::Firewood, q(1))],
+            &[],
+            None,
+        );
+
+        assert_eq!(acceptance, TradeAcceptance::Accept);
+    }
+
+    #[test]
+    fn seller_rejects_selling_last_enabling_recipe_input_for_insufficient_coin() {
+        let actor = entity(10);
+        let place = entity(100);
+        let recipe_id = RecipeId(0);
+        let mut commodities = BTreeMap::new();
+        commodities.insert((actor, CommodityKind::Firewood), q(1));
+        let view = StubBeliefView {
+            commodities,
+            needs: Some(hunger(900)),
+            effective_place: Some(place),
+            commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+            known_recipes: vec![recipe_id],
+            recipe_definitions: BTreeMap::from([(
+                recipe_id,
+                recipe(
+                    "Bake Bread",
+                    vec![(CommodityKind::Firewood, 1)],
+                    vec![(CommodityKind::Bread, 1)],
+                    Some(WorkstationTag::Mill),
+                ),
+            )]),
+            matching_workstations: BTreeMap::from([(
+                (place, WorkstationTag::Mill),
+                vec![entity(101)],
+            )]),
+            ..Default::default()
+        };
+
+        let acceptance = evaluate_trade_bundle(
+            actor,
+            &view,
+            Some(&hunger(900)),
+            None,
+            q(0),
+            &[(CommodityKind::Firewood, q(1))],
+            &[(CommodityKind::Coin, q(1))],
+            &[],
+            None,
+        );
+
+        assert_eq!(
+            acceptance,
+            TradeAcceptance::Reject {
+                reason: TradeRejectionReason::InsufficientPayment,
+            }
+        );
+    }
+
+    #[test]
+    fn seller_accepts_coin_for_firewood_when_recipe_opportunity_is_unreachable() {
+        let actor = entity(11);
+        let recipe_id = RecipeId(0);
+        let mut commodities = BTreeMap::new();
+        commodities.insert((actor, CommodityKind::Firewood), q(1));
+        let view = StubBeliefView {
+            commodities,
+            needs: Some(hunger(900)),
+            effective_place: Some(entity(110)),
+            commodity_valuation_profile: Some(valuation_profile(3, 0, 100)),
+            known_recipes: vec![recipe_id],
+            recipe_definitions: BTreeMap::from([(
+                recipe_id,
+                recipe(
+                    "Bake Bread",
+                    vec![(CommodityKind::Firewood, 1)],
+                    vec![(CommodityKind::Bread, 1)],
+                    Some(WorkstationTag::Mill),
+                ),
+            )]),
+            ..Default::default()
+        };
+
+        let acceptance = evaluate_trade_bundle(
+            actor,
+            &view,
+            Some(&hunger(900)),
+            None,
+            q(0),
+            &[(CommodityKind::Firewood, q(1))],
+            &[(CommodityKind::Coin, q(1))],
+            &[],
+            None,
+        );
+
+        assert_eq!(acceptance, TradeAcceptance::Accept);
     }
 }

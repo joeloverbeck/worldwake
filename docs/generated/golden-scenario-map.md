@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 108
-- Files contributing scenario metadata: 17
-- Tests associated with scenario blocks: 245
+- Scenario blocks with explicit metadata: 110
+- Files contributing scenario metadata: 18
+- Tests associated with scenario blocks: 248
 
 ## Scenario Inventory
 
@@ -38,6 +38,8 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `S03a` | Multi-Corpse Loot Binding | `golden_combat.rs:1888` | `golden_multi_corpse_loot_binding` | `golden_multi_corpse_loot_binding_replays_deterministically` |
 | `S03b` | Bury Suppressed Under Stress | `golden_combat.rs:2086` | `golden_bury_suppressed_under_stress` | `golden_bury_suppressed_under_stress_replays_deterministically` |
 | `S03c` | Suppression Then Binding Combined | `golden_combat.rs:2261` | `golden_suppression_then_binding_combined`<br>`golden_action_trace_records_loot_lifecycle` | `golden_suppression_then_binding_combined_replays_deterministically` |
+| `89` | Unreachable Workstation Suppresses Indirect Firewood Value | `golden_commodity_opportunity.rs:151` | `golden_unreachable_workstation_suppresses_recipe_input_value` | `golden_unreachable_workstation_suppresses_recipe_input_value_replays_deterministically` |
+| `90` | No Known Recipe Prevents Indirect Firewood Motive | `golden_commodity_opportunity.rs:179` | `golden_no_known_recipe_suppresses_recipe_input_value` | — |
 | `6` | Deterministic Replay Fidelity | `golden_determinism.rs:138` | `golden_deterministic_replay_fidelity`<br>`golden_save_load_round_trip_under_ai` | — |
 | `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:201` | `golden_world_runs_without_observers`<br>`bench_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
 | `S21-005` | Save/Load Preserves Promoted Commitments | `golden_determinism.rs:556` | `golden_save_load_preserves_promoted_commitments` | `golden_save_load_preserves_promoted_commitments_replays_deterministically` |
@@ -515,6 +517,36 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: Hunger suppresses both LootCorpse goals. Eats first. Suppression lifts. matches_binding selects correct target. Sequential loot. Conservation holds.
 
 **Cross-system chain**: High hunger -> loot suppression -> eat -> relief -> matches_binding -> sequential loot.
+
+### Scenario 89: Unreachable Workstation Suppresses Indirect Firewood Value
+
+- Source: `golden_commodity_opportunity.rs:151`
+- Systems: AI ranking/candidate generation, belief-facing trade valuation
+- GoalKinds: AcquireCommodity(RecipeInput)
+- ActionDomains: Trade, Production
+- Places: VillageSquare
+- Primary tests: `golden_unreachable_workstation_suppresses_recipe_input_value`
+- Replay tests: `golden_unreachable_workstation_suppresses_recipe_input_value_replays_deterministically`
+- All tests: `golden_unreachable_workstation_suppresses_recipe_input_value`, `golden_unreachable_workstation_suppresses_recipe_input_value_replays_deterministically`
+
+**Setup**: same hungry baker and known recipe, but no reachable mill is believed.
+
+**Proves**: AI does not generate the recipe-input firewood goal and trade
+
+### Scenario 90: No Known Recipe Prevents Indirect Firewood Motive
+
+- Source: `golden_commodity_opportunity.rs:179`
+- Systems: AI ranking/candidate generation, belief-facing trade valuation
+- GoalKinds: AcquireCommodity(RecipeInput)
+- ActionDomains: Trade, Production
+- Places: VillageSquare
+- Primary tests: `golden_no_known_recipe_suppresses_recipe_input_value`
+- Replay tests: None
+- All tests: `golden_no_known_recipe_suppresses_recipe_input_value`
+
+**Setup**: same hungry baker and reachable mill, but the baker does not know Bake Bread.
+
+**Proves**: AI does not generate the recipe-input firewood goal and trade
 
 ### Scenario 6: Deterministic Replay Fidelity
 

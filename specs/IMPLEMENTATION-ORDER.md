@@ -137,6 +137,9 @@ Established explicit merchant facility custody for carried, stored, and displaye
 ### S10: Bilateral Trade Negotiation — COMPLETED
 Established belief-driven bilateral pricing across trade affordances and action lifecycle: reservation pricing, rejection-aware opening offers, alternating-offer concession rounds, `TradeAgreed` aftermath, and full supply-chain golden proof with deterministic replay. Archived spec: `archive/specs/S10-bilateral-trade-negotiation.md`.
 
+### S06: Commodity Opportunity Valuation — COMPLETED
+Established one shared belief-facing commodity-opportunity valuation layer across AI and trade: `CommodityValuationProfile`, bounded indirect recipe propagation, recipe-aware trade valuation and negotiation support, ranking unification for recipe-input and production goals, and final positive/negative golden proof for recipe-opportunity emergence and suppression. Archived spec: `archive/specs/S06-commodity-opportunity-valuation.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -176,9 +179,9 @@ S02 ✅, E16 ──→ E18 ✅, E20 ✅
 S02 ✅, E16, E16b ✅, E16c ──→ E19
 E16c ✅ ──→ S05 ✅ (institutional stock ledgers now reuse the delivered record architecture)
 S04 ✅ ──→ S05 ✅ (stock storage shipped on top of selling + ownership)
-S04 ✅ ──→ S06 (opportunity valuation needs market presence)
+S04 ✅ ──→ S06 ✅ (opportunity valuation shipped on top of merchant market presence)
 S10 ✅ (bilateral trade negotiation completed)
-S10 ✅ ──→ S06 (opportunity valuation benefits from shipped variable pricing)
+S10 ✅ ──→ S06 ✅ (opportunity valuation shipped on top of bilateral negotiation)
 E14 provides the prerequisite belief boundary for E15, ~~E15c~~, E16, E16c, ~~S01~~, ~~S02~~, ~~S03~~, ~~S04~~, ~~S07~~, and ~~S10~~.
 S31 ✅, S23 ✅, S22 ✅ ──→ S33 ✅ (opportunity-scoped identity completed)
 S33 ✅ ──→ S36 ✅ (declarative registration delivered on top of final goal identity shape)
@@ -425,7 +428,8 @@ S36 ✅ ──→ S40 ✅
   - archived spec: `archive/specs/S05-merchant-stock-storage-and-stalls.md`
 - **S10**: Bilateral Trade Negotiation — ✅ COMPLETED
   - archived spec: `archive/specs/S10-bilateral-trade-negotiation.md`
-- **S06**: Commodity Opportunity Valuation (needs S04, benefits from S10)
+- **S06**: Commodity Opportunity Valuation — ✅ COMPLETED
+  - archived spec: `archive/specs/S06-commodity-opportunity-valuation.md`
 - **S38**: Learned Route and Source Preferences (needs S35, S33)
   - per-agent `RouteExperience` and `SourceReliability` components from action outcomes
   - ranking adjustments for route danger and source failure history
@@ -438,7 +442,7 @@ S36 ✅ ──→ S40 ✅
 #### Final Acceptance
 - All Phase 4 gate criteria plus:
 - [x] Merchants autonomously sell at markets with stock storage
-- [ ] Commodity opportunity valuation drives trade route decisions
+- [x] Commodity opportunity valuation drives shared AI/trade indirect commodity reasoning
 - [ ] Economy sustains 100+ tick soak without conservation violations
 
 ---
@@ -516,7 +520,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S04-merchant-selling-market-presence.md`~~ | 4+ | 16 | ✅ COMPLETED |
 | ~~`S05-merchant-stock-storage-and-stalls.md`~~ | 4+ | 16 | ✅ COMPLETED |
 | ~~`S10-bilateral-trade-negotiation.md`~~ | 4+ | 16 | ✅ COMPLETED |
-| `S06-commodity-opportunity-valuation.md` | 4+ | 16 | S04 |
+| ~~`S06-commodity-opportunity-valuation.md`~~ | 4+ | 16 | ✅ COMPLETED |
 | ~~`S33-opportunity-scoped-goal-identity.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S34-general-epistemic-actions.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S35-observable-activity-signals.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
@@ -550,5 +554,5 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3: Information & Politics | E14–E17, E15b, E15c, E16b, E16c, S01–S03, S07–S09, S11–S19, S32, S16b-golden | Information propagates, offices transfer | IN PROGRESS (E14, E15b, E15c, E16, E16b, E16c, E16d, E17, S01, S02, S03, S07, S08, S09, S11, S12, S13, S14, S15, S16, S17, S18, S19, S32, S16b-golden complete; gate items `T10`/`T11`/`T25` remain open) |
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | ✅ COMPLETED |
-| 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | IN PROGRESS (S04, S05, S10 complete; S06, S38, S39 pending) |
+| 4+: Economy & AI Preferences | S04–S06, S10, S38–S39 | Merchant economy depth, learned preferences, side-benefit scoring | IN PROGRESS (S04, S05, S06, S10 complete; S38, S39 pending) |
 | 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | PENDING |

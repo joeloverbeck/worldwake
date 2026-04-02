@@ -1,4 +1,4 @@
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 
 # Commodity Opportunity Valuation
 
@@ -318,6 +318,24 @@ No system calls another system's behavior directly.
 - finite input stocks and finite source throughput
 - workstation occupancy and queueing
 - travel time to believed reachable facilities
+
+## Outcome
+
+- Completed: 2026-04-02
+- What changed:
+  - Added `CommodityValuationProfile` as an authoritative component and exposed it through the belief-facing valuation surface.
+  - Added the shared `commodity_opportunity` module in `worldwake-sim` with bounded, deterministic indirect recipe propagation over known recipes, reachable workstations, accessible sibling inputs, and per-agent valuation limits.
+  - Reworked `evaluate_trade_bundle` and the bilateral-trade runtime path to use the shared commodity-opportunity model instead of direct-only bundle valuation.
+  - Rewired AI ranking for `AcquireCommodity { purpose: RecipeInput(..) }` and `ProduceCommodity` onto the same shared commodity-opportunity layer.
+  - Added and completed the S06 proof surface across focused `worldwake-sim` valuation tests, AI ranking tests, existing positive recipe-input goldens, and the new negative commodity-opportunity goldens.
+- Deviations from original plan:
+  - The final implementation widened the sim runtime/action-execution substrate so recipe definitions could reach runtime-backed belief views and trade handlers lawfully, rather than only changing `trade_valuation.rs` in isolation.
+  - The final S06 closeout required a bounded shared marginal-value fix in `commodity_opportunity.rs` so absent recipe inputs no longer received retained-value credit in trade snapshots.
+- Verification:
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-ai`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
 - carry-capacity limits on moving enabling inputs
 - body-cost and time cost of production steps
 - demand-memory retention decay
