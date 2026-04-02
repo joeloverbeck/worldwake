@@ -34,17 +34,25 @@ pub fn dispatch_command(
         }
         CliCommand::Status => tick::handle_status(sim, registries),
         CliCommand::Look => inspect::handle_look(sim),
-        CliCommand::Inspect { entity } => inspect::handle_inspect(sim, &entity),
-        CliCommand::Inventory { entity } => inspect::handle_inventory(sim, entity.as_deref()),
-        CliCommand::Needs { entity } => inspect::handle_needs(sim, entity.as_deref()),
-        CliCommand::Relations { entity } => inspect::handle_relations(sim, &entity),
+        CliCommand::Inspect { entity } => inspect::handle_inspect(sim, &entity.join(" ")),
+        CliCommand::Inventory { entity } => {
+            let joined = entity.join(" ");
+            let arg = if joined.is_empty() { None } else { Some(joined.as_str()) };
+            inspect::handle_inventory(sim, arg)
+        }
+        CliCommand::Needs { entity } => {
+            let joined = entity.join(" ");
+            let arg = if joined.is_empty() { None } else { Some(joined.as_str()) };
+            inspect::handle_needs(sim, arg)
+        }
+        CliCommand::Relations { entity } => inspect::handle_relations(sim, &entity.join(" ")),
         CliCommand::Actions => actions::handle_actions(sim, registries, repl_state),
         CliCommand::Do { n } => actions::handle_do(n, sim, registries, repl_state),
         CliCommand::Cancel => actions::handle_cancel(sim),
         CliCommand::Events { n } => events::handle_events(sim, n),
         CliCommand::Event { id } => events::handle_event(sim, id),
         CliCommand::Trace { id } => events::handle_trace(sim, id),
-        CliCommand::Switch { name } => control::handle_switch(sim, &name),
+        CliCommand::Switch { name } => control::handle_switch(sim, &name.join(" ")),
         CliCommand::Observe => control::handle_observe(sim),
         CliCommand::World => world_overview::handle_world(sim),
         CliCommand::Places => world_overview::handle_places(sim),

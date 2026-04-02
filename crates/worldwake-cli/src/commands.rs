@@ -27,13 +27,25 @@ pub enum CliCommand {
     /// Cancel current action
     Cancel,
     /// Show inventory
-    Inventory { entity: Option<String> },
+    Inventory {
+        #[arg(trailing_var_arg = true)]
+        entity: Vec<String>,
+    },
     /// Show homeostatic needs
-    Needs { entity: Option<String> },
+    Needs {
+        #[arg(trailing_var_arg = true)]
+        entity: Vec<String>,
+    },
     /// Show all components on entity
-    Inspect { entity: String },
+    Inspect {
+        #[arg(trailing_var_arg = true, num_args = 1..)]
+        entity: Vec<String>,
+    },
     /// Show relations for entity
-    Relations { entity: String },
+    Relations {
+        #[arg(trailing_var_arg = true, num_args = 1..)]
+        entity: Vec<String>,
+    },
     /// Show recent events
     Events { n: Option<usize> },
     /// Show event details
@@ -41,7 +53,10 @@ pub enum CliCommand {
     /// Trace causal chain
     Trace { id: u64 },
     /// Switch control to agent
-    Switch { name: String },
+    Switch {
+        #[arg(trailing_var_arg = true, num_args = 1..)]
+        name: Vec<String>,
+    },
     /// Enter observer mode
     Observe,
     /// World summary
@@ -126,7 +141,16 @@ mod tests {
     fn test_parse_switch() {
         let cmd = parse("switch Kael").unwrap();
         match cmd {
-            CliCommand::Switch { name } => assert_eq!(name, "Kael"),
+            CliCommand::Switch { name } => assert_eq!(name, vec!["Kael"]),
+            other => panic!("expected Switch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_switch_multi_word() {
+        let cmd = parse("switch Merchant Vara").unwrap();
+        match cmd {
+            CliCommand::Switch { name } => assert_eq!(name, vec!["Merchant", "Vara"]),
             other => panic!("expected Switch, got {other:?}"),
         }
     }
@@ -140,14 +164,26 @@ mod tests {
     #[test]
     fn test_parse_inventory_no_arg() {
         let cmd = parse("inventory").unwrap();
-        assert!(matches!(cmd, CliCommand::Inventory { entity: None }));
+        match cmd {
+            CliCommand::Inventory { entity } => assert!(entity.is_empty()),
+            other => panic!("expected Inventory, got {other:?}"),
+        }
     }
 
     #[test]
     fn test_parse_inventory_with_arg() {
         let cmd = parse("inventory Kael").unwrap();
         match cmd {
-            CliCommand::Inventory { entity } => assert_eq!(entity, Some("Kael".to_string())),
+            CliCommand::Inventory { entity } => assert_eq!(entity, vec!["Kael"]),
+            other => panic!("expected Inventory, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_inventory_multi_word() {
+        let cmd = parse("inventory Merchant Vara").unwrap();
+        match cmd {
+            CliCommand::Inventory { entity } => assert_eq!(entity, vec!["Merchant", "Vara"]),
             other => panic!("expected Inventory, got {other:?}"),
         }
     }

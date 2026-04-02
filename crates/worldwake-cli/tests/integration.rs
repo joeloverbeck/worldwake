@@ -148,7 +148,7 @@ fn test_agent_switch_preserves_state() {
 
     // Switch control from Kael to Merchant Vara.
     ctx.dispatch(CliCommand::Switch {
-        name: "Merchant Vara".into(),
+        name: vec!["Merchant".into(), "Vara".into()],
     })
     .unwrap();
 
@@ -205,7 +205,7 @@ fn test_controlled_agent_death() {
 
     // Switch to another agent — verify human can recover.
     ctx.dispatch(CliCommand::Switch {
-        name: "Forager Lina".into(),
+        name: vec!["Forager".into(), "Lina".into()],
     })
     .unwrap();
     let lina = find_agent(&ctx.sim, "Forager Lina");
@@ -230,7 +230,7 @@ fn test_no_player_branching() {
 
     // Switch to Merchant Vara — query affordances.
     ctx.dispatch(CliCommand::Switch {
-        name: "Merchant Vara".into(),
+        name: vec!["Merchant".into(), "Vara".into()],
     })
     .unwrap();
 
@@ -248,7 +248,7 @@ fn test_no_player_branching() {
 
     // Switch to Forager Lina — query affordances.
     ctx.dispatch(CliCommand::Switch {
-        name: "Forager Lina".into(),
+        name: vec!["Forager".into(), "Lina".into()],
     })
     .unwrap();
 
