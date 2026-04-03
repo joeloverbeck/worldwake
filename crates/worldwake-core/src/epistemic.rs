@@ -26,6 +26,16 @@ pub struct EpistemicDispositionProfile {
     pub ask_memory_retention_ticks: u32,
 }
 
+impl Default for EpistemicDispositionProfile {
+    fn default() -> Self {
+        Self {
+            stale_evidence_barrier_threshold: Permille::new_unchecked(400),
+            witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+            ask_memory_retention_ticks: 12,
+        }
+    }
+}
+
 impl Component for EpistemicDispositionProfile {}
 
 #[cfg(test)]
@@ -86,5 +96,14 @@ mod tests {
         let roundtrip: EpistemicDispositionProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn epistemic_disposition_profile_default_matches_fixture_baseline() {
+        let profile = EpistemicDispositionProfile::default();
+
+        assert_eq!(profile.stale_evidence_barrier_threshold, Permille::new(400).unwrap());
+        assert_eq!(profile.witness_query_duration_ticks, NonZeroU32::new(2).unwrap());
+        assert_eq!(profile.ask_memory_retention_ticks, 12);
     }
 }

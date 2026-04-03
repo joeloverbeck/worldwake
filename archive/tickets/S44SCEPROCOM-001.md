@@ -1,6 +1,6 @@
 # S44SCEPROCOM-001: Add missing Default impls for 3 universal profiles
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — 3 new Default impls in worldwake-core
@@ -16,7 +16,7 @@ Three universal profile components (`EpistemicDispositionProfile`, `IntentionDis
 2. `IntentionDispositionProfile` at `crates/worldwake-core/src/intention_disposition.rs:17` — fields: `domain_patience: BTreeMap<IntentionDomainTag, NonZeroU32>`, `default_patience_ticks: NonZeroU32`, `commitment_switch_margin: Permille`. No Default impl. Confirmed.
 3. `PreferenceProfile` at `crates/worldwake-core/src/experience.rs:121` — fields: `route_caution_weight: Permille`, `source_trust_weight: Permille`, `route_memory_capacity: u32`, `source_memory_capacity: u32`, `memory_retention_ticks: u64`. No Default impl. Confirmed.
 4. All three derive `Serialize, Deserialize` — Default impls must produce valid serializable state.
-5. Golden tests that use these profiles set explicit values. Default values should be reasonable baselines that don't break existing behavior — agents without these profiles currently get no behavior from the corresponding systems (they're skipped via `if let Some(...)`). The defaults define "normal agent" baseline.
+5. Ticket says the example defaults are `500/3/50` for epistemic, `20/200` for intention patience/switch margin, and `500/500/20/20/200` for preference. Live code has stronger baseline fixtures: core schema/world samples already use epistemic `400/2/12`, intention samples and golden persistence use `30/200`, and `sample_preference_profile()` uses `300/200/24/18/400`. Correction applied: use the live fixture-aligned values instead of the earlier placeholder examples. Why safe: this is a low-risk factual calibration to current code expectations, not an architecture change.
 6. `NonZeroU32` fields cannot be zero — must use `NonZeroU32::new(N).unwrap()` in Default impls, not `#[derive(Default)]`.
 
 ## Architecture Check
@@ -40,15 +40,15 @@ In `crates/worldwake-core/src/epistemic.rs`:
 impl Default for EpistemicDispositionProfile {
     fn default() -> Self {
         Self {
-            stale_evidence_barrier_threshold: Permille::new_unchecked(500),
-            witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
-            ask_memory_retention_ticks: 50,
+            stale_evidence_barrier_threshold: Permille::new_unchecked(400),
+            witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+            ask_memory_retention_ticks: 12,
         }
     }
 }
 ```
 
-Calibration: check golden test setups that construct `EpistemicDispositionProfile` to find typical values. Use those as the baseline. The values above are reasonable starting points — adjust during implementation if golden tests use different values.
+Calibration: the live core/world fixture surface already uses `400/2/12`, so use that as the baseline instead of the earlier placeholder values.
 
 ### 2. Add Default for IntentionDispositionProfile
 
@@ -59,14 +59,14 @@ impl Default for IntentionDispositionProfile {
     fn default() -> Self {
         Self {
             domain_patience: BTreeMap::new(),
-            default_patience_ticks: NonZeroU32::new(20).unwrap(),
+            default_patience_ticks: NonZeroU32::new(30).unwrap(),
             commitment_switch_margin: Permille::new_unchecked(200),
         }
     }
 }
 ```
 
-Empty `domain_patience` means all domains use `default_patience_ticks`. Calibrate `commitment_switch_margin` against `ReasoningProfile::default().switch_margin` to ensure the two-tier precedence (S42) behaves sensibly with both at defaults.
+Empty `domain_patience` means all domains use `default_patience_ticks`. Live fixtures already converge on `30` ticks plus `200` switch margin, so use that as the baseline.
 
 ### 3. Add Default for PreferenceProfile
 
@@ -76,15 +76,17 @@ In `crates/worldwake-core/src/experience.rs`:
 impl Default for PreferenceProfile {
     fn default() -> Self {
         Self {
-            route_caution_weight: Permille::new_unchecked(500),
-            source_trust_weight: Permille::new_unchecked(500),
-            route_memory_capacity: 20,
-            source_memory_capacity: 20,
-            memory_retention_ticks: 200,
+            route_caution_weight: Permille::new_unchecked(300),
+            source_trust_weight: Permille::new_unchecked(200),
+            route_memory_capacity: 24,
+            source_memory_capacity: 18,
+            memory_retention_ticks: 400,
         }
     }
 }
 ```
+
+Calibration: align with `sample_preference_profile()` in `crates/worldwake-core/src/test_utils.rs`, which is the live representative fixture already used across core/sim coverage.
 
 ### 4. Add unit tests for defaults
 
@@ -135,3 +137,17 @@ Add a test per profile verifying:
 3. `cargo test -p worldwake-core -- preference`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `cargo test --workspace`
+
+## Outcome
+
+- **Completed**: 2026-04-03
+- Added `Default` impls for `EpistemicDispositionProfile`, `IntentionDispositionProfile`, and `PreferenceProfile` in `worldwake-core`.
+- Added focused unit tests in the owning core modules proving the default baselines for all three profiles.
+- Deviation from the original ticket examples: the landed defaults were calibrated to live fixture and schema baselines rather than the earlier placeholder values in the initial ticket draft. The final defaults are epistemic `400/2/12`, intention `empty + 30/200`, and preference `300/200/24/18/400`.
+- Verification:
+  - `cargo test -p worldwake-core -- epistemic`
+  - `cargo test -p worldwake-core -- intention_disposition`
+  - `cargo test -p worldwake-core -- preference`
+  - `cargo test -p worldwake-core`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

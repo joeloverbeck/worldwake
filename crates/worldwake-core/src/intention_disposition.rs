@@ -25,6 +25,16 @@ pub struct IntentionDispositionProfile {
     pub commitment_switch_margin: Permille,
 }
 
+impl Default for IntentionDispositionProfile {
+    fn default() -> Self {
+        Self {
+            domain_patience: BTreeMap::new(),
+            default_patience_ticks: NonZeroU32::new(30).unwrap(),
+            commitment_switch_margin: Permille::new_unchecked(200),
+        }
+    }
+}
+
 impl IntentionDispositionProfile {
     /// Returns the patience limit for a given domain tag, falling back to
     /// the default if no domain-specific entry exists.
@@ -92,5 +102,14 @@ mod tests {
         assert_eq!(profile.patience_for(IntentionDomainTag::Care), 20);
         assert_eq!(profile.patience_for(IntentionDomainTag::Errand), 20);
         assert_eq!(profile.patience_for(IntentionDomainTag::Generic), 20);
+    }
+
+    #[test]
+    fn intention_disposition_profile_default_matches_fixture_baseline() {
+        let profile = IntentionDispositionProfile::default();
+
+        assert!(profile.domain_patience.is_empty());
+        assert_eq!(profile.default_patience_ticks, NonZeroU32::new(30).unwrap());
+        assert_eq!(profile.commitment_switch_margin, Permille::new(200).unwrap());
     }
 }

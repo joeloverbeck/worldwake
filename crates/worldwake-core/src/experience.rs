@@ -126,6 +126,18 @@ pub struct PreferenceProfile {
     pub memory_retention_ticks: u64,
 }
 
+impl Default for PreferenceProfile {
+    fn default() -> Self {
+        Self {
+            route_caution_weight: Permille::new_unchecked(300),
+            source_trust_weight: Permille::new_unchecked(200),
+            route_memory_capacity: 24,
+            source_memory_capacity: 18,
+            memory_retention_ticks: 400,
+        }
+    }
+}
+
 impl Component for PreferenceProfile {}
 
 #[cfg(test)]
@@ -193,6 +205,17 @@ mod tests {
     #[test]
     fn source_reliability_defaults_empty() {
         assert!(SourceReliability::default().sources.is_empty());
+    }
+
+    #[test]
+    fn preference_profile_default_matches_fixture_baseline() {
+        let profile = PreferenceProfile::default();
+
+        assert_eq!(profile.route_caution_weight, crate::Permille::new(300).unwrap());
+        assert_eq!(profile.source_trust_weight, crate::Permille::new(200).unwrap());
+        assert_eq!(profile.route_memory_capacity, 24);
+        assert_eq!(profile.source_memory_capacity, 18);
+        assert_eq!(profile.memory_retention_ticks, 400);
     }
 
     #[test]
