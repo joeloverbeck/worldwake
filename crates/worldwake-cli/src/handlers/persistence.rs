@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use worldwake_ai::{AgentTickDriver, PlanningBudget};
+use worldwake_ai::AgentTickDriver;
 use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandOutcome, CommandResult};
@@ -50,7 +50,7 @@ pub fn handle_load(
                     }
                 }
             } else {
-                AgentTickDriver::new(PlanningBudget::default())
+                AgentTickDriver::new()
             };
             repl_state.last_affordances.clear();
             println!("Loaded from {path} — tick {}", tick.0);
@@ -66,10 +66,9 @@ pub fn handle_load(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_ai::PlanningBudget;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EventLog, Seed, StateHash, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, CauseRef, ControlSource, EventLog, ReasoningProfile, Seed,
+        StateHash, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::SaveableRuntime;
     use worldwake_sim::{
@@ -78,6 +77,12 @@ mod tests {
     };
 
     fn build_test_sim() -> SimulationState {
+        build_test_sim_with_reasoning_profile(None)
+    }
+
+    fn build_test_sim_with_reasoning_profile(
+        reasoning_profile: Option<ReasoningProfile>,
+    ) -> SimulationState {
         let mut world = World::new(build_prototype_world()).unwrap();
         let mut event_log = EventLog::new();
         let mut txn = WorldTxn::new(
@@ -90,6 +95,10 @@ mod tests {
             WitnessData::default(),
         );
         let agent_id = txn.create_agent("TestAgent", ControlSource::Ai).unwrap();
+        if let Some(reasoning_profile) = reasoning_profile {
+            txn.set_component_reasoning_profile(agent_id, reasoning_profile)
+                .unwrap();
+        }
         let _ = txn.commit(&mut event_log);
 
         let scheduler = Scheduler::new_with_tick(Tick(7), SystemManifest::canonical());
@@ -117,7 +126,7 @@ mod tests {
     #[test]
     fn test_save_creates_file() {
         let sim = build_test_sim();
-        let driver = AgentTickDriver::new(PlanningBudget::default());
+        let driver = AgentTickDriver::new();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.save");
         let path_str = path.to_str().unwrap();
@@ -137,15 +146,12 @@ mod tests {
         let path = dir.path().join("roundtrip.save");
         let path_str = path.to_str().unwrap();
 
-        let saving_driver = AgentTickDriver::new(PlanningBudget {
-            max_candidates_to_plan: 9,
-            ..PlanningBudget::default()
-        });
+        let saving_driver = AgentTickDriver::new();
         let expected_driver_bytes = saving_driver.save_runtime_state().unwrap();
         handle_save(&sim, &saving_driver, path_str).unwrap();
 
         let mut loaded_sim = build_test_sim(); // different instance
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let mut repl_state = ReplState::new();
 
         handle_load(&mut loaded_sim, &mut driver, &mut repl_state, path_str).unwrap();
@@ -168,10 +174,43 @@ mod tests {
     }
 
     #[test]
+    fn test_save_load_roundtrip_preserves_agent_reasoning_profile() {
+        let profile = ReasoningProfile {
+            max_plan_depth: 12,
+            beam_width: 16,
+            max_node_expansions: 1024,
+            ..ReasoningProfile::default()
+        };
+        let sim = build_test_sim_with_reasoning_profile(Some(profile.clone()));
+        let agent = sim
+            .controller_state()
+            .controlled_entity()
+            .expect("test sim should have a controlled agent");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("roundtrip-reasoning.save");
+        let path_str = path.to_str().unwrap();
+
+        let driver = AgentTickDriver::new();
+        handle_save(&sim, &driver, path_str).unwrap();
+
+        let mut loaded_sim = build_test_sim();
+        let mut loaded_driver = AgentTickDriver::new();
+        let mut repl_state = ReplState::new();
+        handle_load(&mut loaded_sim, &mut loaded_driver, &mut repl_state, path_str).unwrap();
+
+        assert_eq!(
+            loaded_sim.world().get_component_reasoning_profile(agent),
+            Some(&profile),
+            "agent reasoning profile should persist across save/load"
+        );
+    }
+
+    #[test]
     fn test_load_nonexistent_file() {
         let mut sim = build_test_sim();
         let original_tick = sim.scheduler().current_tick();
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let mut repl_state = ReplState::new();
 
         let result = handle_load(
@@ -195,7 +234,7 @@ mod tests {
     fn test_load_invalid_file() {
         let mut sim = build_test_sim();
         let original_tick = sim.scheduler().current_tick();
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let mut repl_state = ReplState::new();
 
         let dir = tempfile::tempdir().unwrap();
@@ -218,7 +257,7 @@ mod tests {
     #[test]
     fn test_load_clears_repl_state() {
         let sim = build_test_sim();
-        let driver = AgentTickDriver::new(PlanningBudget::default());
+        let driver = AgentTickDriver::new();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clear_repl.save");
         let path_str = path.to_str().unwrap();
@@ -226,7 +265,7 @@ mod tests {
         handle_save(&sim, &driver, path_str).unwrap();
 
         let mut loaded_sim = build_test_sim();
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let mut repl_state = ReplState::new();
 
         // Simulate stale affordances by adding a dummy entry

@@ -140,6 +140,12 @@ Established belief-driven bilateral pricing across trade affordances and action 
 ### S06: Commodity Opportunity Valuation — COMPLETED
 Established one shared belief-facing commodity-opportunity valuation layer across AI and trade: `CommodityValuationProfile`, bounded indirect recipe propagation, recipe-aware trade valuation and negotiation support, ranking unification for recipe-input and production goals, and final positive/negative golden proof for recipe-opportunity emergence and suppression. Archived spec: `archive/specs/S06-commodity-opportunity-valuation.md`.
 
+### S42: Per-Agent Reasoning Style — COMPLETED
+Established authoritative per-agent `ReasoningProfile` storage and AI consumption, removed the shared `PlanningBudget` path, preserved save/load through `SAVE_FORMAT_VERSION` 14, and shipped golden reasoning-diversity proof for search-depth-driven behavioral divergence with deterministic replay. Archived spec: `archive/specs/S42-per-agent-reasoning-style.md`.
+
+### S43: Communication Type Differentiation — COMPLETED
+Established typed social communication through `CommunicationClass`, authoritative per-agent `CommunicationProfile`, class-aware `ShareBelief` suppression and ranking, class-aware Tell acceptance, and golden S43 closeout proving stress survival, listener acceptance divergence, and stressed alarm relay. Archived spec: `archive/specs/S43-communication-type-differentiation.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -197,9 +203,9 @@ S34 ✅, S35 ✅ (independent, can parallel with S33)
 E18 ✅, E19 ✅, E20 ✅ ──→ E22 ✅ (integration tests need everything)
 S40 ✅ ──→ E22 ✅ (integration should cover lawful remote combat pursuit)
 
-S42 (no deps — per-agent reasoning style)
-S43 (no deps — communication type differentiation)
-S42, S43 ──→ S44 (generalized contention substrate)
+S42 ✅ (no deps — per-agent reasoning style completed)
+S43 ✅ (no deps — communication type differentiation completed)
+S42 ✅, S43 ✅ ──→ S44 (generalized contention substrate)
 S44 ──→ S45 (unified social artifact model benefits from contention for claim competition)
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
@@ -456,17 +462,14 @@ S36 ✅ ──→ S40 ✅
 Derived from the external ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs address confirmed architectural gaps in agent reasoning diversity (FND IV.22), communication type differentiation (FND III.15/18), generalized contention (FND II.8/9), and social artifact modeling (FND IV.25).
 
 **Step 17** (parallel, no deps):
-- **S42**: Per-Agent Reasoning Style
-  - Replace shared `PlanningBudget` with per-agent `ReasoningProfile` component
-  - Search depth, beam width, switch reluctance, retry timing become per-agent
-  - FND IV.22 alignment: reasoning style diversity, not just motive diversity
-- **S43**: Communication Type Differentiation
-  - Split Tell into urgency-classified types: Alarm, Testimony, Gossip
-  - Per-class trust model, suppression rule, and acceptance fidelity
-  - Alarms survive stress suppression; gossip does not
-  - FND III.15/18 alignment: distinct communication carriers
+- **S42**: Per-Agent Reasoning Style — ✅ COMPLETED
+  - archived spec: `archive/specs/S42-per-agent-reasoning-style.md`
+  - replaced the shared `PlanningBudget` with authoritative per-agent `ReasoningProfile`, updated save/load through format version 14, and shipped golden reasoning-diversity proof through Scenario 97 search-depth divergence
+- **S43**: Communication Type Differentiation — ✅ COMPLETED
+  - archived spec: `archive/specs/S43-communication-type-differentiation.md`
+  - split Tell into urgency-classified types, moved listener acceptance onto authoritative `CommunicationProfile`, and shipped golden proof for alarm-vs-gossip stress handling, class-aware acceptance, and stressed relay
 
-**Step 18** (after S42, S43):
+**Step 18** (after S43):
 - **S44**: Generalized Contention Substrate
   - Extend facility queue grant/wait/expiry pattern to all exclusive affordances
   - Reusable `ContentionQueue` component for corpse loot, item pickup, patient treatment
@@ -483,15 +486,15 @@ Derived from the external ChatGPT architecture review (`brainstorming/improvemen
 
 Dependency graph:
 ```
-S42 (no deps, parallel)
-S43 (no deps, parallel)
-S42, S43 ──→ S44
+S42 ✅ (no deps, parallel)
+S43 ✅ (no deps, parallel)
+S42 ✅, S43 ✅ ──→ S44
 S44 ──→ S45
 ```
 
 #### Phase 5 Gate
-- [ ] Two agents with different `ReasoningProfile` produce observably different behavior (S42)
-- [ ] Alarm-class communication survives stress suppression while gossip is suppressed (S43)
+- [x] Two agents with different `ReasoningProfile` produce observably different behavior (S42)
+- [x] Alarm-class communication survives stress suppression while gossip is suppressed (S43)
 - [ ] Multi-agent corpse loot contention resolves through inspectable queue state (S44)
 - [ ] End-to-end bounty lifecycle: post → perceive → pursue → claim → reward (S45)
 - [ ] All Phase 4 and 4+ gate criteria still hold
@@ -530,8 +533,8 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S35-observable-activity-signals.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S36-declarative-goal-registration.md`~~ | 3+ | 13.5 W5 | ✅ COMPLETED |
 | ~~`S39-limited-side-benefit-plan-scoring.md`~~ | 4+ | 16 | ✅ COMPLETED |
-| `S42-per-agent-reasoning-style.md` | 5 | 17 | none |
-| `S43-communication-type-differentiation.md` | 5 | 17 | none |
+| ~~`S42-per-agent-reasoning-style.md`~~ | 5 | 17 | ✅ COMPLETED |
+| ~~`S43-communication-type-differentiation.md`~~ | 5 | 17 | ✅ COMPLETED |
 | `S44-generalized-contention-substrate.md` | 5 | 18 | S42, S43 |
 | `S45-unified-social-artifact-model.md` | 5 | 19 | S44 |
 
@@ -558,4 +561,4 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | ✅ COMPLETED |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39, S48 | Merchant economy depth, learned preferences, side-benefit scoring, S38 golden closeout | ✅ COMPLETED |
-| 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | PENDING |
+| 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | IN PROGRESS (S42 and S43 complete; S44–S45 pending) |

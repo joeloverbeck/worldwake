@@ -32,7 +32,9 @@ Follow these steps in order.
 
 ### Step 1: Read Current Scenario
 
-Read `scenarios/cli-evaluation.ron` to understand what's currently exercised.
+First, validate the scenario loads: `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit 2>&1`. If it fails with a parse error (missing field, type mismatch), fix the schema drift before proceeding with feature analysis. This is the most common maintenance trigger.
+
+Then read `scenarios/cli-evaluation.ron` to understand what's currently exercised.
 
 Take inventory:
 - Which place tags are used
@@ -40,6 +42,8 @@ Take inventory:
 - Which commodities exist
 - Which facilities/workstations exist
 - Which resource sources exist
+
+Compare each inventory against the full set of variants in the corresponding enum (`CommodityKind::ALL`, `WorkstationTag::ALL`, `PlaceTag::ALL`) to identify unexercised variants. Not all variants need scenario coverage — apply "exercise, don't overload."
 
 ### Step 2: Read Latest Evaluation
 
@@ -56,6 +60,7 @@ Check what's changed recently:
 3. Check `crates/worldwake-core/src/` for new component types or profile types
 4. Check `crates/worldwake-systems/src/` for new action registrations
 5. Check `crates/worldwake-cli/src/scenario/types.rs` for any new scenario def fields
+6. For each new component or feature, check whether it appears in `AgentDef` or other scenario def types. Components that are runtime-generated (e.g., experience records, belief state, active goals) don't need scenario entries — they emerge naturally from agent behavior during ticking. Only features with scenario-definable fields need scenario updates.
 
 ### Step 4: Update the Scenario
 

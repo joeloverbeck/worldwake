@@ -57,10 +57,13 @@ For each recommendation, identify the *primary* classification and note any seco
 - **Validation fix** (wrong behavior): Actions are listed that shouldn't be, or errors lack context. Start in `handlers/actions.rs` or the relevant handler. Examples: missing profile check, unhelpful error message.
 - **Flow fix** (wrong interaction): The command sequence is confusing or implicit. Start in `repl.rs` or `commands.rs`. Often also requires updating `handlers/mod.rs` (dispatch) and `tests/integration.rs`.
 - **Upstream flag** (needs non-CLI changes): The fix requires changes to core/sim/systems/ai crates. Do NOT implement — flag it as a separate spec/ticket.
+- **False positive** (not a CLI issue): The evaluation flagged something that works correctly, or the issue is in the evaluator's test methodology. Note the finding in the summary so the next evaluation can verify with a better test case.
+
+If addressing 4+ recommendations or changes that cross-cut multiple handler files, consider using plan mode to align on approach before implementing.
 
 ### Step 4: Implement Changes
 
-For the top 2-3 recommendations:
+For the top recommendations (all CRITICAL and HIGH, plus MEDIUM recommendations that share the same files as the top fixes). Batch related changes to reduce churn, but don't expand scope beyond what can be verified in one pass.
 
 1. Identify the specific file and function before writing code
 2. If the fix approach is ambiguous, apply the 1-3-1 rule (1 problem, 3 options, 1 recommendation) and ask the user
@@ -77,6 +80,14 @@ cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 If tests fail, fix the issues before proceeding.
+
+For display fixes, also run 2-3 smoke-test commands against the evaluation scenario to verify the output looks correct:
+
+```bash
+cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec "<relevant command>" --state /tmp/cli-impl-verify.bin
+```
+
+Clean up the state file after: `rm /tmp/cli-impl-verify.bin`
 
 ### Step 6: Summary
 
@@ -103,8 +114,9 @@ The CLI uses these display helpers in `display.rs`:
 - `resolve_entity()` — user input to EntityId conversion
 - `format_needs_bar()` — progress bar for homeostatic needs
 - `format_quantity()` — item count display
-- `format_location()` — location description
+- `format_location()` — location description (includes in-transit status)
 - `format_control_source()` — control label
+- `format_state_delta()` — human-readable event delta formatting
 
 ### Handler Patterns
 

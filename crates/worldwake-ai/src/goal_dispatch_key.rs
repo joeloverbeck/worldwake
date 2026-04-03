@@ -254,6 +254,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice { office },
             GoalKind::SupportCandidateForOffice {

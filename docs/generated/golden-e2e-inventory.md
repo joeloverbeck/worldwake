@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 20
-- Files contributing `golden_*` tests: 20
-- Total `golden_*` tests: 273
+- Golden test files: 21
+- Files contributing `golden_*` tests: 21
+- Total `golden_*` tests: 278
 
 ## Per-File Inventory
 
@@ -26,9 +26,10 @@ Do not hand-edit it.
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
 | `golden_pursuit.rs` | 6 |
+| `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
 | `golden_soak.rs` | 1 |
-| `golden_social.rs` | 14 |
+| `golden_social.rs` | 17 |
 | `golden_supply_chain.rs` | 2 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 11 |
@@ -296,6 +297,11 @@ Do not hand-edit it.
 - `golden_combat_flee_re_pursue`
 - `golden_combat_flee_re_pursue_replays_deterministically`
 
+### `golden_reasoning_diversity.rs`
+
+- `search_depth_divergence`
+- `search_depth_divergence_replays_deterministically`
+
 ### `golden_resilience.rs`
 
 - `t31_stress_disruptions`
@@ -321,6 +327,9 @@ Do not hand-edit it.
 - `golden_chain_length_filtering_stops_gossip`
 - `golden_agent_diversity_in_social_behavior`
 - `golden_rumor_leads_to_wasted_trip_then_discovery`
+- `golden_alarm_survives_stress_suppression`
+- `golden_class_aware_acceptance`
+- `golden_alarm_relay_through_stressed_intermediary`
 
 ### `golden_supply_chain.rs`
 

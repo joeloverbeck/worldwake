@@ -11,8 +11,9 @@ use crate::DirtySet;
 use crate::{
     classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
-    PlannedStep, PlanningBudget, RankedGoal,
+    PlannedStep, RankedGoal,
 };
+use worldwake_core::ReasoningProfile;
 
 use super::frame::progress_op_kinds;
 use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
@@ -74,7 +75,7 @@ pub(super) fn handle_active_action_phase(
             ranked_candidates,
             blocked_memory,
             tick,
-            ctx.budget,
+            ctx.reasoning,
             ctx.semantics_table,
             action_defs,
             action_handlers,
@@ -142,16 +143,16 @@ pub(super) fn effective_goal_switch_margin(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     jc: Option<&IntentionFrame>,
-    budget: &PlanningBudget,
+    reasoning: &ReasoningProfile,
 ) -> Permille {
-    goal_switch_margin_details(view, agent, jc, budget).0
+    goal_switch_margin_details(view, agent, jc, reasoning).0
 }
 
 pub(super) fn goal_switch_margin_details(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     jc: Option<&IntentionFrame>,
-    budget: &PlanningBudget,
+    reasoning: &ReasoningProfile,
 ) -> (Permille, FrameSwitchMarginSource) {
     if has_frame(jc) {
         if let Some(profile) = view.intention_disposition_profile(agent) {
@@ -163,8 +164,8 @@ pub(super) fn goal_switch_margin_details(
     }
 
     (
-        budget.switch_margin_permille,
-        FrameSwitchMarginSource::BudgetDefault,
+        reasoning.switch_margin,
+        FrameSwitchMarginSource::ReasoningProfile,
     )
 }
 
@@ -250,7 +251,7 @@ pub(super) fn handle_current_step_failure(
 ) -> Result<(), TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
-    let budget = ctx.budget;
+    let reasoning = ctx.reasoning;
     let tick = ctx.tick;
     let view = PerAgentBeliefView::from_world(agent, world);
     let goal_key = active_goal.unwrap_or_else(|| {
@@ -272,7 +273,7 @@ pub(super) fn handle_current_step_failure(
         runtime,
         jc,
         blocked_memory,
-        budget,
+        reasoning,
     );
     runtime.step_in_flight = false;
     runtime.current_step_index = 0;

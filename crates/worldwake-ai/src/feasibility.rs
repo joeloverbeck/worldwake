@@ -796,6 +796,7 @@ mod tests {
         let goal = ranked_goal(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         });
         let blocked = empty_blocked_memory();
 
@@ -820,6 +821,7 @@ mod tests {
         let goal = ranked_goal(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         });
         let blocked = empty_blocked_memory();
 

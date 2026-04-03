@@ -157,7 +157,6 @@ pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> Co
 mod tests {
     use super::*;
     use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
-    use worldwake_ai::PlanningBudget;
     use worldwake_core::{
         control::ControlSource, ids::EntityId, needs::HomeostaticNeeds, numerics::Permille,
         topology::PlaceTag,
@@ -249,7 +248,7 @@ mod tests {
     fn test_tick_advances_simulation() {
         let (spawned, _) = ai_agent_scenario();
         let mut sim = spawned.state;
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let before = sim.scheduler().current_tick();
 
         let result = handle_tick(
@@ -269,7 +268,7 @@ mod tests {
     fn test_tick_n_advances_n() {
         let (spawned, _) = ai_agent_scenario();
         let mut sim = spawned.state;
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let before = sim.scheduler().current_tick();
 
         let result = handle_tick(
@@ -289,7 +288,7 @@ mod tests {
     fn test_tick_runs_ai() {
         let (spawned, _) = ai_agent_scenario();
         let mut sim = spawned.state;
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let events_before = sim.event_log().len();
 
         let result = handle_tick(

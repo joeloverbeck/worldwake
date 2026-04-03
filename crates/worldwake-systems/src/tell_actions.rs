@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
+    classify_communication, CommunicationClass,
     current_institutional_belief_topics, institutional_claim_same_memory_lane,
     institutional_claim_subject_entity, institutional_knowledge_chain_len,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
@@ -568,6 +569,15 @@ fn commit_tell(
     );
     speaker_beliefs.enforce_conversation_memory(&speaker_profile, txn.tick());
 
+    let communication_profile = txn
+        .get_component_communication_profile(listener)
+        .cloned()
+        .unwrap_or_default();
+    let acceptance_fidelity = match classify_communication(&payload.topic, &speaker_beliefs) {
+        CommunicationClass::Alarm => communication_profile.alarm_acceptance,
+        CommunicationClass::Testimony => communication_profile.testimony_acceptance,
+        CommunicationClass::Gossip => communication_profile.gossip_acceptance,
+    };
     let mut listener_beliefs = required_belief_store(txn, listener)?;
     let listener_profile = required_tell_profile(txn, listener)?;
     let heard_key = TellMemoryKey {
@@ -575,7 +585,7 @@ fn commit_tell(
         topic: payload.topic,
     };
     let (result, disposition, belief_delta) =
-        if passes_acceptance_check(listener_profile.acceptance_fidelity.value(), rng) {
+        if passes_acceptance_check(acceptance_fidelity.value(), rng) {
             let mut accepted_any = false;
             let mut belief_delta = TellBeliefDeltaKind::None;
             let listener_perception = required_perception_profile(txn, listener)?;
@@ -743,9 +753,9 @@ mod tests {
         build_believed_entity_state, build_prototype_world, to_shared_belief_snapshot, ActionDefId,
         AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
         BodyCostPerTick, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog,
-        EventTag, EventView, HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        CommunicationProfile, ControlSource, DemandObservation, DriveThresholds, EntityId,
+        EntityKind, EventLog, EventTag, EventView, HeardBeliefDisposition, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
         IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
         PerceptionProfile, PerceptionSource, Permille, Quantity, RecipeId,
         RecipientKnowledgeStatus, ResourceSource, Seed, SharedTellState, SuccessionLaw,
@@ -800,6 +810,14 @@ mod tests {
         DeterministicRng::new(Seed([seed; 32]))
     }
 
+    fn guaranteed_communication_profile() -> CommunicationProfile {
+        CommunicationProfile {
+            alarm_acceptance: Permille::new(1000).unwrap(),
+            testimony_acceptance: Permille::new(1000).unwrap(),
+            gossip_acceptance: Permille::new(1000).unwrap(),
+        }
+    }
+
     fn world_with_speaker_listener_and_subject(
         source: PerceptionSource,
     ) -> (World, EntityId, EntityId, EntityId, EntityId) {
@@ -816,11 +834,12 @@ mod tests {
                 TellProfile {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 3,
-                    acceptance_fidelity: Permille::new(1000).unwrap(),
                     ..TellProfile::default()
                 },
             )
             .unwrap();
+            txn.set_component_communication_profile(listener, guaranteed_communication_profile())
+                .unwrap();
             for entity in [speaker, listener, subject] {
                 txn.set_ground_location(entity, place).unwrap();
             }
@@ -897,11 +916,12 @@ mod tests {
                 TellProfile {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 3,
-                    acceptance_fidelity: Permille::new(1000).unwrap(),
                     ..TellProfile::default()
                 },
             )
             .unwrap();
+            txn.set_component_communication_profile(listener, guaranteed_communication_profile())
+                .unwrap();
             for entity in [speaker, listener, office] {
                 txn.set_ground_location(entity, place).unwrap();
             }
@@ -1626,7 +1646,6 @@ mod tests {
                 TellProfile {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 2,
-                    acceptance_fidelity: Permille::new(800).unwrap(),
                     ..TellProfile::default()
                 },
             )
@@ -2070,7 +2089,7 @@ mod tests {
     }
 
     #[test]
-    fn tell_commit_respects_listener_acceptance_fidelity() {
+    fn tell_commit_uses_class_specific_listener_acceptance() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
         let expected = {
@@ -2084,8 +2103,16 @@ mod tests {
                 TellProfile {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 3,
-                    acceptance_fidelity: Permille::new(0).unwrap(),
                     ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            txn.set_component_communication_profile(
+                listener,
+                CommunicationProfile {
+                    alarm_acceptance: Permille::new(1000).unwrap(),
+                    testimony_acceptance: Permille::new(0).unwrap(),
+                    gossip_acceptance: Permille::new(0).unwrap(),
                 },
             )
             .unwrap();
@@ -2108,6 +2135,79 @@ mod tests {
         assert!(speaker_store
             .told_beliefs
             .contains_key(&tell_memory_key(listener, subject)));
+    }
+
+    #[test]
+    fn tell_commit_falls_back_to_default_communication_profile() {
+        let (defs, handlers, tell_id, mut fallback_world, _place, fallback_speaker, fallback_listener, fallback_subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let (defs_explicit, handlers_explicit, tell_id_explicit, mut explicit_world, _place_explicit, explicit_speaker, explicit_listener, explicit_subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+
+        {
+            let mut txn = new_txn(&mut fallback_world, 6);
+            txn.clear_component_communication_profile(fallback_listener)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        {
+            let mut txn = new_txn(&mut explicit_world, 6);
+            txn.set_component_communication_profile(
+                explicit_listener,
+                CommunicationProfile::default(),
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let fallback_instance = tell_instance(
+            tell_id,
+            fallback_speaker,
+            fallback_listener,
+            fallback_subject,
+        );
+        let explicit_instance = tell_instance(
+            tell_id_explicit,
+            explicit_speaker,
+            explicit_listener,
+            explicit_subject,
+        );
+
+        let fallback_outcome = commit_tell_result(
+            &defs,
+            &handlers,
+            tell_id,
+            &mut fallback_world,
+            &fallback_instance,
+            1,
+            8,
+        )
+        .unwrap();
+        let explicit_outcome = commit_tell_result(
+            &defs_explicit,
+            &handlers_explicit,
+            tell_id_explicit,
+            &mut explicit_world,
+            &explicit_instance,
+            1,
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fallback_outcome.trace,
+            explicit_outcome.trace
+        );
+        assert_eq!(
+            fallback_world
+                .get_component_agent_belief_store(fallback_listener)
+                .unwrap(),
+            explicit_world
+                .get_component_agent_belief_store(explicit_listener)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -2261,8 +2361,15 @@ mod tests {
             txn.set_component_tell_profile(
                 listener,
                 TellProfile {
-                    acceptance_fidelity: Permille::new(0).unwrap(),
                     ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            txn.set_component_communication_profile(
+                listener,
+                CommunicationProfile {
+                    testimony_acceptance: Permille::new(0).unwrap(),
+                    ..CommunicationProfile::default()
                 },
             )
             .unwrap();
@@ -2292,8 +2399,15 @@ mod tests {
             txn.set_component_tell_profile(
                 listener,
                 TellProfile {
-                    acceptance_fidelity: Permille::new(0).unwrap(),
                     ..TellProfile::default()
+                },
+            )
+            .unwrap();
+            txn.set_component_communication_profile(
+                listener,
+                CommunicationProfile {
+                    testimony_acceptance: Permille::new(0).unwrap(),
+                    ..CommunicationProfile::default()
                 },
             )
             .unwrap();
@@ -2726,7 +2840,6 @@ mod tests {
                 TellProfile {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 1,
-                    acceptance_fidelity: Permille::new(800).unwrap(),
                     ..TellProfile::default()
                 },
             )
@@ -2757,7 +2870,6 @@ mod tests {
                 TellProfile {
                     max_tell_candidates: 3,
                     max_relay_chain_len: 1,
-                    acceptance_fidelity: Permille::new(800).unwrap(),
                     ..TellProfile::default()
                 },
             )
@@ -2845,7 +2957,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 3,
-                acceptance_fidelity: Permille::new(800).unwrap(),
                 ..TellProfile::default()
             },
         );
@@ -3133,7 +3244,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 2,
-                acceptance_fidelity: Permille::new(800).unwrap(),
                 ..TellProfile::default()
             },
         );

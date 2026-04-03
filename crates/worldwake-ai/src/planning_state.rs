@@ -1187,6 +1187,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .collect()
     }
 
+    fn agent_belief_store(&self, agent: EntityId) -> Option<worldwake_core::AgentBeliefStore> {
+        (agent == self.snapshot.actor()).then(|| self.snapshot.actor_belief_store.clone())
+    }
+
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         if agent != self.snapshot.actor() {
             return Vec::new();
@@ -2988,7 +2992,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
-                acceptance_fidelity: pm(650),
                 ..TellProfile::default()
             },
         );

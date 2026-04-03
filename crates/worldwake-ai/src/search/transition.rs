@@ -3,11 +3,11 @@ use crate::goal_model::{grounded_goal_matches_epistemic_barrier, GoalPayloadOver
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
     apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep,
-    PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
+    PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
 };
 use heuristic::{combined_relevant_places, compute_heuristic};
 use std::collections::BTreeMap;
-use worldwake_core::ActionDefId;
+use worldwake_core::{ActionDefId, ReasoningProfile};
 use worldwake_sim::{ActionDefRegistry, RecipeRegistry, RuntimeBeliefView};
 
 use super::heuristic;
@@ -20,7 +20,7 @@ pub(super) fn build_successor<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     build_successor_detailed(
         goal,
@@ -41,7 +41,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
 ) -> Result<
     (Option<PlanTerminalKind>, SearchNode<'snapshot>),
     crate::decision_trace::RootCandidateSkipReason,

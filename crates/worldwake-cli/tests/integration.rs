@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use worldwake_ai::{AgentTickDriver, PlanningBudget};
+use worldwake_ai::AgentTickDriver;
 use worldwake_cli::commands::{CliCommand, CommandOutcome};
 use worldwake_cli::handlers::dispatch_command;
 use worldwake_cli::repl::ReplState;
@@ -45,7 +45,7 @@ impl TestContext {
             sim: spawned.state,
             registries: spawned.action_registries,
             dispatch_table: spawned.dispatch_table,
-            driver: AgentTickDriver::new(PlanningBudget::default()),
+            driver: AgentTickDriver::new(),
             repl_state: ReplState::new(),
         }
     }
@@ -424,14 +424,14 @@ fn test_scenario_determinism() {
         sim: spawned1.state,
         registries: spawned1.action_registries,
         dispatch_table: spawned1.dispatch_table,
-        driver: AgentTickDriver::new(PlanningBudget::default()),
+        driver: AgentTickDriver::new(),
         repl_state: ReplState::new(),
     };
     let mut ctx2 = TestContext {
         sim: spawned2.state,
         registries: spawned2.action_registries,
         dispatch_table: spawned2.dispatch_table,
-        driver: AgentTickDriver::new(PlanningBudget::default()),
+        driver: AgentTickDriver::new(),
         repl_state: ReplState::new(),
     };
 

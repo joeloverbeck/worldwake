@@ -4,7 +4,7 @@ use crate::{
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
+    ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, DemandObservation, DriveThresholds,
     EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
@@ -49,6 +49,10 @@ pub trait GoalBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
+    }
+    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+        let _ = agent;
+        None
     }
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
@@ -358,6 +362,10 @@ pub trait RuntimeBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
+    }
+    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+        let _ = agent;
+        None
     }
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
@@ -763,6 +771,13 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::BelievedEntityState,
             )> {
                 $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
+            }
+
+            fn agent_belief_store(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::AgentBeliefStore> {
+                $crate::RuntimeBeliefView::agent_belief_store(self, agent)
             }
 
             fn known_social_observations(

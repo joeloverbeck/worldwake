@@ -23,6 +23,7 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
+    classify_communication,
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CommodityKind,
@@ -793,6 +794,10 @@ fn emit_social_candidates(
             );
 
         for topic in selection.selected.iter().copied() {
+            let Some(speaker_beliefs) = ctx.view.agent_belief_store(ctx.agent) else {
+                continue;
+            };
+            let communication_class = classify_communication(&topic, &speaker_beliefs);
             let mut evidence = Evidence::with_entity(listener);
             evidence.places.insert(place);
             let mut trace = EvidenceTrace::default();
@@ -841,7 +846,11 @@ fn emit_social_candidates(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
-                GoalKind::ShareBelief { listener, topic },
+                GoalKind::ShareBelief {
+                    listener,
+                    topic,
+                    communication_class,
+                },
                 OpportunityAnchor::Entity(listener),
                 evidence,
                 trace,
@@ -3868,19 +3877,20 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory,
-        BlockerKey, BlockingFact, BodyPart, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, DemandObservation, DemandObservationReason,
-        DriveThresholds, EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile,
-        GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        PatrolProfile, PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace,
-        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, SharedTellState, SocialObservation,
-        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, ViolationKind,
-        ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId, OpportunityAnchor,
+        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent,
+        BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
+        DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
+        EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeedId,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity, RecipeId,
+        RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
+        SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile,
+        TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause,
+        WoundId, OpportunityAnchor,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -3926,6 +3936,7 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
+        belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         social_observations: BTreeMap<EntityId, Vec<worldwake_core::SocialObservation>>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
@@ -4000,6 +4011,7 @@ mod tests {
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
+                belief_stores: BTreeMap::new(),
                 beliefs: BTreeMap::new(),
                 social_observations: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
@@ -4091,6 +4103,40 @@ mod tests {
 
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+            self.belief_stores.get(&agent).cloned().or_else(|| {
+                let has_any_subjective_memory = self.beliefs.contains_key(&agent)
+                    || self.social_observations.contains_key(&agent)
+                    || self
+                        .institutional_claims
+                        .keys()
+                        .any(|(claim_agent, _)| *claim_agent == agent);
+                has_any_subjective_memory.then(|| AgentBeliefStore {
+                    known_entities: self
+                        .beliefs
+                        .get(&agent)
+                        .cloned()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect(),
+                    social_observations: self
+                        .social_observations
+                        .get(&agent)
+                        .cloned()
+                        .unwrap_or_default(),
+                    told_beliefs: BTreeMap::new(),
+                    heard_beliefs: BTreeMap::new(),
+                    asked_witnesses: BTreeMap::new(),
+                    institutional_beliefs: self
+                        .institutional_claims
+                        .iter()
+                        .filter(|((claim_agent, _), _)| *claim_agent == agent)
+                        .map(|((_, key), claims)| (*key, claims.clone()))
+                        .collect(),
+                })
+            })
         }
 
         fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
@@ -8807,7 +8853,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 2,
                 max_relay_chain_len: 2,
-                acceptance_fidelity: pm(800),
                 ..TellProfile::default()
             },
         );
@@ -8845,6 +8890,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: listener_a,
                 topic: TellTopic::EntityBelief { subject: subject_b },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_goal(
@@ -8852,6 +8898,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: listener_a,
                 topic: TellTopic::EntityBelief { subject: subject_a },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_goal(
@@ -8859,6 +8906,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: listener_b,
                 topic: TellTopic::EntityBelief { subject: subject_b },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_goal(
@@ -8866,6 +8914,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: listener_b,
                 topic: TellTopic::EntityBelief { subject: subject_a },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(!contains_goal(
@@ -8873,6 +8922,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: dead_listener,
                 topic: TellTopic::EntityBelief { subject: subject_b },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(!contains_goal(
@@ -8880,6 +8930,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: listener_a,
                 topic: TellTopic::EntityBelief { subject: too_deep },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
     }
@@ -8916,6 +8967,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
 
@@ -8926,6 +8978,7 @@ mod tests {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
+                    communication_class: CommunicationClass::Testimony,
                 }),
                 place: None,
                 target: None,
@@ -8944,6 +8997,69 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
+            }
+        ));
+    }
+
+    #[test]
+    fn social_candidates_attach_alarm_and_gossip_classes_from_speaker_beliefs() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let dead_subject = entity(20);
+        let rumor_subject = entity(21);
+        let place = entity(10);
+        let remote_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, rumor_subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(dead_subject, EntityKind::Agent);
+        view.entity_kinds.insert(rumor_subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (dead_subject, remote_place),
+            (rumor_subject, remote_place),
+        ]);
+        view.entities_at.insert(place, vec![speaker, listener]);
+        view.tell_profiles.insert(speaker, TellProfile::default());
+        let mut dead_belief = believed_state(8, PerceptionSource::DirectObservation);
+        dead_belief.alive = false;
+        dead_belief.last_known_place = Some(remote_place);
+        let mut rumor_belief = believed_state(7, PerceptionSource::Rumor { chain_len: 2 });
+        rumor_belief.last_known_place = Some(remote_place);
+        view.beliefs.insert(
+            speaker,
+            vec![(dead_subject, dead_belief), (rumor_subject, rumor_belief)],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief {
+                    subject: dead_subject,
+                },
+                communication_class: CommunicationClass::Alarm,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief {
+                    subject: rumor_subject,
+                },
+                communication_class: CommunicationClass::Gossip,
             }
         ));
     }
@@ -8988,6 +9104,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_social_omission(
@@ -9045,6 +9162,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::InstitutionalClaim { claim },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
     }
@@ -9093,6 +9211,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_social_omission(
@@ -9153,6 +9272,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(!contains_social_omission(
@@ -9211,6 +9331,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_social_omission(
@@ -9265,6 +9386,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(!contains_social_omission(
@@ -9341,6 +9463,7 @@ mod tests {
                 topic: TellTopic::EntityBelief {
                     subject: recent_subject,
                 },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
         assert!(contains_goal(
@@ -9350,6 +9473,7 @@ mod tests {
                 topic: TellTopic::EntityBelief {
                     subject: older_subject,
                 },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
     }
@@ -11025,6 +11149,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: CommunicationClass::Testimony,
         });
         let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
@@ -11103,6 +11228,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: CommunicationClass::Testimony,
         });
         let trace = evidence_trace_for_goal(&result.diagnostics, key);
 

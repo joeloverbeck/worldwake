@@ -1,10 +1,9 @@
 use crate::{
     authoritative_target, AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind,
-    PlanningBudget,
 };
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
-    EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, ReasoningProfile, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -32,7 +31,7 @@ pub fn handle_plan_failure(
     runtime: &mut AgentDecisionRuntime,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
-    budget: &PlanningBudget,
+    reasoning: &ReasoningProfile,
 ) {
     runtime.current_plan = None;
     if jc.is_some() {
@@ -48,7 +47,8 @@ pub fn handle_plan_failure(
         context.failed_step,
         context.execution_failure,
     );
-    let expires_tick = context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, budget));
+    let expires_tick =
+        context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, reasoning));
 
     let blocker_key = BlockerKey {
         goal_key: context.goal_key,
@@ -787,14 +787,14 @@ fn related_place(
     }
 }
 
-fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
+fn blocking_fact_ttl(fact: BlockingFact, reasoning: &ReasoningProfile) -> u32 {
     match fact {
         BlockingFact::SellerOutOfStock
         | BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict
         | BlockingFact::ExclusiveFacilityUnavailable
-        | BlockingFact::TargetGone => budget.transient_block_ticks,
-        BlockingFact::Unknown => budget.unknown_block_ticks,
+        | BlockingFact::TargetGone => reasoning.transient_block_ticks,
+        BlockingFact::Unknown => reasoning.unknown_block_ticks,
         BlockingFact::NoKnownPath
         | BlockingFact::NoKnownSeller
         | BlockingFact::TooExpensive
@@ -805,7 +805,7 @@ fn blocking_fact_ttl(fact: BlockingFact, budget: &PlanningBudget) -> u32 {
         | BlockingFact::CombatTooRisky
         | BlockingFact::PatienceExhausted
         | BlockingFact::AssumptionFailed
-        | BlockingFact::NoBuyer => budget.structural_block_ticks,
+        | BlockingFact::NoBuyer => reasoning.structural_block_ticks,
     }
 }
 
@@ -817,7 +817,7 @@ mod tests {
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, PlanningBudget, PlanningEntityRef,
+        PlannerOpKind, ReasoningProfile, PlanningEntityRef,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1283,7 +1283,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
         );
 
         assert_eq!(runtime.current_plan, None);
@@ -1297,7 +1297,7 @@ mod tests {
         assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(1)));
         assert_eq!(
             intent.expires_tick,
-            Tick(20 + u64::from(PlanningBudget::default().transient_block_ticks))
+            Tick(20 + u64::from(ReasoningProfile::default().transient_block_ticks))
         );
     }
 
@@ -1536,7 +1536,7 @@ mod tests {
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
-        let budget = PlanningBudget::default();
+        let budget = ReasoningProfile::default();
 
         handle_plan_failure(
             &PlanFailureContext {
@@ -1622,7 +1622,7 @@ mod tests {
 
     #[test]
     fn blocking_fact_ttl_uses_budget_classification() {
-        let budget = PlanningBudget::default();
+        let budget = ReasoningProfile::default();
 
         assert_eq!(
             blocking_fact_ttl(BlockingFact::SellerOutOfStock, &budget),
@@ -1640,7 +1640,7 @@ mod tests {
 
     #[test]
     fn unknown_blocker_uses_dedicated_ttl() {
-        let budget = PlanningBudget::default();
+        let budget = ReasoningProfile::default();
         let ttl = blocking_fact_ttl(BlockingFact::Unknown, &budget);
         assert_eq!(ttl, 5);
         assert_ne!(ttl, budget.transient_block_ticks);
@@ -1648,7 +1648,7 @@ mod tests {
 
     #[test]
     fn transient_blockers_unchanged_ttl() {
-        let budget = PlanningBudget::default();
+        let budget = ReasoningProfile::default();
         let transient_facts = [
             BlockingFact::SellerOutOfStock,
             BlockingFact::WorkstationBusy,
@@ -1687,7 +1687,7 @@ mod tests {
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
-        let budget = PlanningBudget::default();
+        let budget = ReasoningProfile::default();
 
         handle_plan_failure(
             &PlanFailureContext {

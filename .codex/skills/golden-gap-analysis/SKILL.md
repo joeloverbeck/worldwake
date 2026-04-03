@@ -56,6 +56,8 @@ From the completed spec and live code, enumerate:
 
 Name exact symbols and files. Do not infer from stale memory.
 
+If the spec primarily adds or migrates a substrate, profile, or other state carrier without introducing new goal families, action surfaces, or planner operations, treat that explicitly as a different analysis shape. In those cases, the main question is whether the live golden suite already proves the spec's core emergent promise, not whether every moved field or read path needs its own golden.
+
 ### 4. Cross-check against the coverage matrix
 
 Using [docs/generated/golden-coverage-matrix.md](../../../docs/generated/golden-coverage-matrix.md), identify:
@@ -65,6 +67,7 @@ Using [docs/generated/golden-coverage-matrix.md](../../../docs/generated/golden-
 - `FOUNDATIONS` principles the spec now exercises but the golden suite still demonstrates weakly
 
 Focus on meaningful gaps, not mere count imbalances.
+If the generated matrix and scenario map disagree, or if newly added scenarios appear with thin metadata, treat the generated artifacts as incomplete for that slice and inspect the owning live `golden_*` source before judging coverage gaps.
 
 ### 5. Generate candidate emergent scenarios
 
@@ -87,6 +90,8 @@ For each candidate scenario, verify it is not already covered by:
 4. relevant live `golden_*` suites when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract
 
 If a candidate overlaps an existing or rejected scenario in the same meaningful code path, reject it and explain why.
+
+When a completed spec's illustrative example conflicts with a later rejected backlog item or a stronger live proof-surface decision, prefer the dashboard/live ownership boundary unless the live suite still lacks the broader emergent contract. Treat the spec example as non-binding when reassessment shows it no longer names the strongest honest golden surface.
 
 Also reject a candidate when a recently completed ticket has already resolved the underlying contradiction at a stronger non-golden proof surface, so the remaining scenario would no longer represent a meaningful golden gap.
 

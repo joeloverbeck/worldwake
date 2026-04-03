@@ -11,11 +11,12 @@ use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
     search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
     ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningBudget, RankedGoal,
+    PlannerOpSemantics, RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, Tick,
+    ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, ReasoningProfile,
+    Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
@@ -214,7 +215,7 @@ pub(super) fn build_candidate_plans(
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
     current_tick: Tick,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -320,7 +321,7 @@ fn opportunity_admitted_by_exhaustion(
 
 pub(super) fn summarize_same_goal_planning_trace(
     ranked_candidates: &[RankedGoal],
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
     current_tick: Tick,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
     plans: &[CandidatePlanSearch],
@@ -436,7 +437,7 @@ fn record_exhausted_goals(
     recipe_registry: &RecipeRegistry,
     plans: &[CandidatePlanSearch],
     tick: Tick,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
 ) {
     for plan in plans {
         match &plan.result {
@@ -551,7 +552,7 @@ pub(super) fn plan_and_validate_next_step(
     frame_switch_margin: Permille,
     side_benefit_weight: Permille,
     tick: Tick,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -666,7 +667,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     frame_switch_margin: Permille,
     side_benefit_weight: Permille,
     tick: Tick,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -993,7 +994,7 @@ mod tests {
         feasibility::FeasibilityHint, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
         ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
         GoalPriorityClass, GroundedGoal, OpportunityAnchor, OpportunityKey, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlanningBudget, RankedGoal,
+        PlanTerminalKind, PlannedPlan, PlannedStep, ReasoningProfile, RankedGoal,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -1400,10 +1401,10 @@ mod tests {
                 evidence_places: BTreeSet::from([market]),
             }),
         ];
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             snapshot_travel_horizon: 0,
             max_candidates_to_plan: 2,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
 
         let plans = super::build_candidate_plans(
@@ -1483,10 +1484,10 @@ mod tests {
                 BTreeSet::from([origin]),
             )),
         ];
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
 
         let plans = super::build_candidate_plans(
@@ -1573,10 +1574,10 @@ mod tests {
                 BTreeSet::from([origin]),
             )),
         ];
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
         let exhausted = OpportunityKey {
             goal_key: ranked_candidates[0].grounded.key,
@@ -1750,10 +1751,10 @@ mod tests {
                 BTreeSet::from([origin]),
             )),
         ];
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
         let mut runtime = AgentDecisionRuntime {
             dirty: DirtySet::NO_PLAN,
@@ -1872,9 +1873,9 @@ mod tests {
         assert_eq!(
             super::summarize_same_goal_planning_trace(
                 &ranked_candidates,
-                &PlanningBudget {
+                &ReasoningProfile {
                     max_candidates_to_plan: 3,
-                    ..PlanningBudget::default()
+                    ..ReasoningProfile::default()
                 },
                 Tick(1),
                 &BTreeMap::new(),
@@ -1947,10 +1948,10 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
-            &PlanningBudget {
+            &ReasoningProfile {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 2,
-                ..PlanningBudget::default()
+                ..ReasoningProfile::default()
             },
             &semantics,
             &defs,
@@ -1965,10 +1966,10 @@ mod tests {
         assert_eq!(
             super::summarize_same_goal_planning_trace(
                 &ranked_candidates,
-                &PlanningBudget {
+                &ReasoningProfile {
                     snapshot_travel_horizon: 4,
                     max_candidates_to_plan: 2,
-                    ..PlanningBudget::default()
+                    ..ReasoningProfile::default()
                 },
                 Tick(1),
                 &BTreeMap::new(),
@@ -2087,11 +2088,11 @@ mod tests {
                 },
             ),
         ]);
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
             max_node_expansions: 0,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
 
         let plans = super::build_candidate_plans(
@@ -2173,7 +2174,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(9),
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2182,7 +2183,7 @@ mod tests {
         assert_eq!(
             entry.next_retry_tick,
             Some(Tick(
-                9 + u64::from(PlanningBudget::default().initial_cooldown_ticks)
+                9 + u64::from(ReasoningProfile::default().initial_cooldown_ticks)
             ))
         );
         assert_eq!(
@@ -2223,7 +2224,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(9),
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2244,10 +2245,10 @@ mod tests {
     #[test]
     fn record_exhausted_goals_doubles_cooldown_for_repeated_budget_retry_entries() {
         let goal = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
         let mut runtime = AgentDecisionRuntime::default();
         runtime.exhaustion_cache.insert(
@@ -2330,7 +2331,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(10),
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
         );
 
         assert!(!runtime.exhaustion_cache.contains_key(&solved_goal));
@@ -2366,7 +2367,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(9),
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2504,12 +2505,12 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
-            &PlanningBudget {
+            &ReasoningProfile {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
                 // Zero makes any hidden retry-budget override observable.
                 max_node_expansions: 0,
-                ..PlanningBudget::default()
+                ..ReasoningProfile::default()
             },
             &semantics,
             &defs,
@@ -2596,10 +2597,10 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
-            &PlanningBudget {
+            &ReasoningProfile {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 2,
-                ..PlanningBudget::default()
+                ..ReasoningProfile::default()
             },
             &semantics,
             &defs,
@@ -2671,10 +2672,10 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
-            &PlanningBudget {
+            &ReasoningProfile {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                ..PlanningBudget::default()
+                ..ReasoningProfile::default()
             },
             &semantics,
             &defs,

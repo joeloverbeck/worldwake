@@ -3,7 +3,7 @@
 
 use crate::goal_model::GoalPriorityClass;
 use crate::interrupts::InterruptTrigger;
-use worldwake_core::{CommodityPurpose, GoalKind};
+use worldwake_core::{CommodityPurpose, CommunicationClass, GoalKind};
 
 // ---------------------------------------------------------------------------
 // DecisionContext
@@ -165,11 +165,28 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
             free_interrupt: FreeInterruptRole::Opportunistic,
         },
 
-        // --- Corpse / social / political goals (suppressed under stress, normal interrupt) ---
+        // --- Social goals use class-dependent suppression but keep the same interrupt behavior ---
+        GoalKind::ShareBelief {
+            communication_class,
+            ..
+        } => GoalFamilyPolicy {
+            suppression: match communication_class {
+                CommunicationClass::Alarm => SuppressionRule::Never,
+                CommunicationClass::Testimony => {
+                    SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical)
+                }
+                CommunicationClass::Gossip => {
+                    SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High)
+                }
+            },
+            penalty_interrupt: PenaltyInterruptEligibility::Never,
+            free_interrupt: FreeInterruptRole::Normal,
+        },
+
+        // --- Corpse / political goals (suppressed under stress, normal interrupt) ---
         GoalKind::BuryCorpse { .. }
         | GoalKind::RegroupWithFaction { .. }
         | GoalKind::EstablishBanditCamp { .. }
-        | GoalKind::ShareBelief { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
         | GoalKind::InvestigateViolation { .. }
@@ -304,6 +321,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief {
                     subject: dummy_entity(),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),
@@ -344,6 +362,42 @@ mod tests {
                 "Goal {kind:?} should be suppressed when stressed at or above High"
             );
         }
+    }
+
+    #[test]
+    fn share_belief_suppression_depends_on_communication_class() {
+        let listener = dummy_entity();
+        let topic = worldwake_core::TellTopic::EntityBelief {
+            subject: dummy_entity(),
+        };
+
+        assert_eq!(
+            goal_family_policy(&GoalKind::ShareBelief {
+                listener,
+                topic,
+                communication_class: worldwake_core::CommunicationClass::Alarm,
+            })
+            .suppression,
+            SuppressionRule::Never,
+        );
+        assert_eq!(
+            goal_family_policy(&GoalKind::ShareBelief {
+                listener,
+                topic,
+                communication_class: worldwake_core::CommunicationClass::Testimony,
+            })
+            .suppression,
+            SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
+        );
+        assert_eq!(
+            goal_family_policy(&GoalKind::ShareBelief {
+                listener,
+                topic,
+                communication_class: worldwake_core::CommunicationClass::Gossip,
+            })
+            .suppression,
+            SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
+        );
     }
 
     // -- Penalty interrupt eligibility tests --
@@ -417,6 +471,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief {
                     subject: dummy_entity(),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),
@@ -523,6 +578,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief {
                     subject: dummy_entity(),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),

@@ -1374,7 +1374,11 @@ fn omitted_social_reason_for_goal(
     goal: &crate::GoalKind,
 ) -> Option<TellTopicOmissionReason> {
     omissions.iter().find_map(|omission| match goal {
-        crate::GoalKind::ShareBelief { listener, topic }
+        crate::GoalKind::ShareBelief {
+            listener,
+            topic,
+            ..
+        }
             if omission.listener == *listener && omission.topic == *topic =>
         {
             Some(omission.reason)
@@ -2344,6 +2348,7 @@ mod tests {
         let share_goal = GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         };
 
         let trace = goal_trace(
@@ -2408,6 +2413,7 @@ mod tests {
         let share_goal = GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         };
 
         let trace = goal_trace(
@@ -2470,6 +2476,7 @@ mod tests {
                 &GoalKind::ShareBelief {
                     listener: entity(23),
                     topic: TellTopic::EntityBelief { subject: office },
+                    communication_class: worldwake_core::CommunicationClass::Gossip,
                 }
             ),
             None
@@ -2492,6 +2499,7 @@ mod tests {
                 &GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
+                    communication_class: worldwake_core::CommunicationClass::Gossip,
                 }
             ),
             Some(TellTopicOmissionReason::SpeakerHasAlreadyToldCurrentBelief)

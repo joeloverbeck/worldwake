@@ -4,7 +4,6 @@
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
 pub mod agent_tick;
-pub mod budget;
 pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
@@ -39,7 +38,6 @@ mod shared_collections;
 mod theft;
 
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
-pub use budget::PlanningBudget;
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
     classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
@@ -110,7 +108,9 @@ pub use ranking::{
 pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
 pub use search::{search_plan, PlanSearchResult};
 pub use side_benefit::{build_plan_value, detect_side_benefits, PlanValue, SideBenefit};
-pub use worldwake_core::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
+pub use worldwake_core::{
+    CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, ReasoningProfile,
+};
 
 #[cfg(test)]
 mod tests {

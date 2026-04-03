@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_ai::{
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table, DecisionOutcome,
-    GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind, PlanningBudget,
+    GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind, ReasoningProfile,
     PlanningState, SelectedPlanSource,
 };
 use worldwake_core::{
@@ -232,7 +232,6 @@ fn accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
-        acceptance_fidelity: pm(1000),
         ..TellProfile::default()
     }
 }
@@ -417,10 +416,6 @@ fn golden_bribe_support_coalition() {
     // the prototype world's adjacency graph creates many travel candidates
     // at equal cost that can push Bribe nodes past the beam cutoff.
     let mut h = GoldenHarness::new(Seed([114; 32]));
-    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget {
-        beam_width: 16,
-        ..worldwake_ai::PlanningBudget::default()
-    });
     h.driver.enable_tracing();
     h.enable_action_tracing();
     h.enable_politics_tracing();
@@ -434,6 +429,15 @@ fn golden_bribe_support_coalition() {
         HomeostaticNeeds::default(),
         MetabolismProfile::default(),
         enterprise_weighted_utility(pm(900)),
+    );
+    set_agent_reasoning_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        worldwake_ai::ReasoningProfile {
+            beam_width: 16,
+            ..worldwake_ai::ReasoningProfile::default()
+        },
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -673,10 +677,6 @@ fn golden_threaten_with_courage_diversity() {
     // Wider beam — same rationale as bribe scenario: many equal-cost travel
     // candidates can push Threaten nodes past the default beam cutoff.
     let mut h = GoldenHarness::new(Seed([115; 32]));
-    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget {
-        beam_width: 16,
-        ..worldwake_ai::PlanningBudget::default()
-    });
     h.driver.enable_tracing();
     h.enable_action_tracing();
 
@@ -689,6 +689,15 @@ fn golden_threaten_with_courage_diversity() {
         HomeostaticNeeds::default(),
         MetabolismProfile::default(),
         enterprise_weighted_utility(pm(900)),
+    );
+    set_agent_reasoning_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        worldwake_ai::ReasoningProfile {
+            beam_width: 16,
+            ..worldwake_ai::ReasoningProfile::default()
+        },
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -2487,7 +2496,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         &semantics_table,
         &h.defs,
         &h.handlers,
-        &PlanningBudget::default(),
+        &ReasoningProfile::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

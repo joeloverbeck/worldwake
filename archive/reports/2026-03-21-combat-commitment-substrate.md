@@ -1,7 +1,7 @@
 # Combat Commitment Substrate
 
 **Date**: 2026-03-21
-**Status**: Draft report
+**Status**: COMPLETED
 **Context**: Investigation following `S16S09GOLVAL-003`
 
 ## Summary
@@ -168,3 +168,10 @@ This substrate would make combat behavior:
 - more extensible for future group tactics
 
 Most importantly, it would make `defend` a real AI-owned commitment rather than just a transient action choice under a volatile reactive goal.
+
+## Outcome
+
+- Completed: 2026-04-03
+- This report was exploited as substrate/planning context for later intention-frame and commitment architecture work and is now archived as historical reference material.
+- Deviation from original plan: the report itself remained a design investigation rather than turning into a standalone implementation artifact.
+- Verification results: reviewed for archival readiness and confirmed to be historical context only; no runtime verification applicable.

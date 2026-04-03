@@ -1,12 +1,13 @@
 use crate::{
     DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalPriorityClass,
-    HypotheticalEntityId, PlannedPlan, PlanningBudget,
+    HypotheticalEntityId, PlannedPlan,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, Tick,
+    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, ReasoningProfile,
+    Tick,
     UniqueItemKind, Wound,
 };
 
@@ -93,7 +94,7 @@ impl ExhaustionEntry {
         invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
         baseline: ExhaustionBaseline,
         current_tick: Tick,
-        budget: &PlanningBudget,
+        reasoning: &ReasoningProfile,
     ) -> Self {
         let mut entry = Self {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -102,7 +103,7 @@ impl ExhaustionEntry {
             next_retry_tick: None,
             consecutive_failures: 0,
         };
-        entry.record_budget_exhaustion(current_tick, budget);
+        entry.record_budget_exhaustion(current_tick, reasoning);
         entry
     }
 
@@ -121,14 +122,14 @@ impl ExhaustionEntry {
         matches!(self.retry_state, ExhaustionRetryState::FrontierExhausted)
     }
 
-    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, budget: &PlanningBudget) {
+    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, reasoning: &ReasoningProfile) {
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         let shift = u32::from(self.consecutive_failures.saturating_sub(1).min(6));
-        let cooldown = budget
+        let cooldown = reasoning
             .initial_cooldown_ticks
             .checked_shl(shift)
             .unwrap_or(u32::MAX)
-            .min(budget.max_cooldown_ticks);
+            .min(reasoning.max_cooldown_ticks);
         self.next_retry_tick = Some(Tick(current_tick.0.saturating_add(u64::from(cooldown))));
         self.retry_state = ExhaustionRetryState::BudgetRetryPending;
     }
@@ -276,7 +277,7 @@ mod tests {
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningBudget,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, ReasoningProfile,
         PlanningEntityRef,
     };
     use std::collections::BTreeMap;
@@ -519,10 +520,10 @@ mod tests {
 
     #[test]
     fn budget_retry_pending_factory_sets_initial_cooldown_from_budget() {
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             initial_cooldown_ticks: 10,
             max_cooldown_ticks: 100,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
 
         let entry = ExhaustionEntry::budget_retry_pending(
@@ -539,10 +540,10 @@ mod tests {
 
     #[test]
     fn record_budget_exhaustion_doubles_cooldown_until_cap() {
-        let budget = PlanningBudget {
+        let budget = ReasoningProfile {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 16,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         };
         let mut entry =
             ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());

@@ -1124,7 +1124,6 @@ fn conformance_tell() {
         &mut ch.h.event_log,
         speaker,
         TellProfile {
-            acceptance_fidelity: pm(1000),
             ..TellProfile::default()
         },
     );
@@ -1147,7 +1146,11 @@ fn conformance_tell() {
 
     let snapshot = ch.snapshot_for(speaker);
     let semantics = ch.semantics_for("tell");
-    let goal = grounded(GoalKind::ShareBelief { listener, topic });
+    let goal = grounded(GoalKind::ShareBelief {
+        listener,
+        topic,
+        communication_class: worldwake_core::CommunicationClass::Testimony,
+    });
     let initial_state = PlanningState::new(&snapshot);
 
     let transition = apply_hypothetical_transition(

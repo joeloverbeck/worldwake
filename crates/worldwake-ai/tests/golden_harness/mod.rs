@@ -12,21 +12,23 @@ pub mod soak_world;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey, PlanningBudget};
+use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
     CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
-    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
-    EventRecord, EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes, LoadUnits, MetabolismProfile,
-    OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
-    Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind, RelationDelta,
-    RelationValue, ResourceSource, Seed, SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
+    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile,
+    OfficeForceState, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
+    ReasoningProfile, RecipeId, RecordData, RecordKind, RelationDelta, RelationValue,
+    ResourceSource, Seed, SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker,
     WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    CommunicationProfile,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -235,6 +237,18 @@ pub fn set_agent_tell_profile(
     commit_txn(txn, event_log);
 }
 
+pub fn set_agent_communication_profile(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    communication_profile: CommunicationProfile,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_communication_profile(agent, communication_profile)
+        .expect("golden harness should keep communication profiles writable");
+    commit_txn(txn, event_log);
+}
+
 pub fn set_agent_perception_profile(
     world: &mut World,
     event_log: &mut EventLog,
@@ -244,6 +258,18 @@ pub fn set_agent_perception_profile(
     let mut txn = new_txn(world, 0);
     txn.set_component_perception_profile(agent, perception_profile)
         .expect("golden harness should keep perception profiles writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn set_agent_reasoning_profile(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    reasoning_profile: ReasoningProfile,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_reasoning_profile(agent, reasoning_profile)
+        .expect("golden harness should keep reasoning profiles writable");
     commit_txn(txn, event_log);
 }
 
@@ -1059,7 +1085,7 @@ impl GoldenHarness {
             defs,
             handlers,
             recipes,
-            driver: AgentTickDriver::new(PlanningBudget::default()),
+            driver: AgentTickDriver::new(),
             action_trace: None,
             request_resolution_trace: None,
             politics_trace: None,
@@ -1170,14 +1196,14 @@ impl GoldenHarness {
             .map(|bytes| AgentTickDriver::from_saved_runtime(bytes, state.world()))
             .transpose()
             .expect("golden harness runtime should deserialize")
-            .unwrap_or_else(|| AgentTickDriver::new(PlanningBudget::default()));
+            .unwrap_or_else(AgentTickDriver::new);
         Self::from_simulation_state_with_driver(&state, driver)
     }
 
     pub fn from_simulation_state(state: &SimulationState) -> Self {
         Self::from_simulation_state_with_driver(
             state,
-            AgentTickDriver::new(PlanningBudget::default()),
+            AgentTickDriver::new(),
         )
     }
 
@@ -1279,7 +1305,6 @@ mod tests {
     use worldwake_ai::{
         AgentDecisionRuntime, CommodityPurpose, ExhaustionBaseline, ExhaustionEntry,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
-        PlanningBudget,
     };
     use worldwake_core::{ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
@@ -1287,7 +1312,6 @@ mod tests {
     #[derive(Serialize, Deserialize)]
     struct DriverStateMirror {
         runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
-        budget: PlanningBudget,
     }
 
     fn emit_test_event(
@@ -1413,7 +1437,6 @@ mod tests {
                 (actor, runtime),
                 (dead_agent, AgentDecisionRuntime::default()),
             ]),
-            budget: PlanningBudget::default(),
         })
         .unwrap();
         h.driver = AgentTickDriver::from_saved_runtime(&runtime_bytes, &h.world).unwrap();
@@ -1554,7 +1577,6 @@ mod tests {
         let tell_profile = TellProfile {
             max_tell_candidates: 2,
             max_relay_chain_len: 1,
-            acceptance_fidelity: pm(250),
             ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {

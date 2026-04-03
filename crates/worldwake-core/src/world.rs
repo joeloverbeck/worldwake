@@ -3,13 +3,13 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
+    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
     DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
     FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile, ReasoningProfile,
     PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
     RelationTables, ResourceSource, SaleListing, StockAssignment, StockStoragePolicy,
     RouteExperience, SourceReliability, SubstitutePreferences, TellProfile, TheftDispositionProfile,
@@ -607,7 +607,7 @@ mod tests {
         HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
         JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob, PursuitProfile,
+        CommunicationProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob, PursuitProfile,
         ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
         TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
@@ -733,9 +733,16 @@ mod tests {
         TellProfile {
             max_tell_candidates: 5,
             max_relay_chain_len: 2,
-            acceptance_fidelity: Permille::new(700).unwrap(),
             conversation_memory_capacity: 11,
             conversation_memory_retention_ticks: 30,
+        }
+    }
+
+    fn sample_communication_profile() -> CommunicationProfile {
+        CommunicationProfile {
+            alarm_acceptance: Permille::new(965).unwrap(),
+            testimony_acceptance: Permille::new(805).unwrap(),
+            gossip_acceptance: Permille::new(575).unwrap(),
         }
     }
 
@@ -4650,6 +4657,48 @@ mod tests {
 
         let item_error = world
             .insert_component_tell_profile(item_lot, profile)
+            .unwrap_err();
+        assert!(matches!(item_error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn communication_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_communication_profile();
+
+        world
+            .insert_component_communication_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(world.get_component_communication_profile(id), Some(&profile));
+        assert!(world.has_component_communication_profile(id));
+        assert_eq!(
+            world.query_communication_profile().collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
+        assert_eq!(world.count_with_communication_profile(), 1);
+
+        let removed = world.remove_component_communication_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_communication_profile(id), None);
+    }
+
+    #[test]
+    fn communication_profile_rejected_for_non_agent_entity_kinds() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_entity(EntityKind::Office, Tick(1));
+        let item_lot = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(1))
+            .unwrap();
+        let profile = sample_communication_profile();
+
+        let office_error = world
+            .insert_component_communication_profile(office, profile.clone())
+            .unwrap_err();
+        assert!(matches!(office_error, WorldError::InvalidOperation(_)));
+
+        let item_error = world
+            .insert_component_communication_profile(item_lot, profile)
             .unwrap_err();
         assert!(matches!(item_error, WorldError::InvalidOperation(_)));
     }

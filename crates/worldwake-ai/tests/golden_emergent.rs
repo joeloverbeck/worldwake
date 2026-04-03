@@ -12,14 +12,15 @@ use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPl
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
     verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
-    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ComponentKind,
-    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
-    EventTag, EventView, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-    JusticeDispositionProfile, KnownRecipes, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind, RelationValue,
-    ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
-    TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
+    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind,
+    CommunicationProfile, ComponentKind, ComponentValue, ControlSource, DeadAt,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKey,
+    GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RecordData, RecordKind, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
+    TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick,
+    UtilityProfile,
     ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
@@ -62,7 +63,6 @@ fn accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
-        acceptance_fidelity: pm(1000),
         ..TellProfile::default()
     }
 }
@@ -78,6 +78,14 @@ fn focused_accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 1,
         ..accepting_tell_profile()
+    }
+}
+
+fn accepting_communication_profile() -> CommunicationProfile {
+    CommunicationProfile {
+        alarm_acceptance: pm(1000),
+        testimony_acceptance: pm(1000),
+        gossip_acceptance: pm(1000),
     }
 }
 
@@ -1886,6 +1894,12 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
         listener,
         accepting_tell_profile(),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_communication_profile(listener, accepting_communication_profile())
+            .expect("same-place office golden should keep communication profiles writable");
+        commit_txn(txn, &mut h.event_log);
+    }
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -2001,6 +2015,7 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
                             effective_tick: speaker_update_tick,
                         },
                     },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 },
             )
             .into_iter()
@@ -2294,7 +2309,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
     );
     let loser_hold_tick = h.scheduler.current_tick();
     set_control_source(&mut h, loser, ControlSource::Human, loser_hold_tick.0);
-    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget::default());
+    h.driver = worldwake_ai::AgentTickDriver::new();
     h.driver.enable_tracing();
 
     let declare_support_def_id = h
@@ -2633,6 +2648,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         topic: TellTopic::EntityBelief {
             subject: recent_subject,
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let share_office = GoalKind::ShareBelief {
         listener,
@@ -2643,6 +2659,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 effective_tick: Tick(0),
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
 
     assert!(
@@ -3645,6 +3662,7 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
                 effective_tick: Tick(3),
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
@@ -4191,6 +4209,7 @@ fn run_contested_force_state_propagates_through_belief_system(
                 effective_tick: Tick(8),
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
@@ -6281,6 +6300,7 @@ fn run_supply_depletion_enables_share_belief(
     let share_goal = GoalKind::ShareBelief {
         listener,
         topic: TellTopic::EntityBelief { subject: source },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     assert!(
         first_planning

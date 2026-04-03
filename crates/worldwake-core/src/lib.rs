@@ -32,6 +32,7 @@ pub mod blocked_intent;
 pub mod canonical;
 pub mod cause;
 pub mod combat;
+pub mod communication;
 pub mod component_schema;
 pub mod component_tables;
 pub mod components;
@@ -63,6 +64,7 @@ pub mod offices;
 pub mod patrol;
 pub mod production;
 pub mod pursuit;
+pub mod reasoning_profile;
 pub mod relations;
 pub mod test_utils;
 pub mod topology;
@@ -103,6 +105,7 @@ pub use canonical::{
 };
 pub use cause::CauseRef;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
+pub use communication::{classify_communication, CommunicationClass, CommunicationProfile};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{
@@ -166,6 +169,7 @@ pub use offices::{
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
 pub use pursuit::PursuitProfile;
+pub use reasoning_profile::ReasoningProfile;
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,

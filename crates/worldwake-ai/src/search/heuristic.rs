@@ -1,10 +1,10 @@
 use crate::{
     goal_model::trace_prerequisite_guidance, shared_collections::SharedVec, GoalKindPlannerExt,
-    GroundedGoal, PlannerOpKind, PlannerOpSemantics, PlanningBudget, PlanningEntityRef,
+    GroundedGoal, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
     PlanningSnapshot, PlanningState,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityId};
+use worldwake_core::{ActionDefId, EntityId, ReasoningProfile};
 use worldwake_sim::{RecipeRegistry};
 
 use super::{SearchCandidate, SearchNode};
@@ -39,7 +39,7 @@ pub(super) fn combined_relevant_places(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
 ) -> CombinedRelevantPlaces {
     combined_relevant_places_internal(goal, state, recipes, budget, false)
 }
@@ -48,7 +48,7 @@ pub(super) fn combined_relevant_places_with_guidance(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
 ) -> CombinedRelevantPlaces {
     combined_relevant_places_internal(goal, state, recipes, budget, true)
 }
@@ -57,7 +57,7 @@ fn combined_relevant_places_internal(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
     include_guidance_trace: bool,
 ) -> CombinedRelevantPlaces {
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
@@ -97,7 +97,7 @@ pub(super) fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
     goal: &GroundedGoal,
     recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
 ) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
     let combined_places = combined_relevant_places(goal, &state, recipes, budget);

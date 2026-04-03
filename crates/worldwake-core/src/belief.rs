@@ -1323,7 +1323,6 @@ impl Default for PerceptionProfile {
 pub struct TellProfile {
     pub max_tell_candidates: u8,
     pub max_relay_chain_len: u8,
-    pub acceptance_fidelity: Permille,
     pub conversation_memory_capacity: u16,
     pub conversation_memory_retention_ticks: u64,
 }
@@ -1335,7 +1334,6 @@ impl Default for TellProfile {
         Self {
             max_tell_candidates: 3,
             max_relay_chain_len: 3,
-            acceptance_fidelity: Permille::new(800).unwrap(),
             conversation_memory_capacity: 12,
             conversation_memory_retention_ticks: 48,
         }
@@ -1482,7 +1480,6 @@ mod tests {
         TellProfile {
             max_tell_candidates: 3,
             max_relay_chain_len: 2,
-            acceptance_fidelity: Permille::new(800).unwrap(),
             conversation_memory_capacity: 2,
             conversation_memory_retention_ticks: 5,
         }
@@ -2498,7 +2495,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 3,
                 max_relay_chain_len: 3,
-                acceptance_fidelity: Permille::new(800).unwrap(),
                 conversation_memory_capacity: 12,
                 conversation_memory_retention_ticks: 48,
             }
@@ -2510,7 +2506,6 @@ mod tests {
         let profile = TellProfile {
             max_tell_candidates: 5,
             max_relay_chain_len: 2,
-            acceptance_fidelity: Permille::new(650).unwrap(),
             conversation_memory_capacity: 9,
             conversation_memory_retention_ticks: 21,
         };

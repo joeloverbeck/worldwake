@@ -153,7 +153,6 @@ struct FrontierExhaustionIsolationObservation {
 #[derive(Serialize, Deserialize)]
 struct DriverStateMirror {
     runtime_by_agent: std::collections::BTreeMap<worldwake_core::EntityId, AgentDecisionRuntime>,
-    budget: worldwake_ai::PlanningBudget,
 }
 
 fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
@@ -255,7 +254,6 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
     );
     let runtime_bytes = bincode::serialize(&DriverStateMirror {
         runtime_by_agent: std::collections::BTreeMap::from([(bob, runtime)]),
-        budget: worldwake_ai::PlanningBudget::default(),
     })
     .expect("golden scenario should serialize seeded runtime");
     h.driver = worldwake_ai::AgentTickDriver::from_saved_runtime(&runtime_bytes, &h.world)
@@ -439,7 +437,6 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
     );
     let runtime_bytes = bincode::serialize(&DriverStateMirror {
         runtime_by_agent: std::collections::BTreeMap::from([(agent, runtime)]),
-        budget: worldwake_ai::PlanningBudget::default(),
     })
     .expect("golden scenario should serialize seeded runtime");
     h.driver = worldwake_ai::AgentTickDriver::from_saved_runtime(&runtime_bytes, &h.world)

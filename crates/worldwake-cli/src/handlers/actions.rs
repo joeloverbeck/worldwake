@@ -203,7 +203,7 @@ mod tests {
     use super::*;
     use crate::repl::ReplState;
     use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
-    use worldwake_ai::{AgentTickDriver, PlanningBudget};
+    use worldwake_ai::AgentTickDriver;
     use worldwake_core::{
         control::ControlSource,
         ids::EntityId,
@@ -398,7 +398,7 @@ mod tests {
         let _ = handle_do(1, &mut sim, &spawned.action_registries, &repl_state);
 
         // Tick to process the request and start the action.
-        let mut driver = AgentTickDriver::new(PlanningBudget::default());
+        let mut driver = AgentTickDriver::new();
         let _ = crate::handlers::tick::handle_tick(
             1,
             &mut sim,
