@@ -54,6 +54,18 @@ For each mismatch, state:
 - what the codebase currently has
 - whether the ticket should be corrected, the implementation should adapt, or the issue is blocked
 
+For low-risk factual ticket corrections, you may update the ticket immediately before coding instead of stopping for confirmation. This applies only when the correction is mechanical and directionally unambiguous, such as:
+- exact live spec path resolution from a user-supplied glob or shorthand
+- stale file/symbol/test references
+- `Files to Touch`, `Verification Layers`, or command lists that need to match the current codebase after reassessment
+- component-registration fallout that is factual from live macro expansion or schema inventory discovery
+
+When you make one of these direct corrections, record it in a compact reassessment note using:
+- ticket says
+- live code has
+- correction applied
+- why safe
+
 Apply the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) when the correct direction is unclear or risky:
 - 1 concrete problem
 - 3 viable options
@@ -62,6 +74,8 @@ Apply the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) when the correct direc
 Do not silently skip deliverables. Do not "fix" the problem by weakening the ticket without user confirmation.
 
 When the user confirms a direction that changes the ticket's exact architecture boundary, affected files, or proof surface, update the relevant ticket sections before coding so the implementation and eventual archive remain faithful to the chosen plan. This commonly includes `Files to Touch`, `Verification Layers`, and `Test Plan`, not just the prose summary.
+
+If the mismatch is architectural, ambiguous, or would change the owned boundary rather than merely correcting stale references, do not auto-correct it. Surface it first and use 1-3-1 when needed.
 
 ### 4. Extract the implementation scope
 
@@ -93,6 +107,7 @@ When a widely used serialized component or profile gains a field, proactively se
 
 For component-registration work, distinguish:
 - the authoritative schema declaration itself
+- all live macro-expansion sites or generated API surfaces that materialize the component set
 - runtime code-generation or macro-expansion sites that truly require the bare type in scope
 - test-only helper or manifest sites that mirror the component set
 
@@ -200,6 +215,8 @@ If the user asked only for implementation or analysis, do not archive automatica
 When golden coverage changes, keep the scenario prose and proof claim aligned with the updated assertions so the documented contract stays traceable.
 
 Do not archive automatically if the user only asked for implementation or for analysis.
+
+Before finishing, re-check ticket sections such as `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff and verification commands. Remove reassessment-only fallout from those sections if it did not become a real edit or proof surface.
 
 ## Guardrails
 

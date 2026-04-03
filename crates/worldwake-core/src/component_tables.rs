@@ -22,6 +22,7 @@ use crate::{
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
     pursuit::PursuitProfile,
+    reasoning_profile::ReasoningProfile,
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,

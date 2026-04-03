@@ -9,7 +9,7 @@ use crate::{
     FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile, ReasoningProfile,
     PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
     RelationTables, ResourceSource, SaleListing, StockAssignment, StockStoragePolicy,
     RouteExperience, SourceReliability, SubstitutePreferences, TellProfile, TheftDispositionProfile,

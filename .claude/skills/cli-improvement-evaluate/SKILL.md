@@ -24,6 +24,7 @@ Follow these steps in order. Do not skip any step.
 
 1. Build the CLI: `cargo build -p worldwake-cli`
 2. If the build fails, stop and report the error. Do not evaluate a broken build.
+3. Verify the scenario loads: `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit 2>&1`. If it fails with a parse error (missing field, type mismatch), this is a schema-drift bug, not a scenario design issue. Fix the minimal field addition to match the current struct definition, note the fix in the evaluation, and proceed. This is distinct from the "no scenario changes" guardrail, which prohibits redesigning what the scenario exercises. If the failure is a logic error (not schema drift), stop and report.
 
 ### Step 2: Interactive CLI Session
 
@@ -49,9 +50,11 @@ Exercise **all commands** across these 4 workflow sequences. React naturally to 
 
 **Control workflow**: `switch <other_agent>` -> `status` -> `actions` -> `look` -> `observe` -> `tick 3` -> `switch <original_agent>`
 
-**Debug workflow**: `events 10` -> `event <id>` (pick an interesting event) -> `trace <id>` -> `save /tmp/cli-eval-save.bin` -> `load /tmp/cli-eval-save.bin` -> `status`
+**Debug workflow**: `events 10` -> `event <id>` (pick an interesting event) -> `trace <id>` -> `save /tmp/cli-eval-save.bin` -> `load /tmp/cli-eval-save.bin` -> `status` -> `help`
 
 **Adaptive exploration**: Between commands, read the output and decide what to explore next. If `look` reveals an interesting entity, `inspect` it. If `actions` shows something suspicious, try `do`-ing it. If `tick` produces many events, `event <id>` the most interesting one. This is the key advantage of `--exec` mode — you can react.
+
+If a command exits with a non-zero code in `--exec` mode, test the same command in interactive REPL mode to determine whether the issue is CLI-wide or `--exec`-specific. Score based on the CLI behavior, not `--exec` artifacts.
 
 During the session, take notes on:
 - Output that uses `{:?}` debug format or raw internal identifiers
@@ -62,16 +65,16 @@ During the session, take notes on:
 - Error messages that don't help you recover
 - Anything surprising, confusing, or delightful
 
-**Clean up** the session state file when done: `rm /tmp/cli-eval-session.bin`
+**Clean up** session files when done: `rm /tmp/cli-eval-session.bin /tmp/cli-eval-save.bin`
 
-### Step 3: Save Transcript and Read Previous Evaluation
+### Step 3: Read Previous Evaluation and Save Transcript
 
 After the CLI session, read `reports/cli-evaluation.md` to determine the evaluation number and review previous scores:
 - Read the first ~40 lines for the rubric and scoring guide
 - Count total lines. If >200 lines, read from `offset = totalLines - 200` to get the last 2-3 evaluations
 - To build the Score Trend table, grep for `\*\*Average\*\*` in the report file to get all historical averages
 
-Then save the session transcript to `reports/cli-evaluation-transcripts/eval-N.txt`. Use this format:
+Then save the session transcript to `reports/cli-evaluation-transcripts/eval-N.txt`. The transcript may be written after scoring (Step 4) so that ISSUE/OK annotations can be informed by comparison with prior evaluations. Use this format:
 
 ```
 > command
