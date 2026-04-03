@@ -34,6 +34,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
+   - when save/runtime structs or other persisted shapes gain or lose fields, search for test-only mirror structs and manual `bincode`/seeded deserialize helpers, not just production fixtures
    - when a ticket depends on shared static data such as recipe definitions, schemas, or other registry-backed content, confirm the live service bundle, execution context, or callback boundary that would need to carry that data; if the current runtime boundary does not expose it, correct the ticket before coding to name the real substrate change
    - when a ticket widens a shared callback or execution signature, search dependent crates for both production call paths and test-only direct handler registrations or manual `on_commit` / `on_abort` invocations so stale harnesses do not survive the initial implementation pass
    - when affordance generation depends on self-authoritative profile reads, those profile prerequisites are present in both production code and representative AI/planner test harnesses
@@ -105,6 +106,8 @@ When a shared type changes, treat helper factories, sample fixtures, serialized 
 
 When a widely used serialized component or profile gains a field, proactively search sibling crates for full struct literals embedded in RON/JSON/YAML tests, bundled scenarios, and schema-shape deserialization fixtures. Do not assume the owning crate's Rust constructors are the only fallout surface.
 
+When a save/runtime struct changes shape, also search for test-side mirror structs and hand-written runtime seed/deserialize helpers that may still encode the old field set even after production save/load code compiles.
+
 For component-registration work, distinguish:
 - the authoritative schema declaration itself
 - all live macro-expansion sites or generated API surfaces that materialize the component set
@@ -163,6 +166,8 @@ If you change code after a broader verification pass, rerun the narrowest affect
 
 When CI or clippy forces a bounded reshape of a shared function signature or parameter bundle during implementation, proactively sweep all production call sites, same-file test invocations, and public re-exports before the next verification pass. Do not rely on staggered compile fallout to discover the remaining invocation sites one by one.
 
+When a migration changes a public constructor into a zero-arg `new()` or otherwise reshapes a common API surface, expect lint fallout as well as compile fallout. Re-run CI-matching clippy after the constructor sweep and satisfy trait expectations such as `Default` when that is the clean architectural fit rather than suppressing the lint.
+
 When a required verification tool or script invokes broader repo checks and exposes an adjacent blocker outside the ticket's main architecture change, distinguish:
 - ticket-owned fallout that the current ticket should absorb
 - toolchain or verification-gate fallout that only surfaced because the required check reached farther
@@ -200,6 +205,13 @@ If the architecture change invalidates the old scenario invariant itself rather 
 When adding or renumbering a `// Scenario N:` block in a golden file, treat scenario identifiers as repo-global. Pre-scan nearby or highest live scenario IDs when practical, and be prepared to resolve collisions before the golden inventory refresh can pass.
 
 When a ticket intentionally lands pure scaffolding ahead of downstream integration, either wire the immediate call sites if they are in scope or mark the temporary unused surface deliberately and record why. Do not let staged helper work fail later CI clippy passes by accident.
+
+For migrations that move configuration or profile state from a driver-global field into authoritative per-entity components, use this checklist during reassessment and closeout:
+- remove the driver/global field and constructor arguments
+- move custom test or golden setup onto authoritative component writes for the relevant entities
+- update runtime/save-load mirrors and manual serialization helpers
+- add or update harness helpers for per-entity profile injection when repeated setup would otherwise sprawl
+- rerun both tests and CI-matching clippy after the API reshape
 
 ### 7. Close the loop on the ticket
 

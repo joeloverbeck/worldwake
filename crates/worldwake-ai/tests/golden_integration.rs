@@ -38,7 +38,7 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{
-    AgentTickDriver, DecisionOutcome, PlannerOpKind, PlanningBudget, SelectedPlanSource,
+    AgentTickDriver, DecisionOutcome, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
@@ -477,7 +477,7 @@ fn run_t20_apple_stockout(seed: Seed) -> (StateHash, StateHash) {
     let bandit_2 = seed_bandit(&mut h, "Bandit2");
 
     // Plan continuation allows default budget in multi-agent scenarios.
-    h.driver = AgentTickDriver::new(PlanningBudget::default());
+    h.driver = AgentTickDriver::new();
 
     // Enable tracing for decision and action diagnostics.
     h.driver.enable_tracing();
@@ -3195,7 +3195,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
     }
 
     // Allow default budget in multi-agent scenarios.
-    h.driver = AgentTickDriver::new(PlanningBudget::default());
+    h.driver = AgentTickDriver::new();
 
     // Enable tracing for decision and action diagnostics.
     h.driver.enable_tracing();
@@ -3952,7 +3952,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
     }
 
     // Allow default budget in multi-agent scenarios.
-    h.driver = AgentTickDriver::new(PlanningBudget::default());
+    h.driver = AgentTickDriver::new();
 
     // Enable tracing for decision and action diagnostics.
     h.driver.enable_tracing();

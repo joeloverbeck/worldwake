@@ -7,15 +7,15 @@ use crate::{
     enterprise::{merchant_home_place, restock_gap_at_destination},
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
-    GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningBudget,
-    PlanningEntityRef, PlanningState,
+    GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
+    PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     belief_confidence, CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, GoalKey,
-    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
-    WorkstationTag, OUTDOOR_RELIEF_TAGS,
+    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, Quantity, ReasoningProfile,
+    RecordKind, SuccessionLaw, WorkstationTag, OUTDOOR_RELIEF_TAGS,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -67,7 +67,7 @@ pub trait GoalKindPlannerExt {
         &self,
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
-        budget: &PlanningBudget,
+        budget: &ReasoningProfile,
     ) -> Vec<EntityId>;
     /// Whether the given `op_kind` acting on `authoritative_targets` satisfies
     /// this goal's target-binding requirement.
@@ -1106,7 +1106,7 @@ impl GoalKindPlannerExt for GoalKind {
         &self,
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
-        budget: &PlanningBudget,
+        budget: &ReasoningProfile,
     ) -> Vec<EntityId> {
         let actor = state.snapshot().actor();
         match self {
@@ -1820,7 +1820,7 @@ mod tests {
         build_planning_snapshot, build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
         search_plan, CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind,
-        PlannerOpSemantics, PlannerTransitionKind, PlanningBudget, PlanningState,
+        PlannerOpSemantics, PlannerTransitionKind, ReasoningProfile, PlanningState,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::{BTreeMap, BTreeSet};
@@ -4457,7 +4457,7 @@ mod tests {
             GoalKind::ClaimOffice { office }.prerequisite_places(
                 &state,
                 &RecipeRegistry::new(),
-                &PlanningBudget::default()
+                &ReasoningProfile::default()
             ),
             vec![archive]
         );
@@ -5110,7 +5110,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &PlanningBudget::default());
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &ReasoningProfile::default());
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5139,7 +5139,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &PlanningBudget::default());
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &ReasoningProfile::default());
 
         assert!(places.is_empty());
     }
@@ -5196,7 +5196,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &PlanningBudget::default());
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &ReasoningProfile::default());
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5239,7 +5239,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
             vec![place_b]
         );
     }
@@ -5268,7 +5268,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert!(goal
-            .prerequisite_places(&state, &recipes, &PlanningBudget::default())
+            .prerequisite_places(&state, &recipes, &ReasoningProfile::default())
             .is_empty());
     }
 
@@ -5314,7 +5314,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
             vec![place_b]
         );
     }
@@ -5360,7 +5360,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
             vec![place_c]
         );
     }
@@ -5405,7 +5405,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &PlanningBudget::default()),
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
             vec![place_b]
         );
     }
@@ -5450,7 +5450,7 @@ mod tests {
         };
 
         assert!(goal
-            .prerequisite_places(&state, &recipes, &PlanningBudget::default())
+            .prerequisite_places(&state, &recipes, &ReasoningProfile::default())
             .is_empty());
     }
 
@@ -5480,7 +5480,7 @@ mod tests {
         };
 
         assert!(goal
-            .prerequisite_places(&state, &recipes, &PlanningBudget::default())
+            .prerequisite_places(&state, &recipes, &ReasoningProfile::default())
             .is_empty());
     }
 
@@ -5573,7 +5573,7 @@ mod tests {
         let (view, actor, _place_a, place_b, _place_c) = spatial_view();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
-        let budget = PlanningBudget::default();
+        let budget = ReasoningProfile::default();
         let recipes = RecipeRegistry::new();
 
         let goals: Vec<GoalKind> = vec![
@@ -6759,7 +6759,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -6842,7 +6842,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -6919,7 +6919,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -6972,7 +6972,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7063,7 +7063,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7150,7 +7150,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),
@@ -7232,7 +7232,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),
@@ -7318,7 +7318,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),
@@ -7417,7 +7417,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &PlanningBudget::default(),
+            &ReasoningProfile::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),

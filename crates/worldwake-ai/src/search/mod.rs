@@ -5,7 +5,7 @@ mod transition;
 
 use crate::{
     shared_collections::SharedVec, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpSemantics, PlanningBudget, PlanningEntityRef, PlanningSnapshot,
+    PlannedStep, PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot,
     PlanningState,
 };
 use candidates::{
@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BinaryHeap};
 #[cfg(test)]
 use transition::build_successor;
 use transition::build_successor_detailed;
-use worldwake_core::{ActionDefId, BlockedIntentMemory, OpportunityKey, Tick};
+use worldwake_core::{ActionDefId, BlockedIntentMemory, OpportunityKey, ReasoningProfile, Tick};
 use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry};
 
 #[derive(Clone)]
@@ -80,7 +80,7 @@ pub fn search_plan(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
-    budget: &PlanningBudget,
+    budget: &ReasoningProfile,
     recipes: &RecipeRegistry,
     blocked: &BlockedIntentMemory,
     current_tick: Tick,

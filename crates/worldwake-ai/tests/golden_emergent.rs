@@ -2294,7 +2294,7 @@ fn run_remote_office_claim_start_failure_loses_gracefully(
     );
     let loser_hold_tick = h.scheduler.current_tick();
     set_control_source(&mut h, loser, ControlSource::Human, loser_hold_tick.0);
-    h.driver = worldwake_ai::AgentTickDriver::new(worldwake_ai::PlanningBudget::default());
+    h.driver = worldwake_ai::AgentTickDriver::new();
     h.driver.enable_tracing();
 
     let declare_support_def_id = h

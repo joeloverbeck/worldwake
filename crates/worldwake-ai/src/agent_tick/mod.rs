@@ -38,13 +38,13 @@ use crate::decision_trace::{
 };
 use crate::{
     build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
-    PlanningBudget,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, IntentionFrame, Tick,
+    ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, IntentionFrame,
+    ReasoningProfile, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -54,7 +54,6 @@ use worldwake_sim::{
 
 pub struct AgentTickDriver {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
-    budget: PlanningBudget,
     semantics_cache: Option<(usize, BTreeMap<ActionDefId, PlannerOpSemantics>)>,
     /// Optional trace collector. When `Some`, decision traces are recorded.
     trace_sink: Option<DecisionTraceSink>,
@@ -63,15 +62,13 @@ pub struct AgentTickDriver {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct AgentTickDriverState {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
-    budget: PlanningBudget,
 }
 
 impl AgentTickDriver {
     #[must_use]
-    pub fn new(budget: PlanningBudget) -> Self {
+    pub fn new() -> Self {
         Self {
             runtime_by_agent: BTreeMap::new(),
-            budget,
             semantics_cache: None,
             trace_sink: None,
         }
@@ -81,7 +78,7 @@ impl AgentTickDriver {
         bytes: &[u8],
         world: &worldwake_core::World,
     ) -> Result<Self, SaveError> {
-        let mut driver = Self::new(PlanningBudget::default());
+        let mut driver = Self::new();
         driver.restore_runtime_state(bytes)?;
         driver.post_load_validate(world);
         Ok(driver)
@@ -132,8 +129,12 @@ impl AgentTickDriver {
         let runtime = self.runtime_by_agent.get(&agent)?;
         let frame = world.get_component_intention_frame(agent);
         let view = PerAgentBeliefView::from_world(agent, world);
+        let reasoning = world
+            .get_component_reasoning_profile(agent)
+            .cloned()
+            .unwrap_or_default();
         let (effective_switch_margin, switch_margin_source) =
-            goal_switch_margin_details(&view, agent, frame, &self.budget);
+            goal_switch_margin_details(&view, agent, frame, &reasoning);
         Some(FrameDebugSnapshot {
             runtime: frame_runtime_snapshot(frame, runtime),
             effective_switch_margin,
@@ -189,10 +190,15 @@ impl AgentTickDriver {
         let state: AgentTickDriverState = bincode::deserialize(bytes)
             .map_err(|error| SaveError::RuntimeDeserialization(error.to_string()))?;
         self.runtime_by_agent = state.runtime_by_agent;
-        self.budget = state.budget;
         self.semantics_cache = None;
         self.trace_sink = None;
         Ok(())
+    }
+}
+
+impl Default for AgentTickDriver {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -214,7 +220,6 @@ impl SaveableRuntime for AgentTickDriver {
     fn save_runtime_state(&self) -> Result<Vec<u8>, SaveError> {
         bincode::serialize(&AgentTickDriverState {
             runtime_by_agent: self.runtime_by_agent.clone(),
-            budget: self.budget.clone(),
         })
         .map_err(|error| SaveError::RuntimeSerialization(error.to_string()))
     }
@@ -245,7 +250,7 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) action_handlers: &'a ActionHandlerRegistry,
     pub(super) recipe_registry: &'a RecipeRegistry,
     pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
-    pub(super) budget: &'a PlanningBudget,
+    pub(super) reasoning: &'a ReasoningProfile,
     pub(super) tick: Tick,
 }
 
@@ -275,6 +280,11 @@ impl AutonomousController for AgentTickDriver {
         let _ = self.semantics_table(ctx.action_defs);
         let semantics_table = &self.semantics_cache.as_ref().unwrap().1;
         let tracing = self.trace_sink.is_some();
+        let reasoning = ctx
+            .world
+            .get_component_reasoning_profile(agent)
+            .cloned()
+            .unwrap_or_default();
         let trace = process_agent(
             &mut AgentTickContext {
                 world: ctx.world,
@@ -285,7 +295,7 @@ impl AutonomousController for AgentTickDriver {
                 action_handlers: ctx.action_handlers,
                 recipe_registry: ctx.recipe_registry,
                 semantics_table,
-                budget: &self.budget,
+                reasoning: &reasoning,
                 tick: ctx.tick,
             },
             &mut self.runtime_by_agent,
@@ -314,7 +324,7 @@ fn process_agent(
     let action_handlers = ctx.action_handlers;
     let recipe_registry = ctx.recipe_registry;
     let semantics_table = ctx.semantics_table;
-    let budget = ctx.budget;
+    let reasoning = ctx.reasoning;
     let tick = ctx.tick;
 
     let mut blocked_memory = ctx
@@ -442,7 +452,7 @@ fn process_agent(
         ctx.event_log,
         agent,
         tick,
-        budget.structural_block_ticks,
+        reasoning.structural_block_ticks,
     )?;
 
     // ── Pre-planning assumption evaluation ──
@@ -475,7 +485,7 @@ fn process_agent(
                         view.effective_place(agent),
                         &mut blocked_memory,
                         tick,
-                        budget.structural_block_ticks,
+                        reasoning.structural_block_ticks,
                     );
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
@@ -503,8 +513,8 @@ fn process_agent(
             recipe_registry,
             utility: &utility,
             tick,
-            travel_horizon: budget.snapshot_travel_horizon,
-            structural_block_ticks: budget.structural_block_ticks,
+            travel_horizon: reasoning.snapshot_travel_horizon,
+            structural_block_ticks: reasoning.structural_block_ticks,
         },
         tracing,
     );
@@ -576,9 +586,9 @@ fn process_agent(
         let jc = ctx.world.get_component_intention_frame(agent);
         let view =
             runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
-        effective_goal_switch_margin(&view, agent, jc, budget)
+        effective_goal_switch_margin(&view, agent, jc, reasoning)
     };
-    let default_switch_margin = budget.switch_margin_permille;
+    let default_switch_margin = reasoning.switch_margin;
 
     // ── Active-action path: interrupt evaluation ──
     let outcome_trace = if let Some(active_action) = active_action {
@@ -653,7 +663,7 @@ fn process_agent(
                 frame_switch_margin,
                 utility.side_benefit_weight,
                 tick,
-                budget,
+                reasoning,
                 semantics_table,
                 action_defs,
                 action_handlers,
@@ -859,7 +869,7 @@ fn process_agent(
             &mut blocked_memory,
             runtime,
             tick,
-            budget.structural_block_ticks,
+            reasoning.structural_block_ticks,
         );
         if exhausted {
             let frame_ref = current_frame.as_ref().unwrap();

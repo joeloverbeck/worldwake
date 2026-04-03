@@ -1,6 +1,6 @@
 # PERAGRSTY-002: Replace `PlanningBudget` with per-agent `ReasoningProfile` in AI pipeline
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI pipeline parameter resolution, driver serialization, CLI call sites
@@ -30,6 +30,13 @@
 6. `SAVE_FORMAT_VERSION` is currently 13 at `crates/worldwake-sim/src/save_load.rs:6`.
 7. 26 files reference `PlanningBudget` across the workspace. ~11 golden test files use `PlanningBudget::default()`.
 8. Not a planner/golden/ranking/stale-request/political/ControlSource/heuristic-removal ticket — domain-specific precision items 5-15 are N/A. This is a mechanical signature migration.
+9. `PlanningBudget` reaches farther than the initial narrow function list: `goal_model.rs` uses it in the canonical `GoalKindPlannerExt::prerequisite_places` surface, `search/heuristic.rs` and `search/transition.rs` thread it through helper layers, and CLI persistence code/tests still construct non-default driver budgets. The ticket must treat these as required in-scope fallout, not incidental compile cleanup.
+10. `PERAGRSTY-001` is now archived at `archive/tickets/PERAGRSTY-001.md`, so the dependency is satisfied on the current branch.
+11. Mismatch + correction:
+    - ticket says: the CLI fallout is limited to `main.rs`, `handlers/tick.rs`, `handlers/actions.rs`, and `tests/integration.rs`, and the AI fallout is mostly the explicitly named planner/failure files
+    - live code has: additional `PlanningBudget` consumers in `crates/worldwake-cli/src/handlers/persistence.rs`, `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/search/heuristic.rs`, and `crates/worldwake-ai/src/search/transition.rs`, plus many tests/golden harness callers
+    - correction applied: expanded the in-scope file and verification surface below to include those live consumers
+    - why safe: this is a mechanical scope correction from direct code search; it does not change the architectural direction or owned boundary
 
 ## Architecture Check
 
@@ -40,10 +47,10 @@
 
 1. All existing tests pass with identical behavior (agents without explicit profiles get `Default`) -> `cargo test --workspace`
 2. `AgentTickDriver` no longer stores budget -> structural: field removed from struct and serialized state
-3. No remaining `PlanningBudget` references -> `grep -r PlanningBudget crates/` returns zero hits
+3. No remaining `PlanningBudget` references -> `rg -n "PlanningBudget" crates/` returns zero hits
 4. Save/load round-trip with new format -> focused test serializing/deserializing `AgentTickDriverState` without budget field
 5. `switch_margin` fallback precedence unchanged -> existing `goal_switch_margin_details` tests still pass
-6. Mixed-layer boundary: the shared contract is `ReasoningProfile` resolved from `World` component tables. AI pipeline reads it; core stores it. No cross-system mutation.
+6. Mixed-layer boundary: the shared contract is `ReasoningProfile` resolved from `World` component tables, then threaded through goal-model, search, runtime failure handling, and scheduler-facing driver entry points. No cross-system mutation.
 
 ## What to Change
 
@@ -75,6 +82,8 @@ Replace `&PlanningBudget` with `&ReasoningProfile` in:
 - `build_candidate_plans()` in `crates/worldwake-ai/src/agent_tick/planning.rs`
 - `goal_switch_margin_details()` and `effective_goal_switch_margin()` in `crates/worldwake-ai/src/agent_tick/active_action.rs`
 - Any helper functions in `crates/worldwake-ai/src/agent_tick/frame.rs` that access budget fields
+- `GoalKindPlannerExt::prerequisite_places()` in `crates/worldwake-ai/src/goal_model.rs`
+- search helper layers in `crates/worldwake-ai/src/search/heuristic.rs` and `crates/worldwake-ai/src/search/transition.rs`
 
 Update all field accesses from `budget.switch_margin_permille` to `profile.switch_margin` (or equivalent renamed field).
 
@@ -84,6 +93,7 @@ In all files that construct `AgentTickDriver::new(PlanningBudget::default())`:
 - `crates/worldwake-cli/src/main.rs` — change to `AgentTickDriver::new()`
 - `crates/worldwake-cli/src/handlers/tick.rs` — same
 - `crates/worldwake-cli/src/handlers/actions.rs` — same
+- `crates/worldwake-cli/src/handlers/persistence.rs` — same, and update persistence tests that currently serialize non-default driver budgets
 - `crates/worldwake-cli/tests/integration.rs` — same
 
 Remove `use worldwake_ai::PlanningBudget;` from these files.
@@ -94,11 +104,12 @@ Delete `crates/worldwake-ai/src/budget.rs` entirely. Remove `pub mod budget;` an
 
 ### 6. Update test files
 
-All test files in `worldwake-ai` that construct or reference `PlanningBudget::default()` must switch to `ReasoningProfile::default()`. This includes:
+All test files in `worldwake-ai` that construct or reference `PlanningBudget::default()` must switch to `ReasoningProfile::default()` or to helper setup that attaches a concrete `ReasoningProfile` to the relevant agent(s). This includes:
 - `crates/worldwake-ai/src/agent_tick/tests.rs`
 - `crates/worldwake-ai/src/search/tests.rs`
+- `crates/worldwake-ai/src/goal_model.rs` (test module)
 - `crates/worldwake-ai/src/failure_handling.rs` (test module)
-- Golden test files in `crates/worldwake-ai/tests/`
+- Golden harness/setup callers in `crates/worldwake-ai/tests/`
 
 ### 7. Bump `SAVE_FORMAT_VERSION`
 
@@ -114,7 +125,10 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump from 13 to 14. Add a save/loa
 - `crates/worldwake-ai/src/agent_tick/active_action.rs` (modify — signature change, field rename)
 - `crates/worldwake-ai/src/agent_tick/frame.rs` (modify — field accesses)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — PlanningBudget -> ReasoningProfile)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — signature change + tests)
 - `crates/worldwake-ai/src/search/mod.rs` (modify — signature change)
+- `crates/worldwake-ai/src/search/heuristic.rs` (modify — signature change)
+- `crates/worldwake-ai/src/search/transition.rs` (modify — signature change)
 - `crates/worldwake-ai/src/search/tests.rs` (modify — PlanningBudget -> ReasoningProfile)
 - `crates/worldwake-ai/src/failure_handling.rs` (modify — signature change + tests)
 - `crates/worldwake-ai/src/decision_runtime.rs` (modify — signature change)
@@ -123,9 +137,10 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump from 13 to 14. Add a save/loa
 - `crates/worldwake-cli/src/main.rs` (modify — constructor call)
 - `crates/worldwake-cli/src/handlers/tick.rs` (modify — constructor call)
 - `crates/worldwake-cli/src/handlers/actions.rs` (modify — constructor call)
+- `crates/worldwake-cli/src/handlers/persistence.rs` (modify — constructor calls + save/load tests)
 - `crates/worldwake-cli/tests/integration.rs` (modify — constructor calls)
 - `crates/worldwake-sim/src/save_load.rs` (modify — bump version)
-- Golden test files in `crates/worldwake-ai/tests/` (modify — PlanningBudget -> ReasoningProfile)
+- `crates/worldwake-ai/tests/golden_harness/mod.rs` and any golden test files still constructing custom driver budgets (modify — PlanningBudget -> ReasoningProfile)
 
 ## Out of Scope
 
@@ -140,7 +155,7 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump from 13 to 14. Add a save/loa
 1. All existing `worldwake-ai` tests pass with zero behavioral change
 2. All existing golden tests pass with zero behavioral change
 3. Save/load round-trip preserves non-default `ReasoningProfile` on an agent
-4. `grep -r 'PlanningBudget' crates/` returns zero results
+4. `rg -n "PlanningBudget" crates/` returns zero results
 5. Existing suite: `cargo test --workspace`
 
 ### Invariants
@@ -153,13 +168,36 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump from 13 to 14. Add a save/loa
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/agent_tick/tests.rs` — update all `PlanningBudget::default()` references to `ReasoningProfile::default()`
-2. `crates/worldwake-ai/src/search/tests.rs` — same
+1. `crates/worldwake-ai/src/agent_tick/tests.rs` — update driver setup and direct budget expectations to use `ReasoningProfile`
+2. `crates/worldwake-ai/src/search/tests.rs` and `crates/worldwake-ai/src/goal_model.rs` (tests) — same for search/prerequisite surfaces
 3. `crates/worldwake-ai/src/failure_handling.rs` (tests) — same
-4. Save/load round-trip test in appropriate location — verify `ReasoningProfile` survives save/load
+4. CLI/save-load tests in `crates/worldwake-cli/src/handlers/persistence.rs` — verify runtime round-trip after driver-budget removal and authoritative profile persistence
 
 ### Commands
 
 1. `cargo test -p worldwake-ai`
 2. `cargo test -p worldwake-cli`
 3. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-03
+
+- Replaced `PlanningBudget` throughout the AI pipeline with per-agent `ReasoningProfile` resolution from authoritative world components, preserving `ReasoningProfile::default()` behavior for agents without an explicit profile.
+- Removed `PlanningBudget` storage from `AgentTickDriver` and its serialized runtime state, deleted `crates/worldwake-ai/src/budget.rs`, and updated downstream planner, search, failure-handling, goal-model, CLI, and golden harness call sites to the new contract.
+- Updated test and golden setup so custom reasoning differences are written as authoritative agent components rather than injected through driver-global constructor state.
+- Bumped `SAVE_FORMAT_VERSION` from 13 to 14 and added save/load coverage proving a non-default agent `ReasoningProfile` persists across serialization.
+
+Deviations from original plan:
+
+- The live fallout surface was broader than the original ticket text: `goal_model.rs`, `search/heuristic.rs`, `search/transition.rs`, CLI persistence tests, and several golden/runtime mirror helpers also required migration.
+- A small CI-facing cleanup landed with the migration: `AgentTickDriver` now implements `Default` to satisfy the zero-arg constructor shape under `clippy --all-targets -D warnings`.
+
+Verification results:
+
+- `cargo test -p worldwake-sim save_load -- --nocapture`
+- `cargo test -p worldwake-cli persistence::tests::test_save_load_roundtrip_preserves_agent_reasoning_profile -- --nocapture`
+- `cargo test -p worldwake-ai`
+- `cargo test -p worldwake-cli`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

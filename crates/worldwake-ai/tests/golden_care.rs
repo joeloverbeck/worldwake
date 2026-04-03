@@ -5,7 +5,7 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
-    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, PlanningBudget,
+    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, ReasoningProfile,
     PlanningEntityRef, PlanningState,
 };
 use worldwake_core::{
@@ -598,9 +598,9 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &PlanningBudget {
+        &ReasoningProfile {
             max_plan_depth: 6,
-            ..PlanningBudget::default()
+            ..ReasoningProfile::default()
         },
         &h.recipes,
         &BlockedIntentMemory::default(),
@@ -614,7 +614,7 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &PlanningBudget::default(),
+        &ReasoningProfile::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

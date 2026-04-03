@@ -23,7 +23,7 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{
     AgentTickDriver, CandidateEvidenceExclusionReason, CandidateEvidenceKind, DecisionOutcome,
-    PlannerOpKind, PlanningBudget, SelectedPlanReplacementKind, SelectedPlanSource,
+    PlannerOpKind, ReasoningProfile, SelectedPlanReplacementKind, SelectedPlanSource,
 };
 use worldwake_core::{
     build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
@@ -235,7 +235,7 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
     // Plan continuation (SUPPLYCHAINFIX-001) allows default budget in multi-agent
     // scenarios by skipping expensive plan search when the current goal is still
     // top-ranked and the next step revalidates.
-    h.driver = AgentTickDriver::new(PlanningBudget::default());
+    h.driver = AgentTickDriver::new();
 
     // Enable tracing and run.
     h.driver.enable_tracing();
@@ -321,10 +321,6 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
 fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash, StateHash) {
     let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
     let mut h = GoldenHarness::with_recipes(seed, build_craft_restock_recipe_registry());
-    h.driver = AgentTickDriver::new(PlanningBudget {
-        max_plan_depth: 12,
-        ..PlanningBudget::default()
-    });
     let harvest_firewood_recipe = h
         .recipes
         .recipe_by_name("Harvest Firewood")
@@ -377,6 +373,15 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
             ..UtilityProfile::default()
         },
         KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
+    );
+    set_agent_reasoning_profile(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ReasoningProfile {
+            max_plan_depth: 12,
+            ..ReasoningProfile::default()
+        },
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
@@ -688,11 +693,6 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
     let home_facility = prototype_place_entity(PrototypePlace::EastFieldTrail);
     let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
     let mut h = GoldenHarness::with_recipes(seed, build_craft_restock_recipe_registry());
-    h.driver = AgentTickDriver::new(PlanningBudget {
-        max_plan_depth: 12,
-        max_node_expansions: 1024,
-        ..PlanningBudget::default()
-    });
     let harvest_firewood_recipe = h
         .recipes
         .recipe_by_name("Harvest Firewood")
@@ -759,6 +759,16 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
             ..UtilityProfile::default()
         },
         KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
+    );
+    set_agent_reasoning_profile(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ReasoningProfile {
+            max_plan_depth: 12,
+            max_node_expansions: 1024,
+            ..ReasoningProfile::default()
+        },
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
@@ -1164,11 +1174,6 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
     let home_facility = prototype_place_entity(PrototypePlace::VillageSquare);
     let believed_stale_place = prototype_place_entity(PrototypePlace::BanditCamp);
     let mut h = GoldenHarness::new(seed);
-    h.driver = AgentTickDriver::new(PlanningBudget {
-        max_plan_depth: 10,
-        max_node_expansions: 1024,
-        ..PlanningBudget::default()
-    });
 
     let orchard_source = place_workstation_with_source(
         &mut h.world,
@@ -1203,6 +1208,16 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
             enterprise_weight: pm(900),
             social_weight: pm(0),
             ..UtilityProfile::default()
+        },
+    );
+    set_agent_reasoning_profile(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ReasoningProfile {
+            max_plan_depth: 10,
+            max_node_expansions: 1024,
+            ..ReasoningProfile::default()
         },
     );
     let witness = seed_agent(
@@ -1764,7 +1779,7 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
         PerceptionSource::DirectObservation,
     );
 
-    h.driver = AgentTickDriver::new(PlanningBudget::default());
+    h.driver = AgentTickDriver::new();
     h.driver.enable_tracing();
     h.enable_action_tracing();
 

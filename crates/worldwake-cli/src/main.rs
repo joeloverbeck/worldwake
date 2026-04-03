@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use std::process;
-use worldwake_ai::{AgentTickDriver, PlanningBudget};
+use worldwake_ai::AgentTickDriver;
 use worldwake_cli::repl::{run_repl, run_single_command};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 
@@ -56,7 +56,7 @@ fn main() {
     };
 
     let mut sim = spawned.state;
-    let mut driver = AgentTickDriver::new(PlanningBudget::default());
+    let mut driver = AgentTickDriver::new();
 
     if let Some(ref command) = cli.exec {
         // Single-command execution mode.
@@ -113,7 +113,7 @@ fn load_state_file(
                     Ok(restored) => *driver = restored,
                     Err(err) => {
                         eprintln!("warning: could not restore AI driver: {err}");
-                        *driver = AgentTickDriver::new(PlanningBudget::default());
+                        *driver = AgentTickDriver::new();
                     }
                 }
             }
