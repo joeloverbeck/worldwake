@@ -3,7 +3,8 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ContentionPolicy, ContentionQueue, Container, DeadAt, DemandMemory, DeprivationExposure,
+    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile,
+    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExclusiveFacilityPolicy,
     FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
@@ -240,6 +241,7 @@ mod tests {
             sample_blocked_intent_memory, sample_demand_memory,
             sample_commodity_valuation_profile, sample_preference_profile,
             sample_route_experience, sample_source_reliability,
+            sample_contention_disposition_profile,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
@@ -247,7 +249,8 @@ mod tests {
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy,
         BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
         CombatStance, CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure,
-        CommunicationProfile, ContentionPolicy, ContentionQueue, DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+        CommunicationProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+        DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
         EventId, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FactionData,
         FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
         InstitutionalRecordEntry, IntentionDispositionProfile, IntentionDomain, IntentionDomainTag,
@@ -255,7 +258,8 @@ mod tests {
         MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
         PatrolRoute, PerceptionProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity,
-        QueuedFacilityIntent, ReasoningProfile, RecordData, RecordEntryId, RecordKind, ReservationId,
+        QueuedContentionIntent, QueuedFacilityIntent, ReasoningProfile, RecordData, RecordEntryId,
+        RecordKind, ReservationId,
         ReservationRecord, ResourceSource, SaleListing, StockAssignment, StockAssignmentKind,
         StockStoragePolicy, TellProfile, TheftDispositionProfile, Tick, TickRange,
         TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile, ViolationMemory,
@@ -315,6 +319,9 @@ mod tests {
             ComponentValue::CombatStance(CombatStance::Defending),
             ComponentValue::FacilityQueueDispositionProfile(
                 sample_facility_queue_disposition_profile(),
+            ),
+            ComponentValue::ContentionDispositionProfile(
+                sample_contention_disposition_profile(),
             ),
             ComponentValue::ContentionPolicy(ContentionPolicy {
                 grant_hold_ticks: std::num::NonZeroU32::new(4).unwrap(),
@@ -531,6 +538,15 @@ mod tests {
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 adopted_at: Tick(10),
             }),
+            ComponentValue::ContentionIntents(ContentionIntents {
+                intents: BTreeMap::from([(
+                    entity(40),
+                    QueuedContentionIntent {
+                        goal_key: GoalKey::from(GoalKind::Sleep),
+                        intended_action: ActionDefId(9),
+                    },
+                )]),
+            }),
             ComponentValue::FacilityQueueIntents(FacilityQueueIntents {
                 intents: BTreeMap::from([(
                     entity(41),
@@ -697,6 +713,7 @@ mod tests {
                 ComponentKind::DeadAt,
                 ComponentKind::CombatStance,
                 ComponentKind::FacilityQueueDispositionProfile,
+                ComponentKind::ContentionDispositionProfile,
                 ComponentKind::TheftDispositionProfile,
                 ComponentKind::JusticeDispositionProfile,
                 ComponentKind::UtilityProfile,
@@ -739,6 +756,7 @@ mod tests {
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
                 ComponentKind::ActiveGoal,
+                ComponentKind::ContentionIntents,
                 ComponentKind::FacilityQueueIntents,
                 ComponentKind::IntentionFrame,
                 ComponentKind::IntentionDispositionProfile,

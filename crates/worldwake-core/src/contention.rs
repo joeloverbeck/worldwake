@@ -1,6 +1,6 @@
 //! Authoritative generalized contention state for exclusive affordances.
 
-use crate::{ActionDefId, Component, EntityId, Tick};
+use crate::{ActionDefId, Component, EntityId, GoalKey, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -41,6 +41,29 @@ pub struct ContentionPolicy {
 }
 
 impl Component for ContentionPolicy {}
+
+/// Per-agent tracking of entities the agent is contending for.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ContentionIntents {
+    pub intents: BTreeMap<EntityId, QueuedContentionIntent>,
+}
+
+impl Component for ContentionIntents {}
+
+/// The queued contention-relevant intention for one contended entity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct QueuedContentionIntent {
+    pub goal_key: GoalKey,
+    pub intended_action: ActionDefId,
+}
+
+/// Per-agent tolerance for waiting in generalized contention queues.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ContentionDispositionProfile {
+    pub queue_patience_ticks: Option<NonZeroU32>,
+}
+
+impl Component for ContentionDispositionProfile {}
 
 /// Typed queue-state errors for contention operations.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -154,10 +177,12 @@ impl ContentionQueue {
 #[cfg(test)]
 mod tests {
     use super::{
-        ContentionError, ContentionGrant, ContentionPolicy, ContentionQueue, ContentionWaiter,
+        ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
+        ContentionPolicy, ContentionQueue, ContentionWaiter, QueuedContentionIntent,
     };
-    use crate::{traits::Component, ActionDefId, Tick};
+    use crate::{traits::Component, ActionDefId, GoalKey, GoalKind, Tick};
     use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeMap;
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 
@@ -173,10 +198,15 @@ mod tests {
     fn queue_types_satisfy_component_and_value_bounds() {
         assert_component_bounds::<ContentionPolicy>();
         assert_component_bounds::<ContentionQueue>();
+        assert_component_bounds::<ContentionIntents>();
+        assert_component_bounds::<ContentionDispositionProfile>();
         assert_value_bounds::<ContentionPolicy>();
         assert_value_bounds::<ContentionQueue>();
         assert_value_bounds::<ContentionWaiter>();
         assert_value_bounds::<ContentionGrant>();
+        assert_value_bounds::<ContentionIntents>();
+        assert_value_bounds::<QueuedContentionIntent>();
+        assert_value_bounds::<ContentionDispositionProfile>();
     }
 
     #[test]
@@ -312,5 +342,29 @@ mod tests {
 
         assert_eq!(policy_roundtrip, policy);
         assert_eq!(queue_roundtrip, queue);
+    }
+
+    #[test]
+    fn contention_agent_side_types_round_trip_through_bincode() {
+        let intents = ContentionIntents {
+            intents: BTreeMap::from([(
+                actor(7),
+                QueuedContentionIntent {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    intended_action: ActionDefId(8),
+                },
+            )]),
+        };
+        let disposition = ContentionDispositionProfile {
+            queue_patience_ticks: NonZeroU32::new(12),
+        };
+
+        let intents_roundtrip: ContentionIntents =
+            bincode::deserialize(&bincode::serialize(&intents).unwrap()).unwrap();
+        let disposition_roundtrip: ContentionDispositionProfile =
+            bincode::deserialize(&bincode::serialize(&disposition).unwrap()).unwrap();
+
+        assert_eq!(intents_roundtrip, intents);
+        assert_eq!(disposition_roundtrip, disposition);
     }
 }

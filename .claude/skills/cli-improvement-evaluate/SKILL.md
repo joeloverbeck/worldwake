@@ -104,7 +104,7 @@ Run each of the 6 mandatory checklists below. These are **binary pass/fail** che
 
 #### Checklist 6 — Causal Chain Readability
 
-- [ ] Pick an event with an interesting cause chain. Run `trace <id>`. Is the output human-readable?
+- [ ] Pick an event with an interesting cause chain. Run `trace <id>`. Is the output human-readable? To find events with deeper cause chains, look for events whose cause field shows `Event(N)` rather than `system tick N` or `external input N`. If no such events exist in the first 50 events, note this as a simulation-level gap rather than a CLI display gap.
 - [ ] Does each link in the trace show: who acted, what action, what triggered it?
 - [ ] Can you follow the chain from consequence back to root cause without guessing?
 

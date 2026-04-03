@@ -108,7 +108,8 @@ pub use cause::CauseRef;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
 pub use communication::{classify_communication, CommunicationClass, CommunicationProfile};
 pub use contention::{
-    ContentionError, ContentionGrant, ContentionPolicy, ContentionQueue, ContentionWaiter,
+    ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ContentionWaiter, QueuedContentionIntent,
 };
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};

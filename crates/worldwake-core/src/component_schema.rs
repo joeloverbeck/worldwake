@@ -180,6 +180,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                contention_disposition_profiles,
+                ContentionDispositionProfile,
+                insert_contention_disposition_profile,
+                get_contention_disposition_profile,
+                get_contention_disposition_profile_mut,
+                remove_contention_disposition_profile,
+                has_contention_disposition_profile,
+                iter_contention_disposition_profiles,
+                insert_component_contention_disposition_profile,
+                get_component_contention_disposition_profile,
+                get_component_contention_disposition_profile_mut,
+                remove_component_contention_disposition_profile,
+                has_component_contention_disposition_profile,
+                entities_with_contention_disposition_profile,
+                query_contention_disposition_profile,
+                count_with_contention_disposition_profile,
+                "ContentionDispositionProfile",
+                |kind| kind == EntityKind::Agent,
+                ContentionDispositionProfile,
+                crate::ContentionDispositionProfile,
+                set_component_contention_disposition_profile,
+                clear_component_contention_disposition_profile,
+                txn_simple_set
+            }
+            {
                 theft_disposition_profiles,
                 TheftDispositionProfile,
                 insert_theft_disposition_profile,
@@ -1227,6 +1252,31 @@ macro_rules! with_component_schema_entries {
                 crate::ActiveGoal,
                 set_component_active_goal,
                 clear_component_active_goal,
+                txn_simple_set
+            }
+            {
+                contention_intents,
+                ContentionIntents,
+                insert_contention_intents,
+                get_contention_intents,
+                get_contention_intents_mut,
+                remove_contention_intents,
+                has_contention_intents,
+                iter_contention_intents,
+                insert_component_contention_intents,
+                get_component_contention_intents,
+                get_component_contention_intents_mut,
+                remove_component_contention_intents,
+                has_component_contention_intents,
+                entities_with_contention_intents,
+                query_contention_intents,
+                count_with_contention_intents,
+                "ContentionIntents",
+                |kind| kind == EntityKind::Agent,
+                ContentionIntents,
+                crate::ContentionIntents,
+                set_component_contention_intents,
+                clear_component_contention_intents,
                 txn_simple_set
             }
             {

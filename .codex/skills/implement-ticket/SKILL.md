@@ -29,6 +29,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
 3. Validate the ticket's concrete claims:
    - referenced files exist
    - referenced types, functions, modules, commands, and tests exist
+   - when a ticket presents itself as a later additive step on top of a file, module, or surface created by an earlier ticket, cross-check `Deps` against its own `What to Change`; if the text already assumes that earlier slice landed, correct stale `Deps` before coding
    - when roadmap summary text, an active spec, and the live ticket disagree about whether a slice is still active, compare all three explicitly and record which surface is authoritative for the current turn before coding
    - when a ticket extracts or reuses private helper logic, confirm the exact current crate/file ownership of that helper before finalizing the implementation plan or `Files to Touch`
    - described architecture still matches the live code

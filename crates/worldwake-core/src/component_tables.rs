@@ -6,7 +6,9 @@ use crate::{
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
-    contention::{ContentionPolicy, ContentionQueue},
+    contention::{
+        ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+    },
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
@@ -142,13 +144,16 @@ mod tests {
         },
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
+            sample_contention_disposition_profile,
             sample_facility_queue_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
         ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        ContentionPolicy, ContentionQueue, DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
+        ContentionIntents, ContentionPolicy, ContentionQueue, DriveThresholds, EntityId,
+        ExclusiveFacilityPolicy, FacilityUseQueue, GoalKey,
+        GoalKind, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
         CommunicationProfile, PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
@@ -871,6 +876,25 @@ mod tests {
     }
 
     #[test]
+    fn contention_disposition_profile_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let id = entity(341);
+        let profile = sample_contention_disposition_profile();
+
+        assert_eq!(
+            tables.insert_contention_disposition_profile(id, profile.clone()),
+            None
+        );
+        assert_eq!(tables.get_contention_disposition_profile(id), Some(&profile));
+        assert!(tables.has_contention_disposition_profile(id));
+        assert_eq!(
+            tables.remove_contention_disposition_profile(id),
+            Some(profile)
+        );
+        assert_eq!(tables.get_contention_disposition_profile(id), None);
+    }
+
+    #[test]
     fn insert_and_get_utility_profile() {
         let mut tables = ComponentTables::default();
         let id = entity(35);
@@ -992,6 +1016,27 @@ mod tests {
         assert_eq!(tables.get_contention_queue(facility), Some(&queue));
         assert_eq!(tables.remove_contention_policy(facility), Some(policy));
         assert_eq!(tables.remove_contention_queue(facility), Some(queue));
+    }
+
+    #[test]
+    fn contention_intents_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let agent = entity(421);
+        let intents = ContentionIntents {
+            intents: BTreeMap::from([(
+                entity(422),
+                crate::QueuedContentionIntent {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    intended_action: ActionDefId(8),
+                },
+            )]),
+        };
+
+        assert_eq!(tables.insert_contention_intents(agent, intents.clone()), None);
+        assert_eq!(tables.get_contention_intents(agent), Some(&intents));
+        assert!(tables.has_contention_intents(agent));
+        assert_eq!(tables.remove_contention_intents(agent), Some(intents));
+        assert_eq!(tables.get_contention_intents(agent), None);
     }
 
     #[test]
