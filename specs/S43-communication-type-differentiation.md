@@ -8,7 +8,7 @@ The fix introduces a `CommunicationClass` enum on Tell payloads, per-class `Comm
 
 ## Source
 
-Derived from the ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`, Issue #2 and Improvement F) validated against the actual codebase. Confirmed: single `register_tell_action()` handles all social transmission. `GoalFamilyPolicy` suppresses `ShareBelief` uniformly under stress via `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Medium)`. No urgency differentiation exists.
+Derived from the ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`, Issue #2 and Improvement F) validated against the actual codebase. Confirmed: single `register_tell_action()` handles all social transmission. `GoalFamilyPolicy` suppresses `ShareBelief` uniformly under stress via `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High)`. No urgency differentiation exists.
 
 ## Phase
 
@@ -16,27 +16,29 @@ Phase 5: Architectural Substrates
 
 ## Crates
 
-- `worldwake-core` (new `CommunicationClass` enum, `CommunicationProfile` component, Tell payload extension)
+- `worldwake-core` (new `CommunicationClass` enum, `CommunicationProfile` component, `GoalKind::ShareBelief` extension, classification function)
 - `worldwake-ai` (class-aware social candidate generation, class-aware suppression, class-aware ranking)
 - `worldwake-systems` (class-aware Tell handler: acceptance fidelity varies by class)
 
 ## Dependencies
 
-- None. Can be scheduled in parallel with S42. Builds on existing Tell infrastructure (E15, E15b, E15c all completed).
+- S42 (completed, archived at `archive/specs/S42-per-agent-reasoning-style.md`).
+- Builds on existing Tell infrastructure (E15, E15b, E15c — all completed, archived at `archive/specs/`).
 
 ## FOUNDATIONS Alignment
 
 - **Principle 15, Knowledge Is Acquired Locally and Travels Physically**: "Witness testimony, posted notices, letters, ledgers, rumors, tracks, blood trails, empty shelves, missing items, and public speeches are not flavor. They are mechanisms of causal propagation." Different carriers demand different treatment — a panicked alarm is not a casual rumor.
 - **Principle 18, Memory, Evidence, and Records Are World State**: Social transmissions carry different weight and urgency. A formal accusation should not be suppressed under the same stress threshold as idle gossip.
-- **Principle 22, Agent Diversity Through Concrete Variation**: Per-agent `CommunicationProfile` means some agents are better alarm-responders, others are better gossip filters.
+- **Principle 22, Agent Diversity Through Concrete Variation**: Per-agent `CommunicationProfile` means some agents are better gossip filters, others accept alarms more readily.
 - **Principle 5, Simulate Carriers of Consequence**: Differentiated communication types create more downstream consequences — an alarm that gets through under stress creates different chains than gossip that gets suppressed.
+- **Principle 28, No Backward Compatibility**: `TellProfile.acceptance_fidelity` is fully replaced by `CommunicationProfile` class-specific acceptance fields. No legacy fallback.
 
 ## Design Goals
 
 1. **Classify content, not mechanism**: The Tell action remains a single action type. The classification lives on the payload and affects urgency, suppression, and acceptance — not the action lifecycle.
 2. **Three classes, not twelve**: Start with Alarm, Testimony, Gossip. These cover the meaningful behavioral distinctions. More can be added later (RecordConsultation already exists as a separate action; FormalAccusation is already the Accuse action).
 3. **Class is derived from content, not chosen by the agent**: The classification is deterministic based on what is being communicated — agents don't decide "I'll gossip about this alarm." The mapping is authoritative.
-4. **Per-class suppression**: Alarm is never suppressed by stress. Testimony is suppressed only under critical stress. Gossip is suppressed under medium stress (current behavior). This makes emergency information flow resilient.
+4. **Per-class suppression**: Alarm is never suppressed by stress. Testimony is suppressed only under critical stress. Gossip is suppressed under high stress (preserving current behavior). This makes emergency information flow resilient.
 5. **Per-class acceptance**: Listeners accept alarms more readily than gossip, governed by class-specific fidelity values on the listener's `CommunicationProfile`.
 
 ## Deliverables
@@ -57,43 +59,53 @@ pub enum CommunicationClass {
     Testimony,
     /// Relayed second-hand information, stale beliefs, casual
     /// observations. Low urgency, baseline acceptance, suppressed
-    /// under medium stress (current behavior).
+    /// under high stress (current behavior).
     Gossip,
 }
 ```
 
 ### 2. Classification rules
 
-The communication class is derived deterministically from the Tell payload content:
+The communication class is derived deterministically from the `TellTopic` and its inner content. The function requires the speaker's belief store to inspect `EntityBelief` topics.
 
-| Content | Class | Rationale |
-|---------|-------|-----------|
-| Entity believed dead (alive status changed) | Alarm | Immediate safety relevance |
-| Active combat observed (`WitnessedConflict`) | Alarm | Immediate safety relevance |
-| `SuspectedTheft` with high-severity theft | Alarm | Immediate security relevance |
-| Direct observation entity beliefs (`PerceptionSource::DirectObservation`) | Testimony | First-hand evidence |
-| Institutional claims from `DirectObservation` or `WitnessedEvent` | Testimony | First-hand institutional knowledge |
-| `WitnessedAbsence` (expected entity missing) | Testimony | Direct observation of anomaly |
-| Report-sourced entity beliefs (`PerceptionSource::Report`) | Testimony | Second-hand but attributed evidence |
-| Institutional claims from `Report` source | Testimony | Attributed institutional knowledge |
-| Rumor-sourced entity beliefs (`PerceptionSource::Rumor`) | Gossip | Unattributed hearsay |
-| Inference-sourced beliefs | Gossip | Speculation |
-| `CoPresence` observations | Gossip | Casual social observation |
-| `WitnessedCooperation`, `WitnessedObligation`, `WitnessedTelling` | Gossip | Social observation |
-| Institutional claims from `RecordConsultation` or `SelfDeclaration` | Testimony | Attributed knowledge |
+**By TellTopic variant:**
 
-Implement as a pure function:
+| TellTopic variant | Inner content | Class | Rationale |
+|-------------------|---------------|-------|-----------|
+| `SocialObservation` | `WitnessedConflict` | Alarm | Immediate safety relevance |
+| `SocialObservation` | `SuspectedTheft` | Testimony | Security observation, not immediate danger |
+| `SocialObservation` | `WitnessedAbsence` | Testimony | Direct observation of anomaly |
+| `SocialObservation` | `CoPresence` | Gossip | Casual social observation |
+| `SocialObservation` | `WitnessedCooperation` | Gossip | Social observation |
+| `SocialObservation` | `WitnessedObligation` | Gossip | Social observation |
+| `SocialObservation` | `WitnessedTelling` | Gossip | Social observation |
+| `EntityBelief` | Subject believed dead (alive=false) | Alarm | Immediate safety relevance |
+| `EntityBelief` | Source is `DirectObservation` | Testimony | First-hand evidence |
+| `EntityBelief` | Source is `Report` | Testimony | Second-hand but attributed evidence |
+| `EntityBelief` | Source is `Rumor` | Gossip | Unattributed hearsay |
+| `EntityBelief` | Source is `Inference` | Gossip | Speculation |
+| `InstitutionalClaim` | Source is `DirectObservation` or `WitnessedEvent` | Testimony | First-hand institutional knowledge |
+| `InstitutionalClaim` | Source is `RecordConsultation` or `SelfDeclaration` | Testimony | Attributed institutional knowledge |
+| `InstitutionalClaim` | Source is `Report` | Testimony | Attributed institutional knowledge |
+| `InstitutionalClaim` | Source is `Rumor` | Gossip | Unattributed institutional hearsay |
+
+Implement as a function in `worldwake-core`:
 
 ```rust
-pub fn classify_communication(payload: &TellPayloadItem) -> CommunicationClass
+/// Classify a Tell topic by urgency and trust model.
+/// Requires the speaker's belief store to inspect EntityBelief topics.
+pub fn classify_communication(
+    topic: &TellTopic,
+    speaker_beliefs: &AgentBeliefStore,
+) -> CommunicationClass
 ```
 
-This function lives in `worldwake-core` (or `worldwake-systems` near the Tell handler) and is the single authoritative classification point.
+This is the single authoritative classification point, called from both `worldwake-ai` (candidate generation) and `worldwake-systems` (Tell handler).
 
 ### 3. `CommunicationProfile` component (`worldwake-core`)
 
 ```rust
-/// Per-agent parameters controlling communication behavior by class.
+/// Per-agent parameters controlling communication acceptance by class.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommunicationProfile {
     /// Acceptance fidelity for Alarm-class communications.
@@ -103,10 +115,6 @@ pub struct CommunicationProfile {
     pub testimony_acceptance: Permille,
     /// Acceptance fidelity for Gossip-class communications.
     pub gossip_acceptance: Permille,
-    /// Whether this agent prioritizes sharing alarms even under stress.
-    /// If true, this agent will attempt to share alarm-class information
-    /// even when social goals would otherwise be suppressed.
-    pub alarm_sharer: bool,
 }
 
 impl Component for CommunicationProfile {}
@@ -117,48 +125,61 @@ Default values:
 | Field | Default | Rationale |
 |-------|---------|-----------|
 | `alarm_acceptance` | 950‰ | Near-certain acceptance of alarms |
-| `testimony_acceptance` | 800‰ | Matches current `TellProfile.acceptance_fidelity` |
+| `testimony_acceptance` | 800‰ | Matches current `TellProfile.acceptance_fidelity` default |
 | `gossip_acceptance` | 600‰ | Lower trust for unattributed hearsay |
-| `alarm_sharer` | true | Most agents share urgent news by default |
 
 Register on `EntityKind::Agent` in component schema.
 
-### 4. Class-aware suppression in goal policy (`worldwake-ai`)
+### 4. Extend `GoalKind::ShareBelief` with communication class (`worldwake-core`)
 
-Modify `GoalFamilyPolicy` for `ShareBelief` to return class-dependent suppression:
+Add a `communication_class` field to the `ShareBelief` variant:
+
+```rust
+GoalKind::ShareBelief {
+    listener: EntityId,
+    topic: TellTopic,
+    communication_class: CommunicationClass,
+}
+```
+
+The class is computed at candidate generation time (in `emit_social_candidates()`) when the speaker's full belief context is available. It travels with the goal through ranking, policy evaluation, and plan synthesis without requiring re-derivation.
+
+This is preferred over adding a field to `GroundedGoal` (which would pollute a shared struct with an `Option` meaningful to only one goal kind) and over deriving at policy time (the policy function only sees `GoalKind` and lacks belief context for `EntityBelief` classification).
+
+### 5. Class-aware suppression in goal policy (`worldwake-ai`)
+
+Modify `GoalFamilyPolicy` for `ShareBelief` to return class-dependent suppression by reading the `communication_class` field on the `GoalKind` variant:
 
 - **Alarm-class ShareBelief**: `SuppressionRule::Never` — agents share alarms even under survival stress.
 - **Testimony-class ShareBelief**: `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical)` — suppressed only under critical danger.
-- **Gossip-class ShareBelief**: `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Medium)` — current behavior preserved.
+- **Gossip-class ShareBelief**: `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High)` — preserves current behavior.
 
-This requires the suppression evaluation to know the communication class. The `GoalKind::ShareBelief` already carries `listener` and `topic` — the class can be derived from the topic's underlying belief content at candidate-generation time and stored on the `GroundedGoal` for policy evaluation.
+The `GoalFamilyPolicy` match arm for `ShareBelief` changes from a group match to an individual match that inspects `communication_class`.
 
-**Implementation approach**: Add an optional `CommunicationClass` field to the ShareBelief candidate's grounded goal metadata. `emit_social_candidates()` computes the class for each payload item and attaches it. The policy reads it. If absent (defensive fallback), treat as Gossip.
-
-### 5. Class-aware acceptance in Tell handler (`worldwake-systems`)
+### 6. Class-aware acceptance in Tell handler (`worldwake-systems`)
 
 Modify the Tell commit handler to use class-specific acceptance fidelity:
 
-1. For each payload item, compute `classify_communication(item)`.
+1. For the Tell payload's topic, compute `classify_communication(topic, speaker_beliefs)`.
 2. Look up the listener's `CommunicationProfile` (fall back to defaults if absent).
-3. Use the class-appropriate acceptance fidelity for the RNG acceptance check.
+3. Use the class-appropriate acceptance fidelity (`alarm_acceptance`, `testimony_acceptance`, or `gossip_acceptance`) for the RNG acceptance check.
 
-This replaces the current uniform `TellProfile.acceptance_fidelity` check for Tell payload items. The `TellProfile.acceptance_fidelity` field becomes the legacy fallback and may be deprecated in a follow-up.
+This fully replaces the current `TellProfile.acceptance_fidelity` check. Remove the `acceptance_fidelity` field from `TellProfile` and update all test setups that reference it. Per Principle 28, no legacy fallback.
 
-### 6. Class-aware ranking boost (`worldwake-ai`)
+### 7. Class-aware ranking boost (`worldwake-ai`)
 
-Alarm-class social goals should receive a ranking boost so they tend to be chosen over gossip-class goals when multiple ShareBelief candidates compete:
+Alarm-class social goals receive a ranking boost so they tend to be chosen over gossip-class goals when multiple ShareBelief candidates compete:
 
-- Alarm: motive multiplier ×3 (or equivalent fixed bonus)
-- Testimony: motive multiplier ×1 (no change)
-- Gossip: motive multiplier ×1 (no change)
+- Alarm: result of `social_pressure_for_topic()` is multiplied by 3 (saturating at `Permille(1000)`) before `score_product` with `social_weight`
+- Testimony: no change (×1)
+- Gossip: no change (×1)
 
-The multiplier is applied in `emit_social_candidates()` when computing the motive value. This means under equal `social_weight`, an alarm-class Tell outranks a gossip-class Tell.
+The multiplier is applied in the `ShareBelief` arm of `compute_raw_motive()` in `ranking.rs`, reading the `communication_class` field from the `GoalKind`.
 
-### 7. Golden tests
+### 8. Golden tests
 
 **Scenario A: Stress-filtered communication**
-- Agent with critical hunger has both an alarm (witnessed death) and gossip (commodity price) to share.
+- Agent with critical hunger has both an alarm (witnessed conflict as `SocialObservation`) and gossip (entity belief from Rumor source) to share.
 - The alarm-class ShareBelief is NOT suppressed; the gossip-class one IS.
 - Prove the agent tells the alarm but not the gossip.
 
@@ -168,7 +189,7 @@ The multiplier is applied in `emit_social_candidates()` when computing the motiv
 - The skeptical listener rejects most gossip; the default listener accepts normally.
 
 **Scenario C: Alarm propagation under stress**
-- Three agents in a line of places. Agent A witnesses a death. Agent A is under survival stress. Agent A still tells Agent B (alarm not suppressed). Agent B relays to Agent C (now Testimony-class, since B's source is Report).
+- Three agents in a line of places. Agent A witnesses a conflict (WitnessedConflict). Agent A is under survival stress. Agent A still tells Agent B (alarm not suppressed). Agent B relays to Agent C (now Testimony-class, since B's source is `Report`).
 - Prove the alarm reaches C through lawful relay.
 
 All scenarios with deterministic replay companions.
@@ -177,7 +198,7 @@ All scenarios with deterministic replay companions.
 
 ### H.1 Information-path analysis
 
-Communication class is derived locally from payload content. No new information paths are introduced — the existing Tell/perception/belief paths carry the classified content. The classification function reads only the Tell payload item's content type and source — no external state needed.
+Communication class is derived locally from payload content and speaker belief state. No new information paths are introduced — the existing Tell/perception/belief paths carry the classified content. The classification function reads only the Tell topic's content type, source metadata, and (for `EntityBelief`) the speaker's belief about the subject — no external state needed.
 
 Alarm propagation uses the same Tell → belief update → re-Tell chain as current gossip. The difference is suppression and acceptance, not the propagation mechanism.
 
@@ -206,15 +227,15 @@ This is an intended emergent cascade, not a bug. The dampener is physical:
 | Item | Classification |
 |------|---------------|
 | `CommunicationProfile` component | **Stored authoritative state** — per-agent, persists in save/load |
-| `CommunicationClass` on a Tell payload item | **Derived** — computed by `classify_communication()` at Tell time, not stored |
-| Class attached to GroundedGoal metadata | **Derived** — computed at candidate generation, ephemeral within the decision pass |
+| `CommunicationClass` on a `TellTopic` | **Derived** — computed by `classify_communication()` at Tell time, not stored |
+| `communication_class` on `GoalKind::ShareBelief` | **Derived** — computed at candidate generation, ephemeral within the decision pass, not persisted |
 
 ## Cross-System Interactions (Principle 12)
 
-- **Candidate generation** (worldwake-ai) reads Tell payload items → derives class → attaches to grounded goal.
-- **Goal policy** (worldwake-ai) reads class from grounded goal → applies class-specific suppression.
-- **Ranking** (worldwake-ai) reads class → applies motive multiplier.
-- **Tell handler** (worldwake-systems) reads payload item → derives class → reads listener's `CommunicationProfile` → applies class-specific acceptance.
+- **Candidate generation** (worldwake-ai) reads speaker beliefs and `TellTopic` → calls `classify_communication()` → stores class on `GoalKind::ShareBelief` variant.
+- **Goal policy** (worldwake-ai) reads `communication_class` from `GoalKind::ShareBelief` → applies class-specific suppression.
+- **Ranking** (worldwake-ai) reads `communication_class` → applies alarm motive multiplier.
+- **Tell handler** (worldwake-systems) reads `TellTopic` and speaker beliefs → calls `classify_communication()` → reads listener's `CommunicationProfile` → applies class-specific acceptance.
 
 No system writes to another system's state. All interaction is through shared authoritative state reads.
 
@@ -222,16 +243,17 @@ No system writes to another system's state. All interaction is through shared au
 
 1. Add `CommunicationClass` enum and `classify_communication()` to `worldwake-core`.
 2. Add `CommunicationProfile` component, register on `EntityKind::Agent`.
-3. Extend `emit_social_candidates()` to compute and attach class.
-4. Modify suppression evaluation to be class-aware for ShareBelief.
-5. Modify Tell handler acceptance to use class-specific fidelity.
-6. Add ranking boost for alarm-class.
-7. Write golden tests.
-8. Bump `SAVE_FORMAT_VERSION` if serialized format changes.
+3. Extend `GoalKind::ShareBelief` with `communication_class` field. Update all match arms and constructors.
+4. Update `emit_social_candidates()` to compute and attach class at candidate generation.
+5. Modify suppression evaluation to be class-aware for ShareBelief.
+6. Remove `acceptance_fidelity` from `TellProfile`. Modify Tell handler acceptance to use class-specific fidelity from `CommunicationProfile`.
+7. Add ranking boost for alarm-class in `compute_raw_motive()`.
+8. Write golden tests.
+9. Bump `SAVE_FORMAT_VERSION` (serialized `GoalKind` changes, `TellProfile` field removed, new `CommunicationProfile` component).
 
 ## Verification
 
-- `cargo test --workspace` passes — gossip-class ShareBelief retains current suppression behavior.
+- `cargo test --workspace` passes — gossip-class ShareBelief retains current suppression behavior (`High`).
 - Golden test A proves alarm survives stress suppression.
 - Golden test B proves class-aware acceptance differentiation.
 - Golden test C proves alarm relay through stressed intermediary.
