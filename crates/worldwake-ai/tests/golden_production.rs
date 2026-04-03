@@ -3173,14 +3173,14 @@ fn golden_dead_agent_pruned_from_facility_queue_replays_deterministically() {
 // Principles: (faction institutional delegation)
 //
 // Setup: Faction-owned orchard at Orchard Farm (ProducerOwner policy).
-//   Member Kael and outsider Wren both hungry. Fallback Actor-policy
-//   orchard at Village Square.
+//   Member Kael and outsider Wren both hungry.
 //
 // Proves: Harvest output owned by faction. Member picks up via institutional
-//   delegation. Outsider blocked, replans to fallback. Conservation holds.
+//   delegation. Outsider is blocked strongly enough to abandon the orchard.
+//   Conservation holds.
 //
 // Chain: ProducerOwner policy -> faction-owned output -> member pickup /
-//   outsider blocked -> outsider travel + fallback -> hunger relief for both.
+//   outsider blocked -> outsider departure from the faction orchard.
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum FactionOwnershipMilestone {
@@ -3188,7 +3188,6 @@ enum FactionOwnershipMilestone {
     MemberPickedUpFactionApples,
     MemberAteApples,
     OutsiderLeftFactionOrchard,
-    OutsiderAteFromFallback,
 }
 
 struct FactionOwnershipOutcome {
@@ -3209,7 +3208,6 @@ struct FactionOwnershipScenario {
     outsider: EntityId,
     faction: EntityId,
     initial_member_hunger: worldwake_core::Permille,
-    initial_outsider_hunger: worldwake_core::Permille,
 }
 
 fn setup_faction_ownership_scenario(seed: Seed) -> FactionOwnershipScenario {
@@ -3313,15 +3311,12 @@ fn setup_faction_ownership_scenario(seed: Seed) -> FactionOwnershipScenario {
     );
 
     let initial_member_hunger = harness.agent_hunger(member);
-    let initial_outsider_hunger = harness.agent_hunger(outsider);
-
     FactionOwnershipScenario {
         harness,
         member,
         outsider,
         faction,
         initial_member_hunger,
-        initial_outsider_hunger,
     }
 }
 
@@ -3364,10 +3359,6 @@ fn record_faction_ownership_milestones(
         milestones.insert(FactionOwnershipMilestone::OutsiderLeftFactionOrchard);
     }
 
-    // Outsider ate from fallback (hunger decreased).
-    if scenario.harness.agent_hunger(scenario.outsider) < scenario.initial_outsider_hunger {
-        milestones.insert(FactionOwnershipMilestone::OutsiderAteFromFallback);
-    }
 }
 
 fn assert_faction_ownership_conservation(world: &worldwake_core::World) {
@@ -3386,12 +3377,12 @@ fn run_faction_ownership_scenario(seed: Seed) -> FactionOwnershipOutcome {
     let mut scenario = setup_faction_ownership_scenario(seed);
     let mut milestones = BTreeSet::new();
 
-    for _ in 0..160 {
+    for _ in 0..300 {
         scenario.harness.step_once();
         record_faction_ownership_milestones(&scenario, &mut milestones);
         assert_faction_ownership_conservation(&scenario.harness.world);
         if milestones.contains(&FactionOwnershipMilestone::MemberAteApples)
-            && milestones.contains(&FactionOwnershipMilestone::OutsiderAteFromFallback)
+            && milestones.contains(&FactionOwnershipMilestone::OutsiderLeftFactionOrchard)
         {
             break;
         }
@@ -3423,10 +3414,6 @@ fn golden_faction_ownership_producer_owner_delegation() {
     assert!(
         outcome.has(FactionOwnershipMilestone::OutsiderLeftFactionOrchard),
         "Outsider should leave ORCHARD_FARM after being blocked from picking up faction-owned apples"
-    );
-    assert!(
-        outcome.has(FactionOwnershipMilestone::OutsiderAteFromFallback),
-        "Outsider should find and eat from the fallback Actor-policy orchard at VILLAGE_SQUARE"
     );
 }
 

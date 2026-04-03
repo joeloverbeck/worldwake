@@ -979,6 +979,12 @@ mod tests {
             commit_txn(txn);
             actor
         };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.clear_component_epistemic_disposition_profile(actor)
+                .unwrap();
+            commit_txn(txn);
+        }
 
         assert_eq!(
             DurationExpr::ActorMarketPresence

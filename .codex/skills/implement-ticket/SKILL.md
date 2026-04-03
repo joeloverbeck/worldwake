@@ -122,6 +122,8 @@ When a save/runtime struct changes shape, also search for test-side mirror struc
 
 When behavior moves from one authoritative profile or component carrier to another, search tests, harness helpers, and scenario setup for places that were expressing that behavior through the old carrier. Rewrite those setup paths onto the new authoritative carrier rather than only deleting the stale field from literals.
 
+When a constructor or authoritative factory begins seeding defaults that it previously omitted, reassess tests that were proving "missing component" behavior on freshly created entities. Prefer rewriting those tests to the new constructor contract unless the ticket explicitly owns a lawful post-construction teardown path for that missing-state proof.
+
 For component-registration work, distinguish:
 - the authoritative schema declaration itself
 - all live macro-expansion sites or generated API surfaces that materialize the component set

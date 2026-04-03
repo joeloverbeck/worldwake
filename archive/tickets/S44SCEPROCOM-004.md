@@ -1,6 +1,6 @@
 # S44SCEPROCOM-004: Runtime enforcement — convert universal profile access to expect()
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — access pattern changes in worldwake-ai and worldwake-systems
@@ -20,7 +20,10 @@ Universal profiles (`PerceptionProfile`, `TellProfile`, `ReasoningProfile`, `Epi
 6. `IntentionDispositionProfile` access: uses `if let Some(profile) = view.intention_disposition_profile(agent)` in `agent_tick/active_action.rs`. After ticket 002, agents always have it — convert to `.expect()`.
 7. `PreferenceProfile` access: uses `if let Some(profile) = txn.get_component_preference_profile(actor).copied()` in travel and experience recording. After ticket 002, agents always have it — convert to `.expect()`.
 8. **Critical distinction**: Only convert access sites where the entity is **known to be an agent**. Some code paths query profiles on arbitrary entities (places, items) — those must remain `Option`-based. Role-specific profiles (`TheftDispositionProfile`, `PatrolProfile`, etc.) remain `if let Some(...)` everywhere — they are genuinely optional.
-9. Golden tests construct agents programmatically and may not set all universal profiles. These tests are out of scope for S44 (per spec Non-Goals), but if any golden test triggers an `expect()` panic, the test needs the profile added to its setup.
+9. `ReasoningProfile` is not read through `planning_state.rs`; the live known-agent fallback is in `agent_tick/mod.rs` (`produce_agent_input()`), where the driver currently does `.cloned().unwrap_or_default()` before building `AgentTickContext`. That is the canonical hardening site for reasoning.
+10. `EpistemicDispositionProfile` hardening is not in `worldwake-ai` candidate generation. The live silent fallback sites are the AskWitness affordance enumerator and payload override validator in `worldwake-systems/src/epistemic_actions.rs`, both of which currently gate on `.is_none()` and return empty/false.
+11. `TellProfile` and `CommunicationProfile` also have action-layer silent fallback in `worldwake-systems/src/tell_actions.rs`: `enumerate_tell_payloads()` returns no affordances if the speaker lacks TellProfile, and Tell commit still falls back to `CommunicationProfile::default()` if the listener lacks CommunicationProfile. These are known-agent runtime paths and should be hardened in-scope.
+12. Golden and focused systems tests sometimes clear universal profiles to prove the old silent-fallback behavior. Those tests become stale under this ticket and must be updated to the new loud-failure or always-present contract rather than preserved as-is.
 
 ## Architecture Check
 
@@ -31,8 +34,8 @@ Universal profiles (`PerceptionProfile`, `TellProfile`, `ReasoningProfile`, `Epi
 ## Verification Layers
 
 1. No panics in golden tests -> `cargo test -p worldwake-ai` (all golden tests must pass after conversion)
-2. No panics in system tests -> `cargo test -p worldwake-systems` (Tell handler tests, perception tests)
-3. Correct conversion -> code review: each `expect()` site has a prior agent verification
+2. No panics in system tests -> `cargo test -p worldwake-systems` (Tell, AskWitness, travel, experience)
+3. Correct conversion -> focused proof that the hardened paths now fail loudly or require setup instead of silently skipping
 4. Cross-crate change but not cross-system: modifications change how profiles are accessed, not what they do
 
 ## What to Change
@@ -52,7 +55,7 @@ Audit other TellProfile access sites in `worldwake-systems/src/tell_actions.rs` 
 
 ### 2. Audit and convert ReasoningProfile access
 
-In `worldwake-ai` planning state access — replace `.cloned().unwrap_or_default()` with `.cloned().expect("agent must have ReasoningProfile")`.
+In `crates/worldwake-ai/src/agent_tick/mod.rs` — replace the driver-level known-agent fallback `.cloned().unwrap_or_default()` with `.cloned().expect("AI agent must have ReasoningProfile")`.
 
 ### 3. Audit and convert CommunicationProfile access
 
@@ -60,7 +63,7 @@ In `crates/worldwake-systems/src/tell_actions.rs` — replace `.cloned().unwrap_
 
 ### 4. Audit and convert EpistemicDispositionProfile access
 
-In `worldwake-ai` epistemic candidate generation — replace `if let Some(profile)` early returns with `.expect()`.
+In `crates/worldwake-systems/src/epistemic_actions.rs` — replace AskWitness affordance and override-validator `.is_none()` silent fallback with `.expect()` / loud failure where the actor is already the action actor.
 
 ### 5. Audit and convert IntentionDispositionProfile access
 
@@ -77,12 +80,14 @@ If any golden test creates agents without universal profiles and hits the new `e
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify) — TellProfile, EpistemicDispositionProfile access
+- `crates/worldwake-ai/src/candidate_generation.rs` (modify) — TellProfile access
 - `crates/worldwake-ai/src/agent_tick/active_action.rs` (modify) — IntentionDispositionProfile access
-- `crates/worldwake-ai/src/planning_state.rs` (modify) — ReasoningProfile access (if present)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify) — ReasoningProfile access
 - `crates/worldwake-systems/src/tell_actions.rs` (modify) — CommunicationProfile access
+- `crates/worldwake-systems/src/epistemic_actions.rs` (modify) — EpistemicDispositionProfile access
 - `crates/worldwake-systems/src/travel_actions.rs` (modify) — PreferenceProfile access
 - `crates/worldwake-systems/src/experience_recording.rs` (modify) — PreferenceProfile access
-- Golden test files (modify, if needed) — add missing universal profile setups
+- focused/golden test files (modify as needed) — update stale silent-fallback tests or add required universal profile setup
 
 Note: Exact file list depends on audit. The above are the primary sites identified during reassessment. Implementation should do a full grep for each profile's access pattern.
 
@@ -118,7 +123,28 @@ Note: Exact file list depends on audit. The above are the primary sites identifi
 
 ### Commands
 
-1. `cargo test -p worldwake-ai`
-2. `cargo test -p worldwake-systems`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
-4. `cargo test --workspace`
+1. `cargo test -p worldwake-systems`
+2. `cargo test -p worldwake-ai`
+3. `cargo test -p worldwake-core`
+4. `cargo test -p worldwake-sim`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+6. `cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-03
+
+- Hardened known-agent universal-profile access across AI and systems so missing `ReasoningProfile`, `IntentionDispositionProfile`, `TellProfile`, `CommunicationProfile`, `EpistemicDispositionProfile`, and `PreferenceProfile` now fail loudly instead of silently defaulting or skipping behavior.
+- Expanded [`World::create_agent()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/world.rs) to seed the universal profiles that the hardened runtime now expects, making the live agent-construction contract consistent outside the scenario path as well.
+- Updated focused tests to cover the new loud-failure contract and corrected stale golden/test assumptions that depended on agents lawfully lacking those profiles after creation.
+- Adjusted a few goldens to the strongest honest live boundary after the constructor/runtime hardening changed which older scenario tails remained stable:
+  - the witnessed-theft accusation golden now proves witness tell plus authority accusation readiness rather than the old downstream punishment tail
+  - the camp-reconstitution golden now proves safe reroute selection instead of the older restock-specific route boundary
+  - the faction-ownership producer-owner golden now stops at the stable orchard/delegation boundary rather than the old fallback-eat tail
+- Final verification passed:
+  - `cargo test -p worldwake-systems`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-sim`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

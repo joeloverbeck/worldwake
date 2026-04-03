@@ -1730,11 +1730,40 @@ fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
         effective_goal_switch_margin(&view, actor, None, &budget),
         budget.switch_margin
     );
-    // Unknown agent => budget default (no IntentionDispositionProfile).
-    assert_eq!(
-        effective_goal_switch_margin(&view, entity(999), jc_active.as_ref(), &budget),
-        budget.switch_margin
-    );
+}
+
+#[test]
+#[should_panic(expected = "lacks IntentionDispositionProfile")]
+fn effective_goal_switch_margin_panics_when_committed_agent_lacks_intention_profile() {
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let place = world.topology().place_ids().next().unwrap();
+    let actor = {
+        let mut txn = new_txn(&mut world, 1);
+        let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(actor, place).unwrap();
+        commit_txn(txn);
+        actor
+    };
+    {
+        let mut txn = new_txn(&mut world, 2);
+        txn.clear_component_intention_disposition_profile(actor)
+            .unwrap();
+        commit_txn(txn);
+    }
+    let budget = ReasoningProfile::default();
+    let view = PerAgentBeliefView::from_world(actor, &world);
+    let jc_active = Some(IntentionFrame {
+        goal: GoalKey::from(GoalKind::Sleep),
+        domain: IntentionDomain::Travel { destination: place },
+        assumptions: Vec::new(),
+        state: FrameState::Active,
+        established_at: Tick(7),
+        last_progress_tick: None,
+        stalled_ticks: 0,
+        patience_limit: 10,
+    });
+
+    let _ = effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget);
 }
 
 #[test]

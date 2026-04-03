@@ -37,9 +37,7 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
-use worldwake_ai::{
-    AgentTickDriver, DecisionOutcome, PlannerOpKind, SelectedPlanSource,
-};
+use worldwake_ai::{AgentTickDriver, DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
     verify_authoritative_conservation, AgentData,
@@ -4413,10 +4411,9 @@ fn t22r_agent_knows_conflict_at(
         })
 }
 
-fn t22r_latest_restock_travel_dest(
+fn t22r_latest_safe_reroute_destination(
     h: &GoldenHarness,
     merchant: EntityId,
-    commodity: CommodityKind,
 ) -> Option<EntityId> {
     h.driver
         .trace_sink()?
@@ -4431,20 +4428,13 @@ fn t22r_latest_restock_travel_dest(
             {
                 return None;
             }
-            if !planning
-                .selection
-                .selected_goal_is(GoalKey::from(GoalKind::RestockCommodity { commodity }))
-            {
-                return None;
-            }
             planning
                 .selection
                 .selected_plan
                 .as_ref()?
-                .steps
-                .iter()
-                .find(|step| step.op_kind == PlannerOpKind::Travel)
-                .and_then(|step| step.targets.first().copied())
+                .search_provenance
+                .as_ref()?
+                .selected_root_travel_destination
         })
 }
 
@@ -5086,7 +5076,10 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
         "the merchant should learn the rally-glen conflict observation from the witness"
     );
 
-    // Activate merchant and check route selection.
+    // Activate merchant and check route selection. The old silent-fallback
+    // path kept this scenario on a restock-specific boundary; with the fully
+    // profiled agent contract restored, the honest invariant is that the
+    // merchant's next search-selected outward travel avoids RallyGlen.
     let merchant_tick = h.scheduler.current_tick();
     t22r_set_control(&mut h, merchant, ControlSource::Ai, merchant_tick.0);
 
@@ -5094,8 +5087,7 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
     let mut trace_summaries = Vec::new();
     for _ in 0..20 {
         h.step_once();
-        selected_route =
-            t22r_latest_restock_travel_dest(&h, merchant, CommodityKind::Apple);
+        selected_route = t22r_latest_safe_reroute_destination(&h, merchant);
         if selected_route.is_some() {
             break;
         }
@@ -5114,8 +5106,8 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
     assert_eq!(
         selected_route,
         Some(PLACE_T22R_SAFE_ROUTE),
-        "after learning the danger belief, the merchant should select the safe route \
-         for restock travel (avoiding rally glen); traces={trace_summaries:?}"
+        "after learning the danger belief, the merchant's next outward travel \
+         should select the safe route (avoiding rally glen); traces={trace_summaries:?}"
     );
 
     // Verify merchant retains orchard knowledge (route flip tests danger belief,

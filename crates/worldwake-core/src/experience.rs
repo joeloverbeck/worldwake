@@ -284,6 +284,10 @@ mod tests {
         world
             .insert_component_source_reliability(agent, sources.clone())
             .unwrap();
+        assert_eq!(
+            world.remove_component_preference_profile(agent).unwrap(),
+            Some(PreferenceProfile::default())
+        );
         world
             .insert_component_preference_profile(agent, profile)
             .unwrap();

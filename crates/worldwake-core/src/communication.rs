@@ -294,6 +294,10 @@ mod tests {
             ..CommunicationProfile::default()
         };
 
+        assert_eq!(
+            world.remove_component_communication_profile(agent).unwrap(),
+            Some(CommunicationProfile::default())
+        );
         world
             .insert_component_communication_profile(agent, profile.clone())
             .unwrap();

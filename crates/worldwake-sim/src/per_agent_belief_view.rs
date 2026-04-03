@@ -2047,6 +2047,11 @@ mod tests {
             commit_txn(txn);
             agent
         };
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.clear_component_preference_profile(agent).unwrap();
+            commit_txn(txn);
+        }
 
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
@@ -2172,7 +2177,7 @@ mod tests {
     }
 
     #[test]
-    fn preference_profile_returns_none_when_component_missing() {
+    fn preference_profile_returns_default_for_live_agent() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let agent = {
@@ -2186,8 +2191,14 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::preference_profile(&view, agent), None);
-        assert_eq!(GoalBeliefView::preference_profile(&view, agent), None);
+        assert_eq!(
+            RuntimeBeliefView::preference_profile(&view, agent),
+            Some(PreferenceProfile::default())
+        );
+        assert_eq!(
+            GoalBeliefView::preference_profile(&view, agent),
+            Some(PreferenceProfile::default())
+        );
     }
 
     #[test]
@@ -2431,7 +2442,7 @@ mod tests {
     }
 
     #[test]
-    fn adjacent_places_with_travel_ticks_returns_raw_cost_without_preference_profile() {
+    fn adjacent_places_with_travel_ticks_uses_default_preference_profile_for_live_agent() {
         let (mut world, origin, destination, edge_id, base_ticks) = travel_cost_test_world();
         let route_experience = RouteExperience {
             edges: BTreeMap::from([(
@@ -2455,10 +2466,16 @@ mod tests {
 
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let expected_ticks = NonZeroU32::new(
+            base_ticks.get()
+                * (1000 + u32::from(PreferenceProfile::default().route_caution_weight.value()) * 500 / 1000)
+                / 1000,
+        )
+        .unwrap();
 
         assert_eq!(
             RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
-            vec![(destination, base_ticks)]
+            vec![(destination, expected_ticks)]
         );
     }
 

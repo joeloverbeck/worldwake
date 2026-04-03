@@ -717,9 +717,10 @@ fn emit_social_candidates(
     let Some(place) = ctx.place else {
         return;
     };
-    let Some(profile) = ctx.view.tell_profile(ctx.agent) else {
-        return;
-    };
+    let profile = ctx
+        .view
+        .tell_profile(ctx.agent)
+        .unwrap_or_else(|| panic!("agent {} lacks TellProfile", ctx.agent));
     let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
     let known_social_observations = ctx.view.known_social_observations(ctx.agent);
     let known_institutional_beliefs =
@@ -4394,7 +4395,10 @@ mod tests {
         }
 
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
-            self.tell_profiles.get(&agent).copied()
+            self.tell_profiles
+                .get(&agent)
+                .copied()
+                .or(Some(TellProfile::default()))
         }
 
         fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
@@ -8936,7 +8940,7 @@ mod tests {
     }
 
     #[test]
-    fn social_candidates_require_tell_profile_and_respect_blocked_memory() {
+    fn social_candidates_respect_blocked_memory() {
         let speaker = entity(1);
         let listener = entity(2);
         let subject = entity(20);
@@ -8954,24 +8958,6 @@ mod tests {
                 believed_state(8, PerceptionSource::DirectObservation),
             )],
         );
-
-        let none = generate_candidates(
-            &view,
-            speaker,
-            &BlockedIntentMemory::default(),
-            &RecipeRegistry::new(),
-            Tick(11),
-        );
-        assert!(!contains_goal(
-            &none,
-            GoalKind::ShareBelief {
-                listener,
-                topic: TellTopic::EntityBelief { subject },
-                communication_class: CommunicationClass::Testimony,
-            }
-        ));
-
-        view.tell_profiles.insert(speaker, TellProfile::default());
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
             blocker_key: BlockerKey {

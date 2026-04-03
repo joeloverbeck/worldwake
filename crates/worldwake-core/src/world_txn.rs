@@ -1929,11 +1929,13 @@ mod tests {
             sample_utility_profile,
         },
         AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
-        DemandMemory, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, InstitutionalRecordEntry, MerchandiseProfile, OfficeData,
+        CommunicationProfile, DemandMemory, EpistemicDispositionProfile, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, RecordData, RecordEntryId, RecordKind, SubstitutePreferences,
-        SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
+        PerceptionSource, PreferenceProfile, ReasoningProfile, RecordData, RecordEntryId,
+        RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, UtilityProfile,
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
@@ -2325,6 +2327,12 @@ mod tests {
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
+                    component_kind: ComponentKind::PreferenceProfile,
+                    before: None,
+                    after: ComponentValue::PreferenceProfile(PreferenceProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
                     component_kind: ComponentKind::AgentBeliefStore,
                     before: None,
                     after: ComponentValue::AgentBeliefStore(AgentBeliefStore::new()),
@@ -2340,6 +2348,36 @@ mod tests {
                     component_kind: ComponentKind::TellProfile,
                     before: None,
                     after: ComponentValue::TellProfile(TellProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::CommunicationProfile,
+                    before: None,
+                    after: ComponentValue::CommunicationProfile(
+                        CommunicationProfile::default(),
+                    ),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ReasoningProfile,
+                    before: None,
+                    after: ComponentValue::ReasoningProfile(ReasoningProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::IntentionDispositionProfile,
+                    before: None,
+                    after: ComponentValue::IntentionDispositionProfile(
+                        IntentionDispositionProfile::default(),
+                    ),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::EpistemicDispositionProfile,
+                    before: None,
+                    after: ComponentValue::EpistemicDispositionProfile(
+                        EpistemicDispositionProfile::default(),
+                    ),
                 }),
                 StateDelta::Relation(RelationDelta::Added {
                     relation_kind: RelationKind::InTransit,

@@ -116,9 +116,11 @@ fn enumerate_ask_witness_payloads(
     let Some(target) = targets.first().copied() else {
         return Vec::new();
     };
-    if target == actor || view.epistemic_disposition_profile(actor).is_none() {
+    if target == actor {
         return Vec::new();
     }
+    view.epistemic_disposition_profile(actor)
+        .unwrap_or_else(|| panic!("actor {actor} lacks EpistemicDispositionProfile"));
 
     let mut payloads = BTreeSet::new();
     for (entity, state) in view.known_entity_beliefs(actor) {
@@ -151,9 +153,8 @@ fn validate_ask_witness_payload_override(
     let Some(target) = targets.first().copied() else {
         return false;
     };
-    if view.epistemic_disposition_profile(actor).is_none() {
-        return false;
-    }
+    view.epistemic_disposition_profile(actor)
+        .unwrap_or_else(|| panic!("actor {actor} lacks EpistemicDispositionProfile"));
     let Some(payload) = payload.as_ask_witness() else {
         return false;
     };
@@ -759,6 +760,29 @@ mod tests {
             }),
             "recent ask should suppress same witness/topic affordance"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "lacks EpistemicDispositionProfile")]
+    fn ask_witness_affordance_panics_without_actor_epistemic_profile() {
+        let mut world = new_world();
+        let (place, other_place) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place, "Aster");
+        let witness = spawn_actor(&mut world, place, "Bram");
+        let subject = spawn_actor(&mut world, other_place, "Cyra");
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.clear_component_epistemic_disposition_profile(actor)
+                .unwrap();
+            commit_txn(txn);
+        }
+        seed_entity_belief(&mut world, actor, subject, 1);
+
+        let (defs, handlers, ask_id) = setup_registries_with_ask();
+        let def = defs.get(ask_id).unwrap();
+        let _ = handlers;
+        let view = PerAgentBeliefView::from_world(actor, &world);
+        let _ = enumerate_ask_witness_payloads(def, actor, &[witness], &view);
     }
 
     #[test]
