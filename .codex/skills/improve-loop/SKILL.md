@@ -138,6 +138,15 @@ A good hypothesis for this repo:
 
 Prefer profile-first hypotheses. For Worldwake performance campaigns, do not guess blindly at bottlenecks when the campaign requires profiling evidence.
 
+When `perf` is available, prefer profiling the concrete target binary directly instead of manually timing code paths or profiling through `cargo test` harness wrappers. In this repo, the preferred pattern is:
+
+```bash
+timeout 8s perf record -g -o /tmp/worldwake-<campaign>.perf.data -- target/debug/<binary> <args>
+perf report --stdio --no-children -i /tmp/worldwake-<campaign>.perf.data --percent-limit 1
+```
+
+Use this direct-binary path when the campaign has an executable workload because it produces cleaner symbolized reports than profiling the cargo test harness. Only fall back to manual profiling or temporary instrumentation when no stable executable target exists, or when `perf` output is insufficient to answer the current question.
+
 If the correct next move is unclear or risky, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) instead of improvising a broad change.
 
 ### 5. Implement the experiment
@@ -266,6 +275,7 @@ Use compact updates in the conversation. Typical update structure:
 - Follow [AGENTS.md](../../../AGENTS.md): minimal changes, DRY, TDD for bug fixes, and 1-3-1 for unclear risky decisions.
 - Follow [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md). Performance work must compress computation, never causality.
 - Preserve determinism, conservation, append-only event history, belief-only planning, and system decoupling.
+- Prefer `perf` direct-binary profiling over manual profiling when the campaign exposes a stable executable workload. Treat manual profiling as a fallback, not the default.
 - If a campaign optimization changes behavior and requires golden test updates, preserve the original proof intent rather than weakening assertions.
 - Temporary instrumentation is not an accepted final optimization by default. Remove diagnostic-only profiling code before campaign finish unless the user explicitly wants it retained.
 - Promote cross-campaign lessons selectively. `campaigns/lessons-global.jsonl` should contain durable findings, not noisy one-off notes.
