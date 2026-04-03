@@ -44,10 +44,22 @@ fn need_band(world: &World, entity: EntityId, need: &str) -> ThresholdBand {
 }
 
 /// Format a `ResolveError` into a user-friendly `CommandError`.
-fn resolve_error_to_command_error(err: ResolveError) -> CommandError {
-    match err {
+///
+/// For `NotFound`, lists available named entities to help the user.
+fn resolve_error_to_command_error_with_world(
+    world: &worldwake_core::world::World,
+) -> impl FnOnce(ResolveError) -> CommandError + '_ {
+    move |err| match err {
         ResolveError::NotFound(input) => {
-            CommandError::new(format!("no entity matching \"{input}\""))
+            let names: Vec<String> = world.query_name().map(|(_, n)| n.0.clone()).collect();
+            if names.is_empty() {
+                CommandError::new(format!("no entity matching \"{input}\""))
+            } else {
+                CommandError::new(format!(
+                    "no entity matching \"{input}\". Available: {}",
+                    names.join(", ")
+                ))
+            }
         }
         ResolveError::Ambiguous(names) => {
             CommandError::new(format!("ambiguous — matches: {}", names.join(", ")))
@@ -121,13 +133,13 @@ pub fn handle_look(sim: &SimulationState) -> CommandResult {
 /// Show all components on a resolved entity.
 pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResult {
     let world = sim.world();
-    let entity = resolve_entity(world, entity_input).map_err(resolve_error_to_command_error)?;
+    let entity = resolve_entity(world, entity_input).map_err(resolve_error_to_command_error_with_world(world))?;
 
     let name = entity_display_name(world, entity);
     let kind = world
         .entity_kind(entity)
         .map_or("Unknown".to_string(), |k| format!("{k:?}"));
-    println!("{name} ({kind}) #{}", entity.slot);
+    println!("{name} ({kind})");
 
     // Check each component type and print if present.
     if let Some(agent_data) = world.get_component_agent_data(entity) {
@@ -164,7 +176,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("    hunger: {}, thirst: {}, fatigue: {}", up.hunger_weight, up.thirst_weight, up.fatigue_weight);
         println!("    bladder: {}, dirtiness: {}, pain: {}", up.bladder_weight, up.dirtiness_weight, up.pain_weight);
         println!("    danger: {}, enterprise: {}, social: {}", up.danger_weight, up.enterprise_weight, up.social_weight);
-        println!("    activity_awareness: {}, courage: {}, care: {}", up.activity_awareness_weight, up.courage, up.care_weight);
+        println!("    activity_awareness: {}, side_benefit: {}, courage: {}, care: {}", up.activity_awareness_weight, up.side_benefit_weight, up.courage, up.care_weight);
     }
     if let Some(dt) = world.get_component_drive_thresholds(entity) {
         println!("  DriveThresholds:");
@@ -251,7 +263,10 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     }
 
     // Location.
-    println!("  Location: {}", format_location(world, entity));
+    println!(
+        "  Location: {}",
+        format_location(world, entity, sim.scheduler().current_tick())
+    );
 
     Ok(CommandOutcome::Continue)
 }
@@ -261,7 +276,7 @@ pub fn handle_inventory(sim: &SimulationState, entity_input: Option<&str>) -> Co
     let world = sim.world();
 
     let entity = match entity_input {
-        Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error)?,
+        Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error_with_world(world))?,
         None => sim.controller_state().controlled_entity().ok_or_else(|| {
             CommandError::new("no controlled agent (observer mode) — specify an entity")
         })?,
@@ -310,7 +325,7 @@ pub fn handle_needs(sim: &SimulationState, entity_input: Option<&str>) -> Comman
     let world = sim.world();
 
     let entity = match entity_input {
-        Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error)?,
+        Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error_with_world(world))?,
         None => sim.controller_state().controlled_entity().ok_or_else(|| {
             CommandError::new("no controlled agent (observer mode) — specify an entity")
         })?,
@@ -364,7 +379,7 @@ pub fn handle_needs(sim: &SimulationState, entity_input: Option<&str>) -> Comman
 /// Show all relations involving an entity.
 pub fn handle_relations(sim: &SimulationState, entity_input: &str) -> CommandResult {
     let world = sim.world();
-    let entity = resolve_entity(world, entity_input).map_err(resolve_error_to_command_error)?;
+    let entity = resolve_entity(world, entity_input).map_err(resolve_error_to_command_error_with_world(world))?;
 
     let name = entity_display_name(world, entity);
     println!("{name} relations:");

@@ -54,7 +54,19 @@ pub fn handle_switch(sim: &mut SimulationState, name: &str) -> CommandResult {
     let target_id = match resolve_entity(sim.world(), name) {
         Ok(id) => id,
         Err(ResolveError::NotFound(input)) => {
-            println!("No entity found matching \"{input}\"");
+            let names: Vec<String> = sim
+                .world()
+                .query_name()
+                .map(|(_, n)| n.0.clone())
+                .collect();
+            if names.is_empty() {
+                println!("No entity found matching \"{input}\"");
+            } else {
+                println!(
+                    "No entity found matching \"{input}\". Available: {}",
+                    names.join(", ")
+                );
+            }
             return Ok(CommandOutcome::Continue);
         }
         Err(ResolveError::Ambiguous(names)) => {
@@ -100,7 +112,7 @@ pub fn handle_switch(sim: &mut SimulationState, name: &str) -> CommandResult {
 
     // 6. Print confirmation.
     let display = entity_display_name(sim.world(), target_id);
-    let location = format_location(sim.world(), target_id);
+    let location = format_location(sim.world(), target_id, sim.scheduler().current_tick());
     println!("Now controlling {display} {location}");
 
     Ok(CommandOutcome::Continue)

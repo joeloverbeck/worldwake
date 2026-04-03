@@ -1,0 +1,72 @@
+CLI Evaluation #4 — 2026-04-03
+Scenario: scenarios/cli-evaluation.ron (unchanged from Eval #3)
+
+== EXPLORE WORKFLOW ==
+
+> world — OK: Clean. 5 places with counts.
+> places — OK: Tags, connections, ticks.
+> agents — OK: Names, control, locations, status.
+> goods — OK: 9 commodities. Per-place breakdown.
+> look — OK: Thornwall Village entities all readable. Mill shown.
+> inspect Kael — OK: No raw #N ID. side_benefit shown. All components readable.
+> relations Kael — OK: "placed at Thornwall Village", "possesses 20× Coin".
+> inventory — OK: Clean.
+> needs — OK: Progress bars with urgency bands.
+> inventory Merchant Vara — OK: Multi-word names work.
+
+== ACT WORKFLOW ==
+
+> actions
+  8 items. Clean. No self-targeting, no duplicates, no internal ops.
+  ISSUE: staff_market, defend, travel still show no duration.
+  OK overall.
+
+> do 4 (travel Eldergrove Forest) — OK.
+> tick 1 — "--- Tick 0 --- (4 events) [actions: 1 started]"
+  OK: FIXED from Eval #3 — tick now shows action summary.
+
+> status — "Kael in transit to Eldergrove Forest (2 ticks remaining)" — OK.
+> cancel — OK.
+> tick 1 — "--- Tick 1 --- (7 events) [actions: 1 started, 1 completed, 1 aborted]"
+  OK: Informative — shows cancel (abort) and AI action start.
+
+> actions — 22 items. Single bribe. No self-targeting. OK.
+> do 1 (drink) — OK.
+> tick 5 — Action summaries on ticks 2-3, empty on 4-6. OK.
+
+== CONTROL WORKFLOW ==
+
+> switch Guard Theron — OK.
+> status — OK. Needs bars.
+> actions — 8 items. No self-targeting. Bow visible in put_down. OK.
+> look — "1× Sword, 1× Bow" at Dusty Trail. OK.
+> observe — OK.
+> tick 3 — Action summaries on all 3 ticks. OK.
+> switch Kael — OK.
+
+== DEBUG WORKFLOW ==
+
+> events 10
+  "Decision by Kael", "Decision by Forager Lina" — FIXED from Eval #3.
+  "WorldMutation, Discovery by Merchant Vara" — clear.
+  OK: No more "(no tags)".
+
+> event 63 (ActionStarted by Kael)
+  Header clean. deltas: (none) for start events. OK.
+
+> event 58 (Discovery by Merchant Vara)
+  Merchant Vara discovered Kael. Witnesses: Merchant Vara. OK.
+
+> trace 63
+  Single event (root cause = external input). Trace API correct.
+  OK: Not a bug — tested events have root causes.
+
+> save + load — OK.
+> status — "action: eat (2 ticks remaining)" — OK.
+> help — Exit 0, "Worldwake CLI commands" header. OK.
+
+== ADAPTIVE: Resource source ==
+
+> switch Forager Lina + look
+  "Apple source (Facility)" — FIXED from Eval #3 (was Facility#20).
+  OK.

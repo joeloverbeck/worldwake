@@ -68,8 +68,24 @@ pub fn handle_tick(
         )
         .map_err(|e| CommandError::new(format!("tick error: {e:?}")))?;
 
+        let mut summary_parts = Vec::new();
+        if result.actions_started > 0 {
+            summary_parts.push(format!("{} started", result.actions_started));
+        }
+        if result.actions_completed > 0 {
+            summary_parts.push(format!("{} completed", result.actions_completed));
+        }
+        if result.actions_aborted > 0 {
+            summary_parts.push(format!("{} aborted", result.actions_aborted));
+        }
+        let summary = if summary_parts.is_empty() {
+            String::new()
+        } else {
+            format!(" [actions: {}]", summary_parts.join(", "))
+        };
+
         println!(
-            "--- Tick {} --- ({} events)",
+            "--- Tick {} --- ({} events){summary}",
             result.tick.0, result.events_emitted_count
         );
     }
@@ -88,7 +104,7 @@ pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> Co
 
     // Agent name and location.
     let name = entity_display_name(world, entity);
-    let location = format_location(world, entity);
+    let location = format_location(world, entity, sim.scheduler().current_tick());
     println!("{name} {location}");
 
     // Current action (if any).

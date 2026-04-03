@@ -1,9 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::fmt;
 
-/// Clap wrapper for REPL command parsing.
-///
-/// `multicall = true` so the parser works with REPL input (no binary name prefix).
+/// Worldwake CLI commands.
 #[derive(Parser, Debug)]
 #[command(multicall = true, disable_help_subcommand = false)]
 pub struct CommandParser {
