@@ -198,7 +198,9 @@ fn payload_override_from_affordance(
             .filter(|combat| combat.target == *target)
             .map(|_| Some(payload.clone()))
             .ok_or(GoalPayloadOverrideError::UnsupportedGoal),
-        GoalKind::ShareBelief { listener, topic } => payload
+        GoalKind::ShareBelief {
+            listener, topic, ..
+        } => payload
             .as_tell()
             .filter(|tell| tell.listener == *listener && tell.topic == *topic)
             .map(|_| Some(payload.clone()))
@@ -546,7 +548,9 @@ impl GoalKindPlannerExt for GoalKind {
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
             PlannerOpKind::Tell => match self {
-                GoalKind::ShareBelief { listener, topic } => {
+                GoalKind::ShareBelief {
+                    listener, topic, ..
+                } => {
                     let Some(target_listener) = targets.first().copied() else {
                         return Err(GoalPayloadOverrideError::MissingTarget);
                     };
@@ -2108,6 +2112,7 @@ mod tests {
             topic: TellTopic::EntityBelief {
                 subject: entity_id(5, 0),
             },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         };
 
         assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Tell]);
@@ -2133,6 +2138,7 @@ mod tests {
                 topic: TellTopic::EntityBelief {
                     subject: entity_id(7, 0),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             }
             .relevant_observed_commodities(&recipes),
             Some(BTreeSet::new())
@@ -2146,6 +2152,7 @@ mod tests {
             topic: TellTopic::EntityBelief {
                 subject: entity_id(7, 0),
             },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         };
         let step = PlannedStep {
             def_id: ActionDefId(77),
@@ -3226,6 +3233,7 @@ mod tests {
         let goal = GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         };
         let def = ActionDef {
             id: ActionDefId(10),
@@ -3291,7 +3299,11 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
         let topic = TellTopic::EntityBelief { subject };
-        let goal = GoalKind::ShareBelief { listener, topic };
+        let goal = GoalKind::ShareBelief {
+            listener,
+            topic,
+            communication_class: worldwake_core::CommunicationClass::Gossip,
+        };
         let def = ActionDef {
             id: ActionDefId(10),
             name: "tell".to_string(),
@@ -3365,6 +3377,7 @@ mod tests {
             topic: TellTopic::EntityBelief {
                 subject: right_subject,
             },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         };
         let def = ActionDef {
             id: ActionDefId(10),
@@ -3608,6 +3621,7 @@ mod tests {
                 topic: TellTopic::EntityBelief {
                     subject: entity(20),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -5537,6 +5551,7 @@ mod tests {
                 topic: TellTopic::EntityBelief {
                     subject: entity(98),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice { office: entity(99) },
             GoalKind::SupportCandidateForOffice {
@@ -5613,6 +5628,7 @@ mod tests {
             GoalKind::ShareBelief {
                 listener: place_b,
                 topic: TellTopic::EntityBelief { subject: actor },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice { office: place_b },
             GoalKind::SupportCandidateForOffice {
@@ -5824,6 +5840,7 @@ mod tests {
             let goal = GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject: id(99) },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             };
             assert!(goal.matches_binding(&[listener], PlannerOpKind::Tell));
         }
@@ -5833,6 +5850,7 @@ mod tests {
             let goal = GoalKind::ShareBelief {
                 listener: id(30),
                 topic: TellTopic::EntityBelief { subject: id(99) },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             };
             assert!(!goal.matches_binding(&[id(31)], PlannerOpKind::Tell));
         }

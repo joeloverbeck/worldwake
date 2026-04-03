@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
+    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
     DemandObservation, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
     GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
@@ -239,6 +239,7 @@ pub(crate) struct SnapshotPlace {
 pub struct PlanningSnapshot {
     pub(crate) actor: EntityId,
     pub(crate) current_tick: Tick,
+    pub(crate) actor_belief_store: AgentBeliefStore,
     pub(crate) entities: BTreeMap<EntityId, SnapshotEntity>,
     pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
     pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
@@ -340,6 +341,7 @@ impl PlanningSnapshot {
         Self {
             actor,
             current_tick: view.current_tick(),
+            actor_belief_store: view.agent_belief_store(actor).unwrap_or_default(),
             entities,
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),

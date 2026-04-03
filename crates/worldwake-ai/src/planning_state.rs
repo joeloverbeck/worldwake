@@ -1187,6 +1187,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .collect()
     }
 
+    fn agent_belief_store(&self, agent: EntityId) -> Option<worldwake_core::AgentBeliefStore> {
+        (agent == self.snapshot.actor()).then(|| self.snapshot.actor_belief_store.clone())
+    }
+
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         if agent != self.snapshot.actor() {
             return Vec::new();

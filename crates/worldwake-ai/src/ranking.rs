@@ -3074,6 +3074,7 @@ mod tests {
             &[goal(GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
             })],
             &danger_view,
             agent,
@@ -3101,6 +3102,7 @@ mod tests {
             &[goal(GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
             })],
             &self_care_view,
             agent,
@@ -3122,6 +3124,7 @@ mod tests {
             &[goal(GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
             })],
             &calm_view,
             agent,
@@ -3175,12 +3178,14 @@ mod tests {
             topic: TellTopic::EntityBelief {
                 subject: fresh_subject,
             },
+            communication_class: worldwake_core::CommunicationClass::Testimony,
         });
         let rumor_goal = goal(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief {
                 subject: rumor_subject,
             },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         });
 
         let baseline_ranked = rank(
@@ -3264,6 +3269,7 @@ mod tests {
         let goal = goal(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
         });
         let skeptical_ranked = rank(
             std::slice::from_ref(&goal),
@@ -3314,12 +3320,14 @@ mod tests {
                     topic: TellTopic::EntityBelief {
                         subject: known_subject,
                     },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 }),
                 goal(GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief {
                         subject: missing_subject,
                     },
+                    communication_class: worldwake_core::CommunicationClass::Gossip,
                 }),
             ],
             &view,
@@ -3367,6 +3375,7 @@ mod tests {
                 goal(GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 }),
                 goal(GoalKind::RestockCommodity {
                     commodity: CommodityKind::Bread,
@@ -3400,6 +3409,7 @@ mod tests {
                 goal(GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 }),
                 goal(GoalKind::ConsumeOwnedCommodity {
                     commodity: CommodityKind::Bread,
@@ -4378,6 +4388,7 @@ mod tests {
                 goal(GoalKind::ShareBelief {
                     listener,
                     topic: TellTopic::EntityBelief { subject },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 }),
                 goal(GoalKind::EstablishBanditCamp { faction }),
             ],
@@ -4687,6 +4698,7 @@ mod tests {
                         effective_tick: Tick(1),
                     },
                 },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
             },
             GoalPriorityClass::Low,
             950_000,
@@ -4711,6 +4723,7 @@ mod tests {
                         effective_tick: Tick(1),
                     },
                 },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
             }
         );
         assert_eq!(

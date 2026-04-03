@@ -304,6 +304,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief {
                     subject: dummy_entity(),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),
@@ -417,6 +418,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief {
                     subject: dummy_entity(),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),
@@ -523,6 +525,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief {
                     subject: dummy_entity(),
                 },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalKind::ClaimOffice {
                 office: dummy_entity(),

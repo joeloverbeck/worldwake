@@ -261,6 +261,7 @@ fn share_goal(listener: EntityId, subject: EntityId) -> GoalKind {
     GoalKind::ShareBelief {
         listener,
         topic: TellTopic::EntityBelief { subject },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     }
 }
 

@@ -464,6 +464,7 @@ mod tests {
             GoalDispatchKey::ShareBelief => GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             },
             GoalDispatchKey::ClaimOffice => GoalKind::ClaimOffice { office },
             GoalDispatchKey::SupportCandidateForOffice => GoalKind::SupportCandidateForOffice {

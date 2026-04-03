@@ -5149,6 +5149,7 @@ fn trace_social_resend_omission_reason() {
     let share_goal = GoalKind::ShareBelief {
         listener,
         topic: TellTopic::EntityBelief { subject },
+        communication_class: worldwake_core::CommunicationClass::Gossip,
     };
 
     match &trace.outcome {
@@ -5405,6 +5406,7 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
                 effective_tick: vacancy_tick,
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let claim_goal = GoalKind::ClaimOffice { office };
 

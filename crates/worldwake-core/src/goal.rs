@@ -1,7 +1,8 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
 use crate::{
-    CommodityKind, EntityId, PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
+    CommodityKind, CommunicationClass, EntityId, PunishmentKind, RecipeId, RecordEntryId,
+    TellTopic, ViolationId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +64,7 @@ pub enum GoalKind {
     ShareBelief {
         listener: EntityId,
         topic: TellTopic,
+        communication_class: CommunicationClass,
     },
     ClaimOffice {
         office: EntityId,
@@ -194,7 +196,10 @@ mod tests {
         CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, TellTopic,
         ViolationId,
     };
-    use crate::{test_utils::entity_id, CommodityKind, PunishmentKind, Quantity, RecipeId};
+    use crate::{
+        test_utils::entity_id, CommodityKind, CommunicationClass, PunishmentKind, Quantity,
+        RecipeId,
+    };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
@@ -419,6 +424,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::ShareBelief {
             listener,
             topic: TellTopic::EntityBelief { subject },
+            communication_class: CommunicationClass::Gossip,
         });
 
         assert_eq!(key.commodity, None);
@@ -436,14 +442,17 @@ mod tests {
         let first = GoalKey::from(GoalKind::ShareBelief {
             listener: listener_a,
             topic: TellTopic::EntityBelief { subject: subject_a },
+            communication_class: CommunicationClass::Gossip,
         });
         let second = GoalKey::from(GoalKind::ShareBelief {
             listener: listener_b,
             topic: TellTopic::EntityBelief { subject: subject_a },
+            communication_class: CommunicationClass::Gossip,
         });
         let third = GoalKey::from(GoalKind::ShareBelief {
             listener: listener_a,
             topic: TellTopic::EntityBelief { subject: subject_b },
+            communication_class: CommunicationClass::Gossip,
         });
 
         assert_ne!(first, second);

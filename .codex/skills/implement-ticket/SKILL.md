@@ -41,6 +41,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - when affordance generation depends on self-authoritative profile reads, those profile prerequisites are present in both production code and representative AI/planner test harnesses
    - for component-registration tickets, hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests that mirror the authoritative component set still match the live schema after the new entry lands
    - when a ticket extends a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or other generated surfaces that materialize that API indirectly; if they exist, distinguish the canonical consumer boundary from any implementation-detail mirror the live architecture requires
+   - when a ticket widens a shared trait or read surface, explicitly choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot, harness, and test-double fallout; do not default to borrowed or owned shapes without checking the real cross-crate construction cost
 4. Reassess against Worldwake's repo rules:
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
@@ -124,6 +125,8 @@ Do not assume every file that references the schema macro needs a new top-level 
 When new components participate in persisted world state, check existing save/load or snapshot roundtrip fixture builders as part of the registration sweep. Expand those builders when needed so broad persistence tests actually serialize and deserialize the new components instead of only proving the schema/version boundary changed.
 
 For trait-surface tickets, do not assume the named trait is implemented directly at each consumer. Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits, and correct the ticket if the implementation boundary is broader than the original prose.
+
+When trait-surface reassessment exposes more than one plausible ownership shape for the new API, decide that shape before broad implementation. Prefer the form that keeps the canonical path honest while avoiding unnecessary fixture and test-double churn across dependent crates.
 
 When a ticket is an explicit staged extraction step, temporary duplicated logic is acceptable only if the caller-rewire or old-path removal step is already owned by a named follow-up ticket. Correct the current ticket to state that boundary explicitly instead of leaving the duplication looking accidental.
 
@@ -238,6 +241,8 @@ When golden scenario metadata changes, re-check the generated golden inventory/d
 Do not archive automatically if the user only asked for implementation or for analysis.
 
 Before finishing, re-check ticket sections such as `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff and verification commands. Remove reassessment-only fallout from those sections if it did not become a real edit or proof surface.
+
+If the ticket includes inline code snippets, example signatures, or mini before/after API sketches, re-check those examples against the final landed shape as part of closeout. Do not leave a ticket accurate in prose but stale in its embedded code examples.
 
 ## Guardrails
 

@@ -304,6 +304,7 @@ fn setup_remote_ground_medicine_care_scenario(
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener: patient,
                     topic: TellTopic::EntityBelief { subject: patient },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 }),
                 place: Some(VILLAGE_SQUARE),
                 target: Some(patient),
@@ -319,6 +320,7 @@ fn setup_remote_ground_medicine_care_scenario(
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener: patient,
                     topic: TellTopic::EntityBelief { subject: medicine },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 }),
                 place: Some(VILLAGE_SQUARE),
                 target: Some(patient),

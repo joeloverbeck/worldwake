@@ -2001,6 +2001,7 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
                             effective_tick: speaker_update_tick,
                         },
                     },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
                 },
             )
             .into_iter()
@@ -2633,6 +2634,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         topic: TellTopic::EntityBelief {
             subject: recent_subject,
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let share_office = GoalKind::ShareBelief {
         listener,
@@ -2643,6 +2645,7 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
                 effective_tick: Tick(0),
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
 
     assert!(
@@ -3645,6 +3648,7 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
                 effective_tick: Tick(3),
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
@@ -4191,6 +4195,7 @@ fn run_contested_force_state_propagates_through_belief_system(
                 effective_tick: Tick(8),
             },
         },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     let share_history = trace_sink.goal_history_for(witness, &share_belief_goal);
     assert!(
@@ -6281,6 +6286,7 @@ fn run_supply_depletion_enables_share_belief(
     let share_goal = GoalKind::ShareBelief {
         listener,
         topic: TellTopic::EntityBelief { subject: source },
+        communication_class: worldwake_core::CommunicationClass::Testimony,
     };
     assert!(
         first_planning

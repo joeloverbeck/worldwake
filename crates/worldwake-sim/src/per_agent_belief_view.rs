@@ -424,6 +424,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
+    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+        (agent == self.agent).then(|| self.belief_store.clone())
+    }
+
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         if agent != self.agent {
             return Vec::new();
