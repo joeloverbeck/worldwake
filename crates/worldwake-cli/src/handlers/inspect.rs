@@ -127,7 +127,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     let kind = world
         .entity_kind(entity)
         .map_or("Unknown".to_string(), |k| format!("{k:?}"));
-    println!("{name} ({kind}) #{}", entity.slot);
+    println!("{name} ({kind})");
 
     // Check each component type and print if present.
     if let Some(agent_data) = world.get_component_agent_data(entity) {
@@ -164,7 +164,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("    hunger: {}, thirst: {}, fatigue: {}", up.hunger_weight, up.thirst_weight, up.fatigue_weight);
         println!("    bladder: {}, dirtiness: {}, pain: {}", up.bladder_weight, up.dirtiness_weight, up.pain_weight);
         println!("    danger: {}, enterprise: {}, social: {}", up.danger_weight, up.enterprise_weight, up.social_weight);
-        println!("    activity_awareness: {}, courage: {}, care: {}", up.activity_awareness_weight, up.courage, up.care_weight);
+        println!("    activity_awareness: {}, side_benefit: {}, courage: {}, care: {}", up.activity_awareness_weight, up.side_benefit_weight, up.courage, up.care_weight);
     }
     if let Some(dt) = world.get_component_drive_thresholds(entity) {
         println!("  DriveThresholds:");
@@ -251,7 +251,10 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     }
 
     // Location.
-    println!("  Location: {}", format_location(world, entity));
+    println!(
+        "  Location: {}",
+        format_location(world, entity, sim.scheduler().current_tick())
+    );
 
     Ok(CommandOutcome::Continue)
 }

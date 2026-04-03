@@ -6,7 +6,7 @@ use worldwake_core::{cause::CauseRef, event_log::EventLog, event_record::EventVi
 use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
-use crate::display::entity_display_name;
+use crate::display::{entity_display_name, format_state_delta};
 
 /// Format a single event as a summary line.
 ///
@@ -146,7 +146,7 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
     } else {
         println!("  deltas ({}):", record.state_deltas().len());
         for delta in record.state_deltas() {
-            println!("    {delta:?}");
+            println!("    {}", format_state_delta(sim.world(), delta));
         }
     }
 

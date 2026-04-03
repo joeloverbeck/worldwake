@@ -88,7 +88,7 @@ pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> Co
 
     // Agent name and location.
     let name = entity_display_name(world, entity);
-    let location = format_location(world, entity);
+    let location = format_location(world, entity, sim.scheduler().current_tick());
     println!("{name} {location}");
 
     // Current action (if any).

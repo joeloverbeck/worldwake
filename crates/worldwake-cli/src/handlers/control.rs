@@ -100,7 +100,7 @@ pub fn handle_switch(sim: &mut SimulationState, name: &str) -> CommandResult {
 
     // 6. Print confirmation.
     let display = entity_display_name(sim.world(), target_id);
-    let location = format_location(sim.world(), target_id);
+    let location = format_location(sim.world(), target_id, sim.scheduler().current_tick());
     println!("Now controlling {display} {location}");
 
     Ok(CommandOutcome::Continue)

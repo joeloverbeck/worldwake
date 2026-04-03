@@ -99,7 +99,7 @@ pub fn handle_agents(sim: &SimulationState, registries: &ActionRegistries) -> Co
 
         let name = entity_display_name(world, id);
         let control = format_control_source(agent_data.control_source);
-        let location = format_location(world, id);
+        let location = format_location(world, id, sim.scheduler().current_tick());
 
         // Find active action for this agent.
         let action_str = find_agent_action_str(sim, registries, id);

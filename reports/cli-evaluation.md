@@ -181,3 +181,99 @@ No previous evaluation.
 7. **[MEDIUM]** Add a brief summary to `tick` output showing what the controlled agent (or AI agents) did during that tick, beyond just event count. *(New)*
 
 8. **[LOW]** Add duration display for actions that currently show no duration (e.g., `staff_market`). *(New)*
+
+---
+
+## EVALUATION #2
+
+**Date**: 2026-04-03
+**Scenario**: scenarios/cli-evaluation.ron (fixed: added missing `side_benefit_weight` to all 4 UtilityProfiles)
+**Transcript**: reports/cli-evaluation-transcripts/eval-2.txt
+
+### Session Notes
+
+Launched the CLI against the evaluation scenario after patching a stale `side_benefit_weight` field. Exercised all 4 workflow sequences plus adaptive edge cases (`help`, `do 999`, `inspect Nonexistent`). Significant improvements from Eval #1: multi-word entity names now work everywhere, raw `Place#0` IDs are resolved to place names in `agents`/`status`/`relations`/`look`, and `inspect` component display is now human-readable with labeled key-value pairs instead of `{:?}` walls. The `needs` and `inventory` commands remain excellent.
+
+However, two major issues persist: (1) event delta display (`event N`) still dumps raw `{:?}` debug format with `EntityId { slot: 5, generation: 0 }` and full struct dumps — completely unreadable; (2) the action list still includes self-targeting actions (attack self, fine self, exile self), duplicates (bribe x2, attack x2), and internal merchant operations (store_stock, collect_display_stock, etc.). New issues found: `status` shows "(no location)" for in-transit agents without saying where they're going, `help` exits with error code 1 and leaks Clap internal doc-comments, `UtilityProfile` display omits the `side_benefit_weight` field, and `inspect` shows raw internal entity IDs in the header (`#6`).
+
+### Per-Command Analysis
+
+**world**: Clean. Place names and counts. No issues.
+
+**places**: Clean. Tags, connections, travel ticks. No issues.
+
+**agents**: **FIXED** — locations now show place names instead of `Place#0`. Clean output.
+
+**goods**: Clean. Per-commodity, per-place breakdown. No issues.
+
+**look**: **FIXED** — entities now show descriptive names (`20× Coin`, `Mill`) instead of raw `ItemLot#9`. Clean and useful.
+
+**inspect**: **MAJOR IMPROVEMENT** — component display now uses labeled key-value pairs. UtilityProfile shows `hunger: 300‰` instead of `UtilityProfile { hunger_weight: Permille(300), ... }`. DriveThresholds, MetabolismProfile, DeprivationExposure all readable. **Remaining issues**: (a) `side_benefit_weight` omitted from UtilityProfile display, (b) entity header shows raw internal ID `#6`.
+
+**relations**: **FIXED** — shows place name instead of `Place#0`.
+
+**inventory**: Clean. Works with multi-word names now (**FIXED** from Eval #1).
+
+**needs**: Excellent. Progress bars with urgency bands. Best output in CLI.
+
+**actions**: 40 items listed. **Persistent issues**: self-targeting (attack/fine/exile self), duplicates (bribe x2), no duration on travel/staff_market/defend/steal, internal merchant operations polluting the list. Travel actions don't show their tick duration even though the data exists.
+
+**do**: Clean confirmation. No issues.
+
+**tick**: Minimal — just event count per tick. No indication of what happened.
+
+**status**: Clean when at a location. **Issue**: shows "(no location)" for in-transit agents — should say "in transit to X" or "traveling to X (N ticks remaining)".
+
+**cancel**: Clean. Works correctly — agent returns to origin.
+
+**switch**: **FIXED** — multi-word names work. Clean confirmation with location.
+
+**observe**: Clean. No issues.
+
+**events**: Event list with IDs, ticks, tags, actors. Some events show "(no tags)" with no further description.
+
+**event**: Header portion (tick, tags, cause, actor, place, targets, witnesses) is clean and readable. **CRITICAL**: delta section still dumps raw `{:?}` format — `EntityId { slot: 5, generation: 0 }`, `InTransitOnEdge(InTransitOnEdge { edge_id: TravelEdgeId(5), ... })`, `RouteExperience(RouteExperience { edges: { ... } })`. Completely unusable.
+
+**trace**: Works mechanically but showed only a single-event chain for the tested event. No parent events visible.
+
+**save/load**: Clean. Works correctly with tick confirmation on load.
+
+**help**: **New issue** — exits with error code 1 and prints to stderr. Leaks Clap internal doc-comment: "Clap wrapper for REPL command parsing. `multicall = true`...".
+
+### Resolved Since Previous
+
+- **Raw entity IDs in `agents`, `status`, `relations`, `look`** — was [CRITICAL] in Eval #1, now **fixed**. Place names, item descriptions, and facility types shown instead of `Place#0`, `ItemLot#9`, `Facility#16`.
+- **Raw `{:?}` debug format in `inspect` component display** — was [CRITICAL] in Eval #1, now **fixed**. Components render as labeled key-value pairs.
+- **Multi-word entity name parsing** — was [HIGH] in Eval #1, now **fixed**. `inventory Merchant Vara`, `switch Guard Theron`, `inspect Merchant Vara` all work.
+
+### Scores
+
+| # | Metric | Score | Previous | Delta | Justification |
+|---|--------|-------|----------|-------|---------------|
+| 1 | Output Clarity | 6 | 3 | +3 | Major improvement: no more Place#0 IDs, inspect is readable. But event deltas still raw {:?}, UtilityProfile omits side_benefit_weight, inspect header shows raw #N ID, help leaks Clap internals. |
+| 2 | Action Reliability | 5 | 5 | 0 | Actions execute when selected. But self-targeting, duplicates, and internal merchant ops still pollute the list. No crashes. |
+| 3 | State Legibility | 7 | 5 | +2 | world/places/goods/agents/needs/inventory/look all clean and scannable. inspect greatly improved. Remaining gap: "(no location)" for in-transit. |
+| 4 | Causal Traceability | 3 | 2 | +1 | Event headers improved (actor names, targets readable). But event deltas are still raw {:?} walls. trace shows shallow chains. tick gives no summary. |
+| 5 | Session Flow | 6 | 5 | +1 | Multi-word names fixed removes major friction. Commands flow naturally. Remaining gaps: tick gives no summary, no in-transit status, action list overwhelming. |
+| 6 | Error Recovery | 5 | 4 | +1 | "invalid action number, run 'actions' first" is helpful. "no entity matching X" is clear. But help exits with error, no entity suggestions on failure, no recovery guidance for most errors. |
+| | **Average** | **5.3** | **4.0** | **+1.3** | |
+
+### Prioritized Recommendations
+
+1. **[CRITICAL]** Replace raw `{:?}` debug format in `event` delta display with human-readable formatting. Deltas should show "Kael arrived at Thornwall Village" or "LocatedIn: added (Kael → Thornwall Village)", not `Component(Removed { entity: EntityId { slot: 5, generation: 0 }, ... })`. This is the single largest readability gap remaining. *(Recurring: 2 consecutive evaluations — was CRITICAL #1 in Eval #1, partially fixed for inspect but event deltas still raw)*
+
+2. **[HIGH]** Filter the action list to remove self-targeting actions (attack self, fine self, exile self), duplicates (bribe x2, attack x2), and internal merchant operations (store_stock, collect_display_stock, stage_stock_for_sale, unstage_stock). *(Recurring: 2 consecutive evaluations)*
+
+3. **[HIGH]** Show in-transit status clearly: replace "(no location)" with "in transit to X (N ticks remaining)" in `status` and `switch` output. *(New)*
+
+4. **[MEDIUM]** Add `side_benefit_weight` to UtilityProfile display in `inspect`. The field exists on the struct but the CLI formatter omits it. *(New)*
+
+5. **[MEDIUM]** Fix `help` command: should exit with code 0 (not 1), print to stdout (not stderr), and remove the Clap internal doc-comment ("Clap wrapper for REPL command parsing. `multicall = true`..."). *(New)*
+
+6. **[MEDIUM]** Add human-readable event descriptions to `events` list and improve `tick` output with a brief summary of what happened. *(Recurring: 2 consecutive evaluations)*
+
+7. **[MEDIUM]** Remove raw internal entity ID from `inspect` header (e.g., `Merchant Vara (Agent) #6` → `Merchant Vara (Agent)`). *(New)*
+
+8. **[LOW]** Add duration display for actions that currently show no duration: travel, staff_market, defend, steal, relieve_wilderness. *(Recurring: 2 consecutive evaluations)*
+
+9. **[LOW]** Improve error recovery: when entity not found, list available entities. When `help` fails, handle gracefully. *(Recurring: 2 consecutive evaluations)*

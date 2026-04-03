@@ -4,11 +4,15 @@
 
 use worldwake_core::{
     control::ControlSource,
+    delta::{
+        ComponentDelta, EntityDelta, QuantityDelta, RelationDelta, ReservationDelta, StateDelta,
+    },
     drives::ThresholdBand,
     ids::EntityId,
     items::CommodityKind,
     numerics::{Permille, Quantity},
     world::World,
+    Tick,
 };
 
 /// Errors from [`resolve_entity`].
@@ -133,15 +137,21 @@ pub fn format_quantity(kind: CommodityKind, qty: Quantity) -> String {
     format!("{}× {kind:?}", qty.0)
 }
 
-/// Format the location of an entity, e.g. `"at Market Square"`.
-pub fn format_location(world: &World, entity_id: EntityId) -> String {
-    match world.effective_place(entity_id) {
-        Some(place_id) => {
-            let place_name = entity_display_name(world, place_id);
-            format!("at {place_name}")
-        }
-        None => "(no location)".to_string(),
+/// Format the location of an entity, e.g. `"at Market Square"` or
+/// `"in transit to Eldergrove Forest (2 ticks remaining)"`.
+pub fn format_location(world: &World, entity_id: EntityId, current_tick: Tick) -> String {
+    if let Some(place_id) = world.effective_place(entity_id) {
+        let place_name = entity_display_name(world, place_id);
+        return format!("at {place_name}");
     }
+    if world.is_in_transit(entity_id) {
+        if let Some(transit) = world.get_component_in_transit_on_edge(entity_id) {
+            let dest = entity_display_name(world, transit.destination);
+            let remaining = transit.arrival_tick.0.saturating_sub(current_tick.0);
+            return format!("in transit to {dest} ({remaining} ticks remaining)");
+        }
+    }
+    "(no location)".to_string()
 }
 
 /// Format a `ControlSource` variant for display.
@@ -150,6 +160,101 @@ pub fn format_control_source(cs: ControlSource) -> &'static str {
         ControlSource::Human => "[human]",
         ControlSource::Ai => "[ai]",
         ControlSource::None => "[none]",
+    }
+}
+
+/// Format a state delta for human-readable event display.
+pub fn format_state_delta(world: &World, delta: &StateDelta) -> String {
+    match delta {
+        StateDelta::Entity(EntityDelta::Created { entity, kind }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{name} ({kind:?}) created")
+        }
+        StateDelta::Entity(EntityDelta::Archived { entity, kind }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{name} ({kind:?}) archived")
+        }
+        StateDelta::Component(ComponentDelta::Set {
+            entity,
+            component_kind,
+            ..
+        }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{component_kind:?}: set on {name}")
+        }
+        StateDelta::Component(ComponentDelta::Removed {
+            entity,
+            component_kind,
+            ..
+        }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{component_kind:?}: removed from {name}")
+        }
+        StateDelta::Relation(RelationDelta::Added {
+            relation_kind,
+            relation,
+        }) => format_relation_delta("added", *relation_kind, relation, world),
+        StateDelta::Relation(RelationDelta::Removed {
+            relation_kind,
+            relation,
+        }) => format_relation_delta("removed", *relation_kind, relation, world),
+        StateDelta::Quantity(QuantityDelta::Changed {
+            entity,
+            commodity,
+            before,
+            after,
+        }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{commodity:?} on {name}: {} → {}", before.0, after.0)
+        }
+        StateDelta::Reservation(ReservationDelta::Created { .. }) => {
+            "Reservation created".to_string()
+        }
+        StateDelta::Reservation(ReservationDelta::Released { .. }) => {
+            "Reservation released".to_string()
+        }
+    }
+}
+
+/// Helper: format a relation delta with resolved entity names.
+fn format_relation_delta(
+    verb: &str,
+    kind: worldwake_core::delta::RelationKind,
+    value: &worldwake_core::delta::RelationValue,
+    world: &World,
+) -> String {
+    use worldwake_core::delta::RelationValue;
+    match value {
+        RelationValue::LocatedIn { entity, place } => {
+            let e = entity_display_name(world, *entity);
+            let p = entity_display_name(world, *place);
+            format!("LocatedIn: {verb} ({e} → {p})")
+        }
+        RelationValue::InTransit { entity } => {
+            let e = entity_display_name(world, *entity);
+            format!("InTransit: {verb} ({e})")
+        }
+        RelationValue::PossessedBy { entity, holder } => {
+            let e = entity_display_name(world, *entity);
+            let h = entity_display_name(world, *holder);
+            format!("PossessedBy: {verb} ({e} → {h})")
+        }
+        RelationValue::ContainedBy { entity, container } => {
+            let e = entity_display_name(world, *entity);
+            let c = entity_display_name(world, *container);
+            format!("ContainedBy: {verb} ({e} → {c})")
+        }
+        RelationValue::OwnedBy { entity, owner } => {
+            let e = entity_display_name(world, *entity);
+            let o = entity_display_name(world, *owner);
+            format!("OwnedBy: {verb} ({e} → {o})")
+        }
+        RelationValue::HostileTo { subject, target } => {
+            let s = entity_display_name(world, *subject);
+            let t = entity_display_name(world, *target);
+            format!("HostileTo: {verb} ({s} → {t})")
+        }
+        _ => format!("{kind:?}: {verb}"),
     }
 }
 
@@ -334,7 +439,7 @@ mod tests {
     #[test]
     fn test_format_location_placed() {
         let (sim, id) = one_agent_scenario("Aster");
-        let loc = format_location(sim.state.world(), id);
+        let loc = format_location(sim.state.world(), id, Tick(0));
         assert!(loc.starts_with("at "), "got: {loc}");
     }
 
@@ -345,6 +450,9 @@ mod tests {
             slot: 999,
             generation: 0,
         };
-        assert_eq!(format_location(sim.state.world(), fake_id), "(no location)");
+        assert_eq!(
+            format_location(sim.state.world(), fake_id, Tick(0)),
+            "(no location)"
+        );
     }
 }

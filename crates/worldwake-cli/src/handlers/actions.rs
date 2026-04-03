@@ -10,6 +10,15 @@ use crate::commands::{CommandError, CommandOutcome, CommandResult};
 use crate::display::entity_display_name;
 use crate::repl::ReplState;
 
+/// Action names that are internal merchant/stock operations, not meaningful
+/// user choices. Filtered from the human action menu.
+const HIDDEN_ACTIONS: &[&str] = &[
+    "store_stock",
+    "collect_display_stock",
+    "stage_stock_for_sale",
+    "unstage_stock",
+];
+
 /// List available actions for the controlled agent.
 ///
 /// Queries affordances via `get_affordances()` (same query as AI agents),
@@ -27,7 +36,21 @@ pub fn handle_actions(
     let runtime = PerAgentBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
     let view = PerAgentBeliefView::with_runtime_from_world(entity, sim.world(), runtime);
 
-    let affordances = get_affordances(&view, entity, &registries.defs, &registries.handlers);
+    let mut affordances = get_affordances(&view, entity, &registries.defs, &registries.handlers);
+
+    // Filter out self-targeting actions (attack self, fine self, exile self).
+    affordances.retain(|a| !a.bound_targets.contains(&entity));
+
+    // Filter out internal merchant operations not meaningful as user choices.
+    affordances.retain(|a| {
+        registries
+            .defs
+            .get(a.def_id)
+            .is_none_or(|def| !HIDDEN_ACTIONS.contains(&def.name.as_str()))
+    });
+
+    // Remove duplicates that differ only in payload (keep first variant).
+    affordances.dedup_by(|a, b| a.def_id == b.def_id && a.bound_targets == b.bound_targets);
 
     if affordances.is_empty() {
         println!("no actions available");
