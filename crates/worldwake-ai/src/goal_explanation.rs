@@ -69,7 +69,7 @@ mod tests {
         HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
         ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        WorkstationTag, Wound,
+        TellProfile, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
@@ -352,6 +352,10 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
+        }
+
+        fn tell_profile(&self, _agent: EntityId) -> Option<TellProfile> {
+            Some(TellProfile::default())
         }
 
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {

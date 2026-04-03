@@ -146,6 +146,9 @@ Established authoritative per-agent `ReasoningProfile` storage and AI consumptio
 ### S43: Communication Type Differentiation — COMPLETED
 Established typed social communication through `CommunicationClass`, authoritative per-agent `CommunicationProfile`, class-aware `ShareBelief` suppression and ranking, class-aware Tell acceptance, and golden S43 closeout proving stress survival, listener acceptance divergence, and stressed alarm relay. Archived spec: `archive/specs/S43-communication-type-differentiation.md`.
 
+### S44: Scenario Profile Completeness — COMPLETED
+Established scenario-definable universal and role-specific agent profiles, overrideable defaulted profile components, loud known-agent runtime profile enforcement, and mirrored documentation contract updates across `docs/spec-drafting-rules.md`, `CLAUDE.md`, and `AGENTS.md`. Archived spec: `archive/specs/S44-scenario-profile-completeness.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -205,8 +208,8 @@ S40 ✅ ──→ E22 ✅ (integration should cover lawful remote combat pursuit
 
 S42 ✅ (no deps — per-agent reasoning style completed)
 S43 ✅ (no deps — communication type differentiation completed)
-S42 ✅, S43 ✅ ──→ S44 (generalized contention substrate)
-S44 ──→ S45 (unified social artifact model benefits from contention for claim competition)
+S42 ✅, S43 ✅ ──→ S44 ✅ (scenario profile completeness completed)
+S45 remains the next active Phase 5 spec; the earlier S44-style contention substrate is beneficial for future claim competition but not blocking per the live S45 spec
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
 S26 ✅ (planner conformance tests completed — 32 tests across all action families)
@@ -459,7 +462,7 @@ S36 ✅ ──→ S40 ✅
 
 ### Phase 5: Architectural Substrates
 
-Derived from the external ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs address confirmed architectural gaps in agent reasoning diversity (FND IV.22), communication type differentiation (FND III.15/18), generalized contention (FND II.8/9), and social artifact modeling (FND IV.25).
+Derived from the external ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs address confirmed architectural gaps in agent reasoning diversity (FND IV.22), communication type differentiation (FND III.15/18), scenario profile completeness for agent behavior substrate configuration, and social artifact modeling (FND IV.25).
 
 **Step 17** (parallel, no deps):
 - **S42**: Per-Agent Reasoning Style — ✅ COMPLETED
@@ -469,14 +472,15 @@ Derived from the external ChatGPT architecture review (`brainstorming/improvemen
   - archived spec: `archive/specs/S43-communication-type-differentiation.md`
   - split Tell into urgency-classified types, moved listener acceptance onto authoritative `CommunicationProfile`, and shipped golden proof for alarm-vs-gossip stress handling, class-aware acceptance, and stressed relay
 
-**Step 18** (after S43):
-- **S44**: Generalized Contention Substrate
-  - Extend facility queue grant/wait/expiry pattern to all exclusive affordances
-  - Reusable `ContentionQueue` component for corpse loot, item pickup, patient treatment
-  - Queue state is inspectable world state, not hidden engine order
-  - FND II.8/9 alignment: contested affordances resolve through world processes
+**Step 18** (after S42/S43, now complete):
+- **S44**: Scenario Profile Completeness — ✅ COMPLETED
+  - archived spec: `archive/specs/S44-scenario-profile-completeness.md`
+  - scenario-spawned agents now receive the missing universal and role-specific profile substrate
+  - already-defaulted agent profiles are overrideable per agent
+  - known-agent universal profile reads no longer hide missing-state bugs behind silent fallback
+  - the profile-completeness rule is now mirrored across spec-drafting and repo-guidance docs
 
-**Step 19** (after S44):
+**Step 19** (next active Phase 5 step):
 - **S45**: Unified Social Artifact Model
   - First-class `SocialArtifact` entities: bounties, notices (warrants, contracts, debts in future)
   - Shared `ArtifactHeader` (issuer, authority, jurisdiction, expiration, state) + typed content
@@ -488,14 +492,14 @@ Dependency graph:
 ```
 S42 ✅ (no deps, parallel)
 S43 ✅ (no deps, parallel)
-S42 ✅, S43 ✅ ──→ S44
-S44 ──→ S45
+S42 ✅, S43 ✅ ──→ S44 ✅
+S45 (next active Phase 5 spec; contention follow-on beneficial but not blocking)
 ```
 
 #### Phase 5 Gate
 - [x] Two agents with different `ReasoningProfile` produce observably different behavior (S42)
 - [x] Alarm-class communication survives stress suppression while gossip is suppressed (S43)
-- [ ] Multi-agent corpse loot contention resolves through inspectable queue state (S44)
+- [x] Scenario-spawned agents receive the full universal/role-specific profile substrate, and known-agent universal profile reads no longer hide missing-state bugs (S44)
 - [ ] End-to-end bounty lifecycle: post → perceive → pursue → claim → reward (S45)
 - [ ] All Phase 4 and 4+ gate criteria still hold
 - [ ] `cargo test --workspace` passes
@@ -535,8 +539,8 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S39-limited-side-benefit-plan-scoring.md`~~ | 4+ | 16 | ✅ COMPLETED |
 | ~~`S42-per-agent-reasoning-style.md`~~ | 5 | 17 | ✅ COMPLETED |
 | ~~`S43-communication-type-differentiation.md`~~ | 5 | 17 | ✅ COMPLETED |
-| `S44-generalized-contention-substrate.md` | 5 | 18 | S42, S43 |
-| `S45-unified-social-artifact-model.md` | 5 | 19 | S44 |
+| ~~`S44-scenario-profile-completeness.md`~~ | 5 | 18 | ✅ COMPLETED |
+| `S45-unified-social-artifact-model.md` | 5 | 19 | none |
 
 ## Crate Dependency Graph
 
@@ -561,4 +565,4 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | ✅ COMPLETED |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39, S48 | Merchant economy depth, learned preferences, side-benefit scoring, S38 golden closeout | ✅ COMPLETED |
-| 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, generalized contention, social artifacts | IN PROGRESS (S42 and S43 complete; S44–S45 pending) |
+| 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, scenario profile completeness, social artifacts | IN PROGRESS (S42, S43, and S44 complete; S45 pending) |

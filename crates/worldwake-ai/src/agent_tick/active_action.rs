@@ -155,12 +155,13 @@ pub(super) fn goal_switch_margin_details(
     reasoning: &ReasoningProfile,
 ) -> (Permille, FrameSwitchMarginSource) {
     if has_frame(jc) {
-        if let Some(profile) = view.intention_disposition_profile(agent) {
-            return (
-                profile.commitment_switch_margin,
-                FrameSwitchMarginSource::FrameProfile,
-            );
-        }
+        let profile = view
+            .intention_disposition_profile(agent)
+            .unwrap_or_else(|| panic!("agent {agent} lacks IntentionDispositionProfile"));
+        return (
+            profile.commitment_switch_margin,
+            FrameSwitchMarginSource::FrameProfile,
+        );
     }
 
     (

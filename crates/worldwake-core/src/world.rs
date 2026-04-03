@@ -156,6 +156,17 @@ impl World {
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
+            world.insert_component_reasoning_profile(entity, ReasoningProfile::default())?;
+            world.insert_component_epistemic_disposition_profile(
+                entity,
+                EpistemicDispositionProfile::default(),
+            )?;
+            world.insert_component_intention_disposition_profile(
+                entity,
+                IntentionDispositionProfile::default(),
+            )?;
+            world.insert_component_communication_profile(entity, CommunicationProfile::default())?;
+            world.insert_component_preference_profile(entity, PreferenceProfile::default())?;
             Ok(())
         })
     }

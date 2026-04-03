@@ -7,9 +7,14 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    combat::CombatProfile, control::ControlSource, items::CommodityKind, needs::HomeostaticNeeds,
-    numerics::Quantity, production::WorkstationTag, topology::PlaceTag,
-    trade::TradeDispositionProfile, utility_profile::UtilityProfile,
+    CarryCapacity, CombatProfile, CommodityValuationProfile, CommunicationProfile, ControlSource,
+    DriveThresholds, EpistemicDispositionProfile, FacilityQueueDispositionProfile,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+    MetabolismProfile, PatrolProfile, PerceptionProfile, PreferenceProfile,
+    PursuitProfile, Quantity, ReasoningProfile, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -63,6 +68,44 @@ pub struct AgentDef {
     pub merchandise_profile: Option<MerchandiseProfileDef>,
     #[serde(default)]
     pub trade_disposition: Option<TradeDispositionProfile>,
+    #[serde(default)]
+    pub perception_profile: Option<PerceptionProfile>,
+    #[serde(default)]
+    pub tell_profile: Option<TellProfile>,
+    #[serde(default)]
+    pub reasoning_profile: Option<ReasoningProfile>,
+    #[serde(default)]
+    pub epistemic_disposition: Option<EpistemicDispositionProfile>,
+    #[serde(default)]
+    pub intention_disposition: Option<IntentionDispositionProfile>,
+    #[serde(default)]
+    pub communication_profile: Option<CommunicationProfile>,
+    #[serde(default)]
+    pub preference_profile: Option<PreferenceProfile>,
+    #[serde(default)]
+    pub drive_thresholds: Option<DriveThresholds>,
+    #[serde(default)]
+    pub metabolism_profile: Option<MetabolismProfile>,
+    #[serde(default)]
+    pub carry_capacity: Option<CarryCapacity>,
+    #[serde(default)]
+    pub theft_disposition: Option<TheftDispositionProfile>,
+    #[serde(default)]
+    pub justice_disposition: Option<JusticeDispositionProfile>,
+    #[serde(default)]
+    pub violation_disposition: Option<ViolationDispositionProfile>,
+    #[serde(default)]
+    pub patrol_profile: Option<PatrolProfile>,
+    #[serde(default)]
+    pub patrol_route: Option<PatrolRouteDef>,
+    #[serde(default)]
+    pub pursuit_profile: Option<PursuitProfile>,
+    #[serde(default)]
+    pub facility_queue_disposition: Option<FacilityQueueDispositionProfile>,
+    #[serde(default)]
+    pub commodity_valuation: Option<CommodityValuationProfile>,
+    #[serde(default)]
+    pub substitute_preferences: Option<SubstitutePreferences>,
 }
 
 /// Scenario-specific merchandise profile using string names instead of `EntityId`.
@@ -75,6 +118,16 @@ pub struct MerchandiseProfileDef {
     pub sale_kinds: Vec<CommodityKind>,
     #[serde(default)]
     pub home_facility: Option<String>,
+}
+
+/// Scenario-specific patrol route using string place names instead of `EntityId`.
+///
+/// `PatrolRoute` in core contains `assigned_places: Vec<EntityId>`, which
+/// cannot appear in a RON file before entities are spawned. This def uses
+/// place name strings, resolved to `EntityId` during spawning.
+#[derive(Clone, Debug, Deserialize)]
+pub struct PatrolRouteDef {
+    pub assigned_places: Vec<String>,
 }
 
 /// An item lot to place in the world.
@@ -209,6 +262,40 @@ mod tests {
                         demand_memory_retention_ticks: 50,
                         market_presence_ticks: 30,
                     ),
+                    perception_profile: (
+                        memory_capacity: 6,
+                        memory_retention_ticks: 24,
+                        observation_fidelity: 900,
+                        confidence_policy: (
+                            direct_observation_base: 980,
+                            report_base: 820,
+                            rumor_base: 610,
+                            inference_base: 430,
+                            report_chain_penalty: 45,
+                            rumor_chain_penalty: 120,
+                            staleness_penalty_per_tick: 4,
+                        ),
+                        institutional_memory_capacity: 14,
+                        consultation_speed_factor: 600,
+                        contradiction_tolerance: 250,
+                    ),
+                    drive_thresholds: (
+                        hunger: (low: 150, medium: 300, high: 600, critical: 850),
+                        thirst: (low: 160, medium: 320, high: 610, critical: 860),
+                        fatigue: (low: 170, medium: 340, high: 620, critical: 870),
+                        bladder: (low: 180, medium: 360, high: 630, critical: 880),
+                        dirtiness: (low: 190, medium: 380, high: 640, critical: 890),
+                        pain: (low: 120, medium: 240, high: 520, critical: 800),
+                        danger: (low: 80, medium: 220, high: 480, critical: 760),
+                    ),
+                    theft_disposition: (
+                        steal_duration_ticks: 6,
+                        theft_motive_weight: 620,
+                        witness_risk_penalty: 180,
+                    ),
+                    patrol_route: (
+                        assigned_places: ["Town", "Forest"],
+                    ),
                 ),
             ],
             items: [
@@ -263,6 +350,24 @@ mod tests {
         );
         assert_eq!(merch.home_facility, Some("Town".to_string()));
         assert!(bob.trade_disposition.is_some());
+        assert!(bob.perception_profile.is_some());
+        assert_eq!(bob.perception_profile.unwrap().memory_capacity, 6);
+        assert!(bob.drive_thresholds.is_some());
+        assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
+        assert!(bob.theft_disposition.is_some());
+        assert_eq!(
+            bob.theft_disposition
+                .as_ref()
+                .unwrap()
+                .theft_motive_weight
+                .value(),
+            620
+        );
+        assert!(bob.patrol_route.is_some());
+        assert_eq!(
+            bob.patrol_route.as_ref().unwrap().assigned_places,
+            vec!["Town".to_string(), "Forest".to_string()]
+        );
 
         assert_eq!(def.items.len(), 2);
         assert!(!def.items[0].container);
@@ -292,6 +397,39 @@ mod tests {
         assert!(agent.utility_profile.is_none());
         assert!(agent.merchandise_profile.is_none());
         assert!(agent.trade_disposition.is_none());
+        assert!(agent.perception_profile.is_none());
+        assert!(agent.tell_profile.is_none());
+        assert!(agent.reasoning_profile.is_none());
+        assert!(agent.epistemic_disposition.is_none());
+        assert!(agent.intention_disposition.is_none());
+        assert!(agent.communication_profile.is_none());
+        assert!(agent.preference_profile.is_none());
+        assert!(agent.drive_thresholds.is_none());
+        assert!(agent.metabolism_profile.is_none());
+        assert!(agent.carry_capacity.is_none());
+        assert!(agent.theft_disposition.is_none());
+        assert!(agent.justice_disposition.is_none());
+        assert!(agent.violation_disposition.is_none());
+        assert!(agent.patrol_profile.is_none());
+        assert!(agent.patrol_route.is_none());
+        assert!(agent.pursuit_profile.is_none());
+        assert!(agent.facility_queue_disposition.is_none());
+        assert!(agent.commodity_valuation.is_none());
+        assert!(agent.substitute_preferences.is_none());
+    }
+
+    #[test]
+    fn test_patrol_route_def_deserializes_place_names() {
+        let route: PatrolRouteDef = from_ron_str(
+            r#"(
+                assigned_places: ["Gate", "Market"],
+            )"#,
+        );
+
+        assert_eq!(
+            route.assigned_places,
+            vec!["Gate".to_string(), "Market".to_string()]
+        );
     }
 
     #[test]

@@ -10,9 +10,9 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, EventLog, LoadUnits, MerchandiseProfile, MetabolismProfile, Place,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId,
+    EntityKind, EventLog, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource,
+    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
     WorkstationMarker, World, WorldTxn,
 };
 use worldwake_sim::{
@@ -274,9 +274,27 @@ fn spawn_agent(
     let needs = agent_def.needs.unwrap_or_default();
     txn.set_component_homeostatic_needs(agent_id, needs)?;
     txn.set_component_deprivation_exposure(agent_id, DeprivationExposure::default())?;
-    txn.set_component_drive_thresholds(agent_id, DriveThresholds::default())?;
-    txn.set_component_metabolism_profile(agent_id, MetabolismProfile::default())?;
-    txn.set_component_carry_capacity(agent_id, DEFAULT_AGENT_CARRY_CAPACITY)?;
+    let thresholds = agent_def.drive_thresholds.unwrap_or_default();
+    txn.set_component_drive_thresholds(agent_id, thresholds)?;
+    let metabolism = agent_def.metabolism_profile.unwrap_or_default();
+    txn.set_component_metabolism_profile(agent_id, metabolism)?;
+    let carry = agent_def.carry_capacity.unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
+    txn.set_component_carry_capacity(agent_id, carry)?;
+
+    let perception = agent_def.perception_profile.unwrap_or_default();
+    txn.set_component_perception_profile(agent_id, perception)?;
+    let tell = agent_def.tell_profile.unwrap_or_default();
+    txn.set_component_tell_profile(agent_id, tell)?;
+    let reasoning = agent_def.reasoning_profile.clone().unwrap_or_default();
+    txn.set_component_reasoning_profile(agent_id, reasoning)?;
+    let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
+    txn.set_component_epistemic_disposition_profile(agent_id, epistemic)?;
+    let intention = agent_def.intention_disposition.clone().unwrap_or_default();
+    txn.set_component_intention_disposition_profile(agent_id, intention)?;
+    let communication = agent_def.communication_profile.clone().unwrap_or_default();
+    txn.set_component_communication_profile(agent_id, communication)?;
+    let preference = agent_def.preference_profile.unwrap_or_default();
+    txn.set_component_preference_profile(agent_id, preference)?;
 
     if let Some(ref combat) = agent_def.combat_profile {
         txn.set_component_combat_profile(agent_id, *combat)?;
@@ -305,6 +323,50 @@ fn spawn_agent(
     }
     if let Some(ref trade_disp) = agent_def.trade_disposition {
         txn.set_component_trade_disposition_profile(agent_id, trade_disp.clone())?;
+    }
+    if let Some(ref profile) = agent_def.theft_disposition {
+        txn.set_component_theft_disposition_profile(agent_id, profile.clone())?;
+    }
+    if let Some(ref profile) = agent_def.justice_disposition {
+        txn.set_component_justice_disposition_profile(agent_id, profile.clone())?;
+    }
+    if let Some(ref profile) = agent_def.violation_disposition {
+        txn.set_component_violation_disposition_profile(agent_id, profile.clone())?;
+    }
+    if let Some(ref profile) = agent_def.patrol_profile {
+        txn.set_component_patrol_profile(agent_id, profile.clone())?;
+    }
+    if let Some(ref route_def) = agent_def.patrol_route {
+        let assigned_places = route_def
+            .assigned_places
+            .iter()
+            .map(|name| {
+                resolve_name(
+                    names,
+                    name,
+                    &format!("agent '{}' patrol route", agent_def.name),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        txn.set_component_patrol_route(
+            agent_id,
+            PatrolRoute {
+                assigned_places,
+                current_index: 0,
+            },
+        )?;
+    }
+    if let Some(ref profile) = agent_def.pursuit_profile {
+        txn.set_component_pursuit_profile(agent_id, profile.clone())?;
+    }
+    if let Some(ref profile) = agent_def.facility_queue_disposition {
+        txn.set_component_facility_queue_disposition_profile(agent_id, profile.clone())?;
+    }
+    if let Some(ref profile) = agent_def.commodity_valuation {
+        txn.set_component_commodity_valuation_profile(agent_id, *profile)?;
+    }
+    if let Some(ref preferences) = agent_def.substitute_preferences {
+        txn.set_component_substitute_preferences(agent_id, preferences.clone())?;
     }
 
     txn.set_ground_location(agent_id, place_id)?;
@@ -407,12 +469,51 @@ fn seed_from_u64(seed: u64) -> [u8; 32] {
 mod tests {
     use super::*;
     use crate::scenario::types::*;
+    use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        CarryCapacity, CommodityKind, ControlSource, HomeostaticNeeds, LoadUnits, Permille,
-        Quantity, WorkstationTag,
+        BeliefConfidencePolicy, CarryCapacity, CommodityKind, CommodityValuationProfile,
+        CommunicationProfile, ControlSource, DriveThresholds, EpistemicDispositionProfile,
+        FacilityQueueDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
+        JusticeDispositionProfile, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile,
+        Permille, PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile,
+        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
+        TradeCategory, WorkstationTag,
+        ViolationDispositionProfile,
     };
+
+    fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
+        AgentDef {
+            name: name.into(),
+            location: location.into(),
+            control,
+            needs: None,
+            combat_profile: None,
+            utility_profile: None,
+            merchandise_profile: None,
+            trade_disposition: None,
+            perception_profile: None,
+            tell_profile: None,
+            reasoning_profile: None,
+            epistemic_disposition: None,
+            intention_disposition: None,
+            communication_profile: None,
+            preference_profile: None,
+            drive_thresholds: None,
+            metabolism_profile: None,
+            carry_capacity: None,
+            theft_disposition: None,
+            justice_disposition: None,
+            violation_disposition: None,
+            patrol_profile: None,
+            patrol_route: None,
+            pursuit_profile: None,
+            facility_queue_disposition: None,
+            commodity_valuation: None,
+            substitute_preferences: None,
+        }
+    }
 
     /// Helper: build a minimal `ScenarioDef` with given places and agents.
     fn minimal_def() -> ScenarioDef {
@@ -423,16 +524,7 @@ mod tests {
                 tags: vec![PlaceTag::Village],
             }],
             edges: vec![],
-            agents: vec![AgentDef {
-                name: "Alice".into(),
-                location: "Village".into(),
-                control: ControlSource::Human,
-                needs: None,
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
-            }],
+            agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -478,26 +570,8 @@ mod tests {
             ],
             edges: vec![],
             agents: vec![
-                AgentDef {
-                    name: "Alice".into(),
-                    location: "Town".into(),
-                    control: ControlSource::Human,
-                    needs: None,
-                    combat_profile: None,
-                    utility_profile: None,
-                    merchandise_profile: None,
-                    trade_disposition: None,
-                },
-                AgentDef {
-                    name: "Bob".into(),
-                    location: "Forest".into(),
-                    control: ControlSource::Ai,
-                    needs: None,
-                    combat_profile: None,
-                    utility_profile: None,
-                    merchandise_profile: None,
-                    trade_disposition: None,
-                },
+                minimal_agent("Alice", "Town", ControlSource::Human),
+                minimal_agent("Bob", "Forest", ControlSource::Ai),
             ],
             items: vec![],
             facilities: vec![],
@@ -537,16 +611,7 @@ mod tests {
                 tags: vec![],
             }],
             edges: vec![],
-            agents: vec![AgentDef {
-                name: "Alice".into(),
-                location: "Town".into(),
-                control: ControlSource::Ai,
-                needs: None,
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
-            }],
+            agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -574,16 +639,7 @@ mod tests {
                 tags: vec![],
             }],
             edges: vec![],
-            agents: vec![AgentDef {
-                name: "Trader".into(),
-                location: "Market".into(),
-                control: ControlSource::Ai,
-                needs: None,
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
-            }],
+            agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
             items: vec![ItemDef {
                 commodity: CommodityKind::Apple,
                 quantity: Quantity(10),
@@ -628,16 +684,7 @@ mod tests {
                 tags: vec![],
             }],
             edges: vec![],
-            agents: vec![AgentDef {
-                name: "Warrior".into(),
-                location: "Camp".into(),
-                control: ControlSource::Human,
-                needs: None,
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
-            }],
+            agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
             items: vec![ItemDef {
                 commodity: CommodityKind::Sword,
                 quantity: Quantity(1),
@@ -786,16 +833,7 @@ mod tests {
                 tags: vec![],
             }],
             edges: vec![],
-            agents: vec![AgentDef {
-                name: "Lost".into(),
-                location: "Nowhere".into(), // does not exist
-                control: ControlSource::Ai,
-                needs: None,
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
-            }],
+            agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -907,16 +945,7 @@ mod tests {
                 tags: vec![],
             }],
             edges: vec![],
-            agents: vec![AgentDef {
-                name: "Bot".into(),
-                location: "Void".into(),
-                control: ControlSource::Ai,
-                needs: None,
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
-            }],
+            agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -948,14 +977,8 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![AgentDef {
-                name: "Hungry".into(),
-                location: "Home".into(),
-                control: ControlSource::Ai,
                 needs: Some(custom_needs),
-                combat_profile: None,
-                utility_profile: None,
-                merchandise_profile: None,
-                trade_disposition: None,
+                ..minimal_agent("Hungry", "Home", ControlSource::Ai)
             }],
             items: vec![],
             facilities: vec![],
@@ -970,5 +993,308 @@ mod tests {
         assert_eq!(needs.hunger, Permille::new(100).unwrap());
         assert_eq!(needs.thirst, Permille::new(200).unwrap());
         assert_eq!(needs.fatigue, Permille::new(50).unwrap());
+    }
+
+    #[test]
+    fn test_spawn_agents_receive_default_universal_profiles() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_perception_profile(agent),
+            Some(&PerceptionProfile::default())
+        );
+        assert_eq!(world.get_component_tell_profile(agent), Some(&TellProfile::default()));
+        assert_eq!(
+            world.get_component_reasoning_profile(agent),
+            Some(&ReasoningProfile::default())
+        );
+        assert_eq!(
+            world.get_component_epistemic_disposition_profile(agent),
+            Some(&EpistemicDispositionProfile::default())
+        );
+        assert_eq!(
+            world.get_component_intention_disposition_profile(agent),
+            Some(&IntentionDispositionProfile::default())
+        );
+        assert_eq!(
+            world.get_component_communication_profile(agent),
+            Some(&CommunicationProfile::default())
+        );
+        assert_eq!(
+            world.get_component_preference_profile(agent),
+            Some(&PreferenceProfile::default())
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_profile_overrides() {
+        let custom_perception = PerceptionProfile {
+            memory_capacity: 4,
+            memory_retention_ticks: 16,
+            observation_fidelity: Permille::new(900).unwrap(),
+            confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 9,
+            consultation_speed_factor: Permille::new(650).unwrap(),
+            contradiction_tolerance: Permille::new(125).unwrap(),
+        };
+        let custom_thresholds = DriveThresholds::new(
+            ThresholdBand::new(
+                Permille::new(150).unwrap(),
+                Permille::new(300).unwrap(),
+                Permille::new(600).unwrap(),
+                Permille::new(850).unwrap(),
+            )
+            .unwrap(),
+            ThresholdBand::new(
+                Permille::new(160).unwrap(),
+                Permille::new(320).unwrap(),
+                Permille::new(610).unwrap(),
+                Permille::new(860).unwrap(),
+            )
+            .unwrap(),
+            ThresholdBand::new(
+                Permille::new(170).unwrap(),
+                Permille::new(340).unwrap(),
+                Permille::new(620).unwrap(),
+                Permille::new(870).unwrap(),
+            )
+            .unwrap(),
+            ThresholdBand::new(
+                Permille::new(180).unwrap(),
+                Permille::new(360).unwrap(),
+                Permille::new(630).unwrap(),
+                Permille::new(880).unwrap(),
+            )
+            .unwrap(),
+            ThresholdBand::new(
+                Permille::new(190).unwrap(),
+                Permille::new(380).unwrap(),
+                Permille::new(640).unwrap(),
+                Permille::new(890).unwrap(),
+            )
+            .unwrap(),
+            ThresholdBand::new(
+                Permille::new(120).unwrap(),
+                Permille::new(240).unwrap(),
+                Permille::new(520).unwrap(),
+                Permille::new(800).unwrap(),
+            )
+            .unwrap(),
+            ThresholdBand::new(
+                Permille::new(80).unwrap(),
+                Permille::new(220).unwrap(),
+                Permille::new(480).unwrap(),
+                Permille::new(760).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                perception_profile: Some(custom_perception),
+                drive_thresholds: Some(custom_thresholds),
+                ..minimal_agent("Alice", "Town", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(world.get_component_perception_profile(agent), Some(&custom_perception));
+        assert_eq!(world.get_component_drive_thresholds(agent), Some(&custom_thresholds));
+    }
+
+    #[test]
+    fn test_spawn_agent_applies_role_specific_profiles_and_patrol_route() {
+        let theft_profile = TheftDispositionProfile {
+            steal_duration_ticks: NonZeroU32::new(6).unwrap(),
+            theft_motive_weight: Permille::new(620).unwrap(),
+            witness_risk_penalty: Permille::new(180).unwrap(),
+        };
+        let justice_profile = JusticeDispositionProfile {
+            accusation_motive_weight: Permille::new(700).unwrap(),
+            fine_severity: Permille::new(450).unwrap(),
+        };
+        let violation_profile = ViolationDispositionProfile {
+            investigation_duration_ticks: NonZeroU32::new(5).unwrap(),
+            violation_memory_retention_ticks: 120,
+            investigation_motive_weight: Permille::new(510).unwrap(),
+            ownership_motive_bonus: Permille::new(280).unwrap(),
+        };
+        let patrol_profile = PatrolProfile {
+            base_dwell_ticks: 12,
+            dwell_vigilance_scale_ticks: 10,
+            vigilance: Permille::new(700).unwrap(),
+            route_adaptation_sensitivity: Permille::new(450).unwrap(),
+            patrol_motive_weight: Permille::new(550).unwrap(),
+        };
+        let pursuit_profile = PursuitProfile {
+            min_location_confidence: Permille::new(600).unwrap(),
+            max_pursuit_travel_ticks: NonZeroU32::new(10).unwrap(),
+        };
+        let queue_profile = FacilityQueueDispositionProfile {
+            queue_patience_ticks: Some(NonZeroU32::new(8).unwrap()),
+        };
+        let valuation_profile = CommodityValuationProfile {
+            recipe_opportunity_depth: std::num::NonZeroU8::new(2).unwrap(),
+            recipe_place_horizon: 4,
+            indirect_value_decay_per_step: Permille::new(140).unwrap(),
+        };
+        let substitute_preferences = SubstitutePreferences {
+            preferences: BTreeMap::from([(
+                TradeCategory::Food,
+                vec![CommodityKind::Bread, CommodityKind::Apple],
+            )]),
+        };
+
+        let def = ScenarioDef {
+            seed: 7,
+            places: vec![
+                PlaceDef {
+                    name: "Gate".into(),
+                    tags: vec![],
+                },
+                PlaceDef {
+                    name: "Market".into(),
+                    tags: vec![],
+                },
+            ],
+            edges: vec![],
+            agents: vec![AgentDef {
+                theft_disposition: Some(theft_profile.clone()),
+                justice_disposition: Some(justice_profile.clone()),
+                violation_disposition: Some(violation_profile.clone()),
+                patrol_profile: Some(patrol_profile.clone()),
+                patrol_route: Some(PatrolRouteDef {
+                    assigned_places: vec!["Gate".into(), "Market".into()],
+                }),
+                pursuit_profile: Some(pursuit_profile.clone()),
+                facility_queue_disposition: Some(queue_profile.clone()),
+                commodity_valuation: Some(valuation_profile),
+                substitute_preferences: Some(substitute_preferences.clone()),
+                ..minimal_agent("Guard", "Gate", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+        let gate = world
+            .topology()
+            .place_ids()
+            .find(|&id| world.topology().place(id).unwrap().name == "Gate")
+            .unwrap();
+        let market = world
+            .topology()
+            .place_ids()
+            .find(|&id| world.topology().place(id).unwrap().name == "Market")
+            .unwrap();
+
+        assert_eq!(
+            world.get_component_theft_disposition_profile(agent),
+            Some(&theft_profile)
+        );
+        assert_eq!(
+            world.get_component_justice_disposition_profile(agent),
+            Some(&justice_profile)
+        );
+        assert_eq!(
+            world.get_component_violation_disposition_profile(agent),
+            Some(&violation_profile)
+        );
+        assert_eq!(world.get_component_patrol_profile(agent), Some(&patrol_profile));
+        assert_eq!(
+            world.get_component_patrol_route(agent),
+            Some(&PatrolRoute {
+                assigned_places: vec![gate, market],
+                current_index: 0,
+            })
+        );
+        assert_eq!(world.get_component_pursuit_profile(agent), Some(&pursuit_profile));
+        assert_eq!(
+            world.get_component_facility_queue_disposition_profile(agent),
+            Some(&queue_profile)
+        );
+        assert_eq!(
+            world.get_component_commodity_valuation_profile(agent),
+            Some(&valuation_profile)
+        );
+        assert_eq!(
+            world.get_component_substitute_preferences(agent),
+            Some(&substitute_preferences)
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_leaves_role_specific_profiles_absent_by_default() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(world.get_component_theft_disposition_profile(agent), None);
+        assert_eq!(world.get_component_justice_disposition_profile(agent), None);
+        assert_eq!(world.get_component_violation_disposition_profile(agent), None);
+        assert_eq!(world.get_component_patrol_profile(agent), None);
+        assert_eq!(world.get_component_patrol_route(agent), None);
+        assert_eq!(world.get_component_pursuit_profile(agent), None);
+        assert_eq!(world.get_component_facility_queue_disposition_profile(agent), None);
+        assert_eq!(world.get_component_commodity_valuation_profile(agent), None);
+        assert_eq!(world.get_component_substitute_preferences(agent), None);
+    }
+
+    #[test]
+    fn test_spawn_agent_rejects_invalid_patrol_route_place() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Gate".into(),
+                tags: vec![],
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                patrol_route: Some(PatrolRouteDef {
+                    assigned_places: vec!["Gate".into(), "Nowhere".into()],
+                }),
+                ..minimal_agent("Guard", "Gate", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let Err(error) = spawn_scenario(&def) else {
+            panic!("invalid patrol route should fail");
+        };
+        assert_eq!(
+            error.to_string(),
+            "validation error: agent 'Guard' patrol route references nonexistent entity 'Nowhere'"
+        );
     }
 }

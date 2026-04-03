@@ -130,9 +130,11 @@ fn record_route_experience(
     }
     experience.last_travel_tick = current_tick;
 
-    if let Some(profile) = txn.get_component_preference_profile(actor).copied() {
-        route_experience.enforce_limits(current_tick, &profile);
-    }
+    let profile = txn
+        .get_component_preference_profile(actor)
+        .copied()
+        .unwrap_or_else(|| panic!("actor {actor} lacks PreferenceProfile"));
+    route_experience.enforce_limits(current_tick, &profile);
 
     txn.set_component_route_experience(actor, route_experience)
         .map_err(|err| ActionError::InternalError(err.to_string()))

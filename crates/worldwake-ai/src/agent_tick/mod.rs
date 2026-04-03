@@ -132,7 +132,7 @@ impl AgentTickDriver {
         let reasoning = world
             .get_component_reasoning_profile(agent)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks ReasoningProfile"));
         let (effective_switch_margin, switch_margin_source) =
             goal_switch_margin_details(&view, agent, frame, &reasoning);
         Some(FrameDebugSnapshot {
@@ -284,7 +284,7 @@ impl AutonomousController for AgentTickDriver {
             .world
             .get_component_reasoning_profile(agent)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks ReasoningProfile"));
         let trace = process_agent(
             &mut AgentTickContext {
                 world: ctx.world,

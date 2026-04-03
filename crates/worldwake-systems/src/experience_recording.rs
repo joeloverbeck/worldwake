@@ -20,9 +20,11 @@ fn update_source_reliability(
     update(record);
     record.last_attempt_tick = current_tick;
 
-    if let Some(profile) = txn.get_component_preference_profile(actor).copied() {
-        reliability.enforce_limits(current_tick, &profile);
-    }
+    let profile = txn
+        .get_component_preference_profile(actor)
+        .copied()
+        .unwrap_or_else(|| panic!("actor {actor} lacks PreferenceProfile"));
+    reliability.enforce_limits(current_tick, &profile);
 
     txn.set_component_source_reliability(actor, reliability)
         .map_err(|err| ActionError::InternalError(err.to_string()))

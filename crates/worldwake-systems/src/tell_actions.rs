@@ -301,9 +301,9 @@ fn enumerate_tell_payloads(
         return Vec::new();
     }
 
-    let Some(profile) = view.tell_profile(actor) else {
-        return Vec::new();
-    };
+    let profile = view
+        .tell_profile(actor)
+        .unwrap_or_else(|| panic!("live agent {actor} lacks required TellProfile"));
     let known_institutional_beliefs =
         current_institutional_belief_topics(view.known_institutional_beliefs(actor));
     let relayable_entity_beliefs = view
@@ -572,7 +572,9 @@ fn commit_tell(
     let communication_profile = txn
         .get_component_communication_profile(listener)
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            panic!("live agent {listener} lacks required CommunicationProfile")
+        });
     let acceptance_fidelity = match classify_communication(&payload.topic, &speaker_beliefs) {
         CommunicationClass::Alarm => communication_profile.alarm_acceptance,
         CommunicationClass::Testimony => communication_profile.testimony_acceptance,
@@ -2138,76 +2140,20 @@ mod tests {
     }
 
     #[test]
-    fn tell_commit_falls_back_to_default_communication_profile() {
-        let (defs, handlers, tell_id, mut fallback_world, _place, fallback_speaker, fallback_listener, fallback_subject) =
-            tell_test_setup(PerceptionSource::DirectObservation);
-        let (defs_explicit, handlers_explicit, tell_id_explicit, mut explicit_world, _place_explicit, explicit_speaker, explicit_listener, explicit_subject) =
+    #[should_panic(expected = "lacks required CommunicationProfile")]
+    fn tell_commit_panics_without_listener_communication_profile() {
+        let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
 
         {
-            let mut txn = new_txn(&mut fallback_world, 6);
-            txn.clear_component_communication_profile(fallback_listener)
-                .unwrap();
-            let mut log = EventLog::new();
-            let _ = txn.commit(&mut log);
-        }
-        {
-            let mut txn = new_txn(&mut explicit_world, 6);
-            txn.set_component_communication_profile(
-                explicit_listener,
-                CommunicationProfile::default(),
-            )
-            .unwrap();
+            let mut txn = new_txn(&mut world, 6);
+            txn.clear_component_communication_profile(listener).unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
 
-        let fallback_instance = tell_instance(
-            tell_id,
-            fallback_speaker,
-            fallback_listener,
-            fallback_subject,
-        );
-        let explicit_instance = tell_instance(
-            tell_id_explicit,
-            explicit_speaker,
-            explicit_listener,
-            explicit_subject,
-        );
-
-        let fallback_outcome = commit_tell_result(
-            &defs,
-            &handlers,
-            tell_id,
-            &mut fallback_world,
-            &fallback_instance,
-            1,
-            8,
-        )
-        .unwrap();
-        let explicit_outcome = commit_tell_result(
-            &defs_explicit,
-            &handlers_explicit,
-            tell_id_explicit,
-            &mut explicit_world,
-            &explicit_instance,
-            1,
-            8,
-        )
-        .unwrap();
-
-        assert_eq!(
-            fallback_outcome.trace,
-            explicit_outcome.trace
-        );
-        assert_eq!(
-            fallback_world
-                .get_component_agent_belief_store(fallback_listener)
-                .unwrap(),
-            explicit_world
-                .get_component_agent_belief_store(explicit_listener)
-                .unwrap()
-        );
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+        let _ = commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
     }
 
     #[test]
@@ -3344,7 +3290,8 @@ mod tests {
     }
 
     #[test]
-    fn tell_affordances_require_speaker_tell_profile() {
+    #[should_panic(expected = "lacks required TellProfile")]
+    fn tell_affordances_panic_without_speaker_tell_profile() {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         register_tell_action(&mut defs, &mut handlers);
@@ -3378,9 +3325,7 @@ mod tests {
             )],
         );
 
-        let affordances = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
-
-        assert!(affordances.is_empty());
+        let _ = collect_tell_affordances_from_view(&view, speaker, &defs, &handlers);
     }
 
     #[test]

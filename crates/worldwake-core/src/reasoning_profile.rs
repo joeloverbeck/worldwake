@@ -110,6 +110,10 @@ mod tests {
             ..ReasoningProfile::default()
         };
 
+        assert_eq!(
+            world.remove_component_reasoning_profile(agent).unwrap(),
+            Some(ReasoningProfile::default())
+        );
         world
             .insert_component_reasoning_profile(agent, profile.clone())
             .unwrap();

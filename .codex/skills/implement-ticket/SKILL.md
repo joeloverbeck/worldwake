@@ -38,6 +38,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
    - when an authoritative persisted component or profile changes serialized shape, inspect the live save/load version boundary and correct version gates such as `SAVE_FORMAT_VERSION` when the format contract changed
    - when a ticket's intended behavior depends on helper math, scaling, saturation, or threshold arithmetic, inspect the exact live helper implementation and correct stale numeric prose before coding
+   - when a ticket proposes concrete default or profile values, compare them against live representative fixtures, schema samples, and world-roundtrip examples before coding; if the ticket's values are placeholders or stale, correct them to the strongest live baseline first
    - when save/runtime structs or other persisted shapes gain or lose fields, search for test-only mirror structs and manual `bincode`/seeded deserialize helpers, not just production fixtures
    - when a ticket depends on shared static data such as recipe definitions, schemas, or other registry-backed content, confirm the live service bundle, execution context, or callback boundary that would need to carry that data; if the current runtime boundary does not expose it, correct the ticket before coding to name the real substrate change
    - when a ticket widens a shared callback or execution signature, search dependent crates for both production call paths and test-only direct handler registrations or manual `on_commit` / `on_abort` invocations so stale harnesses do not survive the initial implementation pass
@@ -49,6 +50,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
    - ticket structure from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md)
+   - when a documentation ticket edits repo policy or rule surfaces, check sibling guidance files with overlapping authority such as `AGENTS.md`, `CLAUDE.md`, and ticket-authoring docs; if the same contract should remain mirrored, either update those surfaces in-scope or correct the ticket to say why the mirror is intentionally out of scope
 5. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit instead of using broad summaries.
 
 ### 3. Handle mismatches explicitly
@@ -121,6 +123,8 @@ When a save/runtime struct changes shape, also search for test-side mirror struc
 
 When behavior moves from one authoritative profile or component carrier to another, search tests, harness helpers, and scenario setup for places that were expressing that behavior through the old carrier. Rewrite those setup paths onto the new authoritative carrier rather than only deleting the stale field from literals.
 
+When a constructor or authoritative factory begins seeding defaults that it previously omitted, reassess tests that were proving "missing component" behavior on freshly created entities. Prefer rewriting those tests to the new constructor contract unless the ticket explicitly owns a lawful post-construction teardown path for that missing-state proof.
+
 For component-registration work, distinguish:
 - the authoritative schema declaration itself
 - all live macro-expansion sites or generated API surfaces that materialize the component set
@@ -157,7 +161,7 @@ When a ticket is an explicit staged extraction step, temporary duplicated logic 
 7. If authoritative validation, control checks, action preconditions, target specs, or other affordance-surface behavior changes, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md). If the change removes candidates earlier in that pipeline, update stale downstream planner/search harness expectations to the new admission contract instead of weakening the implementation to preserve obsolete traces.
 8. When widening an existing action into a new custody or state regime, audit all related stored state carriers so the moved entity does not keep stale assignment, listing, queue, or other regime-specific markers after the transition.
 9. When adding a new enum variant, search for exhaustive matches, pattern arms, and state validators in dependent crates and update the non-owning handlers explicitly before broad verification.
-10. When adding a field to a shared model, trace, or other cross-module state carrier, proactively search for hand-written constructors and test literals in sibling modules that build that struct directly. Do not rely only on later compile fallout to discover stale fixture sites.
+10. When adding a field to a shared model, trace, scenario/config type, or other cross-module state carrier, proactively search for hand-written constructors and test literals in sibling modules that build that struct directly, including same-crate test modules outside the owning file. Do not rely only on later compile fallout to discover stale fixture sites.
 11. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
 12. When a ticket splits previously uniform behavior into class-, variant-, or profile-specific rules, search for existing focused tests that currently compress those cases into one expectation and rewrite them into explicit per-case proofs instead of only adding new tests alongside stale broad assertions.
 
@@ -177,6 +181,10 @@ If a canonical interface is realized through a forwarding layer, prove both:
 - the forwarding or runtime path that actually materializes it
 
 Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
+
+When using exact Rust test-name selectors with `cargo test`, prefer separate invocations per selector unless you are intentionally relying on one shared substring filter. Do not assume multiple exact test names can be passed in a single `cargo test` command.
+
+When verification uses multiple `cargo test` or `cargo clippy` commands against the same workspace, prefer running them sequentially rather than in parallel. Cargo lock contention and in-flight stale compiles can make parallel runs noisier and less trustworthy after recent edits.
 
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 

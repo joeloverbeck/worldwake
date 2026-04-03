@@ -113,16 +113,6 @@ fn run_healing_scenario(seed: Seed) -> (StateHash, StateHash) {
             ..UtilityProfile::default()
         },
     );
-    {
-        let mut txn = new_txn(&mut h.world, 0);
-        txn.clear_component_tell_profile(healer).unwrap();
-        commit_txn(txn, &mut h.event_log);
-    }
-    assert_eq!(
-        h.world.get_component_tell_profile(healer),
-        None,
-        "scenario should explicitly remove the healer tell profile to isolate care planning"
-    );
     let patient = seed_wounded_patient(&mut h);
 
     give_commodity(

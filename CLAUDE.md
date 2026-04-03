@@ -68,6 +68,7 @@ These are non-negotiable design rules enforced by tests:
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`
 - **Unique location** — every entity exists in exactly one place
 - **No backward compatibility layers** — when a design changes, update or remove the old path instead of adding shims, redirects, or deprecated wrappers
+- **Scenario profile completeness** — every agent profile component registered on `EntityKind::Agent` must be scenario-definable via `AgentDef` + `spawn_agent()`. Universal profiles are always applied with defaults. See `docs/spec-drafting-rules.md` section 5 for the checklist.
 
 ## Authoritative-to-AI Impact Rule
 
