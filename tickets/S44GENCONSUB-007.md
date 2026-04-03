@@ -8,7 +8,7 @@
 
 ## Problem
 
-The contention substrate exists (types, system, validation) but no entities actually have `ContentionQueue` + `ContentionPolicy` attached. Phase 1 targets — corpses (loot/bury), unique items on ground (pickup), and wounded agents (heal) — must be equipped with contention components and appropriate policies.
+The contention substrate now exists at the type and maintenance-system layers, but no Phase 1 entities actually have `ContentionQueue` + `ContentionPolicy` attached yet. Phase 1 targets — corpses (loot/bury), unique items on ground (pickup), and wounded agents (heal) — must be equipped with contention components and appropriate policies before the later validation/perception tickets can exercise them.
 
 ## Assumption Reassessment (2026-04-03)
 

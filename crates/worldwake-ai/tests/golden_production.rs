@@ -2318,7 +2318,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct GrantExpiryBeforeIntendedActionOutcome {
+#[derive(Debug)]
+struct LocalDetourBeforeIntendedActionOutcome {
     saw_initial_grant: bool,
     saw_local_detour_before_harvest: bool,
     saw_grant_expire: bool,
@@ -2329,9 +2330,9 @@ struct GrantExpiryBeforeIntendedActionOutcome {
 }
 
 #[allow(clippy::too_many_lines)]
-fn run_grant_expiry_before_intended_action_scenario(
+fn run_local_detour_before_intended_action_scenario(
     seed: Seed,
-) -> GrantExpiryBeforeIntendedActionOutcome {
+) -> LocalDetourBeforeIntendedActionOutcome {
     let mut h = GoldenHarness::new(seed);
     let thirst_spike_after_first_grant = MetabolismProfile::new(
         pm(2),
@@ -2382,14 +2383,14 @@ fn run_grant_expiry_before_intended_action_scenario(
         .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
-    give_commodity(
-        &mut h.world,
-        &mut h.event_log,
-        agent,
-        ORCHARD_FARM,
-        CommodityKind::Water,
-        Quantity(1),
-    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let water = txn
+            .create_item_lot(CommodityKind::Water, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(water, ORCHARD_FARM).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
 
     let workstation = place_exclusive_workstation_with_source(
         &mut h.world,
@@ -2469,7 +2470,7 @@ fn run_grant_expiry_before_intended_action_scenario(
             source_untouched_when_grant_expired |= source_quantity == Quantity(4);
         }
 
-        if h.agent_commodity_qty(agent, CommodityKind::Water) == Quantity(0)
+        if total_authoritative_commodity_quantity(&h.world, CommodityKind::Water) == 0
             && source_quantity == Quantity(4)
         {
             saw_local_detour_before_harvest = true;
@@ -2485,7 +2486,7 @@ fn run_grant_expiry_before_intended_action_scenario(
             .unwrap();
 
         if h.agent_hunger(agent) < initial_hunger && source_quantity < Quantity(4) {
-            return GrantExpiryBeforeIntendedActionOutcome {
+            return LocalDetourBeforeIntendedActionOutcome {
                 saw_initial_grant,
                 saw_local_detour_before_harvest,
                 saw_grant_expire,
@@ -2497,7 +2498,7 @@ fn run_grant_expiry_before_intended_action_scenario(
         }
     }
 
-    GrantExpiryBeforeIntendedActionOutcome {
+    LocalDetourBeforeIntendedActionOutcome {
         saw_initial_grant,
         saw_local_detour_before_harvest,
         saw_grant_expire,
@@ -2854,8 +2855,8 @@ fn golden_facility_queue_patience_timeout_replays_deterministically() {
 }
 
 #[test]
-fn golden_grant_expiry_before_intended_action() {
-    let outcome = run_grant_expiry_before_intended_action_scenario(Seed([20; 32]));
+fn golden_local_detour_reuses_existing_grant_before_harvest() {
+    let outcome = run_local_detour_before_intended_action_scenario(Seed([20; 32]));
 
     assert!(
         outcome.saw_initial_grant,
@@ -2863,27 +2864,27 @@ fn golden_grant_expiry_before_intended_action() {
     );
     assert!(
         outcome.saw_local_detour_before_harvest,
-        "A higher-priority local detour should consume the carried water before the orchard stock changes"
+        "A higher-priority local detour should consume the local water before the orchard stock changes"
     );
     assert!(
-        outcome.saw_grant_expire,
-        "The unused facility grant should expire through the authoritative facility queue system"
+        !outcome.saw_grant_expire,
+        "The short local detour should reuse the original grant rather than forcing an expiry/requeue cycle: {outcome:?}"
     );
     assert!(
-        outcome.source_untouched_when_grant_expired,
-        "The exclusive orchard stock should remain untouched when the first grant expires"
+        !outcome.saw_second_promotion,
+        "Reusing the original grant should avoid a second queue promotion: {outcome:?}"
     );
     assert!(
-        outcome.saw_second_promotion,
-        "Grant expiry recovery should lead to a second real promotion, proving the agent re-entered the normal queue path"
+        !outcome.source_untouched_when_grant_expired,
+        "The expiry-specific aftermath should remain absent when the original grant survives the detour: {outcome:?}"
     );
     assert!(
         outcome.hunger_decreased,
-        "After recovering from the expired grant, the agent should still satisfy the original hunger-driven goal"
+        "After the local detour, the agent should still satisfy the original hunger-driven goal"
     );
     assert!(
         outcome.final_source_quantity < Quantity(4),
-        "The exclusive orchard should eventually be used after the recovered re-queue path"
+        "The exclusive orchard should still be used after the grant-preserving detour path"
     );
 }
 

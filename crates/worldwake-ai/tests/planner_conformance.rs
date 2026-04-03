@@ -10,7 +10,7 @@
 
 mod golden_harness;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use golden_harness::*;
 use worldwake_ai::{
@@ -19,10 +19,11 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     prototype_place_entity, total_live_lot_quantity, AgentBeliefStore, AgentData, CommodityKind,
-    ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
-    MetabolismProfile, PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed,
-    SuccessionLaw, TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile,
-    ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    ContentionIntents, ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalClaim, MetabolismProfile, PerceptionSource, Permille, Quantity,
+    QueuedContentionIntent, RecordData, RecordKind, Seed, SuccessionLaw, TellProfile, TellTopic,
+    TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationKind,
+    ViolationMemory,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
@@ -2009,6 +2010,23 @@ fn conformance_queue_for_facility() {
     let _ = transition;
 
     // --- Handler side ---
+    {
+        let mut txn = new_txn(&mut ch.h.world, 0);
+        txn.set_component_contention_intents(
+            agent,
+            ContentionIntents {
+                intents: BTreeMap::from([(
+                    facility,
+                    QueuedContentionIntent {
+                        goal_key: goal.key,
+                        intended_action: harvest_id,
+                    },
+                )]),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut ch.h.event_log);
+    }
     ch.run_action_to_completion(
         agent,
         "queue_for_facility_use",
