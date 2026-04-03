@@ -1,5 +1,7 @@
 # S44: Scenario Profile Completeness
 
+**Status**: COMPLETED
+
 ## Summary
 
 16 agent profile components are registered in the ECS but not available in the CLI scenario system (`AgentDef` / `spawn_agent()`). Additionally, 3 already-defaulted profiles (`DriveThresholds`, `MetabolismProfile`, `CarryCapacity`) are applied uniformly with no scenario override path, undermining agent diversity. Agents spawned from RON scenarios silently lack profiles that control perception, social transmission, reasoning, belief confidence, and other core behaviors — and share identical urgency thresholds and depletion rates.
@@ -395,3 +397,22 @@ No cross-system coupling changes. Modifications span `worldwake-core` (Default i
 - Inspect `AgentDef` — every missing profile from Deliverable 1 has a field.
 - `docs/spec-drafting-rules.md` contains the profile completeness checklist.
 - `CLAUDE.md` contains the scenario profile completeness invariant.
+
+## Outcome
+
+Completed: 2026-04-03
+
+- Added missing `Default` impls for the universal profile types that needed scenario-time defaults.
+- Extended CLI scenario `AgentDef` and `spawn_agent()` so the missing universal and role-specific agent profiles are scenario-definable, and so the already-defaulted agent profiles are now overrideable per agent.
+- Hardened known-agent universal-profile runtime reads to fail loudly instead of silently defaulting or skipping behavior, and aligned focused/golden fallout to the new constructor/runtime contract.
+- Added the profile-completeness drafting contract to `docs/spec-drafting-rules.md` and mirrored the invariant to both `CLAUDE.md` and `AGENTS.md`.
+- Deviation from the original plan: the spec's illustrative `scenarios/cli-evaluation.ron` diversification step remained a separate scenario-skill follow-up rather than part of the engine/documentation ticket chain. The core architectural requirement for S44 was the scenario/profile substrate itself, which is now delivered.
+- Verification passed across the implementation ticket chain:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-cli`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-systems`
+  - `cargo test -p worldwake-sim`
+  - `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

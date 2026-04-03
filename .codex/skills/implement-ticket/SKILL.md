@@ -50,6 +50,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - ticket fidelity from [AGENTS.md](../../../AGENTS.md)
    - foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
    - ticket structure from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md)
+   - when a documentation ticket edits repo policy or rule surfaces, check sibling guidance files with overlapping authority such as `AGENTS.md`, `CLAUDE.md`, and ticket-authoring docs; if the same contract should remain mirrored, either update those surfaces in-scope or correct the ticket to say why the mirror is intentionally out of scope
 5. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit instead of using broad summaries.
 
 ### 3. Handle mismatches explicitly
