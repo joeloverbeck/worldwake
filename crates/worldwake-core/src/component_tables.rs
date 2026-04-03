@@ -5,6 +5,7 @@ use crate::{
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
+    communication::CommunicationProfile,
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
@@ -148,7 +149,7 @@ mod tests {
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
-        PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
+        CommunicationProfile, PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
         TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
         WoundCause, WoundList,
@@ -239,6 +240,14 @@ mod tests {
             acceptance_fidelity: Permille::new(725).unwrap(),
             conversation_memory_capacity: 10,
             conversation_memory_retention_ticks: 32,
+        }
+    }
+
+    fn sample_roundtrip_communication_profile() -> CommunicationProfile {
+        CommunicationProfile {
+            alarm_acceptance: Permille::new(970).unwrap(),
+            testimony_acceptance: Permille::new(810).unwrap(),
+            gossip_acceptance: Permille::new(575).unwrap(),
         }
     }
 
@@ -345,6 +354,7 @@ mod tests {
             },
         );
         tables.insert_tell_profile(entity(25), sample_roundtrip_tell_profile());
+        tables.insert_communication_profile(entity(52), sample_roundtrip_communication_profile());
         tables.insert_drive_thresholds(entity(10), DriveThresholds::default());
         tables.insert_homeostatic_needs(entity(13), HomeostaticNeeds::default());
         tables.insert_deprivation_exposure(entity(14), DeprivationExposure::default());
@@ -790,6 +800,23 @@ mod tests {
         );
         assert_eq!(tables.remove_tell_profile(entity), Some(profile));
         assert_eq!(tables.get_tell_profile(entity), None);
+    }
+
+    #[test]
+    fn insert_and_get_communication_profile() {
+        let mut tables = ComponentTables::default();
+        let entity = entity(53);
+        let profile = sample_roundtrip_communication_profile();
+
+        assert_eq!(tables.insert_communication_profile(entity, profile.clone()), None);
+        assert_eq!(tables.get_communication_profile(entity), Some(&profile));
+        assert!(tables.has_communication_profile(entity));
+        assert_eq!(
+            tables.iter_communication_profiles().collect::<Vec<_>>(),
+            vec![(entity, &profile)]
+        );
+        assert_eq!(tables.remove_communication_profile(entity), Some(profile));
+        assert_eq!(tables.get_communication_profile(entity), None);
     }
 
     #[test]

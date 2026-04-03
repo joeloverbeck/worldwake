@@ -1,6 +1,6 @@
 # S43COMTYPDIF-001: Core types — CommunicationClass, classify_communication, CommunicationProfile
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new enum, new function, new ECS component + registration
@@ -19,9 +19,12 @@ All social communication routes through a single undifferentiated Tell action. T
 5. `AgentBeliefStore` at `belief.rs` has `known_entities: BTreeMap<EntityId, BelievedEntityState>` — `classify_communication` needs this to check "entity believed dead" for EntityBelief topics.
 6. `Permille` at `numerics.rs` confirmed as `struct Permille(u16)` with `new()`, `new_unchecked()`.
 7. `Component` trait at `traits.rs` requires `'static + Send + Sync + Clone + Debug + Serialize + DeserializeOwned`.
-8. Component registration via `with_component_schema_entries!` macro expands in `delta.rs`, `world_txn.rs`, `component_tables.rs`, `world.rs` — all expansion sites need the new type in scope.
+8. Component registration via `with_component_schema_entries!` macro expands in `delta.rs`, `component_tables.rs`, and `world.rs` with the bare type in scope. `world_txn.rs` uses the schema's qualified `crate::Type` setter type path via `select_txn_simple_set_components`, so registration affects generated setters there without requiring a new top-level import.
 9. `TellProfile` registered at `component_schema.rs:609` on `EntityKind::Agent` — `CommunicationProfile` follows the same pattern.
 10. No existing `CommunicationClass` or `CommunicationProfile` in the codebase — confirmed via Grep.
+11. Ticket says `world_txn.rs` needs a new type import at a macro expansion site; live code has `select_txn_simple_set_components` forwarding the schema entry's qualified `crate::Type` as `$txn_component_ty`, so no `world_txn.rs` top-level import is required for this registration change.
+12. Correction applied: removed `crates/worldwake-core/src/world_txn.rs` from `Files to Touch` and narrowed the reassessment note to the real import fallout in `delta.rs`, `component_tables.rs`, and `world.rs`.
+13. Why safe: this is a mechanical correction derived directly from the live macro signature in `component_schema.rs`, not an architecture change.
 
 ## Architecture Check
 
@@ -86,7 +89,7 @@ With `Default` impl: `alarm_acceptance: 950`, `testimony_acceptance: 800`, `goss
 
 ### 4. Register CommunicationProfile in component schema
 
-Add entry in `component_schema.rs` following the `TellProfile` pattern, registered on `EntityKind::Agent`. Ensure the type is imported at all macro expansion sites (`delta.rs`, `world_txn.rs`, `component_tables.rs`, `world.rs`).
+Add entry in `component_schema.rs` following the `TellProfile` pattern, registered on `EntityKind::Agent`. Ensure the type is imported at the bare-type macro expansion sites (`delta.rs`, `component_tables.rs`, `world.rs`).
 
 ## Files to Touch
 
@@ -94,7 +97,6 @@ Add entry in `component_schema.rs` following the `TellProfile` pattern, register
 - `crates/worldwake-core/src/lib.rs` (modify) — export new types
 - `crates/worldwake-core/src/component_schema.rs` (modify) — register CommunicationProfile
 - `crates/worldwake-core/src/delta.rs` (modify) — import CommunicationProfile
-- `crates/worldwake-core/src/world_txn.rs` (modify) — import CommunicationProfile
 - `crates/worldwake-core/src/component_tables.rs` (modify) — import CommunicationProfile
 - `crates/worldwake-core/src/world.rs` (modify) — import CommunicationProfile
 
@@ -136,3 +138,23 @@ Add entry in `component_schema.rs` following the `TellProfile` pattern, register
 1. `cargo test -p worldwake-core`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-03
+
+- Added [`CommunicationClass`], `classify_communication()`, and the authoritative per-agent [`CommunicationProfile`] substrate in `worldwake-core`.
+- Registered `CommunicationProfile` on `EntityKind::Agent` and updated the explicit schema inventory, component table, world API, and component-delta test surfaces to include it.
+- Added focused classification tests for the spec-owned alarm/testimony/gossip boundaries, plus default, registration, and bincode roundtrip coverage for `CommunicationProfile`.
+- Corrected the ticket's macro-expansion fallout during reassessment: `world_txn.rs` did not require a new top-level import because the generated setter path already uses the schema entry's qualified `crate::Type`.
+
+Deviation from original plan:
+
+- The owned code surface remained core-only, but the ticket's original `world_txn.rs` import expectation was removed as stale reassessment fallout rather than implemented literally.
+
+Verification:
+
+- `cargo test -p worldwake-core communication`
+- `cargo test -p worldwake-core`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

@@ -630,6 +630,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                communication_profiles,
+                CommunicationProfile,
+                insert_communication_profile,
+                get_communication_profile,
+                get_communication_profile_mut,
+                remove_communication_profile,
+                has_communication_profile,
+                iter_communication_profiles,
+                insert_component_communication_profile,
+                get_component_communication_profile,
+                get_component_communication_profile_mut,
+                remove_component_communication_profile,
+                has_component_communication_profile,
+                entities_with_communication_profile,
+                query_communication_profile,
+                count_with_communication_profile,
+                "CommunicationProfile",
+                |kind| kind == EntityKind::Agent,
+                CommunicationProfile,
+                crate::CommunicationProfile,
+                set_component_communication_profile,
+                clear_component_communication_profile,
+                txn_simple_set
+            }
+            {
                 reasoning_profiles,
                 ReasoningProfile,
                 insert_reasoning_profile,

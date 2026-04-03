@@ -32,6 +32,7 @@ pub mod blocked_intent;
 pub mod canonical;
 pub mod cause;
 pub mod combat;
+pub mod communication;
 pub mod component_schema;
 pub mod component_tables;
 pub mod components;
@@ -104,6 +105,7 @@ pub use canonical::{
 };
 pub use cause::CauseRef;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
+pub use communication::{classify_communication, CommunicationClass, CommunicationProfile};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{

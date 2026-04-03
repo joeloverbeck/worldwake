@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, Container, DeadAt, DemandMemory, DeprivationExposure,
+    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExclusiveFacilityPolicy,
     FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
@@ -247,7 +247,7 @@ mod tests {
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy,
         BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
         CombatStance, CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+        CommunicationProfile, DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
         EventId, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FactionData,
         FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
         InstitutionalRecordEntry, IntentionDispositionProfile, IntentionDomain, IntentionDomainTag,
@@ -438,6 +438,11 @@ mod tests {
                 acceptance_fidelity: Permille::new(720).unwrap(),
                 conversation_memory_capacity: 9,
                 conversation_memory_retention_ticks: 28,
+            }),
+            ComponentValue::CommunicationProfile(CommunicationProfile {
+                alarm_acceptance: Permille::new(980).unwrap(),
+                testimony_acceptance: Permille::new(830).unwrap(),
+                gossip_acceptance: Permille::new(540).unwrap(),
             }),
             ComponentValue::ReasoningProfile(ReasoningProfile {
                 max_candidates_to_plan: 3,
@@ -705,6 +710,7 @@ mod tests {
                 ComponentKind::AgentBeliefStore,
                 ComponentKind::PerceptionProfile,
                 ComponentKind::TellProfile,
+                ComponentKind::CommunicationProfile,
                 ComponentKind::ReasoningProfile,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,

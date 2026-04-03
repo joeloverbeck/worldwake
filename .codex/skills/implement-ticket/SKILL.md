@@ -68,6 +68,8 @@ When you make one of these direct corrections, record it in a compact reassessme
 - correction applied
 - why safe
 
+When a low-risk factual correction changes the real fallout surface, update every affected ticket section that restates that surface, not just one inventory list. This commonly includes `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan`.
+
 Apply the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) when the correct direction is unclear or risky:
 - 1 concrete problem
 - 3 viable options
@@ -235,7 +237,7 @@ When golden scenario metadata changes, re-check the generated golden inventory/d
 
 Do not archive automatically if the user only asked for implementation or for analysis.
 
-Before finishing, re-check ticket sections such as `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff and verification commands. Remove reassessment-only fallout from those sections if it did not become a real edit or proof surface.
+Before finishing, re-check ticket sections such as `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff and verification commands. Remove reassessment-only fallout from those sections if it did not become a real edit or proof surface.
 
 ## Guardrails
 
