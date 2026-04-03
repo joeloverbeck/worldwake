@@ -435,7 +435,6 @@ mod tests {
             ComponentValue::TellProfile(TellProfile {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
-                acceptance_fidelity: Permille::new(720).unwrap(),
                 conversation_memory_capacity: 9,
                 conversation_memory_retention_ticks: 28,
             }),

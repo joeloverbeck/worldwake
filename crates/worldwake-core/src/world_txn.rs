@@ -4526,7 +4526,6 @@ mod tests {
         let after = TellProfile {
             max_tell_candidates: before.max_tell_candidates + 2,
             max_relay_chain_len: before.max_relay_chain_len + 1,
-            acceptance_fidelity: Permille::new(910).unwrap(),
             conversation_memory_capacity: before.conversation_memory_capacity + 3,
             conversation_memory_retention_ticks: before.conversation_memory_retention_ticks + 9,
         };

@@ -232,7 +232,6 @@ fn accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
-        acceptance_fidelity: pm(1000),
         ..TellProfile::default()
     }
 }

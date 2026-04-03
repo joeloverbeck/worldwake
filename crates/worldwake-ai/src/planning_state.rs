@@ -2992,7 +2992,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
-                acceptance_fidelity: pm(650),
                 ..TellProfile::default()
             },
         );

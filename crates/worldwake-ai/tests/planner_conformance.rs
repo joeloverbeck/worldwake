@@ -1124,7 +1124,6 @@ fn conformance_tell() {
         &mut ch.h.event_log,
         speaker,
         TellProfile {
-            acceptance_fidelity: pm(1000),
             ..TellProfile::default()
         },
     );

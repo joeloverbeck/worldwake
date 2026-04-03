@@ -18,16 +18,17 @@ use worldwake_core::{
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
     CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
-    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
-    EventRecord, EventTag, EventView, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityUseQueue, FactionData, FactionPurpose, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes, LoadUnits, MetabolismProfile,
-    OfficeData, OfficeForceProfile, OfficeForceState, PerceptionProfile, PerceptionSource,
-    Permille, PrototypePlace, Quantity, ReasoningProfile, RecipeId, RecordData, RecordKind,
-    RelationDelta, RelationValue, ResourceSource, Seed, SharedTellState, StateDelta,
-    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-    WoundCause, WoundId, WoundList,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
+    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
+    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile,
+    OfficeForceState, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
+    ReasoningProfile, RecipeId, RecordData, RecordKind, RelationDelta, RelationValue,
+    ResourceSource, Seed, SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    CommunicationProfile,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -233,6 +234,18 @@ pub fn set_agent_tell_profile(
     let mut txn = new_txn(world, 0);
     txn.set_component_tell_profile(agent, tell_profile)
         .expect("golden harness should keep tell profiles writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn set_agent_communication_profile(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    communication_profile: CommunicationProfile,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_communication_profile(agent, communication_profile)
+        .expect("golden harness should keep communication profiles writable");
     commit_txn(txn, event_log);
 }
 
@@ -1564,7 +1577,6 @@ mod tests {
         let tell_profile = TellProfile {
             max_tell_candidates: 2,
             max_relay_chain_len: 1,
-            acceptance_fidelity: pm(250),
             ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {

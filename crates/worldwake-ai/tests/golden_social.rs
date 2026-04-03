@@ -6,10 +6,11 @@ use golden_harness::*;
 use worldwake_ai::GoalTraceStatus;
 use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
-    verify_authoritative_conservation, CommodityKind, EntityId, EventTag, EventView, EvidenceRef,
-    GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity,
-    ResourceSource, Seed, SharedTellState, SocialObservationDetail, SocialObservationKind,
-    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag,
+    verify_authoritative_conservation, CommodityKind, CommunicationProfile, EntityId, EventTag,
+    EventView, EvidenceRef, GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile,
+    PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile,
+    WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
 
@@ -48,7 +49,6 @@ fn accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
-        acceptance_fidelity: pm(1000),
         ..TellProfile::default()
     }
 }
@@ -57,7 +57,6 @@ fn rejecting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
-        acceptance_fidelity: pm(0),
         ..TellProfile::default()
     }
 }
@@ -66,6 +65,22 @@ fn focused_accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 1,
         ..accepting_tell_profile()
+    }
+}
+
+fn accepting_communication_profile() -> CommunicationProfile {
+    CommunicationProfile {
+        alarm_acceptance: pm(1000),
+        testimony_acceptance: pm(1000),
+        gossip_acceptance: pm(1000),
+    }
+}
+
+fn rejecting_communication_profile() -> CommunicationProfile {
+    CommunicationProfile {
+        alarm_acceptance: pm(0),
+        testimony_acceptance: pm(0),
+        gossip_acceptance: pm(0),
     }
 }
 
@@ -157,7 +172,6 @@ fn listener_suppressed_social_utility() -> UtilityProfile {
 fn retell_speaker_profile(retention_ticks: u64) -> TellProfile {
     TellProfile {
         max_tell_candidates: 1,
-        acceptance_fidelity: pm(1000),
         conversation_memory_retention_ticks: retention_ticks,
         ..TellProfile::default()
     }
@@ -218,6 +232,12 @@ fn build_social_retell_fixture(
         &mut h.event_log,
         listener,
         accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -425,6 +445,12 @@ fn run_autonomous_tell_scenario(
         &mut h.event_log,
         listener,
         accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -823,6 +849,12 @@ fn run_skeptical_listener_scenario(
         listener,
         rejecting_tell_profile(),
     );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        rejecting_communication_profile(),
+    );
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
@@ -967,6 +999,12 @@ fn run_bystander_witness_scenario(
         &mut h.event_log,
         listener,
         accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
     );
     set_agent_tell_profile(
         &mut h.world,
@@ -1170,6 +1208,12 @@ fn run_survival_needs_suppression_scenario(
         &mut h.event_log,
         listener,
         accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -1720,7 +1764,6 @@ fn run_chain_length_filtering_scenario(
             TellProfile {
                 max_tell_candidates: 1,
                 max_relay_chain_len: 3,
-                acceptance_fidelity: pm(1000),
                 ..TellProfile::default()
             },
         );
@@ -1733,7 +1776,6 @@ fn run_chain_length_filtering_scenario(
         TellProfile {
             max_tell_candidates: 1,
             max_relay_chain_len: 1,
-            acceptance_fidelity: pm(1000),
             ..TellProfile::default()
         },
     );
@@ -1745,7 +1787,6 @@ fn run_chain_length_filtering_scenario(
         TellProfile {
             max_tell_candidates: 1,
             max_relay_chain_len: 3,
-            acceptance_fidelity: pm(1000),
             ..TellProfile::default()
         },
     );
@@ -1978,6 +2019,12 @@ fn run_agent_diversity_scenario(
         listener,
         accepting_tell_profile(),
     );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
+    );
 
     // Seed beliefs: each speaker knows the listener + their unique subject.
     for speaker in [gossip, normal, loner] {
@@ -2154,6 +2201,12 @@ fn run_rumor_wasted_trip_scenario(
         &mut h.event_log,
         agent,
         accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        accepting_communication_profile(),
     );
     set_agent_perception_profile(
         &mut h.world,

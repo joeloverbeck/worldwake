@@ -928,9 +928,9 @@ mod tests {
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
         EligibilityRule, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId, ResourceSource,
-        SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
+        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
 
@@ -1378,7 +1378,6 @@ mod tests {
             TellProfile {
                 max_tell_candidates: 4,
                 max_relay_chain_len: 2,
-                acceptance_fidelity: Permille::new(650).unwrap(),
                 ..TellProfile::default()
             },
         );

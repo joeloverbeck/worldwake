@@ -12,14 +12,15 @@ use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPl
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
     verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
-    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind, ComponentKind,
-    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
-    EventTag, EventView, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-    JusticeDispositionProfile, KnownRecipes, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind, RelationValue,
-    ResourceSource, Seed, StateHash, SuccessionLaw, TellProfile, TellTopic,
-    TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
+    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind,
+    CommunicationProfile, ComponentKind, ComponentValue, ControlSource, DeadAt,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKey,
+    GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RecordData, RecordKind, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
+    TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick,
+    UtilityProfile,
     ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
@@ -62,7 +63,6 @@ fn accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
         max_relay_chain_len: 3,
-        acceptance_fidelity: pm(1000),
         ..TellProfile::default()
     }
 }
@@ -78,6 +78,14 @@ fn focused_accepting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 1,
         ..accepting_tell_profile()
+    }
+}
+
+fn accepting_communication_profile() -> CommunicationProfile {
+    CommunicationProfile {
+        alarm_acceptance: pm(1000),
+        testimony_acceptance: pm(1000),
+        gossip_acceptance: pm(1000),
     }
 }
 
@@ -1886,6 +1894,12 @@ fn run_same_place_office_fact_still_requires_tell(seed: Seed) -> (StateHash, Sta
         listener,
         accepting_tell_profile(),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_communication_profile(listener, accepting_communication_profile())
+            .expect("same-place office golden should keep communication profiles writable");
+        commit_txn(txn, &mut h.event_log);
+    }
     set_agent_perception_profile(
         &mut h.world,
         &mut h.event_log,
