@@ -450,3 +450,64 @@ The CLI is now in excellent shape across all workflows. The explore workflow pro
 2. **[LOW]** Improve error recovery: when entity not found, list available entities. *(Recurring: 4 consecutive evaluations)*
 
 3. **[LOW]** CombatStance in `inspect` still uses `{stance:?}` debug format (observed in code review, not triggered in this session because no combat occurred). Minor — only appears during active combat.
+
+---
+
+## EVALUATION #5
+
+**Date**: 2026-04-03
+**Scenario**: scenarios/cli-evaluation.ron (unchanged)
+**Transcript**: reports/cli-evaluation-transcripts/eval-5.txt
+
+### Session Notes
+
+This evaluation measures the impact of the final two LOW fixes: action duration display for all `DurationExpr` variants, and entity suggestions on not-found errors. Both recommendations that had been recurring for 4+ evaluations are now resolved. Every action shows a duration label ("N ticks", "travel time", "per unit", or "varies"). Error messages for unknown entities now list available names.
+
+The CLI is now comprehensively polished across all workflows. No raw IDs, no `{:?}` debug format, no self-targeting, no duplicates, no missing durations. Error messages are helpful with recovery suggestions. Event descriptions are meaningful. Tick output shows action summaries. In-transit status is clear. All commands work correctly.
+
+### Per-Command Analysis
+
+**world**: Clean. **places**: Clean. **agents**: Clean. **goods**: Clean (9 commodities). **look**: Clean at all locations. "Apple source (Facility)" for resource sources. **inspect**: Clean. All profiles readable. `side_benefit` shown. No raw IDs. **relations**: Clean. **inventory**: Clean. Multi-word names work. **needs**: Excellent. Progress bars.
+
+**actions**: **IMPROVED** — all 8 initial actions show duration: "sleep — 1 ticks", "staff_market — varies", "travel — travel time", "defend — varies". Post-tick 22 items: "drink — per unit", "steal — varies", "attack — varies". No action lacks duration.
+
+**do**: Clean. **tick**: Informative summaries. **status**: In-transit clear. **cancel**: Clean. **switch**: Clean. **observe**: Clean.
+
+**events**: "Decision by X" labels. No "(no tags)". **event**: Readable deltas. **trace**: Correct. **save/load**: Clean. **help**: Exit 0, clean header.
+
+**Error recovery**: **IMPROVED** — `inspect Nobody` → "Available: Kael, Merchant Vara, Forager Lina, Guard Theron". `switch Zephyr` → same suggestions.
+
+### Resolved Since Previous
+
+- **Action duration display** — was [LOW] recurring 4 evals, now **fixed**. All `DurationExpr` variants show labels: "N ticks", "travel time", "per unit", or "varies".
+- **Entity suggestions on not-found** — was [LOW] recurring 4 evals, now **fixed**. `inspect`, `switch`, `inventory`, `relations` all list available entities when input doesn't match.
+
+### Scores
+
+| # | Metric | Score | Previous | Delta | Justification |
+|---|--------|-------|----------|-------|---------------|
+| 1 | Output Clarity | 9 | 9 | 0 | All output human-readable. No raw IDs, no debug format. Action durations now complete. |
+| 2 | Action Reliability | 9 | 8 | +1 | All actions show duration. Actions work when selected. Clean filtered list. |
+| 3 | State Legibility | 9 | 9 | 0 | All state displays clean and scannable. |
+| 4 | Causal Traceability | 7 | 7 | 0 | Event descriptions meaningful. Tick summaries informative. Deltas readable. |
+| 5 | Session Flow | 8 | 8 | 0 | Commands flow naturally. Durations help users choose actions. |
+| 6 | Error Recovery | 8 | 6 | +2 | Entity suggestions on not-found. "invalid action number, run 'actions' first". Help works. Clear recovery guidance across all error paths. |
+| | **Average** | **8.3** | **7.8** | **+0.5** | |
+
+### Score Trend
+
+| Eval | Avg | Delta |
+|------|-----|-------|
+| #1 | 4.0 | — |
+| #2 | 5.3 | +1.3 |
+| #3 | 7.2 | +1.9 |
+| #4 | 7.8 | +0.6 |
+| #5 | 8.3 | +0.5 |
+
+### Graduation Check
+
+> **The CLI has graduated to acceptable quality.** Average score 8.3 >= 8.0, and no CRITICAL or HIGH recommendations remain. Further evaluations are optional — invoke only after significant CLI changes or new simulation features.
+
+### Remaining LOW Items (optional polish)
+
+1. **[LOW]** CombatStance in `inspect` uses `{stance:?}` debug format — only visible during active combat, not triggered in evaluation scenario.
