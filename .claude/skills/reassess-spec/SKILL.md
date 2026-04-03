@@ -29,7 +29,7 @@ If working inside a worktree (e.g., `.claude/worktrees/<name>/`), **all file pat
 
 ## Plan Mode Awareness
 
-If plan mode is active, Steps 1-6 proceed normally (all are read-only analysis). At the end of Step 6, after presenting findings and resolving all questions, call ExitPlanMode. Step 7 (write the updated spec) and Step 8 (final summary) execute after the user approves the plan. When plan mode is active, the user's plan approval covers both question resolutions and the overall set of changes — there is no separate confirmation gate between resolution presentation and spec writing.
+If plan mode is active, Steps 1-6 proceed normally (all are read-only analysis). At the end of Step 6, after presenting findings and resolving all questions, write a condensed summary of approved changes to the plan file before calling ExitPlanMode. The plan file serves as the approval artifact; the conversational report provides detail. Step 7 (write the updated spec) and Step 8 (final summary) execute after the user approves the plan. When plan mode is active, the user's plan approval covers both question resolutions and the overall set of changes — there is no separate confirmation gate between resolution presentation and spec writing.
 
 ## Process
 
@@ -70,7 +70,7 @@ For every reference extracted in Step 2, validate against the actual codebase:
 6. **Downstream consumers**: For types or interfaces the spec proposes to modify, grep for all import sites and usage points. Record the blast radius — files that would need updating.
 7. **Impact scan — upstream spec references**: Grep active specs in `specs/` for references to the target spec's deliverables (type names, component names, interfaces it introduces). Note any active specs that would be affected by proposed changes. This step can be delegated to an Explore agent alongside Steps 3.1-3.6 validation — include "grep active specs in specs/ for references to [list proposed type/component names]" in the agent prompt.
 
-For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32). Spot-check agent claims about existence/registration with direct Grep or Read before including them in findings. Agent results are approximate — treat them as leads, not facts.
+For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32). Spot-check agent claims about existence/registration with direct Grep or Read before including them in findings. Agent results are approximate — treat them as leads, not facts. In plan mode, Explore agents are inherently compatible (read-only exploration) — no special handling needed.
 
 Do not present findings yet. Collect everything for Step 4.
 
