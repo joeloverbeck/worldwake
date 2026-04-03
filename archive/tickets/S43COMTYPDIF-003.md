@@ -1,6 +1,6 @@
 # S43COMTYPDIF-003: Class-aware suppression and ranking boost in worldwake-ai
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — goal policy suppression differentiated, ranking motive multiplied
@@ -14,7 +14,7 @@ All ShareBelief goals are suppressed uniformly at `GoalPriorityClass::High` and 
 
 1. `GoalFamilyPolicy` for ShareBelief at `goal_policy.rs:172-180` — currently grouped with BuryCorpse, RegroupWithFaction, etc. under `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High)`. Confirmed.
 2. ShareBelief ranking at `ranking.rs:608-610`: `score_product(context.utility.social_weight, social_pressure_for_topic(context, topic))`. Confirmed.
-3. `score_product` at `ranking.rs` — multiplies two Permille values: `(a.value() as u32 * b.value() as u32) / 1000`. Returns `u32`.
+3. `score_product` at `ranking.rs` currently multiplies the raw Permille values directly: `u32::from(weight.value()) * u32::from(pressure.value())`. Returns `u32`.
 4. `SuppressionRule::Never` variant exists at `goal_policy.rs:37`. Confirmed.
 5. `GoalPriorityClass::Critical` variant exists at `goal_model.rs:1623`. Confirmed.
 6. After ticket 002, `GoalKind::ShareBelief` will carry `communication_class: CommunicationClass`, readable in both policy and ranking match arms.
@@ -30,7 +30,7 @@ All ShareBelief goals are suppressed uniformly at `GoalPriorityClass::High` and 
 
 1. Alarm-class suppression = Never -> decision trace: ShareBelief with Alarm class survives stress suppression
 2. Testimony-class suppression = Critical -> decision trace: ShareBelief with Testimony class suppressed at Critical, not at High
-3. Gossip-class suppression = High -> decision trace: preserves current behavior (existing tests)
+3. Gossip-class suppression = High -> focused ranking/policy tests preserve current behavior for gossip while testimony-specific tests are recalibrated to the new `Critical` threshold
 4. Alarm ranking boost -> focused unit test: alarm-class motive > gossip-class motive given equal social_weight and social_pressure
 5. Single-crate (worldwake-ai) changes — no cross-system verification needed
 
@@ -88,9 +88,15 @@ GoalKind::ShareBelief { topic, communication_class, .. } => {
 
 The ×3 boost uses `Permille::saturating_add` which caps at 1000, preventing overflow.
 
-### 3. Update goal_policy test
+### 3. Update focused policy/ranking tests
 
-The existing `test_all_goal_kinds_have_policy` test in `goal_policy.rs` constructs dummy ShareBelief goals. After ticket 002, these already have the `communication_class` field. Add test assertions for the three class-specific policies.
+The existing `goal_policy.rs` policy table tests and the existing `ranking.rs` stress-suppression test for `ShareBelief` both become partially stale after this change. Update them to prove the new class split explicitly:
+
+- `goal_policy.rs` should assert the three class-specific suppression policies directly.
+- `ranking.rs` should stop expecting testimony-class `ShareBelief` to be suppressed at `High` stress and instead prove:
+  - testimony survives `High`
+  - testimony is suppressed at `Critical`
+  - gossip remains suppressed at `High`
 
 ## Files to Touch
 
@@ -124,12 +130,31 @@ The existing `test_all_goal_kinds_have_policy` test in `goal_policy.rs` construc
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/goal_policy.rs` — extend existing policy test with class-specific assertions
-2. `crates/worldwake-ai/src/ranking.rs` — new unit test for alarm motive multiplier
+1. `crates/worldwake-ai/src/goal_policy.rs` — extend existing policy tests with class-specific assertions
+2. `crates/worldwake-ai/src/ranking.rs` — update the existing ShareBelief stress-suppression test to match the new class split
+3. `crates/worldwake-ai/src/ranking.rs` — add a focused unit test for the alarm motive multiplier
 
 ### Commands
 
 1. `cargo test -p worldwake-ai -- goal_policy`
 2. `cargo test -p worldwake-ai -- ranking`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
-4. `cargo test --workspace`
+3. `cargo test -p worldwake-ai`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
+5. `cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-03
+
+- Updated `crates/worldwake-ai/src/goal_policy.rs` so `GoalKind::ShareBelief` suppression is class-aware: `Alarm` is never suppressed, `Testimony` suppresses only at `Critical`, and `Gossip` preserves the prior `High` suppression threshold.
+- Updated `crates/worldwake-ai/src/ranking.rs` so `Alarm`-class `ShareBelief` goals receive a saturating pressure boost before motive scoring while `Testimony` and `Gossip` keep the existing path.
+- Recalibrated the focused AI tests to prove the per-class split explicitly instead of preserving the old uniform `ShareBelief` suppression expectation.
+- No deviation from the corrected ticket boundary. Ticket 004 still owns authoritative Tell acceptance changes, and ticket 005 still owns the golden E2E proof surface.
+
+Verification:
+
+- `cargo test -p worldwake-ai -- goal_policy`
+- `cargo test -p worldwake-ai -- ranking`
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

@@ -16,9 +16,10 @@ use std::{
 };
 use worldwake_core::{
     belief_confidence, ActionDomain, BelievedEntityState, CommodityKind, CommodityPurpose,
-    DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, SourceKey,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, failure_ratio_permille,
+    CommunicationClass, DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalClaim, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity,
+    SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    failure_ratio_permille,
 };
 use worldwake_sim::{commodity_opportunity_score, CommodityOpportunityBreakdown, GoalBeliefView};
 
@@ -605,10 +606,20 @@ fn motive_score(
                 market_signal_for_place(context.view, context.agent, commodity, destination);
             score_product(context.utility.enterprise_weight, signal)
         }
-        GoalKind::ShareBelief { topic, .. } => score_product(
-            context.utility.social_weight,
-            social_pressure_for_topic(context, topic),
-        ),
+        GoalKind::ShareBelief {
+            topic,
+            communication_class,
+            ..
+        } => {
+            let pressure = social_pressure_for_topic(context, topic);
+            let boosted_pressure = match communication_class {
+                CommunicationClass::Alarm => {
+                    pressure.saturating_add(pressure).saturating_add(pressure)
+                }
+                CommunicationClass::Testimony | CommunicationClass::Gossip => pressure,
+            };
+            score_product(context.utility.social_weight, boosted_pressure)
+        }
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
         GoalKind::Patrol { .. } => patrol_motive(context),
         GoalKind::StealItem { .. } => theft_motive(context),
@@ -3055,7 +3066,7 @@ mod tests {
     }
 
     #[test]
-    fn share_belief_is_low_priority_and_suppressed_by_high_danger_or_self_care() {
+    fn share_belief_suppression_depends_on_communication_class() {
         let agent = entity(1);
         let listener = entity(2);
         let subject = entity(3);
@@ -3074,7 +3085,7 @@ mod tests {
             &[goal(GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
-                communication_class: worldwake_core::CommunicationClass::Testimony,
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             })],
             &danger_view,
             agent,
@@ -3083,6 +3094,21 @@ mod tests {
         )
         .into_ranked();
         assert!(ranked.is_empty());
+
+        let ranked = rank(
+            &[goal(GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
+            })],
+            &danger_view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
 
         let mut self_care_view = base_view(agent);
         let thresholds = DriveThresholds::default();
@@ -3102,9 +3128,35 @@ mod tests {
             &[goal(GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
-                communication_class: worldwake_core::CommunicationClass::Testimony,
+                communication_class: worldwake_core::CommunicationClass::Gossip,
             })],
             &self_care_view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+        assert!(ranked.is_empty());
+
+        let mut critical_self_care_view = base_view(agent);
+        critical_self_care_view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
+        );
+        critical_self_care_view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
+        );
+        let ranked = rank(
+            &[goal(GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
+            })],
+            &critical_self_care_view,
             agent,
             current_tick(),
             &utility(),
@@ -3144,6 +3196,58 @@ mod tests {
                 )
                 .value(),
             )
+        );
+    }
+
+    #[test]
+    fn alarm_share_belief_gets_a_saturating_motive_boost() {
+        let agent = entity(1);
+        let listener = entity(2);
+        let subject = entity(3);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                believed_state(9, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let alarm_goal = goal(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Alarm,
+        });
+        let gossip_goal = goal(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
+        });
+
+        let ranked = rank(
+            &[alarm_goal, gossip_goal],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+                communication_class: worldwake_core::CommunicationClass::Alarm,
+            }
+        );
+        assert!(
+            ranked[0].motive_score > ranked[1].motive_score,
+            "alarm-class ShareBelief should outrank equal-pressure gossip"
+        );
+        assert_eq!(
+            ranked[0].motive_score,
+            150 * u32::from(Permille::new_unchecked(1000).value())
         );
     }
 

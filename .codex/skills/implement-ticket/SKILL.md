@@ -35,6 +35,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
    - for golden-driven tickets, if a claimed divergence is already proved at lower layers but does not remain stably isolatable in the current golden harness without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative for the rejected slice
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
+   - when a ticket's intended behavior depends on helper math, scaling, saturation, or threshold arithmetic, inspect the exact live helper implementation and correct stale numeric prose before coding
    - when save/runtime structs or other persisted shapes gain or lose fields, search for test-only mirror structs and manual `bincode`/seeded deserialize helpers, not just production fixtures
    - when a ticket depends on shared static data such as recipe definitions, schemas, or other registry-backed content, confirm the live service bundle, execution context, or callback boundary that would need to carry that data; if the current runtime boundary does not expose it, correct the ticket before coding to name the real substrate change
    - when a ticket widens a shared callback or execution signature, search dependent crates for both production call paths and test-only direct handler registrations or manual `on_commit` / `on_abort` invocations so stale harnesses do not survive the initial implementation pass
@@ -152,6 +153,7 @@ When a ticket is an explicit staged extraction step, temporary duplicated logic 
 9. When adding a new enum variant, search for exhaustive matches, pattern arms, and state validators in dependent crates and update the non-owning handlers explicitly before broad verification.
 10. When adding a field to a shared model, trace, or other cross-module state carrier, proactively search for hand-written constructors and test literals in sibling modules that build that struct directly. Do not rely only on later compile fallout to discover stale fixture sites.
 11. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
+12. When a ticket splits previously uniform behavior into class-, variant-, or profile-specific rules, search for existing focused tests that currently compress those cases into one expectation and rewrite them into explicit per-case proofs instead of only adding new tests alongside stale broad assertions.
 
 ### 6. Verify at the right boundary
 
