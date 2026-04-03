@@ -35,13 +35,15 @@ If plan mode is active, Steps 1-6 proceed normally (all are read-only analysis).
 
 Follow these steps in order. Do not skip any step.
 
+**Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and the spec file has not been modified by an external process since then, Steps 2-3 may be scoped to only validate references affected by the change that triggered re-reassessment (e.g., a new CLAUDE.md invariant, a codebase change, or user-requested corrections). Step 1 still applies — re-read the spec (it may have been updated by the prior reassessment). Steps 4-8 proceed normally.
+
 ### Step 1: Mandatory Reads
 
 Read ALL of these files before any analysis:
 
 1. **The spec file** (from the argument) — read the entire file
-2. **`docs/FOUNDATIONS.md`** — architectural commandments; every spec must align with these principles
-3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain an FND-01 Section H analysis) — defines the required format and checklist points for P30 compliance
+2. **`docs/FOUNDATIONS.md`** — architectural commandments; every spec must align with these principles. Skip if read earlier in this session and not modified since.
+3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain an FND-01 Section H analysis) — defines the required format and checklist points for P30 compliance. Skip if read earlier in this session and not modified since.
 
 Parse the spec's metadata — look for fields like Phase, Status, Priority, Crates, Dependencies, Goals/Design Goals, Non-Goals, FOUNDATIONS Alignment, and all implementation/deliverable sections. Not all specs have every field.
 

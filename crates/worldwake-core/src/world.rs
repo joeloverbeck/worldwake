@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
+    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, ContentionPolicy, ContentionQueue, Container, DeadAt, DemandMemory,
     DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
     FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,

@@ -51,6 +51,8 @@ Read the latest evaluation from `reports/cli-evaluation.md` (last ~100 lines) to
 - Are there commands that couldn't be fully exercised due to missing scenario elements?
 - Are there recommendations about scenario gaps?
 
+If `reports/cli-evaluation.md` does not exist, skip this step — there are no prior evaluation recommendations to consider.
+
 ### Step 3: Identify New Features
 
 Check what's changed recently:
@@ -61,6 +63,7 @@ Check what's changed recently:
 4. Check `crates/worldwake-systems/src/` for new action registrations
 5. Check `crates/worldwake-cli/src/scenario/types.rs` for any new scenario def fields
 6. For each new component or feature, check whether it appears in `AgentDef` or other scenario def types. Components that are runtime-generated (e.g., experience records, belief state, active goals) don't need scenario entries — they emerge naturally from agent behavior during ticking. Only features with scenario-definable fields need scenario updates.
+7. Compare the full set of `AgentDef` fields against what the current scenario RON actually uses. Fields present in `AgentDef` but absent from all agents in the RON are coverage gaps — these are the primary candidates for scenario updates.
 
 ### Step 4: Update the Scenario
 

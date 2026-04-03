@@ -6,6 +6,7 @@ use crate::{
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
+    contention::{ContentionPolicy, ContentionQueue},
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
@@ -147,7 +148,7 @@ mod tests {
         },
         ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
+        ContentionPolicy, ContentionQueue, DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
         CommunicationProfile, PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
@@ -969,6 +970,28 @@ mod tests {
             Some(policy)
         );
         assert_eq!(tables.remove_facility_use_queue(facility), Some(queue));
+    }
+
+    #[test]
+    fn contention_components_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let facility = entity(42);
+        let policy = ContentionPolicy {
+            grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+            auto_promote: true,
+            max_waiters: Some(2),
+        };
+        let mut queue = ContentionQueue::default();
+        queue
+            .enqueue(entity(99), ActionDefId(7), Tick(3), policy.max_waiters)
+            .unwrap();
+
+        assert_eq!(tables.insert_contention_policy(facility, policy.clone()), None);
+        assert_eq!(tables.get_contention_policy(facility), Some(&policy));
+        assert_eq!(tables.insert_contention_queue(facility, queue.clone()), None);
+        assert_eq!(tables.get_contention_queue(facility), Some(&queue));
+        assert_eq!(tables.remove_contention_policy(facility), Some(policy));
+        assert_eq!(tables.remove_contention_queue(facility), Some(queue));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, Container, DeadAt, DemandMemory, DeprivationExposure,
+    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ContentionPolicy, ContentionQueue, Container, DeadAt, DemandMemory, DeprivationExposure,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExclusiveFacilityPolicy,
     FacilityQueueDispositionProfile, FacilityQueueIntents, FacilityUseQueue, FactionData,
     HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
@@ -247,7 +247,7 @@ mod tests {
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy,
         BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
         CombatStance, CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure,
-        CommunicationProfile, DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+        CommunicationProfile, ContentionPolicy, ContentionQueue, DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
         EventId, ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FactionData,
         FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
         InstitutionalRecordEntry, IntentionDispositionProfile, IntentionDomain, IntentionDomainTag,
@@ -316,6 +316,12 @@ mod tests {
             ComponentValue::FacilityQueueDispositionProfile(
                 sample_facility_queue_disposition_profile(),
             ),
+            ComponentValue::ContentionPolicy(ContentionPolicy {
+                grant_hold_ticks: std::num::NonZeroU32::new(4).unwrap(),
+                auto_promote: true,
+                max_waiters: Some(2),
+            }),
+            ComponentValue::ContentionQueue(ContentionQueue::default()),
             ComponentValue::TheftDispositionProfile(TheftDispositionProfile {
                 steal_duration_ticks: std::num::NonZeroU32::new(5).unwrap(),
                 theft_motive_weight: Permille::new(620).unwrap(),
@@ -721,6 +727,8 @@ mod tests {
                 ComponentKind::TradeDispositionProfile,
                 ComponentKind::MerchandiseProfile,
                 ComponentKind::SubstitutePreferences,
+                ComponentKind::ContentionPolicy,
+                ComponentKind::ContentionQueue,
                 ComponentKind::ExclusiveFacilityPolicy,
                 ComponentKind::FacilityUseQueue,
                 ComponentKind::WorkstationMarker,

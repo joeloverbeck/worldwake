@@ -30,7 +30,7 @@ Read ALL of these files before any analysis:
 1. **The spec file** (from argument 1) — read the entire file
 2. **`tickets/_TEMPLATE.md`** — the canonical ticket structure; every ticket you produce must follow this template exactly
 3. **`tickets/README.md`** — the ticket authoring contract; understand the required sections and checks
-4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles
+4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles. Skip if read earlier in this session and not modified since.
 
 ### Step 2: Codebase Validation
 
@@ -51,6 +51,7 @@ Analyze the spec and identify discrete work units:
 - Determine **priority ordering** (what to implement first)
 - Ensure **every spec deliverable is covered** — no silent skipping. If a deliverable seems wrong or unnecessary, flag it to the user using the 1-3-1 rule instead of omitting it
 - Consider natural boundaries: type changes, new modules, test suites, integration points
+- Ensure **workspace builds after each ticket** — if removing types/functions from a shared crate, all consumers must be updated in the same ticket. Splitting a migration across tickets is only valid when intermediate states compile.
 
 ### Step 4: Present Summary for Approval
 

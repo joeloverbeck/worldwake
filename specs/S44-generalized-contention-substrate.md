@@ -152,6 +152,13 @@ impl Component for ContentionDispositionProfile {}
 
 Existing agents with `FacilityQueueDispositionProfile` receive `ContentionDispositionProfile` with the same field values.
 
+**Scenario profile contract** (per `docs/spec-drafting-rules.md` section 5):
+- `ContentionDispositionProfile` is **role-specific** — not all agents need queue patience settings. Applied conditionally via `if let Some(...)` in `spawn_agent()`.
+- Rename `AgentDef.facility_queue_disposition` → `AgentDef.contention_disposition` (type: `Option<ContentionDispositionProfile>`).
+- Update `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs` to apply the renamed field.
+- Update all `.ron` scenario files that reference `facility_queue_disposition`.
+- `ContentionIntents` (Deliverable 4) is **exempt** — it is runtime-generated state, not scenario configuration.
+
 ### 6. Contention domains — Phase 1 targets
 
 Attach `ContentionQueue` + `ContentionPolicy` to these entity classes:
@@ -310,14 +317,15 @@ The existing `SystemId::FacilityQueue` slot becomes `SystemId::Contention`.
 2. Implement queue operations (same method surface as `FacilityUseQueue`).
 3. Add `ContentionIntents` and `ContentionDispositionProfile` to `worldwake-core`.
 4. Replace `FacilityUseQueue` → `ContentionQueue`, `ExclusiveFacilityPolicy` → `ContentionPolicy`, `FacilityQueueIntents` → `ContentionIntents`, `FacilityQueueDispositionProfile` → `ContentionDispositionProfile` (full removal per P28).
-5. Rename `SystemId::FacilityQueue` → `SystemId::Contention`.
-6. Generalize `contention_system()` in `worldwake-systems`.
-7. Attach `ContentionQueue` + `ContentionPolicy` to corpse entities and patient entities.
-8. Add contention checks to loot, bury, and heal action validation.
-9. Extend affordance generation with `ContentionStatus` field on `Affordance`.
-10. Add perception of contention state.
-11. Write golden tests.
-12. Bump `SAVE_FORMAT_VERSION`.
+5. Update scenario system: rename `AgentDef.facility_queue_disposition` → `contention_disposition`, update `spawn_agent()`, update `.ron` scenario files.
+6. Rename `SystemId::FacilityQueue` → `SystemId::Contention`.
+7. Generalize `contention_system()` in `worldwake-systems`.
+8. Attach `ContentionQueue` + `ContentionPolicy` to corpse entities and patient entities.
+9. Add contention checks to loot, bury, and heal action validation.
+10. Extend affordance generation with `ContentionStatus` field on `Affordance`.
+11. Add perception of contention state.
+12. Write golden tests.
+13. Bump `SAVE_FORMAT_VERSION`.
 
 ## Verification
 

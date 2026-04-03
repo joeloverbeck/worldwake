@@ -81,7 +81,7 @@ Run each of the 6 mandatory checklists below. These are **binary pass/fail** che
 - [ ] Find an ActionStarted event — does it name the action type (e.g., "Tell", "Travel", "Produce") not just "ActionStarted"?
 - [ ] Find an ActionCommitted event — does it name the action type?
 - [ ] Run `do <N>` — does the confirmation show what action was requested?
-- [ ] Run `status` while an action is in progress — does it show the action name and target?
+- [ ] Run `status` while an action is in progress — does it show the action name and target? (To test this, use a multi-tick action like travel or tell, then check `status` before ticking to completion.)
 
 #### Checklist 3 — Delta Semantics
 
@@ -92,7 +92,7 @@ Run each of the 6 mandatory checklists below. These are **binary pass/fail** che
 #### Checklist 4 — Action Reliability
 
 - [ ] Run `actions` and record the count of listed actions.
-- [ ] Try EVERY action via `do <N>`. Record which ones succeed and which crash/error.
+- [ ] Try EVERY action via `do <N>`. Record which ones succeed and which crash/error. Action numbers may shift between ticks as affordances change — always re-run `actions` immediately before each `do <N>` to ensure the number matches the intended action. Record any numbering mismatches as an Action Reliability issue.
 - [ ] Zero crashes or opaque errors? (Actions needing payloads the CLI can't construct must either not appear in the list or must give a clear error explaining what's needed.)
 
 #### Checklist 5 — Command Self-Documentation
