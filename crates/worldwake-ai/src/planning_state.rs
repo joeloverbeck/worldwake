@@ -1,7 +1,9 @@
 use crate::planning_snapshot::PlanningSnapshot;
 use crate::shared_collections::{SharedMap, SharedSet};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 use worldwake_core::{
     load_per_unit, to_shared_belief_snapshot, ActionDefId, ActionDomain, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
@@ -13,7 +15,8 @@ use worldwake_core::{
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::{
-    estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
+    estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
+    RuntimeBeliefView,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -60,6 +63,8 @@ pub struct PlanningState<'snapshot> {
     facility_queue_membership_overrides: SharedMap<EntityId, Option<HypotheticalQueueJoin>>,
     facility_grant_overrides: SharedMap<EntityId, Option<GrantedFacilityUse>>,
     hypothetical_registry: SharedMap<HypotheticalEntityId, HypotheticalEntityMeta>,
+    entities_at_cache: Rc<RefCell<BTreeMap<EntityId, Vec<EntityId>>>>,
+    effective_place_cache: Rc<RefCell<BTreeMap<PlanningEntityRef, Option<EntityId>>>>,
     next_hypothetical_id: u32,
 }
 
@@ -87,8 +92,15 @@ impl<'snapshot> PlanningState<'snapshot> {
             facility_queue_membership_overrides: SharedMap::new(),
             facility_grant_overrides: SharedMap::new(),
             hypothetical_registry: SharedMap::new(),
+            entities_at_cache: Rc::new(RefCell::new(BTreeMap::new())),
+            effective_place_cache: Rc::new(RefCell::new(BTreeMap::new())),
             next_hypothetical_id: 0,
         }
+    }
+
+    fn invalidate_entities_at_cache(&mut self) {
+        self.entities_at_cache = Rc::new(RefCell::new(BTreeMap::new()));
+        self.effective_place_cache = Rc::new(RefCell::new(BTreeMap::new()));
     }
 
     #[must_use]
@@ -389,6 +401,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         commodity: CommodityKind,
         quantity: Quantity,
     ) -> Self {
+        self.invalidate_entities_at_cache();
         let previous_holder = self.direct_possessor_ref(lot);
         self.direct_possessor_overrides.insert(lot, Some(holder));
         self.direct_container_overrides.insert(lot, None);
@@ -415,6 +428,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         commodity: CommodityKind,
         quantity: Quantity,
     ) -> Self {
+        self.invalidate_entities_at_cache();
         if let Some(previous_holder) = self.direct_possessor_ref(lot) {
             let current = self.commodity_quantity_ref(previous_holder, commodity);
             let next = Quantity(current.0.saturating_sub(quantity.0));
@@ -467,7 +481,14 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn effective_place_ref(&self, entity: PlanningEntityRef) -> Option<EntityId> {
-        self.resolve_effective_place_ref(entity, &mut BTreeSet::new())
+        if let Some(place) = self.effective_place_cache.borrow().get(&entity) {
+            return *place;
+        }
+        let resolved = self.resolve_effective_place_ref(entity, &mut BTreeSet::new());
+        self.effective_place_cache
+            .borrow_mut()
+            .insert(entity, resolved);
+        resolved
     }
 
     #[must_use]
@@ -544,6 +565,7 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn move_entity_ref(mut self, entity: PlanningEntityRef, destination: EntityId) -> Self {
+        self.invalidate_entities_at_cache();
         self.entity_place_overrides
             .insert(entity, Some(destination));
         self
@@ -555,6 +577,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         entity: PlanningEntityRef,
         holder: PlanningEntityRef,
     ) -> Self {
+        self.invalidate_entities_at_cache();
         self.direct_possessor_overrides.insert(entity, Some(holder));
         self.direct_container_overrides.insert(entity, None);
         self.entity_place_overrides.remove(&entity);
@@ -567,6 +590,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         entity: PlanningEntityRef,
         container: PlanningEntityRef,
     ) -> Self {
+        self.invalidate_entities_at_cache();
         self.direct_container_overrides
             .insert(entity, Some(container));
         self.direct_possessor_overrides.insert(entity, None);
@@ -588,6 +612,7 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     #[must_use]
     pub fn mark_removed_ref(mut self, entity: PlanningEntityRef) -> Self {
+        self.invalidate_entities_at_cache();
         self.removed_entities.insert(entity);
         self.entity_place_overrides.insert(entity, None);
         self.direct_container_overrides.insert(entity, None);
@@ -882,23 +907,29 @@ impl<'snapshot> PlanningState<'snapshot> {
         if !visited.insert(entity) || self.removed_entities.contains(&entity) {
             return None;
         }
-        if let Some(override_place) = self.entity_place_overrides.get(&entity) {
-            return *override_place;
+        if let Some(place) = self.effective_place_cache.borrow().get(&entity) {
+            return *place;
         }
-        if let Some(possessor) = self.direct_possessor_ref(entity) {
-            return self.resolve_effective_place_ref(possessor, visited);
-        }
-        if let Some(container) = self.direct_container_ref(entity) {
-            return self.resolve_effective_place_ref(container, visited);
-        }
-        match entity {
+        let resolved = if let Some(override_place) = self.entity_place_overrides.get(&entity) {
+            *override_place
+        } else if let Some(possessor) = self.direct_possessor_ref(entity) {
+            self.resolve_effective_place_ref(possessor, visited)
+        } else if let Some(container) = self.direct_container_ref(entity) {
+            self.resolve_effective_place_ref(container, visited)
+        } else {
+            match entity {
             PlanningEntityRef::Authoritative(entity) => self
                 .snapshot
                 .entities
                 .get(&entity)
                 .and_then(|snapshot| snapshot.effective_place),
             PlanningEntityRef::Hypothetical(_) => None,
-        }
+            }
+        };
+        self.effective_place_cache
+            .borrow_mut()
+            .insert(entity, resolved);
+        resolved
     }
 
     fn carried_load_ref(&self, holder: PlanningEntityRef) -> Option<LoadUnits> {
@@ -919,7 +950,34 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     fn direct_child_refs(&self, holder: PlanningEntityRef) -> Vec<PlanningEntityRef> {
-        self.all_entity_refs()
+        let mut candidates = BTreeSet::new();
+        if let PlanningEntityRef::Authoritative(holder_entity) = holder {
+            if let Some(snapshot) = self.snapshot.entities.get(&holder_entity) {
+                candidates.extend(
+                    snapshot
+                        .direct_possessions
+                        .iter()
+                        .copied()
+                        .map(PlanningEntityRef::Authoritative),
+                );
+                candidates.extend(
+                    snapshot
+                        .direct_contents
+                        .iter()
+                        .copied()
+                        .map(PlanningEntityRef::Authoritative),
+                );
+            }
+        }
+        candidates.extend(self.direct_possessor_overrides.keys().copied());
+        candidates.extend(self.direct_container_overrides.keys().copied());
+        candidates.extend(
+            self.hypothetical_registry
+                .keys()
+                .copied()
+                .map(PlanningEntityRef::Hypothetical),
+        );
+        candidates
             .into_iter()
             .filter(|entity| {
                 self.direct_possessor_ref(*entity) == Some(holder)
@@ -1080,12 +1138,17 @@ impl RuntimeBeliefView for PlanningState<'_> {
             && self.direct_possessor_overrides.is_empty()
             && self.removed_entities.is_empty()
         {
-            return self
+            let entities = self
                 .snapshot
                 .places
                 .get(&place)
                 .map(|p| p.entities.iter().copied().collect())
                 .unwrap_or_default();
+            return entities;
+        }
+
+        if let Some(entities) = self.entities_at_cache.borrow().get(&place) {
+            return entities.clone();
         }
 
         // Slow path: full scan with override resolution.
@@ -1103,6 +1166,12 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .collect::<Vec<_>>();
         entities.sort();
         entities.dedup();
+        // Slow-path queries repeat heavily across affordance enumeration for a
+        // single immutable planning state. Cache per-place results until a
+        // later state mutation invalidates them.
+        self.entities_at_cache
+            .borrow_mut()
+            .insert(place, entities.clone());
         entities
     }
 
@@ -3475,6 +3544,49 @@ mod tests {
             ),
             vec![bread]
         );
+    }
+
+    #[test]
+    fn entities_at_cache_is_invalidated_when_holder_moves_across_branches() {
+        let (view, actor, town, field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let mut state = PlanningState::new(&snapshot);
+        let cargo_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let cargo_ref = PlanningEntityRef::Hypothetical(cargo_id);
+
+        let base = state
+            .set_possessor_ref(cargo_ref, actor_ref)
+            .set_quantity_ref(cargo_ref, CommodityKind::Bread, Quantity(2));
+
+        assert_eq!(RuntimeBeliefView::entities_at(&base, town), vec![actor, bread]);
+
+        let moved = base.clone().move_actor_to(field);
+
+        assert_eq!(RuntimeBeliefView::entities_at(&base, town), vec![actor, bread]);
+        assert_eq!(RuntimeBeliefView::entities_at(&moved, field), vec![actor, bread]);
+        assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
+    }
+
+    #[test]
+    fn effective_place_cache_is_invalidated_when_holder_moves_across_branches() {
+        let (view, actor, town, field, _bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let mut state = PlanningState::new(&snapshot);
+        let cargo_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Bread);
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let cargo_ref = PlanningEntityRef::Hypothetical(cargo_id);
+
+        let base = state
+            .set_possessor_ref(cargo_ref, actor_ref)
+            .set_quantity_ref(cargo_ref, CommodityKind::Bread, Quantity(2));
+
+        assert_eq!(base.effective_place_ref(cargo_ref), Some(town));
+
+        let moved = base.clone().move_actor_to(field);
+
+        assert_eq!(base.effective_place_ref(cargo_ref), Some(town));
+        assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
     }
 
     #[test]

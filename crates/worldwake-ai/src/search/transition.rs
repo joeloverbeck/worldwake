@@ -101,7 +101,6 @@ pub(super) fn build_successor_detailed<'snapshot>(
             },
         )?;
     let estimated_ticks = duration.ticks();
-
     let transition = apply_hypothetical_transition(
         goal,
         *semantics,

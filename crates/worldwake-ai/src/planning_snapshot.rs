@@ -12,7 +12,7 @@ use worldwake_core::{
     TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
     ViolationDispositionProfile, WorkstationTag, Wound,
 };
-use worldwake_sim::RuntimeBeliefView;
+use worldwake_sim::{RuntimeBeliefView};
 
 use crate::route_threat::perceived_direct_travel_cost_from_memory;
 
@@ -35,6 +35,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) direct_possessor: Option<EntityId>,
     pub(crate) owner: Option<EntityId>,
     pub(crate) direct_possessions: BTreeSet<EntityId>,
+    pub(crate) direct_contents: BTreeSet<EntityId>,
     pub(crate) known_recipes: Vec<RecipeId>,
     pub(crate) unique_item_counts: BTreeMap<UniqueItemKind, u32>,
     pub(crate) commodity_quantities: BTreeMap<CommodityKind, Quantity>,
@@ -83,6 +84,7 @@ impl Default for SnapshotEntity {
             direct_possessor: None,
             owner: None,
             direct_possessions: BTreeSet::new(),
+            direct_contents: BTreeSet::new(),
             known_recipes: Vec::new(),
             unique_item_counts: BTreeMap::new(),
             commodity_quantities: BTreeMap::new(),
@@ -302,7 +304,7 @@ impl PlanningSnapshot {
         let actor_known_entity_beliefs = view.known_entity_beliefs(actor).into_iter().collect();
         let actor_known_social_observations = view.known_social_observations(actor);
         let actor_confidence_policy = view.belief_confidence_policy(actor);
-        let entities = included_entities
+        let mut entities: BTreeMap<EntityId, SnapshotEntity> = included_entities
             .iter()
             .copied()
             .map(|entity| {
@@ -312,6 +314,15 @@ impl PlanningSnapshot {
                 )
             })
             .collect();
+        let content_edges = entities
+            .iter()
+            .filter_map(|(&entity, snapshot)| snapshot.direct_container.map(|container| (entity, container)))
+            .collect::<Vec<_>>();
+        for (entity, container) in content_edges {
+            if let Some(container_snapshot) = entities.get_mut(&container) {
+                container_snapshot.direct_contents.insert(entity);
+            }
+        }
 
         let shortest_travel_ticks = DistanceMatrix::new(&places);
         let perceived_travel_costs = DistanceMatrix::with_edge_cost(&places, |from, to, ticks| {
@@ -563,7 +574,7 @@ fn build_snapshot_places(
     included_places: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
-    included_places
+    let places = included_places
         .iter()
         .copied()
         .map(|place| {
@@ -591,7 +602,8 @@ fn build_snapshot_places(
                 },
             )
         })
-        .collect()
+        .collect();
+    places
 }
 
 fn build_snapshot_entity(
@@ -601,69 +613,113 @@ fn build_snapshot_entity(
     evidence_entities: &BTreeSet<EntityId>,
     included_places: &BTreeSet<EntityId>,
 ) -> SnapshotEntity {
+    let kind = view.entity_kind(entity);
+    let effective_place = view.effective_place(entity);
+    let in_transit_state = view.in_transit_state(entity);
+    let direct_container = view.direct_container(entity);
+    let direct_possessor = view.direct_possessor(entity);
+    let owner = view.believed_owner_of(entity);
+    let direct_possessions = view
+        .direct_possessions(entity)
+        .into_iter()
+        .filter(|possessed| {
+            included_entities_contains(
+                view,
+                *possessed,
+                actor,
+                evidence_entities,
+                included_places,
+            )
+        })
+        .collect();
+    let known_recipes = view.known_recipes(entity);
+    let unique_item_counts = collect_unique_item_counts(view, entity);
+    let commodity_quantities = collect_commodity_quantities(view, entity);
+    let item_lot_commodity = view.item_lot_commodity(entity);
+    let carry_capacity = view.carry_capacity(entity);
+    let intrinsic_load = view.load_of_entity(entity).unwrap_or(LoadUnits(0));
+    let item_lot_consumable_profile = view.item_lot_consumable_profile(entity);
+    let workstation_tag = view.workstation_tag(entity);
+    let stock_storage_policy = view.stock_storage_policy(entity);
+    let resource_source = view.resource_source(entity);
+    let action_flags = SnapshotActionFlags {
+        has_production_job: view.has_production_job(entity),
+        controllable_by_actor: view.can_control(actor, entity),
+        has_control: view.has_control(entity),
+    };
+    let lifecycle = SnapshotLifecycle {
+        alive: view.is_alive(entity),
+        dead: view.is_dead(entity),
+        incapacitated: view.is_incapacitated(entity),
+    };
+    let wounds = view.wounds(entity);
+    let homeostatic_needs = view.homeostatic_needs(entity);
+    let drive_thresholds = view.drive_thresholds(entity);
+    let metabolism_profile = view.metabolism_profile(entity);
+    let trade_disposition_profile = view.trade_disposition_profile(entity);
+    let patrol_profile = view.patrol_profile(entity);
+    let patrol_route = view.patrol_route(entity);
+    let theft_disposition_profile = view.theft_disposition_profile(entity);
+    let justice_disposition_profile = view.justice_disposition_profile(entity);
+    let violation_disposition_profile = view.violation_disposition_profile(entity);
+    let combat_profile = view.combat_profile(entity);
+    let courage = view.courage(entity);
+    let record_data = view.record_data(entity);
+    let hostile_targets = view.hostile_targets_of(entity);
+    let visible_hostiles = view.visible_hostiles_for(entity);
+    let current_attackers = view.current_attackers_of(entity);
+    let demand_memory = view.demand_memory(entity);
+    let merchandise_profile = view.merchandise_profile(entity);
+    let has_sale_listing = view.has_sale_listing(entity);
+    let seller_for_sale_lot = view.seller_for_sale_lot(entity);
+    let reservation_ranges = view.reservation_ranges(entity);
+    let facility_queue = snapshot_facility_queue(view, actor, entity);
+    let office_data = view.office_data(entity);
+
     SnapshotEntity {
-        kind: view.entity_kind(entity),
-        effective_place: view.effective_place(entity),
-        in_transit_state: view.in_transit_state(entity),
-        direct_container: view.direct_container(entity),
-        direct_possessor: view.direct_possessor(entity),
-        owner: view.believed_owner_of(entity),
-        direct_possessions: view
-            .direct_possessions(entity)
-            .into_iter()
-            .filter(|possessed| {
-                included_entities_contains(
-                    view,
-                    *possessed,
-                    actor,
-                    evidence_entities,
-                    included_places,
-                )
-            })
-            .collect(),
-        known_recipes: view.known_recipes(entity),
-        unique_item_counts: collect_unique_item_counts(view, entity),
-        commodity_quantities: collect_commodity_quantities(view, entity),
-        item_lot_commodity: view.item_lot_commodity(entity),
-        carry_capacity: view.carry_capacity(entity),
-        intrinsic_load: view.load_of_entity(entity).unwrap_or(LoadUnits(0)),
-        item_lot_consumable_profile: view.item_lot_consumable_profile(entity),
-        workstation_tag: view.workstation_tag(entity),
-        stock_storage_policy: view.stock_storage_policy(entity),
-        resource_source: view.resource_source(entity),
-        action_flags: SnapshotActionFlags {
-            has_production_job: view.has_production_job(entity),
-            controllable_by_actor: view.can_control(actor, entity),
-            has_control: view.has_control(entity),
-        },
-        lifecycle: SnapshotLifecycle {
-            alive: view.is_alive(entity),
-            dead: view.is_dead(entity),
-            incapacitated: view.is_incapacitated(entity),
-        },
-        wounds: view.wounds(entity),
-        homeostatic_needs: view.homeostatic_needs(entity),
-        drive_thresholds: view.drive_thresholds(entity),
-        metabolism_profile: view.metabolism_profile(entity),
-        trade_disposition_profile: view.trade_disposition_profile(entity),
-        patrol_profile: view.patrol_profile(entity),
-        patrol_route: view.patrol_route(entity),
-        theft_disposition_profile: view.theft_disposition_profile(entity),
-        justice_disposition_profile: view.justice_disposition_profile(entity),
-        violation_disposition_profile: view.violation_disposition_profile(entity),
-        combat_profile: view.combat_profile(entity),
-        courage: view.courage(entity),
-        record_data: view.record_data(entity),
-        hostile_targets: view.hostile_targets_of(entity),
-        visible_hostiles: view.visible_hostiles_for(entity),
-        current_attackers: view.current_attackers_of(entity),
-        demand_memory: view.demand_memory(entity),
-        merchandise_profile: view.merchandise_profile(entity),
-        has_sale_listing: view.has_sale_listing(entity),
-        seller_for_sale_lot: view.seller_for_sale_lot(entity),
-        reservation_ranges: view.reservation_ranges(entity),
-        facility_queue: snapshot_facility_queue(view, actor, entity),
-        office_data: view.office_data(entity),
+        kind,
+        effective_place,
+        in_transit_state,
+        direct_container,
+        direct_possessor,
+        owner,
+        direct_possessions,
+        direct_contents: BTreeSet::new(),
+        known_recipes,
+        unique_item_counts,
+        commodity_quantities,
+        item_lot_commodity,
+        carry_capacity,
+        intrinsic_load,
+        item_lot_consumable_profile,
+        workstation_tag,
+        stock_storage_policy,
+        resource_source,
+        action_flags,
+        lifecycle,
+        wounds,
+        homeostatic_needs,
+        drive_thresholds,
+        metabolism_profile,
+        trade_disposition_profile,
+        patrol_profile,
+        patrol_route,
+        theft_disposition_profile,
+        justice_disposition_profile,
+        violation_disposition_profile,
+        combat_profile,
+        courage,
+        record_data,
+        hostile_targets,
+        visible_hostiles,
+        current_attackers,
+        demand_memory,
+        merchandise_profile,
+        has_sale_listing,
+        seller_for_sale_lot,
+        reservation_ranges,
+        facility_queue,
+        office_data,
     }
 }
 
@@ -700,6 +756,18 @@ fn collect_commodity_quantities(
     view: &dyn RuntimeBeliefView,
     entity: EntityId,
 ) -> BTreeMap<CommodityKind, Quantity> {
+    if view.entity_kind(entity) == Some(EntityKind::ItemLot) {
+        let Some(kind) = view.item_lot_commodity(entity) else {
+            return BTreeMap::new();
+        };
+        let quantity = view.commodity_quantity(entity, kind);
+        return if quantity > Quantity(0) {
+            BTreeMap::from([(kind, quantity)])
+        } else {
+            BTreeMap::new()
+        };
+    }
+
     CommodityKind::ALL
         .into_iter()
         .filter_map(|kind| {
@@ -794,7 +862,6 @@ fn collect_places(
             included.insert(transit.destination);
         }
     }
-
     included
 }
 
@@ -830,7 +897,6 @@ fn collect_entities(
             }
         }
     }
-
     included
 }
 
@@ -876,6 +942,8 @@ mod tests {
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+        commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         exclusive_facilities: BTreeSet<EntityId>,
@@ -899,6 +967,8 @@ mod tests {
                 effective_places: BTreeMap::new(),
                 entities_at: BTreeMap::new(),
                 adjacent: BTreeMap::new(),
+                commodity_quantities: BTreeMap::new(),
+                item_lot_commodities: BTreeMap::new(),
                 carry_capacities: BTreeMap::new(),
                 entity_loads: BTreeMap::new(),
                 exclusive_facilities: BTreeSet::new(),
@@ -959,8 +1029,11 @@ mod tests {
             0
         }
 
-        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
-            Quantity(0)
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
         }
         fn controlled_commodity_quantity_at_place(
             &self,
@@ -979,8 +1052,8 @@ mod tests {
             Vec::new()
         }
 
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
-            None
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
         }
 
         fn item_lot_consumable_profile(
@@ -1451,6 +1524,38 @@ mod tests {
                 .get(&place)
                 .map(|entity| entity.intrinsic_load),
             Some(LoadUnits(0))
+        );
+    }
+
+    #[test]
+    fn build_snapshot_item_lot_queries_only_its_commodity_quantity() {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(lot, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(lot, place);
+        view.entities_at.insert(place, vec![actor, lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((lot, CommodityKind::Bread), Quantity(3));
+        view.commodity_quantities
+            .insert((lot, CommodityKind::Water), Quantity(99));
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
+
+        assert_eq!(
+            snapshot.entities.get(&lot).and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Bread)).copied(),
+            Some(Quantity(3))
+        );
+        assert_eq!(
+            snapshot.entities.get(&lot).and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Water)).copied(),
+            None
         );
     }
 

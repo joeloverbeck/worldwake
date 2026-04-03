@@ -1332,9 +1332,9 @@ fn acquisition_places_for_commodity(
 ) -> Vec<EntityId> {
     let loose_lot_places = places_with_loose_lots(state, commodity);
     if !loose_lot_places.is_empty() {
-        return cap_places_by_travel_distance(state, actor, loose_lot_places, limit);
+        let result = cap_places_by_travel_distance(state, actor, loose_lot_places, limit);
+        return result;
     }
-
     let mut places = places_with_seller_list(state, commodity);
     append_unique_places(&mut places, places_with_resource_source(state, commodity));
     cap_places_by_travel_distance(state, actor, places, limit)
@@ -1362,15 +1362,10 @@ fn prerequisite_places_for_recipe_inputs<'a>(
 }
 
 pub(crate) fn trace_prerequisite_guidance(
-    goal: &GoalKind,
-    state: &PlanningState<'_>,
-    recipes: &RecipeRegistry,
-    budget: &PlanningBudget,
+    goal_relevant_places: Vec<EntityId>,
+    prerequisite_places: Vec<EntityId>,
+    exclusions: Vec<PrerequisiteExclusionTrace>,
 ) -> Option<PrerequisiteGuidanceTrace> {
-    let goal_relevant_places = goal.goal_relevant_places(state, recipes);
-    let prerequisite_places = goal.prerequisite_places(state, recipes, budget);
-    let exclusions = prerequisite_depleted_source_exclusions(goal, state, recipes);
-
     (!goal_relevant_places.is_empty() || !prerequisite_places.is_empty() || !exclusions.is_empty())
         .then_some(PrerequisiteGuidanceTrace {
             goal_relevant_places,
@@ -1379,7 +1374,7 @@ pub(crate) fn trace_prerequisite_guidance(
         })
 }
 
-fn prerequisite_depleted_source_exclusions(
+pub(crate) fn prerequisite_depleted_source_exclusions(
     goal: &GoalKind,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,

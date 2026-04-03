@@ -199,6 +199,7 @@ fn observe_passive_local_entities(
     updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
 ) -> BTreeMap<EntityId, DirectLocalObservationBatch> {
     let mut batches = BTreeMap::new();
+    let mut colocated_entities_by_place = BTreeMap::<EntityId, Vec<EntityId>>::new();
 
     for (agent, _) in world.query_agent_data() {
         if world.get_component_dead_at(agent).is_some() {
@@ -210,6 +211,9 @@ fn observe_passive_local_entities(
         let Some(place) = world.effective_place(agent) else {
             continue;
         };
+        let colocated_entities = colocated_entities_by_place
+            .entry(place)
+            .or_insert_with(|| world.entities_effectively_at(place));
 
         let base_store = world
             .get_component_agent_belief_store(agent)
@@ -219,6 +223,7 @@ fn observe_passive_local_entities(
             world,
             agent,
             place,
+            colocated_entities,
             tick,
             profile.observation_fidelity.value(),
             rng,
@@ -379,17 +384,19 @@ fn observe_active_actions(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_direct_local_observation_batch(
     world: &World,
     observer: EntityId,
     place: EntityId,
+    colocated_entities: &[EntityId],
     tick: worldwake_core::Tick,
     observation_fidelity: u16,
     rng: &mut worldwake_sim::DeterministicRng,
     store: &AgentBeliefStore,
 ) -> Option<DirectLocalObservationBatch> {
     let mut observed_snapshots = BTreeMap::new();
-    for entity in world.entities_effectively_at(place) {
+    for &entity in colocated_entities {
         if entity == observer {
             continue;
         }

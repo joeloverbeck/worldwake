@@ -5,7 +5,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityId};
-use worldwake_sim::RecipeRegistry;
+use worldwake_sim::{RecipeRegistry};
 
 use super::{SearchCandidate, SearchNode};
 
@@ -23,8 +23,8 @@ pub(super) fn compute_heuristic(
         return 0;
     }
     let actor = state.snapshot().actor();
-    state
-        .effective_place_ref(PlanningEntityRef::Authoritative(actor))
+    let actor_place = state.effective_place_ref(PlanningEntityRef::Authoritative(actor));
+    actor_place
         .and_then(|place| snapshot.min_perceived_travel_cost_to_any(place, goal_relevant_places))
         .unwrap_or(0)
 }
@@ -41,16 +41,51 @@ pub(super) fn combined_relevant_places(
     recipes: &RecipeRegistry,
     budget: &PlanningBudget,
 ) -> CombinedRelevantPlaces {
-    let guidance_trace = trace_prerequisite_guidance(&goal.key.kind, state, recipes, budget);
+    combined_relevant_places_internal(goal, state, recipes, budget, false)
+}
+
+pub(super) fn combined_relevant_places_with_guidance(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
+) -> CombinedRelevantPlaces {
+    combined_relevant_places_internal(goal, state, recipes, budget, true)
+}
+
+fn combined_relevant_places_internal(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    budget: &PlanningBudget,
+    include_guidance_trace: bool,
+) -> CombinedRelevantPlaces {
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
+    let goal_relevant_places_for_trace = include_guidance_trace.then(|| places.clone());
     let base_len = places.len();
     let prerequisite_places = goal.key.kind.prerequisite_places(state, recipes, budget);
+    let prerequisite_places_for_trace = include_guidance_trace.then(|| prerequisite_places.clone());
     for place in prerequisite_places {
         if !places.contains(&place) {
             places.push(place);
         }
     }
     let prerequisite_places_count = (places.len() - base_len) as u16;
+    let guidance_trace = if include_guidance_trace {
+        trace_prerequisite_guidance(
+            goal_relevant_places_for_trace
+                .expect("guidance trace should preserve goal-relevant places"),
+            prerequisite_places_for_trace
+                .expect("guidance trace should preserve prerequisite places"),
+            crate::goal_model::prerequisite_depleted_source_exclusions(
+                &goal.key.kind,
+                state,
+                recipes,
+            ),
+        )
+    } else {
+        None
+    };
     CombinedRelevantPlaces {
         places,
         prerequisite_places_count,

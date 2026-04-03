@@ -2,7 +2,7 @@ use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
     Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, EntityId, EntityKind};
 
 #[must_use]
@@ -13,6 +13,8 @@ pub fn get_affordances(
     handlers: &ActionHandlerRegistry,
 ) -> Vec<Affordance> {
     let mut affordances = Vec::new();
+    let mut target_cache = BTreeMap::<TargetSpec, Vec<EntityId>>::new();
+    let mut actor_place_entity_cache = BTreeMap::<EntityId, Vec<EntityId>>::new();
 
     for def in registry.iter() {
         let handler = handlers.get(def.handler).unwrap_or_else(|| {
@@ -28,13 +30,22 @@ pub fn get_affordances(
         {
             continue;
         }
-
-        let mut def_affordances = enumerate_affordances_for_def(def, handler, actor, view);
-        def_affordances.retain(|affordance| {
-            def.preconditions.iter().all(|precondition| {
-                evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
-            })
-        });
+        let effective_preconditions = preconditions_not_implied_by_target_specs(def);
+        let mut def_affordances = enumerate_affordances_for_def(
+            def,
+            handler,
+            actor,
+            view,
+            &mut target_cache,
+            &mut actor_place_entity_cache,
+        );
+        if !effective_preconditions.is_empty() {
+            def_affordances.retain(|affordance| {
+                effective_preconditions.iter().all(|precondition| {
+                    evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
+                })
+            });
+        }
         for affordance in &def_affordances {
             affordances.extend(expand_payload_variants(def, handler, affordance, view));
         }
@@ -54,17 +65,19 @@ pub fn get_affordances_for_defs(
     allowed_defs: &BTreeSet<ActionDefId>,
 ) -> Vec<Affordance> {
     let mut affordances = Vec::new();
+    let mut target_cache = BTreeMap::<TargetSpec, Vec<EntityId>>::new();
+    let mut actor_place_entity_cache = BTreeMap::<EntityId, Vec<EntityId>>::new();
 
     for def in registry.iter() {
+        if !allowed_defs.contains(&def.id) {
+            continue;
+        }
         let handler = handlers.get(def.handler).unwrap_or_else(|| {
             panic!(
                 "action def {} references missing handler {}",
                 def.id.0, def.handler.0
             )
         });
-        if !allowed_defs.contains(&def.id) {
-            continue;
-        }
         if !def
             .actor_constraints
             .iter()
@@ -72,18 +85,26 @@ pub fn get_affordances_for_defs(
         {
             continue;
         }
-
-        let mut def_affordances = enumerate_affordances_for_def(def, handler, actor, view);
-        def_affordances.retain(|affordance| {
-            def.preconditions.iter().all(|precondition| {
-                evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
-            })
-        });
+        let mut def_affordances = enumerate_affordances_for_def(
+            def,
+            handler,
+            actor,
+            view,
+            &mut target_cache,
+            &mut actor_place_entity_cache,
+        );
+        let effective_preconditions = preconditions_not_implied_by_target_specs(def);
+        if !effective_preconditions.is_empty() {
+            def_affordances.retain(|affordance| {
+                effective_preconditions.iter().all(|precondition| {
+                    evaluate_precondition(*precondition, actor, &affordance.bound_targets, view)
+                })
+            });
+        }
         for affordance in &def_affordances {
             affordances.extend(expand_payload_variants(def, handler, affordance, view));
         }
     }
-
     affordances.sort();
     affordances.dedup();
     affordances
@@ -298,10 +319,95 @@ pub fn evaluate_precondition(
 }
 
 #[must_use]
+fn precondition_implied_by_target_spec(spec: &TargetSpec, precondition: Precondition) -> bool {
+    match (spec, precondition) {
+        (TargetSpec::ActorPlace, precondition) => matches!(
+            precondition,
+            Precondition::TargetExists(_)
+                | Precondition::TargetAtActorPlace(_)
+                | Precondition::TargetKind {
+                    kind: EntityKind::Place,
+                    ..
+                }
+        ),
+        (TargetSpec::AdjacentPlace, precondition) => matches!(
+            precondition,
+            Precondition::TargetExists(_)
+                | Precondition::TargetAdjacentToActor(_)
+                | Precondition::TargetKind {
+                    kind: EntityKind::Place,
+                    ..
+                }
+        ),
+        (TargetSpec::EntityAtActorPlace { kind: target_kind }, precondition) => {
+            match precondition {
+                Precondition::TargetExists(_) | Precondition::TargetAtActorPlace(_) => true,
+                Precondition::TargetKind { kind, .. } => *target_kind == kind,
+                _ => false,
+            }
+        }
+        (
+            TargetSpec::EntityDirectlyPossessedByActor { kind: target_kind },
+            precondition,
+        ) => match precondition {
+            Precondition::TargetExists(_) | Precondition::TargetDirectlyPossessedByActor(_) => {
+                true
+            }
+            Precondition::TargetKind { kind, .. } => *target_kind == kind,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+#[must_use]
+fn preconditions_not_implied_by_target_specs(def: &ActionDef) -> Vec<Precondition> {
+    def.preconditions
+        .iter()
+        .copied()
+        .filter(|precondition| match precondition_target_index(*precondition) {
+            Some(index) => def
+                .targets
+                .get(index)
+                .is_none_or(|spec| !precondition_implied_by_target_spec(spec, *precondition)),
+            None => true,
+        })
+        .collect()
+}
+
+#[must_use]
+fn precondition_target_index(precondition: Precondition) -> Option<usize> {
+    match precondition {
+        Precondition::ActorAlive => None,
+        Precondition::ActorCanControlTarget(index)
+        | Precondition::TargetExists(index)
+        | Precondition::TargetAlive(index)
+        | Precondition::TargetDead(index)
+        | Precondition::TargetIsAgent(index)
+        | Precondition::TargetAtActorPlace(index)
+        | Precondition::TargetAdjacentToActor(index)
+        | Precondition::TargetNotInContainer(index)
+        | Precondition::TargetUnpossessed(index)
+        | Precondition::TargetDirectlyPossessedByActor(index)
+        | Precondition::TargetLacksProductionJob(index)
+        | Precondition::TargetHasWounds(index)
+        | Precondition::TargetUnownedOrActorControls(index) => Some(usize::from(index)),
+        Precondition::TargetKind { target_index, .. }
+        | Precondition::TargetCommodity { target_index, .. }
+        | Precondition::TargetHasWorkstationTag { target_index, .. }
+        | Precondition::TargetHasResourceSource { target_index, .. }
+        | Precondition::TargetHasConsumableEffect { target_index, .. } => {
+            Some(usize::from(target_index))
+        }
+    }
+}
+
+#[must_use]
 fn enumerate_targets(
     spec: &TargetSpec,
     actor: EntityId,
     view: &dyn RuntimeBeliefView,
+    actor_place_entity_cache: &mut BTreeMap<EntityId, Vec<EntityId>>,
 ) -> Vec<EntityId> {
     let mut targets = match spec {
         TargetSpec::SpecificEntity(entity) => view
@@ -314,21 +420,26 @@ fn enumerate_targets(
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
             };
-            view.entities_at(place)
+            actor_place_entity_cache
+                .entry(place)
+                .or_insert_with(|| view.entities_at(place))
+                .iter()
+                .copied()
+                .filter(|entity| view.entity_kind(*entity) == Some(*kind))
+                .collect::<Vec<_>>()
+        }
+        TargetSpec::EntityDirectlyPossessedByActor { kind } => {
+            view.direct_possessions(actor)
                 .into_iter()
                 .filter(|entity| view.entity_kind(*entity) == Some(*kind))
                 .collect::<Vec<_>>()
         }
-        TargetSpec::EntityDirectlyPossessedByActor { kind } => view
-            .direct_possessions(actor)
-            .into_iter()
-            .filter(|entity| view.entity_kind(*entity) == Some(*kind))
-            .collect::<Vec<_>>(),
         TargetSpec::AdjacentPlace => {
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
             };
-            view.adjacent_places(place)
+            view
+                .adjacent_places(place)
                 .into_iter()
                 .filter(|entity| {
                     view.entity_kind(*entity) == Some(worldwake_core::EntityKind::Place)
@@ -345,20 +456,29 @@ fn enumerate_targets(
 fn enumerate_bindings(
     specs: &[TargetSpec],
     actor: EntityId,
-    view: &dyn RuntimeBeliefView,
+    target_cache: &BTreeMap<TargetSpec, Vec<EntityId>>,
     current: &mut Vec<EntityId>,
     affordances: &mut Vec<Affordance>,
     def_id: ActionDefId,
 ) {
     if let Some((spec, remaining)) = specs.split_first() {
-        for target in enumerate_targets(spec, actor, view) {
+        let targets = target_cache
+            .get(spec)
+            .expect("target cache must be pre-populated before binding enumeration");
+        for &target in targets {
             current.push(target);
-            enumerate_bindings(remaining, actor, view, current, affordances, def_id);
+            enumerate_bindings(
+                remaining,
+                actor,
+                target_cache,
+                current,
+                affordances,
+                def_id,
+            );
             current.pop();
         }
         return;
     }
-
     affordances.push(Affordance {
         def_id,
         actor,
@@ -373,6 +493,8 @@ fn enumerate_affordances_for_def(
     handler: &ActionHandler,
     actor: EntityId,
     view: &dyn RuntimeBeliefView,
+    target_cache: &mut BTreeMap<TargetSpec, Vec<EntityId>>,
+    actor_place_entity_cache: &mut BTreeMap<EntityId, Vec<EntityId>>,
 ) -> Vec<Affordance> {
     if handler.uses_dynamic_affordance_targets {
         return (handler.affordance_targets)(def, actor, view)
@@ -386,13 +508,17 @@ fn enumerate_affordances_for_def(
             })
             .collect();
     }
-
+    for &spec in &def.targets {
+        target_cache
+            .entry(spec)
+            .or_insert_with(|| enumerate_targets(&spec, actor, view, actor_place_entity_cache));
+    }
     let mut affordances = Vec::new();
     let mut bound_targets = Vec::new();
     enumerate_bindings(
         &def.targets,
         actor,
-        view,
+        target_cache,
         &mut bound_targets,
         &mut affordances,
         def.id,
@@ -402,13 +528,18 @@ fn enumerate_affordances_for_def(
 
 #[cfg(test)]
 mod tests {
-    use super::{enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances};
+    use super::{
+        enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
+        get_affordances_for_defs,
+        preconditions_not_implied_by_target_specs,
+    };
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
         PerAgentBeliefView, Precondition, ReservationReq, TargetSpec, TradeActionPayload,
     };
+    use std::cell::Cell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -449,6 +580,7 @@ mod tests {
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         wound_lists: BTreeMap<EntityId, Vec<Wound>>,
         believed_owners: BTreeMap<EntityId, EntityId>,
+        entities_at_calls: Cell<u32>,
     }
 
     impl crate::RuntimeBeliefView for StubBeliefView {
@@ -469,6 +601,8 @@ mod tests {
         }
 
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at_calls
+                .set(self.entities_at_calls.get().saturating_add(1));
             self.colocated.get(&place).cloned().unwrap_or_default()
         }
 
@@ -890,6 +1024,7 @@ mod tests {
             },
             actor,
             &view,
+            &mut BTreeMap::new(),
         );
 
         assert_eq!(targets, vec![matching_b, matching_a]);
@@ -913,7 +1048,7 @@ mod tests {
         view.adjacent_places
             .insert(place, vec![dest_b, dest_a, dest_a]);
 
-        let targets = enumerate_targets(&TargetSpec::AdjacentPlace, actor, &view);
+        let targets = enumerate_targets(&TargetSpec::AdjacentPlace, actor, &view, &mut BTreeMap::new());
 
         assert_eq!(targets, vec![dest_a, dest_b]);
     }
@@ -929,9 +1064,62 @@ mod tests {
         view.kinds.insert(place, EntityKind::Place);
         view.places.insert(actor, place);
 
-        let targets = enumerate_targets(&TargetSpec::ActorPlace, actor, &view);
+        let targets = enumerate_targets(&TargetSpec::ActorPlace, actor, &view, &mut BTreeMap::new());
 
         assert_eq!(targets, vec![place]);
+    }
+
+    #[test]
+    fn get_affordances_for_defs_reuses_actor_place_entities_across_target_kinds() {
+        let actor = entity(1);
+        let place = entity(10);
+        let facility = entity(20);
+        let lot = entity(30);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(facility, true);
+        view.alive.insert(lot, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.places.insert(actor, place);
+        view.places.insert(facility, place);
+        view.places.insert(lot, place);
+        view.colocated.insert(place, vec![actor, facility, lot]);
+
+        let def_a = sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            }],
+            vec![],
+        );
+        let def_b = sample_action_def(
+            ActionDefId(1),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::ItemLot,
+            }],
+            vec![],
+        );
+        let mut registry = ActionDefRegistry::new();
+        registry.register(def_a);
+        registry.register(def_b);
+        let handlers = handler_registry(2);
+
+        let affordances = get_affordances_for_defs(
+            &view,
+            actor,
+            &registry,
+            &handlers,
+            &BTreeSet::from([ActionDefId(0), ActionDefId(1)]),
+        );
+
+        assert_eq!(affordances.len(), 2);
+        assert_eq!(view.entities_at_calls.get(), 1);
     }
 
     #[test]
@@ -1504,6 +1692,42 @@ mod tests {
         let affordances = get_affordances(&view, actor, &registry, &handlers);
 
         assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn preconditions_not_implied_by_target_specs_drops_redundant_target_checks() {
+        let def = sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![
+                TargetSpec::EntityAtActorPlace {
+                    kind: EntityKind::Agent,
+                },
+                TargetSpec::AdjacentPlace,
+            ],
+            vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Agent,
+                },
+                Precondition::TargetAdjacentToActor(1),
+                Precondition::TargetKind {
+                    target_index: 1,
+                    kind: EntityKind::Place,
+                },
+                Precondition::TargetAlive(0),
+            ],
+        );
+
+        let effective = preconditions_not_implied_by_target_specs(&def);
+
+        assert_eq!(
+            effective,
+            vec![Precondition::ActorAlive, Precondition::TargetAlive(0)]
+        );
     }
 
     #[test]
