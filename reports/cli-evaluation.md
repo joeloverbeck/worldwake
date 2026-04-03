@@ -89,3 +89,64 @@ First evaluation.
 6. **[MEDIUM] Trace command shows shallow chains** — All tested traces show only the queried event with no parent chain. Either the events tested have no parents (root causes), or the trace display doesn't follow parent links. Investigate whether deeper chains exist and ensure they're displayed.
 7. **[MEDIUM] Trace error should say "event ID"** — `trace` without args says `<ID>`. Should say `<EVENT_ID>` or explain "provide an event ID from the events list".
 8. **[LOW] Action numbering stability** — Action numbers shift between ticks as affordances change. `do 8` was `declare_support` in one list but `bribe` when selected. Consider showing a stable identifier alongside the number, or refresh the list on each `do`.
+
+---
+
+## EVALUATION #2 — 2026-04-04
+
+### Session Notes
+
+Second evaluation after implementing Eval #1 CRITICAL/HIGH fixes: HIDDEN_ACTIONS filtering for crashing actions, action trace collection for per-agent tick summaries, ActiveGoal delta enrichment (shows goal kind), AgentBeliefStore delta diffing (shows what beliefs changed), trace argument renamed to EVENT_ID. Also fixed a bug where `--exec` mode's auto-populated affordances skipped HIDDEN_ACTIONS filtering, causing `do N` to select the wrong action.
+
+### Checklist Results
+
+| Checklist | Result | Notes |
+|-----------|--------|-------|
+| 1. Decision Transparency | PASS (3/3) | Tick summary names agents and actions. Decision events show goal kind ("chose ConsumeOwnedCommodity { commodity: Apple }"). |
+| 2. Action Lifecycle Clarity | PASS (4/4) | Tick shows "started tell(Kael)", "completed pick_up". `do N` names action. Status mid-travel: "action: travel (2 ticks remaining)". |
+| 3. Delta Semantics | PASS (3/3) | Belief deltas: "heard location of Mill from Merchant Vara". Goals: "chose ConsumeOwnedCommodity". Quantities: "Water: 4 → 3". Can distinguish types. |
+| 4. Action Reliability | PASS (1/1) | 20 actions at Thornwall, 15 at Eldergrove. All properly-selected actions succeed. No crashes. HIDDEN_ACTIONS filter applied in both `actions` and `--exec` auto-populate. |
+| 5. Command Self-Documentation | PASS (4/4) | help, trace (`<EVENT_ID>`), inspect, switch all good. |
+| 6. Causal Chain Readability | FAIL (1/3) | Trace output is readable but all tested events have shallow chains (1 link — cause is "system tick N"). No multi-link chains found to verify chain-following. |
+
+### Per-Command Analysis
+
+**Explore workflow**: Unchanged from Eval #1 — clean and informative.
+
+**Act workflow**: Major improvement. Tick summary now shows per-agent action lifecycle: "Guard Theron: started patrol(Dusty Trail)", "Forager Lina: completed pick_up", "Merchant Vara: started tell(Kael)". Action crashes eliminated — no declare_support, queue_for_facility_use, or staff_market in the list. `do N` numbering now aligned between `actions` display and `--exec` auto-populate (bug fixed this cycle). Status mid-action shows "action: travel (2 ticks remaining)".
+
+**Control workflow**: Works cleanly. Observer mode produces per-agent summaries each tick.
+
+**Debug workflow**: Decision events now show goal kind — "ActiveGoal: Forager Lina chose ConsumeOwnedCommodity { commodity: Apple }" is clear and readable. AgentBeliefStore deltas now show semantic content: "told Kael about location of Mill", "heard location of Mill from Merchant Vara". Trace chains remain shallow (1 link) — events tested have root causes (system ticks), not derived causes. The trace infrastructure works but deeper chains weren't exercised.
+
+**Remaining gap**: GoalKind::ShareBelief displays raw EntityIds for listener/topic fields. Other goal kinds (ConsumeOwnedCommodity, Sleep, Patrol) display cleanly with commodity/variant names. ActionStarted/ActionCommitted events in the `event <id>` view still don't name the action type — the improvement is in the tick summary, not the individual event display.
+
+### Resolved Since Previous
+
+1. **[CRITICAL] Action crashes** — RESOLVED: declare_support, queue_for_facility_use, staff_market removed from action list via HIDDEN_ACTIONS.
+2. **[HIGH] Decision events name goal kind** — RESOLVED: "ActiveGoal: Merchant Vara chose ShareBelief { ... }" now visible.
+3. **[HIGH] ActionStarted/Committed name action type** — PARTIALLY RESOLVED: Tick summary names action types. Individual event view (`event <id>`) still shows "ActionStarted by X" without the type.
+4. **[HIGH] AgentBeliefStore deltas show content** — RESOLVED: "heard location of Mill from Merchant Vara" instead of "AgentBeliefStore: set on Kael".
+5. **[HIGH] Tick summary names agents/actions/goals** — RESOLVED: "Merchant Vara: started tell(Kael)", "Guard Theron: completed patrol".
+6. **[MEDIUM] Trace error says "event ID"** — RESOLVED: `<EVENT_ID>` in usage.
+7. **[LOW] Action numbering** — RESOLVED (bug fix): `--exec` auto-populate now applies same HIDDEN_ACTIONS filter.
+
+### Scores
+
+| # | Metric | Score | Delta | Gate | Justification |
+|---|--------|-------|-------|------|---------------|
+| 1 | Decision Transparency | 7 | +5 | PASS | Goal kinds visible in event deltas and tick summaries. Raw EntityIds in ShareBelief are a minor gap — the goal kind itself is clear. |
+| 2 | Action Lifecycle Clarity | 7 | +4 | PASS | Tick summary shows agent + action name + targets for every lifecycle event. Status shows mid-action name. Individual event view still lacks action type name (shows in tags only). |
+| 3 | Delta Semantics | 8 | +5 | PASS | Belief deltas are semantic ("heard location of Mill"). Quantities show before→after. Goal deltas show kind. PossessedBy/OwnedBy show entities. HomeostaticNeeds still shows "set on X" without field values. |
+| 4 | Action Reliability | 9 | +7 | PASS | Zero crashes. All listed actions work. Hidden actions properly filtered in both interactive and --exec modes. |
+| 5 | Command Self-Documentation | 8 | +3 | PASS | All 4 checklist items pass. Help is comprehensive. Error messages suggest alternatives. |
+| 6 | Causal Chain Readability | 4 | +2 | FAIL | Trace works and output is readable, but all tested events had shallow chains (root cause = system tick). Can't evaluate multi-link chain following. Need a scenario that produces deeper causal chains. |
+| | **Average** | **7.2** | **+4.4** | | |
+
+### Prioritized Recommendations
+
+1. **[HIGH] Individual event display should name action type for ActionStarted/Committed** — The tick summary now shows action names, but `event <id>` for ActionStarted/Committed events still only shows "ActionStarted by X" without the action type. Resolve by looking up the action def from the event's cause chain or adding action type to event tags display. Recurring: addressed in tick summary but not event detail view.
+2. **[MEDIUM] GoalKind::ShareBelief displays raw EntityIds** — "ShareBelief { listener: EntityId { slot: 5, generation: 0 }, ... }" — the listener and subject should show entity names ("listener=Kael"). Other goal kinds display cleanly. Add a `format_goal_kind(world, kind)` helper that resolves EntityIds to names.
+3. **[MEDIUM] HomeostaticNeeds delta shows "set on X" without field values** — When needs change (e.g., after drinking), the delta says "HomeostaticNeeds: set on Kael" without showing which need changed or by how much. Add semantic enrichment like "hunger: 520→500‰" or "thirst reduced by 30‰".
+4. **[MEDIUM] Trace chains shallow — investigate deeper causal chains** — Recurring from Eval #1. All tested events have root causes (system ticks). Either the simulation doesn't produce deep chains at this stage, or the trace needs to follow action→decision→action chains across events. Investigate whether `CauseRef::Event(EventId)` links exist in the event log.
+5. **[LOW] ActionStarted/Committed events in event list don't show action type** — The event summary line "[E14] tick 2 — ActionStarted by Merchant Vara" could append the action type: "[E14] tick 2 — ActionStarted(tell) by Merchant Vara".

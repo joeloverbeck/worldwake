@@ -9,6 +9,7 @@ use worldwake_core::{
         ReservationDelta, StateDelta,
     },
     drives::ThresholdBand,
+    goal::GoalKind,
     ids::EntityId,
     items::CommodityKind,
     numerics::{Permille, Quantity},
@@ -187,9 +188,12 @@ pub fn format_state_delta(world: &World, delta: &StateDelta) -> String {
         }) => {
             let name = entity_display_name(world, *entity);
             match component_kind {
-                ComponentKind::ActiveGoal => format_active_goal_delta(&name, after),
+                ComponentKind::ActiveGoal => format_active_goal_delta(&name, after, world),
                 ComponentKind::AgentBeliefStore => {
                     format_belief_store_delta(&name, before.as_ref(), after, world)
+                }
+                ComponentKind::HomeostaticNeeds => {
+                    format_needs_delta(&name, before.as_ref(), after)
                 }
                 _ => format!("{component_kind:?}: set on {name}"),
             }
@@ -270,13 +274,127 @@ fn format_relation_delta(
     }
 }
 
-/// Format an `ActiveGoal` delta showing the goal kind.
-fn format_active_goal_delta(agent_name: &str, after: &ComponentValue) -> String {
+/// Format an `ActiveGoal` delta showing the goal kind with resolved entity names.
+fn format_active_goal_delta(agent_name: &str, after: &ComponentValue, world: &World) -> String {
     if let ComponentValue::ActiveGoal(goal) = after {
-        let kind = &goal.goal_key.kind;
-        format!("ActiveGoal: {agent_name} chose {kind:?}")
+        let kind_str = format_goal_kind(world, &goal.goal_key.kind);
+        format!("ActiveGoal: {agent_name} chose {kind_str}")
     } else {
         format!("ActiveGoal: set on {agent_name}")
+    }
+}
+
+/// Format a `GoalKind` with resolved entity names instead of raw `EntityId` values.
+pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
+    match kind {
+        GoalKind::ConsumeOwnedCommodity { commodity } => format!("ConsumeOwnedCommodity({commodity:?})"),
+        GoalKind::AcquireCommodity { commodity, purpose } => format!("AcquireCommodity({commodity:?}, {purpose:?})"),
+        GoalKind::Sleep => "Sleep".to_string(),
+        GoalKind::Relieve => "Relieve".to_string(),
+        GoalKind::Wash => "Wash".to_string(),
+        GoalKind::EngageHostile { target } => {
+            format!("EngageHostile({})", entity_display_name(world, *target))
+        }
+        GoalKind::RaidTarget { target } => {
+            format!("RaidTarget({})", entity_display_name(world, *target))
+        }
+        GoalKind::ReduceDanger => "ReduceDanger".to_string(),
+        GoalKind::TreatWounds { patient } => {
+            format!("TreatWounds({})", entity_display_name(world, *patient))
+        }
+        GoalKind::RegroupWithFaction { faction } => {
+            format!("RegroupWithFaction({})", entity_display_name(world, *faction))
+        }
+        GoalKind::EstablishBanditCamp { faction } => {
+            format!("EstablishBanditCamp({})", entity_display_name(world, *faction))
+        }
+        GoalKind::ProduceCommodity { recipe_id } => format!("ProduceCommodity({recipe_id:?})"),
+        GoalKind::SellCommodity { commodity } => format!("SellCommodity({commodity:?})"),
+        GoalKind::RestockCommodity { commodity } => format!("RestockCommodity({commodity:?})"),
+        GoalKind::MoveCargo { commodity, destination } => {
+            format!("MoveCargo({commodity:?} → {})", entity_display_name(world, *destination))
+        }
+        GoalKind::LootCorpse { corpse } => {
+            format!("LootCorpse({})", entity_display_name(world, *corpse))
+        }
+        GoalKind::BuryCorpse { corpse, burial_site } => {
+            format!("BuryCorpse({} at {})", entity_display_name(world, *corpse), entity_display_name(world, *burial_site))
+        }
+        GoalKind::ShareBelief { listener, topic, communication_class } => {
+            let listener_name = entity_display_name(world, *listener);
+            let topic_str = format_tell_topic_brief(world, topic);
+            format!("ShareBelief({communication_class:?}, tell {listener_name} about {topic_str})")
+        }
+        GoalKind::ClaimOffice { office } => {
+            format!("ClaimOffice({})", entity_display_name(world, *office))
+        }
+        GoalKind::SupportCandidateForOffice { office, candidate } => {
+            format!("SupportCandidate({} for {})", entity_display_name(world, *candidate), entity_display_name(world, *office))
+        }
+        GoalKind::InvestigateViolation { place, .. } => {
+            format!("InvestigateViolation(at {})", entity_display_name(world, *place))
+        }
+        GoalKind::Patrol { place } => {
+            format!("Patrol({})", entity_display_name(world, *place))
+        }
+        GoalKind::StealItem { target_item } => {
+            format!("StealItem({})", entity_display_name(world, *target_item))
+        }
+        GoalKind::Accuse { accused, .. } => {
+            format!("Accuse({})", entity_display_name(world, *accused))
+        }
+        GoalKind::PunishAccused { accused, punishment, .. } => {
+            format!("PunishAccused({}, {punishment:?})", entity_display_name(world, *accused))
+        }
+    }
+}
+
+/// Format a `HomeostaticNeeds` delta showing which fields changed.
+fn format_needs_delta(
+    agent_name: &str,
+    before: Option<&ComponentValue>,
+    after: &ComponentValue,
+) -> String {
+    let ComponentValue::HomeostaticNeeds(after_needs) = after else {
+        return format!("HomeostaticNeeds: set on {agent_name}");
+    };
+
+    let before_needs = before.and_then(|b| {
+        if let ComponentValue::HomeostaticNeeds(n) = b {
+            Some(n)
+        } else {
+            None
+        }
+    });
+
+    if let Some(bn) = before_needs {
+        let mut changes = Vec::new();
+        if bn.hunger != after_needs.hunger {
+            changes.push(format!("hunger {}→{}‰", bn.hunger.value(), after_needs.hunger.value()));
+        }
+        if bn.thirst != after_needs.thirst {
+            changes.push(format!("thirst {}→{}‰", bn.thirst.value(), after_needs.thirst.value()));
+        }
+        if bn.fatigue != after_needs.fatigue {
+            changes.push(format!("fatigue {}→{}‰", bn.fatigue.value(), after_needs.fatigue.value()));
+        }
+        if bn.bladder != after_needs.bladder {
+            changes.push(format!("bladder {}→{}‰", bn.bladder.value(), after_needs.bladder.value()));
+        }
+        if bn.dirtiness != after_needs.dirtiness {
+            changes.push(format!("dirtiness {}→{}‰", bn.dirtiness.value(), after_needs.dirtiness.value()));
+        }
+        if changes.is_empty() {
+            format!("HomeostaticNeeds: unchanged on {agent_name}")
+        } else {
+            format!("HomeostaticNeeds on {agent_name}: {}", changes.join(", "))
+        }
+    } else {
+        format!(
+            "HomeostaticNeeds on {agent_name}: hunger={}‰, thirst={}‰, fatigue={}‰, bladder={}‰, dirtiness={}‰",
+            after_needs.hunger.value(), after_needs.thirst.value(), after_needs.fatigue.value(),
+            after_needs.bladder.value(), after_needs.dirtiness.value()
+        )
     }
 }
 

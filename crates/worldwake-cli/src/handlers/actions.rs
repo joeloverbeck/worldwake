@@ -12,7 +12,7 @@ use crate::repl::ReplState;
 
 /// Action names that are internal merchant/stock operations, not meaningful
 /// user choices. Filtered from the human action menu.
-const HIDDEN_ACTIONS: &[&str] = &[
+pub const HIDDEN_ACTIONS: &[&str] = &[
     "store_stock",
     "collect_display_stock",
     "stage_stock_for_sale",
