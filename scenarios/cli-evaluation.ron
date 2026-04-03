@@ -2,7 +2,10 @@
 //
 // 5 places, 6 travel edges (mix of bidirectional and unidirectional),
 // 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
-// and a resource source.  Designed to exercise all 30 CLI commands.
+// and resource sources.  Designed to exercise all CLI commands.
+//
+// Updated 2026-04-03: Added side_benefit_weight to all UtilityProfiles (S39).
+//   Added Forge at Hearthstone Inn and Medicine/Bow items for commodity variety.
 (
     seed: 7777,
     places: [
@@ -47,6 +50,7 @@
                 enterprise_weight: 500,
                 social_weight: 500,
                 activity_awareness_weight: 500,
+                side_benefit_weight: 500,
                 courage: 500,
                 care_weight: 500,
             ),
@@ -74,6 +78,7 @@
                 enterprise_weight: 800,
                 social_weight: 400,
                 activity_awareness_weight: 300,
+                side_benefit_weight: 500,
                 courage: 300,
                 care_weight: 200,
             ),
@@ -113,6 +118,7 @@
                 enterprise_weight: 400,
                 social_weight: 300,
                 activity_awareness_weight: 500,
+                side_benefit_weight: 500,
                 courage: 400,
                 care_weight: 300,
             ),
@@ -153,6 +159,7 @@
                 enterprise_weight: 200,
                 social_weight: 300,
                 activity_awareness_weight: 400,
+                side_benefit_weight: 500,
                 courage: 850,
                 care_weight: 400,
             ),
@@ -172,9 +179,14 @@
         (commodity: Sword, quantity: 1, location: "Guard Theron"),
         // Firewood at the inn
         (commodity: Firewood, quantity: 3, location: "Hearthstone Inn"),
+        // Medicine at the inn (traveler aid station)
+        (commodity: Medicine, quantity: 2, location: "Hearthstone Inn"),
+        // Bow on Guard Theron (ranged weapon)
+        (commodity: Bow, quantity: 1, location: "Guard Theron"),
     ],
     facilities: [
         (workstation: Mill, location: "Thornwall Village"),
+        (workstation: Forge, location: "Hearthstone Inn"),
     ],
     resource_sources: [
         (commodity: Apple, location: "Eldergrove Forest", regeneration_ticks_per_unit: 2, capacity: 20),

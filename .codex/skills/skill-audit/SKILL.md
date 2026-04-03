@@ -36,6 +36,7 @@ Review the current session and extract only evidence-backed observations:
 - steps that were not exercised this session
 
 If auditing `skill-audit` itself, treat the current invocation as weak evidence. Do not invent findings that were not observed.
+For self-audits, default to `No issues identified` unless a gap was directly observed in a previous non-self invocation during the same session.
 
 ### 4. Cross-check alignment
 
@@ -43,10 +44,12 @@ For each observed gap, check whether the skill:
 - contradicts or omits repo rules from [AGENTS.md](../../../AGENTS.md)
 - suggests behavior that would violate a principle in [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
 - uses stale Claude-specific assumptions when the target is meant for Codex
+- would create repo-specific operational hazards such as dirtying tracked worktree paths, colliding with special directories, or leaving cleanup obligations implicit
 
 Reference concrete rule sources in findings:
 - `AGENTS.md` section names
 - FOUNDATIONS principle numbers
+- relevant repo paths or tracked-state evidence when the hazard is operational rather than purely textual
 
 ### 5. Classify findings
 

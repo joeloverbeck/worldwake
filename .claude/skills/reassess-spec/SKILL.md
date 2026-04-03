@@ -39,7 +39,7 @@ Read ALL of these files before any analysis:
 2. **`docs/FOUNDATIONS.md`** — architectural commandments; every spec must align with these principles
 3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain an FND-01 Section H analysis) — defines the required format and checklist points for P30 compliance
 
-Parse the spec's metadata: Status, Priority, Dependencies, Goals, Non-Goals, FOUNDATIONS.md Alignment table (if present), and all implementation sections.
+Parse the spec's metadata — look for fields like Phase, Status, Priority, Crates, Dependencies, Goals/Design Goals, Non-Goals, FOUNDATIONS Alignment, and all implementation/deliverable sections. Not all specs have every field.
 
 ### Step 2: Extract References
 
@@ -62,11 +62,11 @@ For every reference extracted in Step 2, validate against the actual codebase:
 2. **Types and interfaces**: Grep for each type name. Confirm it exists, check its current shape (fields, members). If the spec assumes a field that does not exist or has a different name/type, record the discrepancy. For types the spec uses in formulas or struct definitions (not just extends), verify that the assumed field types match the actual types. Pay particular attention to numeric types (`u32` vs `Permille` vs `i32`) — the spec may assume a different numeric representation than what exists.
 3. **Functions and methods**: Grep for each function. Confirm signature, module location, and export status. Note any signature differences from what the spec assumes.
 4. **Dependencies (specs/tickets)**: For each dependency, verify whether it lives in `specs/`, `archive/specs/`, `tickets/`, or `archive/tickets/`. Record the correct path. If a dependency is listed as incomplete but has since been implemented, note this.
-5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration. For types or enums the spec proposes to extend (new variants, new fields), check the existing derive macros and trait bounds. Record any constraints that new additions must satisfy (e.g., `Copy`, `Serialize`, `Ord`). For field additions to existing structs, focus on the `Default` impl and any builder/constructor functions. For field type changes or removals, perform full downstream consumer analysis (Step 3.6).
+5. **Component fields and ECS registrations**: Grep for component struct definitions in `worldwake-core`, verify field names and types match spec claims. Check `component_schema.rs` for registration. For types or enums the spec proposes to extend (new variants, new fields), check the existing derive macros and trait bounds. Record any constraints that new additions must satisfy (e.g., `Copy`, `Serialize`, `Ord`). For field additions to existing structs, focus on the `Default` impl and any builder/constructor functions. For field type changes or removals, perform full downstream consumer analysis (Step 3.6). For each field the spec proposes to add to a new or existing component, grep for semantically similar field names across all existing components (e.g., if the spec adds `switch_margin`, search for `margin`, `switch`, `commitment` across other profile types). Record any semantic overlaps and trace the runtime interaction between the overlapping fields.
 6. **Downstream consumers**: For types or interfaces the spec proposes to modify, grep for all import sites and usage points. Record the blast radius — files that would need updating.
 7. **Upstream spec references**: Grep active specs in `specs/` for references to the target spec's deliverables (type names, component names, interfaces it introduces). Note any active specs that would be affected by proposed changes.
 
-For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32).
+For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32). Spot-check agent claims about existence/registration with direct Grep or Read before including them in findings. Agent results are approximate — treat them as leads, not facts.
 
 Do not present findings yet. Collect everything for Step 4.
 
@@ -81,7 +81,7 @@ Review each section of the spec against `docs/FOUNDATIONS.md`:
    - **Principle 14** (World State Is Not Belief State) — does the spec let agents read authoritative world state directly?
    - **Principle 26** (Systems Interact Through State) — does the spec introduce cross-system direct calls instead of state-mediated interaction?
    - **Principle 28** (No Backward Compatibility) — does the spec leave compatibility shims or defer migration?
-   - **Principle 30** (Causal Hooks Declaration) — does the spec declare its causal hooks per the required checklist (14 unique points; items 14 and 15 in FOUNDATIONS.md are identical)?
+   - **Principle 30** (Causal Hooks Declaration) — does the spec declare its causal hooks per the required checklist (14 unique points; items 14 and 15 in FOUNDATIONS.md are identical)? If the spec includes a Section H, verify it addresses all applicable P30 checklist points. Not all 14 points apply to every spec — flag only genuinely missing items, not items correctly omitted as N/A.
 3. Record each alignment issue with the specific Foundation number and what conflicts.
 4. If the spec modifies action preconditions, `validate_*` functions, affordance generation (`enumerate_*_payloads`), or `can_exercise_control`, verify compliance with the Authoritative-to-AI Impact Rule checklist in CLAUDE.md. Check all 7 points: `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, payload revalidation (`with_payload_override_validator`), and golden test pass.
 
@@ -139,7 +139,7 @@ If the user's answers raise new questions or invalidate previous findings, prese
 
 After all findings are resolved and the user has approved the changes:
 
-**Write the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon.
+**Write the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon. When changes are numerous and spread throughout the spec, a full Write is acceptable. The intent is to avoid gratuitous rewrites of prose that has no findings — not to mandate Edit over Write as the tool choice.
 
 If the user requests corrections after reviewing, apply them and re-present the affected sections.
 
@@ -148,7 +148,7 @@ If the user requests corrections after reviewing, apply them and re-present the 
 After writing the updated spec, present:
 
 - Number of issues fixed, improvements applied, and additions incorporated
-- Per-section change list: which sections changed and what each change was
+- Change inventory: enumerate all changes applied, either grouped by spec section or by finding type
 - Any deferred items the user chose not to address now
 - 1-3 sections that changed most substantially, with a note to review them before proceeding
 - Suggested next step: `/spec-to-tickets <spec-path> <NAMESPACE>` to decompose into tickets

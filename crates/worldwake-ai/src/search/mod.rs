@@ -16,7 +16,10 @@ use candidates::{search_candidate_from_planner, search_candidates_from_affordanc
 use frontier::{compare_search_nodes, FrontierEntry};
 #[cfg(test)]
 use heuristic::compute_heuristic;
-use heuristic::{combined_relevant_places, prune_travel_away_from_goal, root_node};
+use heuristic::{
+    combined_relevant_places, combined_relevant_places_with_guidance, prune_travel_away_from_goal,
+    root_node,
+};
 use std::collections::{BTreeMap, BinaryHeap};
 #[cfg(test)]
 use transition::build_successor;
@@ -131,7 +134,6 @@ pub fn search_plan(
         let record_root_candidates = depth == 0 && expansion_summaries.is_some();
         let mut root_candidates = Vec::new();
         let mut root_omissions = Vec::new();
-
         let mut candidates = search_candidates(
             goal,
             &node,
@@ -145,7 +147,11 @@ pub fn search_plan(
             record_root_candidates.then_some(&mut root_omissions),
             &relevant_defs,
         );
-        let combined_places = combined_relevant_places(goal, &node.state, recipes, budget);
+        let combined_places = if expansion_summaries.is_some() {
+            combined_relevant_places_with_guidance(goal, &node.state, recipes, budget)
+        } else {
+            combined_relevant_places(goal, &node.state, recipes, budget)
+        };
         let mut travel_pruning = None;
         if let Some(current_place) =
             node.state
@@ -212,7 +218,6 @@ pub fn search_plan(
         let non_terminal_before_beam = successors.len() as u16;
 
         let mut found_goal_satisfied = false;
-
         if !terminal_successors.is_empty() {
             // Sort by cost so the best candidate of each kind is first.
             terminal_successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
@@ -290,7 +295,6 @@ pub fn search_plan(
                 root_omissions,
             });
         }
-
         for (terminal, successor) in successors {
             if let Some(terminal_kind) = terminal {
                 return PlanSearchResult::Found(

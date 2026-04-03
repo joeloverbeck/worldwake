@@ -5,7 +5,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
-use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag};
+use worldwake_sim::{
+    ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView,
+    MaterializationTag,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -271,50 +274,61 @@ pub fn apply_hypothetical_transition<'snapshot>(
     payload_override: Option<&ActionPayload>,
 ) -> Option<HypotheticalTransition<'snapshot>> {
     match semantics.transition_kind {
-        PlannerTransitionKind::GoalModelFallback => Some(apply_goal_model_fallback_transition(
-            goal,
-            semantics,
-            state,
-            targets,
-            payload_override,
-        )),
+        PlannerTransitionKind::GoalModelFallback => {
+            let result = Some(apply_goal_model_fallback_transition(
+                goal,
+                semantics,
+                state,
+                targets,
+                payload_override,
+            ));
+            result
+        }
         PlannerTransitionKind::ConsumeMatchingTargetCommodity => {
-            apply_consume_matching_target_transition(goal, semantics, state, targets)
+            let result = apply_consume_matching_target_transition(goal, semantics, state, targets);
+            result
         }
         PlannerTransitionKind::PickUpGroundLot => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_pick_up_transition(state, targets, payload_override)
+            let result = apply_pick_up_transition(state, targets, payload_override);
+            result
         }
         PlannerTransitionKind::StealGroundLot => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_steal_transition(state, targets)
+            let result = apply_steal_transition(state, targets);
+            result
         }
         PlannerTransitionKind::PutDownGroundLot => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_put_down_transition(state, targets)
+            let result = apply_put_down_transition(state, targets);
+            result
         }
         PlannerTransitionKind::StoreStockIntoLocalFacility => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_store_stock_transition(state, targets)
+            let result = apply_store_stock_transition(state, targets);
+            result
         }
         PlannerTransitionKind::StageStoredStockForSale => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_stage_stock_transition(state, targets)
+            let result = apply_stage_stock_transition(state, targets);
+            result
         }
         PlannerTransitionKind::CollectFacilityStockToPossession => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_collect_stock_transition(state, targets)
+            let result = apply_collect_stock_transition(state, targets);
+            result
         }
         PlannerTransitionKind::UnstageDisplayedStock => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_unstage_stock_transition(state, targets)
+            let result = apply_unstage_stock_transition(state, targets);
+            result
         }
     }
 }
@@ -327,12 +341,13 @@ fn apply_goal_model_fallback_state<'snapshot>(
     payload_override: Option<&ActionPayload>,
 ) -> PlanningState<'snapshot> {
     let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
-    goal.key.kind.apply_planner_step(
+    let state = goal.key.kind.apply_planner_step(
         state,
         semantics.op_kind,
         &authoritative_targets,
         payload_override,
-    )
+    );
+    state
 }
 
 fn apply_goal_model_fallback_transition<'snapshot>(
@@ -453,7 +468,6 @@ fn apply_pick_up_transition<'snapshot>(
             }],
         });
     }
-
     if state.load_of_entity_ref(lot_ref)?.0 <= remaining_capacity {
         return Some(HypotheticalTransition {
             targets: vec![lot_ref],

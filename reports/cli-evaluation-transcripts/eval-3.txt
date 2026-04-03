@@ -1,0 +1,136 @@
+CLI Evaluation #3 — 2026-04-03
+Scenario: scenarios/cli-evaluation.ron (updated with Forge, Medicine, Bow)
+
+== EXPLORE WORKFLOW ==
+
+> world
+  5 places, agent/item counts. Clean.
+  OK: No issues.
+
+> places
+  Tags, connections, travel ticks. Clean.
+  OK: No issues.
+
+> agents
+  All 4 agents with names, control, location, status. Clean.
+  OK: No issues.
+
+> goods
+  9 commodities (added Medicine, Bow from scenario update). Per-place breakdown.
+  OK: Clean and scannable.
+
+> look
+  Thornwall Village: Agent, items with quantities, Mill facility, connections.
+  OK: Clean. No raw IDs.
+
+> inspect Merchant Vara
+  All components readable. UtilityProfile now includes side_benefit: 500‰.
+  No raw entity ID in header (was "#6" in Eval #2, now removed).
+  OK: Major improvement from previous evals.
+
+> relations Merchant Vara
+  "placed at Thornwall Village"
+  OK: Clean.
+
+> inventory
+  Kael: 20× Coin, 5× Water, Load: 0/20
+  OK: Clean.
+
+> needs
+  Progress bars with urgency bands.
+  OK: Best output in CLI.
+
+> inventory Guard Theron
+  1× Sword, 1× Bow, Load: 0/20
+  OK: Multi-word names work. New Bow commodity visible.
+
+== ACT WORKFLOW ==
+
+> actions
+  8 items. No self-targeting, no duplicates, no internal merchant ops.
+  ISSUE: staff_market still shows no duration.
+  ISSUE: defend still shows no duration.
+  ISSUE: travel actions still show no duration.
+  OK overall: Dramatic improvement from 40 items to 8.
+
+> do 6 (travel to Hearthstone Inn)
+  "Requested: travel"
+  OK: Clean.
+
+> tick 1
+  "--- Tick 0 --- (4 events)"
+  ISSUE: No indication of what happened.
+
+> status
+  "Kael in transit to Hearthstone Inn (3 ticks remaining)"
+  OK: FIXED from Eval #2 — was "(no location)".
+
+> cancel
+  "Cancel requested"
+  OK.
+
+> tick 1 + actions
+  22 items after cancel and tick. Single bribe entry (was 2 in Eval #2).
+  No self-targeting. No internal ops.
+  OK: Clean action list.
+
+> do 6 (tell Merchant Vara) + tick 5
+  "Requested: tell" + 5 ticks advanced.
+  OK.
+
+== CONTROL WORKFLOW ==
+
+> switch Forager Lina
+  "Now controlling Forager Lina at Eldergrove Forest"
+  OK.
+
+> status
+  Needs bars correct. Thirst at 621‰ [medium].
+  OK.
+
+> actions (as Lina)
+  11 items. No self-targeting.
+  ISSUE: queue_for_facility_use shows "Facility#20" — raw internal ID for resource source entity.
+  OK otherwise.
+
+> look (Eldergrove Forest)
+  ISSUE: Entity list shows "Facility#20 (Facility)" — raw ID for the resource source.
+  OK otherwise: 8× Apple shown correctly.
+
+> observe + tick 3
+  OK.
+
+> switch Kael
+  "Now controlling Kael at Thornwall Village"
+  OK.
+
+== DEBUG WORKFLOW ==
+
+> events 10
+  Event list with IDs, ticks, tags, actors. Some "(no tags)" events.
+  ISSUE: "(no tags)" events give no description.
+  OK: Actor names shown correctly.
+
+> event 58 (ActionStarted)
+  Header clean: tick, tags, cause, actor, place, targets. "deltas: (none)".
+  OK: FIXED — no more {:?} walls.
+
+> event 60 (WorldMutation, System)
+  "AgentBeliefStore: set on Kael" — human-readable delta format.
+  OK: FIXED from Eval #2.
+
+> trace 58
+  Single-event trace. No parent chain visible.
+  ISSUE: Trace is shallow — only shows the event itself, not causal parents.
+
+> save + load
+  OK: Clean messages with tick confirmation.
+
+> status (after load)
+  "action: eat (2 ticks remaining)" — clear.
+  OK.
+
+> help
+  "Worldwake CLI commands" — clean header, no Clap internals.
+  Exit code 0.
+  OK: FIXED from Eval #2.

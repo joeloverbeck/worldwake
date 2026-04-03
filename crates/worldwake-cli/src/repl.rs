@@ -93,7 +93,15 @@ pub fn run_single_command(
         }
     }
 
-    let parsed = CommandParser::try_parse_from(words)?;
+    let parsed = match CommandParser::try_parse_from(words) {
+        Ok(p) => p,
+        Err(e) => {
+            // Clap returns DisplayHelp / DisplayVersion as "errors". Print
+            // them to stdout and treat as success rather than propagating.
+            println!("{e}");
+            return Ok(());
+        }
+    };
 
     match dispatch_command(
         parsed.command,

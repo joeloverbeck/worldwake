@@ -57,6 +57,11 @@ If a dedicated worktree for the campaign does not already exist:
 
 If the user explicitly asks to use `.claude/worktrees/<name>/`, respect that path instead. Otherwise prefer a Codex-owned worktree path.
 
+Before creating or removing a preferred worktree path such as `.codex/worktrees/improve-<campaign>/`:
+1. verify whether that path is tracked, ignored, or otherwise special in the current repo
+2. if the preferred path is tracked or would dirty the main repo unexpectedly, choose a different untracked worktree location or explicitly plan the cleanup before proceeding
+3. do not assume `.codex/worktrees/` is safe just because it is the preferred convention
+
 Before destructive git operations such as `git reset --hard` or `git checkout -- <files>`:
 1. run `git status`
 2. verify the worktree is clean or the pending changes are only the current experiment
@@ -79,6 +84,12 @@ Extract and obey:
 Never modify files declared immutable by the campaign.
 
 Do not modify `harness.sh`, `checks.sh`, or `program.md` during the loop unless the user explicitly changes campaign scope. The evaluation harness must stay fixed during the campaign.
+
+If the user explicitly changes the campaign constitution mid-loop:
+1. update only the campaign file(s) required for that change
+2. commit that constitution change separately from any experiment code
+3. re-read `program.md`, `harness.sh`, `checks.sh`, and any affected campaign notes before resuming
+4. restart the loop from the new constitution rather than treating the previous experiment state as still authoritative
 
 ## Workflow
 
@@ -127,6 +138,15 @@ A good hypothesis for this repo:
 
 Prefer profile-first hypotheses. For Worldwake performance campaigns, do not guess blindly at bottlenecks when the campaign requires profiling evidence.
 
+When `perf` is available, prefer profiling the concrete target binary directly instead of manually timing code paths or profiling through `cargo test` harness wrappers. In this repo, the preferred pattern is:
+
+```bash
+timeout 8s perf record -g -o /tmp/worldwake-<campaign>.perf.data -- target/debug/<binary> <args>
+perf report --stdio --no-children -i /tmp/worldwake-<campaign>.perf.data --percent-limit 1
+```
+
+Use this direct-binary path when the campaign has an executable workload because it produces cleaner symbolized reports than profiling the cargo test harness. Only fall back to manual profiling or temporary instrumentation when no stable executable target exists, or when `perf` output is insufficient to answer the current question.
+
 If the correct next move is unclear or risky, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) instead of improvising a broad change.
 
 ### 5. Implement the experiment
@@ -136,6 +156,7 @@ If the correct next move is unclear or risky, use the 1-3-1 rule from [AGENTS.md
 3. If conditionally mutable files such as tests must move to preserve the intended contract after a production-side optimization, keep those edits narrow and explain why they remain faithful to the campaign goal.
 4. If fixture regeneration is required and the campaign provides `sync-fixtures.sh`, run it. Otherwise regenerate the necessary fixtures manually and keep the regeneration steps recorded in musings.
 5. Capture a concise experiment description before running the harness.
+6. If temporary diagnostic instrumentation is needed to gather profiling evidence, gate it tightly, keep it behavior-neutral when disabled, and record that it is diagnostic-only.
 
 ### 6. Measure with the fixed harness
 
@@ -204,6 +225,21 @@ Maintain these files as the loop runs:
 
 Keep entries factual. Avoid story-like narration.
 
+### 11. Finish the campaign cleanly
+
+When the user says the campaign is finished, do not improvise the close-out. Perform an explicit finish pass:
+
+1. summarize the accepted experiments, current best metric state, and any important plateaus or remaining hotspots in `musings.md` if the campaign tracks notes there
+2. remove temporary profiling or diagnostic instrumentation that was added only to guide experiments, unless the user explicitly wants it retained as a supported feature
+3. re-run the campaign harness and the campaign correctness gate on the de-instrumented final state
+4. verify the campaign worktree is clean except for the intended final landing changes
+5. land the result using the user-requested mode:
+   - keep the campaign branch as-is
+   - squash-merge into the target branch
+   - prepare the branch for a PR
+6. before destructive branch moves or worktree removal, confirm the target worktree is clean and confirm whether removing the worktree path will dirty another repo worktree
+7. report the final landed commit and any follow-up risks or cleanup still left for the user
+
 ## Report Format During a Live Loop
 
 Use compact updates in the conversation. Typical update structure:
@@ -239,6 +275,8 @@ Use compact updates in the conversation. Typical update structure:
 - Follow [AGENTS.md](../../../AGENTS.md): minimal changes, DRY, TDD for bug fixes, and 1-3-1 for unclear risky decisions.
 - Follow [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md). Performance work must compress computation, never causality.
 - Preserve determinism, conservation, append-only event history, belief-only planning, and system decoupling.
+- Prefer `perf` direct-binary profiling over manual profiling when the campaign exposes a stable executable workload. Treat manual profiling as a fallback, not the default.
 - If a campaign optimization changes behavior and requires golden test updates, preserve the original proof intent rather than weakening assertions.
+- Temporary instrumentation is not an accepted final optimization by default. Remove diagnostic-only profiling code before campaign finish unless the user explicitly wants it retained.
 - Promote cross-campaign lessons selectively. `campaigns/lessons-global.jsonl` should contain durable findings, not noisy one-off notes.
 - If the loop is blocked by a compile failure or harness break unrelated to the current experiment, stop and report that blocker before continuing.
