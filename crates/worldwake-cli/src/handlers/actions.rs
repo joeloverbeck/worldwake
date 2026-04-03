@@ -178,9 +178,23 @@ pub fn handle_cancel(sim: &mut SimulationState) -> CommandResult {
 /// Format a duration estimate from a `DurationExpr` for display.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn format_duration_estimate(duration: &worldwake_sim::DurationExpr) -> String {
+    use worldwake_sim::DurationExpr;
     match duration {
-        worldwake_sim::DurationExpr::Fixed(n) => format!(" — {} ticks", n.get()),
-        _ => String::new(),
+        DurationExpr::Fixed(n) => format!(" — {} ticks", n.get()),
+        DurationExpr::TravelToTarget { .. } => " — travel time".to_string(),
+        DurationExpr::TargetConsumable { .. } => " — per unit".to_string(),
+        DurationExpr::ActorMetabolism { .. }
+        | DurationExpr::ActorTradeDisposition
+        | DurationExpr::ActorMarketPresence
+        | DurationExpr::ActorPatrolProfile
+        | DurationExpr::ActorTheftDisposition
+        | DurationExpr::ActorInvestigationDisposition
+        | DurationExpr::ActorWitnessQueryDisposition
+        | DurationExpr::BanditCampEstablishmentProfile
+        | DurationExpr::ActorDefendStance
+        | DurationExpr::CombatWeapon
+        | DurationExpr::ConsultRecord { .. }
+        | DurationExpr::TargetTreatment { .. } => " — varies".to_string(),
     }
 }
 
