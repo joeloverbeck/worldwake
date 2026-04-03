@@ -17,6 +17,9 @@ const HIDDEN_ACTIONS: &[&str] = &[
     "collect_display_stock",
     "stage_stock_for_sale",
     "unstage_stock",
+    "declare_support",
+    "queue_for_facility_use",
+    "staff_market",
 ];
 
 /// List available actions for the controlled agent.
