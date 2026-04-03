@@ -79,7 +79,7 @@ Each evaluation appended below follows this structure:
 | 6 | Error Recovery | X | — | — | [brief] |
 | | **Average** | **X.X** | **—** | **—** | |
 
-### Score Trend (include if 5+ evaluations exist)
+### Score Trend (include if 3+ evaluations exist)
 
 | Eval | Avg | Delta |
 |------|-----|-------|
@@ -277,3 +277,102 @@ However, two major issues persist: (1) event delta display (`event N`) still dum
 8. **[LOW]** Add duration display for actions that currently show no duration: travel, staff_market, defend, steal, relieve_wilderness. *(Recurring: 2 consecutive evaluations)*
 
 9. **[LOW]** Improve error recovery: when entity not found, list available entities. When `help` fails, handle gracefully. *(Recurring: 2 consecutive evaluations)*
+
+---
+
+## EVALUATION #3
+
+**Date**: 2026-04-03
+**Scenario**: scenarios/cli-evaluation.ron (updated: added Forge, Medicine, Bow for commodity variety)
+**Transcript**: reports/cli-evaluation-transcripts/eval-3.txt
+
+### Session Notes
+
+This evaluation measures the impact of the 6 CLI improvements implemented between Eval #2 and #3 in the same session. Exercised all 4 workflow sequences plus `help`. Every CRITICAL and HIGH recommendation from Eval #2 has been resolved: event deltas now show human-readable formatted text instead of `{:?}` walls, the action list is filtered to remove self-targeting/duplicates/internal ops (from 40 items to 8-22), in-transit agents show "in transit to X (N ticks remaining)", `inspect` no longer shows raw entity IDs and now includes `side_benefit_weight`, and `help` exits cleanly with code 0 and a user-friendly header.
+
+One new issue discovered: resource source entities at Eldergrove Forest display as `Facility#20` in both `look` and `actions` output. This is because resource sources are facilities without a `WorkstationMarker`, so `entity_display_name()` falls through to the raw `EntityKind#slot` format. This affects only the forest location in the current scenario.
+
+### Per-Command Analysis
+
+**world**: Clean. No issues.
+
+**places**: Clean. No issues.
+
+**agents**: Clean. Names, control, location, status all readable.
+
+**goods**: Clean. Now shows 9 commodities including Medicine and Bow from scenario update.
+
+**look**: Clean at Thornwall Village. **Issue at Eldergrove Forest**: resource source entity shows as `Facility#20 (Facility)` instead of a meaningful name.
+
+**inspect**: **FIXED** — no raw `#N` ID in header. `side_benefit_weight` now shown in UtilityProfile. All components readable.
+
+**relations**: Clean.
+
+**inventory**: Clean. Multi-word names work. Guard Theron now shows Sword + Bow.
+
+**needs**: Excellent. Progress bars with urgency bands.
+
+**actions**: **MAJOR IMPROVEMENT** — self-targeting removed, duplicates eliminated (bribe x1 now), internal merchant ops filtered. 8 items at start (was 11 in Eval #2), 22 after ticking (was 40). **Remaining**: `Facility#20` raw ID in `queue_for_facility_use` at Eldergrove Forest. Some actions still show no duration (travel, staff_market, defend).
+
+**do**: Clean.
+
+**tick**: Minimal — event count only.
+
+**status**: **FIXED** — "in transit to Hearthstone Inn (3 ticks remaining)" instead of "(no location)".
+
+**cancel**: Clean.
+
+**switch**: Clean. Multi-word names work.
+
+**observe**: Clean.
+
+**events**: Event list with IDs, ticks, tags, actors. Some "(no tags)" events still lack description.
+
+**event**: **FIXED** — deltas now show "AgentBeliefStore: set on Kael", "PossessedBy: added (8× Apple → Forager Lina)" instead of raw `{:?}` debug format.
+
+**trace**: Shallow — single event shown with no causal parent chain.
+
+**save/load**: Clean.
+
+**help**: **FIXED** — "Worldwake CLI commands" header, exit code 0, no Clap internal text.
+
+### Resolved Since Previous
+
+- **Raw `{:?}` debug format in event delta display** — was [CRITICAL] in Eval #2, now **fixed**. Deltas show human-readable component/relation changes with resolved entity names.
+- **Action list pollution (self-targeting, duplicates, internal merchant ops)** — was [HIGH] in Eval #2, now **fixed**. Action count reduced from 40 to 8-22.
+- **"(no location)" for in-transit agents** — was [HIGH] in Eval #2, now **fixed**. Shows "in transit to X (N ticks remaining)".
+- **Missing `side_benefit_weight` in UtilityProfile display** — was [MEDIUM] in Eval #2, now **fixed**.
+- **`help` command exits with error code 1 and leaks Clap internals** — was [MEDIUM] in Eval #2, now **fixed**.
+- **Raw entity ID `#N` in inspect header** — was [MEDIUM] in Eval #2, now **fixed**.
+
+### Scores
+
+| # | Metric | Score | Previous | Delta | Justification |
+|---|--------|-------|----------|-------|---------------|
+| 1 | Output Clarity | 8 | 6 | +2 | Nearly all output is human-readable. Event deltas fixed. inspect clean. Only gap: `Facility#20` raw ID for resource source entities. |
+| 2 | Action Reliability | 8 | 5 | +3 | Dramatic improvement: self-targeting, duplicates, and internal ops filtered. Actions work when selected. Only gap: some actions lack duration. |
+| 3 | State Legibility | 8 | 7 | +1 | In-transit status now clear. inspect shows all profile fields. Only gap: `Facility#20` in look/actions at forest. |
+| 4 | Causal Traceability | 6 | 3 | +3 | Event deltas now readable. Event headers clear. But tick gives no summary, events list has "(no tags)" entries, and trace shows shallow chains. |
+| 5 | Session Flow | 7 | 6 | +1 | Action list is manageable (8-22 items vs 40). In-transit status clear. Help works. Tick output still minimal. |
+| 6 | Error Recovery | 6 | 5 | +1 | Help fixed. "invalid action number" is helpful. But no entity suggestions on not-found, no recovery guidance for most errors. |
+| | **Average** | **7.2** | **5.3** | **+1.9** | |
+
+### Score Trend
+
+| Eval | Avg | Delta |
+|------|-----|-------|
+| #1 | 4.0 | — |
+| #2 | 5.3 | +1.3 |
+| #3 | 7.2 | +1.9 |
+
+### Prioritized Recommendations
+
+1. **[MEDIUM]** Resolve `Facility#20` raw ID for resource source entities. `entity_display_name()` falls through to `EntityKind#slot` for facilities without a `WorkstationMarker`. Resource sources should display as their commodity source type (e.g., "Apple Orchard" or "Apple source"). Affects `look` and `actions` at Eldergrove Forest. *(New)*
+
+2. **[MEDIUM]** Add human-readable event descriptions to `events` list and improve `tick` output with a brief summary of what happened. Events with "(no tags)" give no indication of their content. *(Recurring: 3 consecutive evaluations)*
+
+3. **[MEDIUM]** Improve `trace` command to show deeper causal chains. Currently shows only the target event with no parent events. *(New — first time trace depth was specifically tested)*
+
+4. **[LOW]** Add duration display for actions that currently show no duration: travel, staff_market, defend, steal, relieve_wilderness. *(Recurring: 3 consecutive evaluations)*
+
+5. **[LOW]** Improve error recovery: when entity not found, list available entities. *(Recurring: 3 consecutive evaluations — help portion now resolved)*

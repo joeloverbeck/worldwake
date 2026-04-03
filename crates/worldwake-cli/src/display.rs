@@ -48,6 +48,10 @@ pub fn entity_display_name(world: &World, id: EntityId) -> String {
     if let Some(wm) = world.get_component_workstation_marker(id) {
         return format!("{:?}", wm.0);
     }
+    // Resource sources: show as "Apple source".
+    if let Some(rs) = world.get_component_resource_source(id) {
+        return format!("{:?} source", rs.commodity);
+    }
     match world.entity_kind(id) {
         Some(kind) => format!("{kind:?}#{}", id.slot),
         None => format!("Unknown#{}", id.slot),

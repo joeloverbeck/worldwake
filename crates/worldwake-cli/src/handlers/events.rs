@@ -17,7 +17,10 @@ fn format_event_summary(sim: &SimulationState, event_id: EventId) -> Option<Stri
 
     let tags: Vec<String> = record.tags().iter().map(|t| format!("{t:?}")).collect();
     let tag_str = if tags.is_empty() {
-        "(no tags)".to_string()
+        match record.actor_id() {
+            Some(_) => "Decision".to_string(),
+            None => "Internal".to_string(),
+        }
     } else {
         tags.join(", ")
     };
