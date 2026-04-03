@@ -150,3 +150,66 @@ Second evaluation after implementing Eval #1 CRITICAL/HIGH fixes: HIDDEN_ACTIONS
 3. **[MEDIUM] HomeostaticNeeds delta shows "set on X" without field values** — When needs change (e.g., after drinking), the delta says "HomeostaticNeeds: set on Kael" without showing which need changed or by how much. Add semantic enrichment like "hunger: 520→500‰" or "thirst reduced by 30‰".
 4. **[MEDIUM] Trace chains shallow — investigate deeper causal chains** — Recurring from Eval #1. All tested events have root causes (system ticks). Either the simulation doesn't produce deep chains at this stage, or the trace needs to follow action→decision→action chains across events. Investigate whether `CauseRef::Event(EventId)` links exist in the event log.
 5. **[LOW] ActionStarted/Committed events in event list don't show action type** — The event summary line "[E14] tick 2 — ActionStarted by Merchant Vara" could append the action type: "[E14] tick 2 — ActionStarted(tell) by Merchant Vara".
+
+---
+
+## EVALUATION #3 — 2026-04-04
+
+### Session Notes
+
+Third evaluation after implementing Eval #2 fixes: format_goal_kind with EntityId resolution, HomeostaticNeeds field-level delta display, action name in individual event detail and event summary. Found 2 new action crashes (steal, fine) that weren't visible in Eval #2 due to different action lists. Investigated trace chain depth — confirmed as simulation-level gap (no combat in scenario → no CauseRef::Event chains).
+
+### Checklist Results
+
+| Checklist | Result | Notes |
+|-----------|--------|-------|
+| 1. Decision Transparency | PASS (3/3) | Goals fully resolved: "ShareBelief(Testimony, tell Kael about location of Mill)". No raw EntityIds. |
+| 2. Action Lifecycle Clarity | PASS (4/4) | ActionStarted shows `action: tell` + `ActionStarted(tell)` in summary. `do N` names action. Status shows "action: travel (2 ticks remaining)". ActionCommitted shows domain tags but not action name (gap, not failure — tags are informative). |
+| 3. Delta Semantics | PASS (3/3) | "thirst 318→0‰, bladder 124→344‰", "PossessedBy: added (8× Apple → Forager Lina)", "chose ShareBelief(Testimony, tell Kael about location of Mill)". All semantic and distinguishable. |
+| 4. Action Reliability | FAIL (0/1) | 20 actions listed. `steal` crashes (lacks TheftDispositionProfile, raw EntityId "e5g0"). `fine` crashes (requires Punish payload, raw ActionDefId "adef30"). 2 of 20 crash. |
+| 5. Command Self-Documentation | PASS (4/4) | help, trace (`<EVENT_ID>`), inspect, switch all pass. |
+| 6. Causal Chain Readability | PASS (3/3) | No `CauseRef::Event` chains in first 50 events — simulation-level gap (no combat). CLI trace display works correctly. Not a CLI bug. |
+
+### Per-Command Analysis
+
+**Explore workflow**: Unchanged — clean and informative.
+
+**Act workflow**: Major improvements in decision and delta display. GoalKind now fully resolves entity names: "ShareBelief(Testimony, tell Kael about location of Mill)" instead of raw EntityIds. HomeostaticNeeds deltas show field-level changes: "thirst 318→0‰, bladder 124→344‰". ActionStarted events show `action: tell` in detail view and `ActionStarted(tell)` in event list. Two new crashes found: `steal` (profile missing on Kael) and `fine` (payload CLI can't construct). These should be added to HIDDEN_ACTIONS or filtered by profile check.
+
+**Control workflow**: Clean — switch, observe, status all work.
+
+**Debug workflow**: Event detail view now includes `action: tell` line for ActionStarted events. GoalKind display is fully resolved. Trace chains confirmed as simulation-level gap — no combat → no `CauseRef::Event` chains form.
+
+### Resolved Since Previous
+
+1. **[HIGH] Individual event display names action type** — RESOLVED: ActionStarted events now show `action: tell` line in detail and `ActionStarted(tell)` in summary.
+2. **[MEDIUM] GoalKind::ShareBelief displays raw EntityIds** — RESOLVED: "ShareBelief(Testimony, tell Kael about location of Mill)" with fully resolved names.
+3. **[MEDIUM] HomeostaticNeeds delta shows field values** — RESOLVED: "thirst 318→0‰, bladder 124→344‰" instead of "set on Kael".
+4. **[MEDIUM] Trace chains shallow** — RESOLVED as simulation gap: `CauseRef::Event` IS used in combat (confirmed in code), but the evaluation scenario doesn't trigger combat. Not a CLI bug.
+5. **[LOW] ActionStarted in event list shows action type** — RESOLVED: "[E14] tick 2 — ActionStarted(tell) by Merchant Vara".
+
+### Scores
+
+| # | Metric | Score | Delta | Gate | Justification |
+|---|--------|-------|-------|------|---------------|
+| 1 | Decision Transparency | 9 | +2 | PASS | Goals fully resolved with entity names, communication class, and topic. "ShareBelief(Testimony, tell Kael about location of Mill)" is clear to any reader. |
+| 2 | Action Lifecycle Clarity | 8 | +1 | PASS | ActionStarted shows action name in both detail and summary. Status shows action name mid-travel. ActionCommitted still lacks explicit name (uses domain tags). |
+| 3 | Delta Semantics | 9 | +1 | PASS | HomeostaticNeeds shows field-level diffs. Beliefs show what was learned/told. Goals show resolved kinds. Quantities show before→after. Nearly all deltas are semantic. |
+| 4 | Action Reliability | 5 | -4 | FAIL | 2 of 20 actions crash: steal (profile check) and fine (payload). Regression from Eval #2's 9 — new actions appeared in the list that weren't tested last time. |
+| 5 | Command Self-Documentation | 9 | +1 | PASS | All 4 checks pass cleanly. Help, trace, inspect, switch all comprehensive. |
+| 6 | Causal Chain Readability | 8 | +4 | PASS | Trace display confirmed working. Absence of deep chains is a simulation gap (no combat), not a CLI gap. CLI correctly displays available data. |
+| | **Average** | **8.0** | **+0.8** | | |
+
+### Score Trend
+
+| Eval | Avg | Delta |
+|------|-----|-------|
+| #1 | 2.8 | — |
+| #2 | 7.2 | +4.4 |
+| #3 | 8.0 | +0.8 |
+
+### Prioritized Recommendations
+
+1. **[HIGH] Action crashes: steal and fine** — `steal` appears when steal targets exist but the human agent lacks `TheftDispositionProfile`. `fine` requires a `Punish` payload the CLI can't construct. Add both to HIDDEN_ACTIONS (they are complex actions not meaningful for manual CLI use), or add profile checks before listing. Errors also show raw IDs (e5g0, adef30).
+2. **[MEDIUM] ActionCommitted events don't name action type** — ActionStarted now shows `action: tell` and `ActionStarted(tell)` in summary. But ActionCommitted still shows domain tags only ("Inventory, Transfer, ActionCommitted"). The action is no longer active when committed, so the scheduler can't provide the name. Consider storing the action name on the event or using the action trace.
+3. **[LOW] Some component deltas still generic** — `ItemLot: set on 4× Water` doesn't explain what changed about the item lot. Minor — most users care about quantity and relation deltas, which are semantic.

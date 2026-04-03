@@ -1,0 +1,74 @@
+=== EXPLORE/ACT WORKFLOW ===
+
+> tick 3
+  Guard Theron: started patrol(Dusty Trail)
+  Forager Lina: started pick_up(8× Apple) / completed pick_up
+  Merchant Vara: started tell(Kael)
+  CHECKLIST: 1.1 PASS — tick names agents and actions
+  OK: Per-agent action lifecycle clear
+
+> event 13 (Decision by Forager Lina)
+  ActiveGoal: Forager Lina chose ConsumeOwnedCommodity(Apple)
+  CHECKLIST: 1.2 PASS — shows goal kind with resolved names
+  CHECKLIST: 1.3 PASS — goal is clear
+
+> event 12 (Decision by Merchant Vara)
+  ActiveGoal: Merchant Vara chose ShareBelief(Testimony, tell Kael about location of Mill)
+  OK: EntityIds fully resolved to names. Communication class shown.
+
+> event 14 (ActionStarted by Merchant Vara)
+  action: tell
+  CHECKLIST: 2.1 PASS — ActionStarted names action type
+
+> event 8 (ActionCommitted by Forager Lina)
+  tags: WorldMutation, Inventory, Transfer, ActionCommitted
+  PossessedBy: added (8× Apple → Forager Lina)
+  CHECKLIST: 2.2 PARTIAL — no explicit action name but tags+delta reveal pick_up
+
+> do 1 (drink)
+  Requested: drink
+  CHECKLIST: 2.3 PASS
+
+> event 37 (drink committed)
+  HomeostaticNeeds on Kael: thirst 318→0‰, bladder 124→344‰
+  Water: 5 → 4, item split/archive
+  CHECKLIST: 3.1 PASS — needs delta shows field-level changes
+  CHECKLIST: 3.2 PASS — "thirst 318→0‰" is meaningful
+  CHECKLIST: 3.3 PASS — distinguishable: needs vs possession vs goal
+
+> actions (20 listed)
+  CHECKLIST: 4.1 PASS — 20 actions
+
+> do 14 (steal)
+  error: Action(PreconditionFailed("actor e5g0 lacks theft disposition profile"))
+  ISSUE: steal crashes with raw EntityId. Kael doesn't have TheftDispositionProfile.
+  CHECKLIST: 4.3 FAIL — steal crashes
+
+> do 19 (fine)
+  error: Action(PreconditionFailed("action def adef30 requires Punish payload"))
+  ISSUE: fine crashes with raw ActionDefId. Needs Punish payload CLI can't construct.
+  CHECKLIST: 4.3 FAIL — fine crashes
+
+=== CONTROL WORKFLOW ===
+
+> switch Guard Theron / observe / tick 2 / switch Kael
+  OK: All clean. Per-agent summaries during observe.
+
+=== DEBUG WORKFLOW ===
+
+> trace (no args)
+  <EVENT_ID> shown
+  CHECKLIST: 5.2 PASS
+
+> inspect Nonexistent / switch Nonexistent
+  CHECKLIST: 5.3 PASS / 5.4 PASS
+
+> help
+  CHECKLIST: 5.1 PASS
+
+> Searched events 0-50 for cause: event E*
+  None found — all causes are system tick or external input
+  CHECKLIST: 6.1 PASS (simulation gap, not CLI gap)
+
+> save/load
+  OK
