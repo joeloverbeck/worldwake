@@ -1,5 +1,7 @@
 # S42: Per-Agent Reasoning Style
 
+**Status**: COMPLETED
+
 ## Summary
 
 Replace the shared global `PlanningBudget` with a per-agent `ReasoningProfile` ECS component that governs planning depth, search patience, goal-switching reluctance, retry timing, and cooldown progression. Today all agents use identical reasoning parameters (224 expansions, 8 beam width, 100 permille switch margin, same cooldown curves). This makes agents that should behave very differently under uncertainty — cautious merchants vs reckless bandits — plan with identical thoroughness, switch goals at the same threshold, and retry at the same pace. The fix is straightforward: move existing `PlanningBudget` fields into a per-agent component registered on `EntityKind::Agent`, then read the agent's profile at each decision point instead of the driver-level default.
@@ -188,3 +190,22 @@ No system writes to `ReasoningProfile` as a side effect. Profile mutation (if ev
 - Save/load round-trip preserves `ReasoningProfile`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
 - No remaining references to `PlanningBudget` in the codebase.
+
+## Outcome
+
+- Completed: 2026-04-03
+- Added authoritative per-agent `ReasoningProfile` in `worldwake-core`, registered it on agents, and preserved the old default `PlanningBudget` values exactly through `ReasoningProfile::default()`.
+- Removed the shared driver-level `PlanningBudget` path from `worldwake-ai`; `AgentTickDriver` now resolves reasoning from per-agent world state and passes it through planning, switch-margin fallback, failure handling, and cooldown/exhaustion logic.
+- Bumped `SAVE_FORMAT_VERSION` to `14` and proved non-default `ReasoningProfile` values survive save/load.
+- Landed golden E2E proof in `crates/worldwake-ai/tests/golden_reasoning_diversity.rs` that per-agent reasoning style changes observable behavior through search-depth divergence, with deterministic replay coverage.
+- Deviation from original plan: the illustrative switch-margin golden variant was not shipped as an E2E golden. Live reassessment showed that boundary remains better owned by focused lower-layer tests in the current harness, while the search-depth variant provided the strongest honest golden proof for the spec's main emergent promise.
+- Verification:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-cli`
+  - `cargo test -p worldwake-sim save_load -- --nocapture`
+  - `cargo test -p worldwake-cli persistence::tests::test_save_load_roundtrip_preserves_agent_reasoning_profile -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_reasoning_diversity -- --nocapture`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

@@ -128,7 +128,7 @@ Append the complete evaluation to `reports/cli-evaluation.md` using the template
 - Per-Command Analysis
 - Resolved Since Previous
 - Scores table with deltas
-- Score Trend (if 5+ evaluations exist)
+- Score Trend (if 3+ evaluations exist)
 - Prioritized Recommendations
 
 ### Step 8: Graduation Check

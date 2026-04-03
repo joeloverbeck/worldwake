@@ -33,6 +33,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - described architecture still matches the live code
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
+   - for golden-driven tickets, if a claimed divergence is already proved at lower layers but does not remain stably isolatable in the current golden harness without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative for the rejected slice
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
    - when save/runtime structs or other persisted shapes gain or lose fields, search for test-only mirror structs and manual `bincode`/seeded deserialize helpers, not just production fixtures
    - when a ticket depends on shared static data such as recipe definitions, schemas, or other registry-backed content, confirm the live service bundle, execution context, or callback boundary that would need to carry that data; if the current runtime boundary does not expose it, correct the ticket before coding to name the real substrate change
@@ -99,6 +100,8 @@ Do not keep a later ticket's proof surface artificially broad just because the p
 If the ticket's requested invariant exposes a production contradiction, correct the scope first instead of pretending it is a tests-only change.
 
 For golden tickets, remove duplicate proof from scope unless the new scenario proves a materially different contract from the existing coverage.
+
+If a proposed golden invariant turns out to be real at lower layers but not stably exposable as an E2E golden without changing the scenario's nature, narrow the ticket to the durable golden slice and explicitly preserve the lower-layer boundary as the authoritative proof surface for the rejected piece.
 
 When a golden-driven ticket mixes still-valid negative coverage gaps with an over-claimed positive agreement proof, preserve the honest golden slice and correct the ticket to include any bounded production fix needed for the exposed contradiction instead of dropping the remaining golden work entirely.
 
@@ -204,6 +207,8 @@ If the architecture change invalidates the old scenario invariant itself rather 
 
 When adding or renumbering a `// Scenario N:` block in a golden file, treat scenario identifiers as repo-global. Pre-scan nearby or highest live scenario IDs when practical, and be prepared to resolve collisions before the golden inventory refresh can pass.
 
+When a ticket adds, removes, or renumbers a `// Scenario N:` block, refresh the generated golden inventory/docs and treat that refresh as part of the owned verification surface unless the ticket explicitly says otherwise.
+
 When a ticket intentionally lands pure scaffolding ahead of downstream integration, either wire the immediate call sites if they are in scope or mark the temporary unused surface deliberately and record why. Do not let staged helper work fail later CI clippy passes by accident.
 
 For migrations that move configuration or profile state from a driver-global field into authoritative per-entity components, use this checklist during reassessment and closeout:
@@ -225,6 +230,8 @@ When archiving:
 If the user asked only for implementation or analysis, do not archive automatically, but keep the factual completion details current enough that a later archival pass can record outcome and verification without reconstructing the session from scratch.
 
 When golden coverage changes, keep the scenario prose and proof claim aligned with the updated assertions so the documented contract stays traceable.
+
+When golden scenario metadata changes, re-check the generated golden inventory/docs before finishing so the scenario map, coverage matrix, and inventory stay consistent with the landed scenario IDs and prose.
 
 Do not archive automatically if the user only asked for implementation or for analysis.
 

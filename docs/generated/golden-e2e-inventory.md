@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 20
-- Files contributing `golden_*` tests: 20
-- Total `golden_*` tests: 273
+- Golden test files: 21
+- Files contributing `golden_*` tests: 21
+- Total `golden_*` tests: 275
 
 ## Per-File Inventory
 
@@ -26,6 +26,7 @@ Do not hand-edit it.
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 24 |
 | `golden_pursuit.rs` | 6 |
+| `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
 | `golden_soak.rs` | 1 |
 | `golden_social.rs` | 14 |
@@ -295,6 +296,11 @@ Do not hand-edit it.
 - `golden_stale_pursuit_arrival_failure_replays_deterministically`
 - `golden_combat_flee_re_pursue`
 - `golden_combat_flee_re_pursue_replays_deterministically`
+
+### `golden_reasoning_diversity.rs`
+
+- `search_depth_divergence`
+- `search_depth_divergence_replays_deterministically`
 
 ### `golden_resilience.rs`
 

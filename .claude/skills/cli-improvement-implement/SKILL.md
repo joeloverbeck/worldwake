@@ -57,6 +57,7 @@ For each recommendation, identify the *primary* classification and note any seco
 - **Validation fix** (wrong behavior): Actions are listed that shouldn't be, or errors lack context. Start in `handlers/actions.rs` or the relevant handler. Examples: missing profile check, unhelpful error message.
 - **Flow fix** (wrong interaction): The command sequence is confusing or implicit. Start in `repl.rs` or `commands.rs`. Often also requires updating `handlers/mod.rs` (dispatch) and `tests/integration.rs`.
 - **Upstream flag** (needs non-CLI changes): The fix requires changes to core/sim/systems/ai crates. Do NOT implement — flag it as a separate spec/ticket.
+- **False positive** (not a CLI issue): The evaluation flagged something that works correctly, or the issue is in the evaluator's test methodology. Note the finding in the summary so the next evaluation can verify with a better test case.
 
 If addressing 4+ recommendations or changes that cross-cut multiple handler files, consider using plan mode to align on approach before implementing.
 

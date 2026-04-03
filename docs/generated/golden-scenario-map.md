@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 115
-- Files contributing scenario metadata: 19
-- Tests associated with scenario blocks: 258
+- Scenario blocks with explicit metadata: 116
+- Files contributing scenario metadata: 20
+- Tests associated with scenario blocks: 260
 
 ## Scenario Inventory
 
@@ -18,11 +18,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 |----------|-------|------|---------------|--------------|
 | `1` | Goal Invalidation by Another Agent | `golden_ai_decisions.rs:23` | `golden_goal_invalidation_by_another_agent` | — |
 | `1b` | Unrelated Commodity Change Preserves Frontier Exhaustion | `golden_ai_decisions.rs:124` | `golden_unrelated_commodity_change_preserves_frontier_exhaustion` | `golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deterministically` |
-| `1c` | Exhausted Opportunity Falls Through To Sibling Source | `golden_ai_decisions.rs:319` | `golden_exhausted_opportunity_switches_to_sibling_source` | `golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically` |
-| `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:547` | `golden_priority_based_interrupt` | — |
-| `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:660` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
-| `7` | Deprivation Cascade | `golden_ai_decisions.rs:749` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
-| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1944` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
+| `1c` | Exhausted Opportunity Falls Through To Sibling Source | `golden_ai_decisions.rs:317` | `golden_exhausted_opportunity_switches_to_sibling_source` | `golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically` |
+| `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:544` | `golden_priority_based_interrupt` | — |
+| `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:657` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
+| `7` | Deprivation Cascade | `golden_ai_decisions.rs:746` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
+| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1941` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
 | `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:722` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
 | `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:812` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
 | `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:900` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
@@ -84,16 +84,16 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
 | `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:391` | `golden_bribe_support_coalition`<br>`bench_branchy_office_coalition` | — |
-| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:632` | `golden_threaten_with_courage_diversity` | — |
-| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:927` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
-| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1040` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
-| `73` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1256` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
-| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1554` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
-| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1918` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
-| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2120` | `golden_faction_eligibility_filters_office_claim` | — |
-| `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2281` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
-| `71` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2665` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
-| `72` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2930` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
+| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:637` | `golden_threaten_with_courage_diversity` | — |
+| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:937` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
+| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1050` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
+| `73` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1266` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
+| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1564` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
+| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1928` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
+| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2130` | `golden_faction_eligibility_filters_office_claim` | — |
+| `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2291` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
+| `71` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2675` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
+| `72` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2940` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
 | `52` | Patrol Cycle Wraps Route | `golden_patrol.rs:302` | `golden_patrol_cycle_wraps_route` | `golden_patrol_cycle_wraps_route_replays_deterministically` |
 | `53` | Patrol Interruption Preserves Waypoint Until Resume | `golden_patrol.rs:333` | `golden_patrol_interruption_preserves_waypoint_until_resume` | — |
 | `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:471` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
@@ -108,10 +108,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `68` | Bandit witnesses traveler leave, pursues, attacks | `golden_pursuit.rs:339` | `golden_bandit_witnesses_and_pursues` | `golden_bandit_witnesses_and_pursues_replays_deterministically` |
 | `69` | Bandit pursues stale target, arrival failure | `golden_pursuit.rs:480` | `golden_stale_pursuit_arrival_failure` | `golden_stale_pursuit_arrival_failure_replays_deterministically` |
 | `70` | Combat → flee → re-pursue | `golden_pursuit.rs:624` | `golden_combat_flee_re_pursue` | `golden_combat_flee_re_pursue_replays_deterministically` |
+| `97` | Search Depth Drives Multi-Step Plan Divergence | `golden_reasoning_diversity.rs:126` | `search_depth_divergence` | `search_depth_divergence_replays_deterministically` |
 | `31` | Stress with Frequent Disruptions | `golden_resilience.rs:23` | `t31_stress_disruptions` | — |
 | `32` | Long Replay Consistency | `golden_resilience.rs:291` | `t32_replay_consistency` | — |
 | `2e` | Social Belief Sharing, Conversation Memory, Locality, and Discovery | `golden_social.rs:347` | `golden_agent_autonomously_tells_colocated_peer`<br>`golden_rumor_chain_degrades_through_three_agents`<br>`golden_stale_belief_travel_reobserve_replan`<br>`golden_skeptical_listener_rejects_told_belief`<br>`golden_bystander_sees_telling_but_gets_no_belief`<br>`golden_entity_missing_discovery_does_not_teleport_belief`<br>`golden_survival_needs_suppress_social_goals`<br>`golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`<br>`golden_agent_retells_after_subject_belief_changes`<br>`golden_agent_retells_after_conversation_memory_expiry`<br>`golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`<br>`golden_chain_length_filtering_stops_gossip`<br>`golden_agent_diversity_in_social_behavior`<br>`golden_rumor_leads_to_wasted_trip_then_discovery` | — |
-| `88` | Full Supply Chain Negotiated Restock To Consumption | `golden_supply_chain.rs:1909` | `golden_full_supply_chain_negotiated_restock_to_consumption` | `golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically` |
+| `88` | Full Supply Chain Negotiated Restock To Consumption | `golden_supply_chain.rs:1924` | `golden_full_supply_chain_negotiated_restock_to_consumption` | `golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically` |
 | `22` | Bandit Camp Destruction Chain | `golden_t22_bandit_camp_destruction.rs:1981` | `golden_t22_bandit_camp_destruction` | `golden_t22_bandit_camp_destruction_replays_deterministically` |
 | `47` | Pressure-Driven Raid Emergence | `golden_t22_bandit_camp_destruction.rs:2025` | `golden_pressure_driven_raid_emergence` | `golden_pressure_driven_raid_emergence_replays_deterministically` |
 | `48` | Raid-Belief Economic Cascade | `golden_t22_bandit_camp_destruction.rs:2064` | `golden_raid_belief_economic_cascade` | `golden_raid_belief_economic_cascade_replays_deterministically` |
@@ -169,7 +170,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 1c: Exhausted Opportunity Falls Through To Sibling Source
 
-- Source: `golden_ai_decisions.rs:319`
+- Source: `golden_ai_decisions.rs:317`
 - Systems: Needs, AI, Production, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Transport
@@ -187,7 +188,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:547`
+- Source: `golden_ai_decisions.rs:544`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -205,7 +206,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:660`
+- Source: `golden_ai_decisions.rs:657`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -222,7 +223,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:749`
+- Source: `golden_ai_decisions.rs:746`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -239,7 +240,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1944`
+- Source: `golden_ai_decisions.rs:1941`
 - Systems: Needs, Enterprise, AI, Travel, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity
 - ActionDomains: Needs, Travel, Production
@@ -1176,7 +1177,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:632`
+- Source: `golden_offices.rs:637`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1194,7 +1195,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:927`
+- Source: `golden_offices.rs:937`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1212,7 +1213,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1040`
+- Source: `golden_offices.rs:1050`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1230,7 +1231,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 73: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1256`
+- Source: `golden_offices.rs:1266`
 - Systems: AI, Travel, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1248,7 +1249,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1554`
+- Source: `golden_offices.rs:1564`
 - Systems: AI, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1266,7 +1267,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1918`
+- Source: `golden_offices.rs:1928`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -1284,7 +1285,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2120`
+- Source: `golden_offices.rs:2130`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1302,7 +1303,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 
-- Source: `golden_offices.rs:2281`
+- Source: `golden_offices.rs:2291`
 - Systems: AI, Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1320,7 +1321,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2665`
+- Source: `golden_offices.rs:2675`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1338,7 +1339,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2930`
+- Source: `golden_offices.rs:2940`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -1593,6 +1594,24 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: co-location -> combat -> traveler flees to B -> perception observes departure -> fresh belief about B -> new RaidTarget candidate -> Travel(A→B)+Attack plan -> second engagement at B.
 
+### Scenario 97: Search Depth Drives Multi-Step Plan Divergence
+
+- Source: `golden_reasoning_diversity.rs:126`
+- Systems: Production, AI, Travel
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Travel, Needs
+- Places: VillageSquare, OrchardFarm
+- Principles: 20
+- Primary tests: `search_depth_divergence`
+- Replay tests: `search_depth_divergence_replays_deterministically`
+- All tests: `search_depth_divergence`, `search_depth_divergence_replays_deterministically`
+
+**Setup**: Two isolated harness runs share the same baker, recipe registry, remote firewood input, beliefs, and RNG seed. The only difference is `ReasoningProfile.max_node_expansions`: tight budget `2` vs default.
+
+**Proves**: Per-agent reasoning style changes which multi-step plan search can actually select. The default budget finds the remote input -> return -> craft chain, while the tight budget fails to select that plan from the same tick-0 planning boundary.
+
+**Cross-system chain**: Shared initial state -> same candidates generated -> search budget caps expansion depth -> default run finds remote craft plan -> tight run fails to select the same plan.
+
 ### Scenario 31: Stress with Frequent Disruptions
 
 - Source: `golden_resilience.rs:23`
@@ -1649,7 +1668,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 88: Full Supply Chain Negotiated Restock To Consumption
 
-- Source: `golden_supply_chain.rs:1909`
+- Source: `golden_supply_chain.rs:1924`
 - Systems: Enterprise, Travel, Production, Trade, Needs, Conservation
 - GoalKinds: RestockCommodity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Trade, Needs
