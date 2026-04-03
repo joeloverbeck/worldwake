@@ -158,7 +158,7 @@ When a ticket is an explicit staged extraction step, temporary duplicated logic 
 7. If authoritative validation, control checks, action preconditions, target specs, or other affordance-surface behavior changes, verify the full AI pipeline called out in `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md). If the change removes candidates earlier in that pipeline, update stale downstream planner/search harness expectations to the new admission contract instead of weakening the implementation to preserve obsolete traces.
 8. When widening an existing action into a new custody or state regime, audit all related stored state carriers so the moved entity does not keep stale assignment, listing, queue, or other regime-specific markers after the transition.
 9. When adding a new enum variant, search for exhaustive matches, pattern arms, and state validators in dependent crates and update the non-owning handlers explicitly before broad verification.
-10. When adding a field to a shared model, trace, or other cross-module state carrier, proactively search for hand-written constructors and test literals in sibling modules that build that struct directly. Do not rely only on later compile fallout to discover stale fixture sites.
+10. When adding a field to a shared model, trace, scenario/config type, or other cross-module state carrier, proactively search for hand-written constructors and test literals in sibling modules that build that struct directly, including same-crate test modules outside the owning file. Do not rely only on later compile fallout to discover stale fixture sites.
 11. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
 12. When a ticket splits previously uniform behavior into class-, variant-, or profile-specific rules, search for existing focused tests that currently compress those cases into one expectation and rewrite them into explicit per-case proofs instead of only adding new tests alongside stale broad assertions.
 
@@ -178,6 +178,8 @@ If a canonical interface is realized through a forwarding layer, prove both:
 - the forwarding or runtime path that actually materializes it
 
 Check that each focused selector actually matches the new or changed test names. A thematic filter can miss sibling tests in the same implementation slice when their names do not share the expected prefix.
+
+When using exact Rust test-name selectors with `cargo test`, prefer separate invocations per selector unless you are intentionally relying on one shared substring filter. Do not assume multiple exact test names can be passed in a single `cargo test` command.
 
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 

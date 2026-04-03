@@ -7,9 +7,11 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    combat::CombatProfile, control::ControlSource, items::CommodityKind, needs::HomeostaticNeeds,
-    numerics::Quantity, production::WorkstationTag, topology::PlaceTag,
-    trade::TradeDispositionProfile, utility_profile::UtilityProfile,
+    CarryCapacity, CombatProfile, CommunicationProfile, ControlSource, DriveThresholds,
+    EpistemicDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile, MetabolismProfile,
+    PerceptionProfile, PreferenceProfile, Quantity, ReasoningProfile, TellProfile,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -63,6 +65,26 @@ pub struct AgentDef {
     pub merchandise_profile: Option<MerchandiseProfileDef>,
     #[serde(default)]
     pub trade_disposition: Option<TradeDispositionProfile>,
+    #[serde(default)]
+    pub perception_profile: Option<PerceptionProfile>,
+    #[serde(default)]
+    pub tell_profile: Option<TellProfile>,
+    #[serde(default)]
+    pub reasoning_profile: Option<ReasoningProfile>,
+    #[serde(default)]
+    pub epistemic_disposition: Option<EpistemicDispositionProfile>,
+    #[serde(default)]
+    pub intention_disposition: Option<IntentionDispositionProfile>,
+    #[serde(default)]
+    pub communication_profile: Option<CommunicationProfile>,
+    #[serde(default)]
+    pub preference_profile: Option<PreferenceProfile>,
+    #[serde(default)]
+    pub drive_thresholds: Option<DriveThresholds>,
+    #[serde(default)]
+    pub metabolism_profile: Option<MetabolismProfile>,
+    #[serde(default)]
+    pub carry_capacity: Option<CarryCapacity>,
 }
 
 /// Scenario-specific merchandise profile using string names instead of `EntityId`.
@@ -209,6 +231,32 @@ mod tests {
                         demand_memory_retention_ticks: 50,
                         market_presence_ticks: 30,
                     ),
+                    perception_profile: (
+                        memory_capacity: 6,
+                        memory_retention_ticks: 24,
+                        observation_fidelity: 900,
+                        confidence_policy: (
+                            direct_observation_base: 980,
+                            report_base: 820,
+                            rumor_base: 610,
+                            inference_base: 430,
+                            report_chain_penalty: 45,
+                            rumor_chain_penalty: 120,
+                            staleness_penalty_per_tick: 4,
+                        ),
+                        institutional_memory_capacity: 14,
+                        consultation_speed_factor: 600,
+                        contradiction_tolerance: 250,
+                    ),
+                    drive_thresholds: (
+                        hunger: (low: 150, medium: 300, high: 600, critical: 850),
+                        thirst: (low: 160, medium: 320, high: 610, critical: 860),
+                        fatigue: (low: 170, medium: 340, high: 620, critical: 870),
+                        bladder: (low: 180, medium: 360, high: 630, critical: 880),
+                        dirtiness: (low: 190, medium: 380, high: 640, critical: 890),
+                        pain: (low: 120, medium: 240, high: 520, critical: 800),
+                        danger: (low: 80, medium: 220, high: 480, critical: 760),
+                    ),
                 ),
             ],
             items: [
@@ -263,6 +311,10 @@ mod tests {
         );
         assert_eq!(merch.home_facility, Some("Town".to_string()));
         assert!(bob.trade_disposition.is_some());
+        assert!(bob.perception_profile.is_some());
+        assert_eq!(bob.perception_profile.unwrap().memory_capacity, 6);
+        assert!(bob.drive_thresholds.is_some());
+        assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
 
         assert_eq!(def.items.len(), 2);
         assert!(!def.items[0].container);
@@ -292,6 +344,16 @@ mod tests {
         assert!(agent.utility_profile.is_none());
         assert!(agent.merchandise_profile.is_none());
         assert!(agent.trade_disposition.is_none());
+        assert!(agent.perception_profile.is_none());
+        assert!(agent.tell_profile.is_none());
+        assert!(agent.reasoning_profile.is_none());
+        assert!(agent.epistemic_disposition.is_none());
+        assert!(agent.intention_disposition.is_none());
+        assert!(agent.communication_profile.is_none());
+        assert!(agent.preference_profile.is_none());
+        assert!(agent.drive_thresholds.is_none());
+        assert!(agent.metabolism_profile.is_none());
+        assert!(agent.carry_capacity.is_none());
     }
 
     #[test]

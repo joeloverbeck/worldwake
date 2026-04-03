@@ -1,6 +1,6 @@
 # S44SCEPROCOM-002: AgentDef + spawn_agent — universal and already-defaulted profiles
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AgentDef extended with 10 fields, spawn_agent rewritten for universal profiles
@@ -19,8 +19,9 @@
 5. `MetabolismProfile` at `needs.rs:72` — has Default impl. Currently set unconditionally at `mod.rs:278`.
 6. `CarryCapacity` at `production.rs:67` — `pub struct CarryCapacity(pub LoadUnits)`. Currently set unconditionally at `mod.rs:279` via `DEFAULT_AGENT_CARRY_CAPACITY`.
 7. All profile types derive `Deserialize` — RON deserialization works out of the box via `#[serde(default)]` `Option<T>` fields.
-8. Import additions needed in `types.rs`: `PerceptionProfile`, `TellProfile`, `ReasoningProfile`, `EpistemicDispositionProfile`, `IntentionDispositionProfile`, `CommunicationProfile`, `PreferenceProfile`, `DriveThresholds`, `MetabolismProfile`, `CarryCapacity`. Most from `worldwake_core`.
-9. The `with_component_schema_entries!` macro expansion sites (`delta.rs`, `world_txn.rs`, `component_tables.rs`, `world.rs`) already import all these types — no changes needed there.
+8. Import additions needed in `types.rs`: `PerceptionProfile`, `TellProfile`, `ReasoningProfile`, `EpistemicDispositionProfile`, `IntentionDispositionProfile`, `CommunicationProfile`, `PreferenceProfile`, `DriveThresholds`, `MetabolismProfile`, `CarryCapacity`. Live code has all of them re-exported from `worldwake_core`, so no deep module-path imports are required. Correction applied: keep the import surface at the root re-exports. Why safe: this is a factual import-shape confirmation, not an architecture change.
+9. Ticket says the only code fallout is `types.rs` plus the main spawn path. Live code also has multiple local `AgentDef` test constructors across `crates/worldwake-cli/src/scenario/mod.rs`, `display.rs`, and the CLI handler test modules that must widen with the schema. Correction applied: treat all direct `AgentDef` constructor fallout inside `worldwake-cli` as owned by this ticket. Why safe: this is direct compile-surface fallout from the widened scenario schema.
+10. The `with_component_schema_entries!` macro expansion sites (`delta.rs`, `world_txn.rs`, `component_tables.rs`, `world.rs`) are unrelated to this CLI-only ticket — no component-registration fallout applies here.
 
 ## Architecture Check
 
@@ -34,7 +35,7 @@
 2. RON override works -> focused unit test: spawn agent with explicit PerceptionProfile in RON, verify non-default values
 3. Already-defaulted profiles overridable -> focused unit test: spawn agent with explicit DriveThresholds, verify non-default values
 4. Existing scenarios still load -> `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
-5. Single-crate change (worldwake-cli) — no cross-system verification needed
+5. Single-crate change (worldwake-cli) — no cross-system verification needed, but local scenario spawn tests and the bundled CLI scenario load path both need proof because this widens the RON schema and spawn contract together
 
 ## What to Change
 
@@ -128,7 +129,14 @@ Update `test_agent_def_default_optional_fields` to verify all new fields default
 ## Files to Touch
 
 - `crates/worldwake-cli/src/scenario/types.rs` (modify) — add 10 fields, add imports, update tests
-- `crates/worldwake-cli/src/scenario/mod.rs` (modify) — add 7 universal profile setters, change 3 already-defaulted to override-or-default
+- `crates/worldwake-cli/src/scenario/mod.rs` (modify) — add 7 universal profile setters, change 3 already-defaulted to override-or-default, update local `AgentDef` test construction fallout
+- `crates/worldwake-cli/src/display.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
+- `crates/worldwake-cli/src/handlers/actions.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
+- `crates/worldwake-cli/src/handlers/control.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
+- `crates/worldwake-cli/src/handlers/events.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
+- `crates/worldwake-cli/src/handlers/inspect.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
+- `crates/worldwake-cli/src/handlers/tick.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
+- `crates/worldwake-cli/src/handlers/world_overview.rs` (modify) — widen local `AgentDef` test constructors for the new optional fields
 
 ## Out of Scope
 
@@ -162,10 +170,32 @@ Update `test_agent_def_default_optional_fields` to verify all new fields default
 1. `crates/worldwake-cli/src/scenario/types.rs` — update `test_agent_def_default_optional_fields` for 10 new None fields
 2. `crates/worldwake-cli/src/scenario/types.rs` — update `test_scenario_def_deserialize_full` with at least one new profile
 3. `crates/worldwake-cli/src/scenario/mod.rs` — add spawn test verifying universal profiles are present after spawn
+4. Existing CLI unit tests that construct `AgentDef` directly — widen those test-only constructors so the crate still compiles against the expanded schema
 
 ### Commands
 
-1. `cargo test -p worldwake-cli -- scenario`
-2. `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
-4. `cargo test --workspace`
+1. `cargo test -p worldwake-cli scenario::types::tests::test_agent_def_default_optional_fields`
+2. `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full`
+3. `cargo test -p worldwake-cli scenario::tests::test_spawn_agents_receive_default_universal_profiles`
+4. `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_with_profile_overrides`
+5. `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
+6. `cargo test -p worldwake-cli`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
+8. `cargo test --workspace`
+
+## Outcome
+
+- **Completed**: 2026-04-03
+- Extended `AgentDef` with the 7 universal profile fields plus overridable `drive_thresholds`, `metabolism_profile`, and `carry_capacity`.
+- Updated `spawn_agent()` so scenario-spawned agents now always receive the universal profiles via `unwrap_or_default()`, while the already-defaulted profiles now use scenario override-or-default behavior.
+- Added focused scenario proofs for default universal-profile application and explicit profile overrides.
+- Deviation from the initial ticket shape: widening `AgentDef` also required updating direct `AgentDef` constructors in other `worldwake-cli` test modules, not just `scenario/types.rs` and `scenario/mod.rs`.
+- Verification:
+  - `cargo test -p worldwake-cli scenario::types::tests::test_agent_def_default_optional_fields`
+  - `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full`
+  - `cargo test -p worldwake-cli scenario::tests::test_spawn_agents_receive_default_universal_profiles`
+  - `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_with_profile_overrides`
+  - `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
+  - `cargo test -p worldwake-cli`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
