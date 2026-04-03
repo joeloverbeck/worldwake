@@ -18,8 +18,8 @@ macro_rules! define_system_ids {
             /// - `Production` runs before `Trade` so newly created goods exist before market exchange.
             /// - `Trade` runs before `Combat` so economic resolution happens before violence mutates the world.
             /// - `Combat` runs before `BanditCamp` so combat deaths can contribute to same-tick camp abandonment.
-            /// - `BanditCamp` runs before `FacilityQueue` so abandonment is visible before later world-state systems.
-            /// - `FacilityQueue` runs before `Politics` so completed exclusive actions can free resources before political resolution.
+            /// - `BanditCamp` runs before `Contention` so abandonment is visible before later world-state systems.
+            /// - `Contention` runs before `Politics` so completed exclusive actions can free resources before political resolution.
             /// - `Politics` runs before `Perception` so institutional state changes (`OfficeController`, contested state)
             ///   are visible to co-located observers in the same tick via `force_control_claims_for_event()`.
             ///   Without this ordering, `Perception` cannot project institutional beliefs from political events
@@ -54,7 +54,7 @@ define_system_ids! {
     (Production, "production"),
     (Trade, "trade"),
     (Combat, "combat"),
-    (FacilityQueue, "facility_queue"),
+    (Contention, "contention"),
     (Politics, "politics"),
     (Perception, "perception"),
     (BanditCamp, "bandit_camp"),
@@ -100,7 +100,7 @@ impl SystemManifest {
             SystemId::Trade,
             SystemId::Combat,
             SystemId::BanditCamp,
-            SystemId::FacilityQueue,
+            SystemId::Contention,
             SystemId::Politics,
             SystemId::Perception,
             SystemId::Patrol,
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(SystemId::Trade.to_string(), "trade");
         assert_eq!(SystemId::Combat.to_string(), "combat");
         assert_eq!(SystemId::BanditCamp.to_string(), "bandit_camp");
-        assert_eq!(SystemId::FacilityQueue.to_string(), "facility_queue");
+        assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::Politics.to_string(), "politics");
         assert_eq!(SystemId::Patrol.to_string(), "patrol");
@@ -173,7 +173,7 @@ mod tests {
                 SystemId::Production,
                 SystemId::Trade,
                 SystemId::Combat,
-                SystemId::FacilityQueue,
+                SystemId::Contention,
                 SystemId::Politics,
                 SystemId::Perception,
                 SystemId::BanditCamp,
@@ -239,7 +239,7 @@ mod tests {
                 SystemId::Trade,
                 SystemId::Combat,
                 SystemId::BanditCamp,
-                SystemId::FacilityQueue,
+                SystemId::Contention,
                 SystemId::Politics,
                 SystemId::Perception,
                 SystemId::Patrol,

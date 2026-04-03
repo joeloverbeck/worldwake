@@ -5,8 +5,8 @@
 
 use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
-    CommodityPurpose, CommodityValuationProfile, ContentionDispositionProfile, DemandMemory, DemandObservation,
-    DemandObservationReason, EdgeExperience, EntityId, FacilityQueueDispositionProfile, GoalKey,
+    CommodityPurpose, CommodityValuationProfile, ContentionDispositionProfile, DemandMemory,
+    DemandObservation, DemandObservationReason, EdgeExperience, EntityId, GoalKey,
     GoalKind, MerchandiseProfile, PreferenceProfile, Permille, Quantity, ReliabilityRecord,
     RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind,
     StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
@@ -78,13 +78,6 @@ pub fn sample_stock_assignment() -> StockAssignment {
     StockAssignment {
         facility: entity_id(7, 3),
         kind: StockAssignmentKind::Stored,
-    }
-}
-
-/// Returns a representative facility-queue disposition fixture.
-pub fn sample_facility_queue_disposition_profile() -> FacilityQueueDispositionProfile {
-    FacilityQueueDispositionProfile {
-        queue_patience_ticks: NonZeroU32::new(12),
     }
 }
 

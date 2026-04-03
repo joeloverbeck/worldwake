@@ -45,7 +45,7 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
 
         view.entities_at(place)
             .into_iter()
-            .filter(|facility| view.has_exclusive_facility_policy(*facility))
+            .filter(|facility| view.has_contention_policy(*facility))
             .filter(|facility| {
                 view.facility_grant(*facility)
                     .is_none_or(|grant| grant.actor != agent)
@@ -59,21 +59,21 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
 
     let mut changed = false;
     for facility in expired_facilities {
-        let Some(mut queue) = world.get_component_facility_use_queue(facility).cloned() else {
+        let Some(mut queue) = world.get_component_contention_queue(facility).cloned() else {
             continue;
         };
         if !queue.remove_actor(agent) {
             continue;
         }
         let queued_intent = world
-            .get_component_facility_queue_intents(agent)
+            .get_component_contention_intents(agent)
             .and_then(|intents| intents.intents.get(&facility).copied());
         let mut blocked_memory = world
             .get_component_blocked_intent_memory(agent)
             .cloned()
             .unwrap_or_default();
         let mut facility_queue_intents = world
-            .get_component_facility_queue_intents(agent)
+            .get_component_contention_intents(agent)
             .cloned()
             .unwrap_or_default();
         facility_queue_intents.intents.remove(&facility);
@@ -101,7 +101,7 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         );
-        txn.set_component_facility_use_queue(facility, queue)
+        txn.set_component_contention_queue(facility, queue)
             .map_err(|error| TickInputError::new(error.to_string()))?;
         if blocked_memory.intents.is_empty() {
             txn.clear_component_blocked_intent_memory(agent)
@@ -111,10 +111,10 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
                 .map_err(|error| TickInputError::new(error.to_string()))?;
         }
         if facility_queue_intents.intents.is_empty() {
-            txn.clear_component_facility_queue_intents(agent)
+            txn.clear_component_contention_intents(agent)
                 .map_err(|error| TickInputError::new(error.to_string()))?;
         } else {
-            txn.set_component_facility_queue_intents(agent, facility_queue_intents)
+            txn.set_component_contention_intents(agent, facility_queue_intents)
                 .map_err(|error| TickInputError::new(error.to_string()))?;
         }
         let _ = txn.commit(event_log);

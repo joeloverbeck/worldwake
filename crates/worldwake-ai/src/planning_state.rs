@@ -7,7 +7,7 @@ use std::rc::Rc;
 use worldwake_core::{
     load_per_unit, to_shared_belief_snapshot, ActionDefId, ActionDomain, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
     RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
@@ -61,7 +61,7 @@ pub struct PlanningState<'snapshot> {
     support_declaration_belief_overrides:
         SharedMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
     facility_queue_membership_overrides: SharedMap<EntityId, Option<HypotheticalQueueJoin>>,
-    facility_grant_overrides: SharedMap<EntityId, Option<GrantedFacilityUse>>,
+    facility_grant_overrides: SharedMap<EntityId, Option<ContentionGrant>>,
     hypothetical_registry: SharedMap<HypotheticalEntityId, HypotheticalEntityMeta>,
     entities_at_cache: Rc<RefCell<BTreeMap<EntityId, Vec<EntityId>>>>,
     effective_place_cache: Rc<RefCell<BTreeMap<PlanningEntityRef, Option<EntityId>>>>,
@@ -837,7 +837,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             .insert(facility, None);
         self.facility_grant_overrides.insert(
             facility,
-            Some(GrantedFacilityUse {
+            Some(ContentionGrant {
                 actor: self.snapshot.actor(),
                 intended_action: action_def,
                 granted_at: worldwake_core::Tick(0),
@@ -865,7 +865,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         }
     }
 
-    fn actor_facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+    fn actor_facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
         match self.facility_grant_overrides.get(&facility) {
             Some(grant) => grant.as_ref(),
             None => self
@@ -1373,7 +1373,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
         (actor == self.snapshot.actor()).then(|| self.actor_facility_queue_position(facility))?
     }
 
-    fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::GrantedFacilityUse> {
+    fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
         self.actor_facility_grant(facility)
     }
 
@@ -2001,7 +2001,7 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BelievedActivity, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
-        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, GrantedFacilityUse,
+        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ContentionGrant,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
         LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
         Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
@@ -2058,7 +2058,7 @@ mod tests {
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         combat_profiles: BTreeMap<EntityId, CombatProfile>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
-        facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
+        facility_grants: BTreeMap<EntityId, ContentionGrant>,
         courages: BTreeMap<EntityId, Permille>,
         office_holder_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
@@ -2245,7 +2245,7 @@ mod tests {
                 .copied()
         }
 
-        fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+        fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
             self.facility_grants.get(&facility)
         }
 
@@ -2785,7 +2785,7 @@ mod tests {
         view.facility_queue_positions.insert((field, actor), 2);
         view.facility_grants.insert(
             field,
-            GrantedFacilityUse {
+            ContentionGrant {
                 actor: other,
                 intended_action: ActionDefId(7),
                 granted_at: Tick(3),
@@ -2799,7 +2799,7 @@ mod tests {
         assert_eq!(state.facility_queue_position(field, actor), Some(2));
         assert_eq!(
             state.facility_grant(field),
-            Some(&GrantedFacilityUse {
+            Some(&ContentionGrant {
                 actor: other,
                 intended_action: ActionDefId(7),
                 granted_at: Tick(3),
@@ -2848,7 +2848,7 @@ mod tests {
         assert!(state.has_actor_facility_grant(field, ActionDefId(44)));
         assert_eq!(
             state.facility_grant(field),
-            Some(&GrantedFacilityUse {
+            Some(&ContentionGrant {
                 actor,
                 intended_action: ActionDefId(44),
                 granted_at: Tick(0),
@@ -2863,7 +2863,7 @@ mod tests {
         let mut view = view;
         view.facility_grants.insert(
             field,
-            GrantedFacilityUse {
+            ContentionGrant {
                 actor,
                 intended_action: ActionDefId(44),
                 granted_at: Tick(3),
@@ -2881,7 +2881,7 @@ mod tests {
                 .get(&field)
                 .and_then(|entity| entity.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.as_ref()),
-            Some(&GrantedFacilityUse {
+            Some(&ContentionGrant {
                 actor,
                 intended_action: ActionDefId(44),
                 granted_at: Tick(3),

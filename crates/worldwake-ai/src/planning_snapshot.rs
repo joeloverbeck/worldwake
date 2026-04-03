@@ -4,7 +4,7 @@ use worldwake_core::{
     ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
     DemandObservation, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-    GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    ContentionGrant, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData,
     ResourceSource, StockStoragePolicy,
@@ -23,7 +23,7 @@ type OfficeSupportBeliefReads = Vec<(EntityId, SupportBeliefRead)>;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotFacilityQueue {
     pub(crate) actor_queue_position: Option<u32>,
-    pub(crate) active_grant: Option<GrantedFacilityUse>,
+    pub(crate) active_grant: Option<ContentionGrant>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -730,7 +730,7 @@ fn snapshot_facility_queue(
     actor: EntityId,
     entity: EntityId,
 ) -> Option<SnapshotFacilityQueue> {
-    let has_policy = view.has_exclusive_facility_policy(entity);
+    let has_policy = view.has_contention_policy(entity);
     let actor_queue_position = view.facility_queue_position(entity, actor);
     let active_grant = view.facility_grant(entity).cloned();
     (has_policy || actor_queue_position.is_some() || active_grant.is_some()).then_some(
@@ -926,7 +926,7 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-        EligibilityRule, EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds,
+        EligibilityRule, EntityId, EntityKind, ContentionGrant, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
         OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
@@ -950,7 +950,7 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         exclusive_facilities: BTreeSet<EntityId>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
-        facility_grants: BTreeMap<EntityId, GrantedFacilityUse>,
+        facility_grants: BTreeMap<EntityId, ContentionGrant>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
@@ -1081,7 +1081,7 @@ mod tests {
             None
         }
 
-        fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+        fn has_contention_policy(&self, entity: EntityId) -> bool {
             self.exclusive_facilities.contains(&entity)
         }
 
@@ -1091,7 +1091,7 @@ mod tests {
                 .copied()
         }
 
-        fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+        fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
             self.facility_grants.get(&facility)
         }
 
@@ -1612,7 +1612,7 @@ mod tests {
         view.entities_at.insert(place, vec![actor, other, facility]);
         view.facility_grants.insert(
             facility,
-            GrantedFacilityUse {
+            ContentionGrant {
                 actor: other,
                 intended_action: ActionDefId(77),
                 granted_at: Tick(5),
@@ -1628,7 +1628,7 @@ mod tests {
                 .get(&facility)
                 .and_then(|entity| entity.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.clone()),
-            Some(GrantedFacilityUse {
+            Some(ContentionGrant {
                 actor: other,
                 intended_action: ActionDefId(77),
                 granted_at: Tick(5),

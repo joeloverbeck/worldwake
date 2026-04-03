@@ -19,8 +19,8 @@ use worldwake_core::{
     BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
     CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
     DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
-    EventLog, EventRecord, EventTag, EventView, ExclusiveFacilityPolicy,
-    FacilityQueueDispositionProfile, FacilityUseQueue, FactionData, FactionPurpose,
+    EventLog, EventRecord, EventTag, EventView, ContentionPolicy,
+    ContentionDispositionProfile, ContentionQueue, FactionData, FactionPurpose,
     HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
     KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile,
     OfficeForceState, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
@@ -663,9 +663,9 @@ pub fn set_queue_patience(
     queue_patience_ticks: Option<NonZeroU32>,
 ) {
     let mut txn = new_txn(world, 0);
-    txn.set_component_facility_queue_disposition_profile(
+    txn.set_component_contention_disposition_profile(
         agent,
-        FacilityQueueDispositionProfile {
+        ContentionDispositionProfile {
             queue_patience_ticks,
         },
     )
@@ -717,9 +717,9 @@ pub fn place_exclusive_workstation_with_source(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
-    txn.set_component_exclusive_facility_policy(ws, ExclusiveFacilityPolicy { grant_hold_ticks })
+    txn.set_component_contention_policy(ws, ContentionPolicy { grant_hold_ticks, auto_promote: true, max_waiters: None })
         .unwrap();
-    txn.set_component_facility_use_queue(ws, FacilityUseQueue::default())
+    txn.set_component_contention_queue(ws, ContentionQueue::default())
         .unwrap();
     txn.set_component_production_output_ownership_policy(
         ws,

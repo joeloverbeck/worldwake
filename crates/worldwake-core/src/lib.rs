@@ -49,7 +49,6 @@ pub mod experience;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
-pub mod facility_queue;
 pub mod factions;
 pub mod goal;
 pub mod ids;
@@ -137,10 +136,6 @@ pub use experience::{
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
-pub use facility_queue::{
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,
-    GrantedFacilityUse, QueuedFacilityUse,
-};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
@@ -149,7 +144,7 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
-pub use intention::{ActiveGoal, FacilityQueueIntents, QueuedFacilityIntent};
+pub use intention::ActiveGoal;
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,

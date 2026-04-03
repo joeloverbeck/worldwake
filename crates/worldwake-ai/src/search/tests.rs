@@ -23,7 +23,7 @@ use worldwake_core::{
     CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
     DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
-    ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
+    ContentionPolicy, ContentionQueue, ContentionGrant, HomeostaticNeeds,
     InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
     PerceptionSource, Permille, Place, PlaceTag, PrototypePlace, Quantity, RecipeId,
     ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
@@ -3292,24 +3292,26 @@ fn build_exclusive_orchard_fixture(granted: bool) -> ExclusiveOrchardFixture {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        let granted = granted.then_some(GrantedFacilityUse {
+        let granted = granted.then_some(ContentionGrant {
             actor,
             intended_action: harvest_action,
             granted_at: Tick(2),
             expires_at: Tick(5),
         });
-        txn.set_component_facility_use_queue(
+        txn.set_component_contention_queue(
             orchard_row,
-            FacilityUseQueue {
+            ContentionQueue {
                 granted,
-                ..FacilityUseQueue::default()
+                ..ContentionQueue::default()
             },
         )
         .unwrap();
@@ -3343,13 +3345,13 @@ fn enqueue_actor_for_exclusive_fixture(fixture: &mut ExclusiveOrchardFixture, qu
         WitnessData::default(),
     );
     let mut queue = txn
-        .get_component_facility_use_queue(fixture.orchard_row)
+        .get_component_contention_queue(fixture.orchard_row)
         .cloned()
         .expect("exclusive fixture should include queue state");
     queue
-        .enqueue(fixture.actor, fixture.harvest_action, queued_at)
+        .enqueue(fixture.actor, fixture.harvest_action, queued_at, None)
         .expect("fixture actor should be queueable");
-    txn.set_component_facility_use_queue(fixture.orchard_row, queue)
+    txn.set_component_contention_queue(fixture.orchard_row, queue)
         .unwrap();
     let mut event_log = EventLog::new();
     let _ = txn.commit(&mut event_log);
@@ -3698,14 +3700,16 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+        txn.set_component_contention_queue(orchard_row, ContentionQueue::default())
             .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
@@ -3823,14 +3827,16 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+        txn.set_component_contention_queue(orchard_row, ContentionQueue::default())
             .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);

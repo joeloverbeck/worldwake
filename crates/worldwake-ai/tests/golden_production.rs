@@ -14,7 +14,7 @@ use worldwake_core::{
     verify_authoritative_conservation, verify_live_lot_conservation, AgentData, BlockingFact,
     BodyPart, CarryCapacity, CombatProfile, CommodityKind, ControlSource, DemandMemory,
     DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind, EntityId,
-    EventTag, EventView, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    EventTag, EventView, ContentionGrant, HomeostaticNeeds, KnownRecipes, LoadUnits,
     MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
     ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
     Wound, WoundCause, WoundId, WoundList,
@@ -1938,7 +1938,7 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
 
         let queue = h
             .world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .expect("exclusive workstation should retain queue state");
         max_waiting_len = max_waiting_len.max(queue.waiting.len());
         saw_granted_state |= queue.granted.is_some();
@@ -2039,16 +2039,16 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
     {
         let mut txn = new_txn(&mut h.world, 0);
         let mut queue = txn
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .cloned()
             .expect("exclusive workstation should have queue state");
-        queue.granted = Some(GrantedFacilityUse {
+        queue.granted = Some(ContentionGrant {
             actor: grant_holder,
             intended_action: harvest_action,
             granted_at: Tick(0),
             expires_at: Tick(12),
         });
-        txn.set_component_facility_use_queue(workstation, queue)
+        txn.set_component_contention_queue(workstation, queue)
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
@@ -2085,7 +2085,7 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
 
         let queue = h
             .world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .expect("exclusive workstation should retain queue state");
         let fragile_position = queue.position_of(fragile);
         let healthy_position = queue.position_of(healthy);
@@ -2234,16 +2234,16 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
         )
         .unwrap();
         let mut queue = txn
-            .get_component_facility_use_queue(facility_a)
+            .get_component_contention_queue(facility_a)
             .cloned()
             .expect("exclusive facility A should have queue state");
-        queue.granted = Some(GrantedFacilityUse {
+        queue.granted = Some(ContentionGrant {
             actor: monopolist,
             intended_action: harvest_action,
             granted_at: Tick(0),
             expires_at: Tick(12),
         });
-        txn.set_component_facility_use_queue(facility_a, queue)
+        txn.set_component_contention_queue(facility_a, queue)
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
@@ -2268,7 +2268,7 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
 
         let queue_a = h
             .world
-            .get_component_facility_use_queue(facility_a)
+            .get_component_contention_queue(facility_a)
             .expect("facility A should retain queue state");
         if queue_a.position_of(patient).is_some() {
             joined_facility_a = true;
@@ -2430,7 +2430,7 @@ fn run_grant_expiry_before_intended_action_scenario(
 
         let queue = h
             .world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .expect("exclusive workstation should retain queue state");
         let source_quantity = h
             .world

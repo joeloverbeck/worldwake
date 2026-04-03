@@ -255,7 +255,7 @@ mod tests {
                 patrol_profile: None,
                 patrol_route: None,
                 pursuit_profile: None,
-                facility_queue_disposition: None,
+                contention_disposition: None,
                 commodity_valuation: None,
                 substitute_preferences: None,
             }],

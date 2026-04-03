@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, BlockingFact, ControlSource, EntityId, FacilityQueueIntents, IntentionFrame,
+    ActionDefId, BlockingFact, ControlSource, EntityId, ContentionIntents, IntentionFrame,
     ReasoningProfile, Tick,
 };
 use worldwake_sim::{
@@ -353,7 +353,7 @@ fn process_agent(
     // Read facility queue intents from authoritative component.
     let original_facility_intents = ctx
         .world
-        .get_component_facility_queue_intents(agent)
+        .get_component_contention_intents(agent)
         .cloned()
         .unwrap_or_default();
     let mut current_facility_intents = original_facility_intents.clone();
@@ -378,7 +378,7 @@ fn process_agent(
                 }
             }
             current_active_goal = None;
-            current_facility_intents = FacilityQueueIntents::default();
+            current_facility_intents = ContentionIntents::default();
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;

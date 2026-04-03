@@ -9,7 +9,7 @@ use worldwake_core::{
     AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityValuationProfile, ControlSource, DemandObservation, DriveThresholds, EntityId,
-    EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile,
     Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource,
@@ -691,27 +691,27 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .and_then(|state| state.workstation_tag)
     }
 
-    fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
         self.world
-            .get_component_exclusive_facility_policy(entity)
+            .get_component_contention_policy(entity)
             .is_some()
     }
 
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
         self.world
-            .get_component_facility_use_queue(facility)
+            .get_component_contention_queue(facility)
             .and_then(|queue| queue.position_of(actor))
     }
 
-    fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
         self.world
-            .get_component_facility_use_queue(facility)
+            .get_component_contention_queue(facility)
             .and_then(|queue| queue.granted.as_ref())
     }
 
     fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
         self.world
-            .get_component_facility_use_queue(facility)
+            .get_component_contention_queue(facility)
             .and_then(|queue| {
                 queue
                     .waiting
@@ -723,7 +723,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
     fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
         self.world
-            .get_component_facility_queue_disposition_profile(agent)
+            .get_component_contention_disposition_profile(agent)
             .and_then(|profile| profile.queue_patience_ticks)
     }
 

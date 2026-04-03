@@ -3,7 +3,7 @@ use super::observation::update_runtime_observation_snapshot;
 use super::{handle_recoverable_travel_step_blockage, runtime_belief_view, AgentTickContext};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FacilityQueueIntents, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, ContentionIntents, Tick,
     VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
@@ -387,8 +387,8 @@ pub(super) fn persist_facility_queue_intents(
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
     tick: Tick,
-    before: &FacilityQueueIntents,
-    after: &FacilityQueueIntents,
+    before: &ContentionIntents,
+    after: &ContentionIntents,
 ) -> Result<(), TickInputError> {
     if before == after {
         return Ok(());
@@ -404,10 +404,10 @@ pub(super) fn persist_facility_queue_intents(
         WitnessData::default(),
     );
     if after.intents.is_empty() {
-        txn.clear_component_facility_queue_intents(agent)
+        txn.clear_component_contention_intents(agent)
             .map_err(|error| TickInputError::new(error.to_string()))?;
     } else {
-        txn.set_component_facility_queue_intents(agent, after.clone())
+        txn.set_component_contention_intents(agent, after.clone())
             .map_err(|error| TickInputError::new(error.to_string()))?;
     }
     let _ = txn.commit(event_log);

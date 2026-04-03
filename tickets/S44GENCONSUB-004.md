@@ -10,9 +10,9 @@
 
 The existing `facility_queue_system()` (now `contention_system()` after S44GENCONSUB-003) only handles facility-type entities. It must be generalized to process contention queues on any entity kind (Agent, Facility) and respect `ContentionPolicy` fields (`auto_promote`, `max_waiters`) that didn't exist in the old `ExclusiveFacilityPolicy`.
 
-## Assumption Reassessment (2026-04-03)
+## Assumption Reassessment (2026-04-04)
 
-1. After S44GENCONSUB-003, `contention_system()` exists in `crates/worldwake-systems/src/contention.rs` (renamed from facility_queue.rs). It iterates entities with `ContentionQueue`, calling prune_invalid_waiters, expire_stale_grant, prune_structurally_invalid_heads, promote_ready_head.
+1. After S44GENCONSUB-003, `contention_system()` exists in `crates/worldwake-systems/src/facility_queue.rs`. The system/function identity was generalized, but the file was intentionally not renamed in that removal ticket. It iterates entities with `ContentionQueue`, calling prune_invalid_waiters, expire_stale_grant, prune_structurally_invalid_heads, promote_ready_head.
 2. Current system reads `ExclusiveFacilityPolicy.grant_hold_ticks` for promotion. After migration, it reads `ContentionPolicy.grant_hold_ticks`.
 3. New logic needed: respect `auto_promote` flag (only promote when true), respect `max_waiters` cap (already enforced at enqueue time but system should validate), prune by ContentionDispositionProfile patience.
 4. System runs at `SystemId::Contention` slot in canonical order: after BanditCamp, before Politics. Confirmed.
@@ -36,7 +36,7 @@ The existing `facility_queue_system()` (now `contention_system()` after S44GENCO
 
 ### 1. Generalize contention_system() logic
 
-In `crates/worldwake-systems/src/contention.rs`:
+In `crates/worldwake-systems/src/facility_queue.rs`:
 - Iterate ALL entities with `ContentionQueue` (not just facilities)
 - Read `ContentionPolicy` for each entity
 - `expire_stale_grant()`: check `grant_expired(current_tick)`, clear if expired
@@ -50,7 +50,7 @@ Test all branches: auto_promote true/false, patience exceeded, dead actor prunin
 
 ## Files to Touch
 
-- `crates/worldwake-systems/src/contention.rs` (modify — generalize logic)
+- `crates/worldwake-systems/src/facility_queue.rs` (modify — generalize logic)
 
 ## Out of Scope
 
@@ -79,7 +79,7 @@ Test all branches: auto_promote true/false, patience exceeded, dead actor prunin
 
 ### New/Modified Tests
 
-1. `crates/worldwake-systems/src/contention.rs` (inline tests) — generalized system behavior with ContentionPolicy fields
+1. `crates/worldwake-systems/src/facility_queue.rs` (inline tests) — generalized system behavior with ContentionPolicy fields
 
 ### Commands
 

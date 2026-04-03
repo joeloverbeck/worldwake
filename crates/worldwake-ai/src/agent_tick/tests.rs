@@ -32,13 +32,13 @@ use worldwake_core::{
     BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
     ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
     DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, EventPayload,
-    ExclusiveFacilityPolicy, FacilityQueueIntents, FacilityUseQueue, FrameState,
-    GrantedFacilityUse, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    ContentionPolicy, ContentionIntents, ContentionQueue, FrameState,
+    ContentionGrant, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
     PatrolRoute,
     PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedFacilityIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
     TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
     TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
     WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
@@ -1130,7 +1130,7 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
         .entry(harness.actor)
         .or_default();
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -1298,14 +1298,16 @@ fn build_exclusive_queue_harness() -> ExclusiveQueueHarness {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+        txn.set_component_contention_queue(orchard_row, ContentionQueue::default())
             .unwrap();
         commit_txn(txn);
         (actor, orchard_row)
@@ -1334,13 +1336,13 @@ fn set_local_queue_state(
 ) {
     let mut txn = new_txn(world, queued_at.max(1));
     let mut queue = txn
-        .get_component_facility_use_queue(facility)
+        .get_component_contention_queue(facility)
         .cloned()
         .unwrap_or_default();
     queue.waiting.clear();
     queue.granted = None;
     if let Some(action_def) = grant_action {
-        queue.granted = Some(GrantedFacilityUse {
+        queue.granted = Some(ContentionGrant {
             actor,
             intended_action: action_def,
             granted_at: Tick(queued_at),
@@ -1348,10 +1350,10 @@ fn set_local_queue_state(
         });
     } else {
         queue
-            .enqueue(actor, ActionDefId(77), Tick(queued_at))
+            .enqueue(actor, ActionDefId(77), Tick(queued_at), None)
             .unwrap();
     }
-    txn.set_component_facility_use_queue(facility, queue)
+    txn.set_component_contention_queue(facility, queue)
         .unwrap();
     commit_txn(txn);
     sync_all_beliefs(world, actor, Tick(queued_at.max(1)));
@@ -1360,12 +1362,12 @@ fn set_local_queue_state(
 fn clear_local_queue_state(world: &mut World, actor: EntityId, facility: EntityId, tick: u64) {
     let mut txn = new_txn(world, tick.max(1));
     let mut queue = txn
-        .get_component_facility_use_queue(facility)
+        .get_component_contention_queue(facility)
         .cloned()
         .unwrap_or_default();
     queue.waiting.clear();
     queue.granted = None;
-    txn.set_component_facility_use_queue(facility, queue)
+    txn.set_component_contention_queue(facility, queue)
         .unwrap();
     commit_txn(txn);
     sync_all_beliefs(world, actor, Tick(tick.max(1)));
@@ -1377,14 +1379,16 @@ fn add_local_queued_facility(world: &mut World, actor: EntityId, queued_at: u64)
         let mut txn = new_txn(world, queued_at.max(1));
         let facility = txn.create_entity(EntityKind::Facility);
         txn.set_ground_location(facility, place).unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             facility,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        txn.set_component_facility_use_queue(facility, FacilityUseQueue::default())
+        txn.set_component_contention_queue(facility, ContentionQueue::default())
             .unwrap();
         commit_txn(txn);
         facility
@@ -1476,7 +1480,7 @@ struct QueuePatienceBeliefView {
     place: Option<EntityId>,
     facilities_at_place: Vec<EntityId>,
     queue_join_ticks: std::collections::BTreeMap<EntityId, Tick>,
-    grants: std::collections::BTreeMap<EntityId, GrantedFacilityUse>,
+    grants: std::collections::BTreeMap<EntityId, ContentionGrant>,
     patience_ticks: Option<NonZeroU32>,
 }
 
@@ -1548,13 +1552,13 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
     }
-    fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
         self.facilities_at_place.contains(&entity)
     }
     fn facility_queue_position(&self, facility: EntityId, _actor: EntityId) -> Option<u32> {
         self.queue_join_ticks.contains_key(&facility).then_some(0)
     }
-    fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
         self.grants.get(&facility)
     }
     fn facility_queue_join_tick(&self, facility: EntityId, _actor: EntityId) -> Option<Tick> {
@@ -1783,7 +1787,7 @@ fn grant_arrival_marks_runtime_dirty_from_facility_access_snapshot() {
     );
 
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -1841,7 +1845,7 @@ fn abandon_expired_facility_queues_removes_actor_from_authoritative_queue() {
 
     let queue = harness
         .world
-        .get_component_facility_use_queue(facility)
+        .get_component_contention_queue(facility)
         .expect("facility queue should remain attached");
     assert_eq!(
         queue.position_of(harness.actor),
@@ -1861,12 +1865,12 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     // Set facility queue intents as a component on the World.
     {
         let mut txn = new_txn(&mut harness.world, 1);
-        txn.set_component_facility_queue_intents(
+        txn.set_component_contention_intents(
             harness.actor,
-            FacilityQueueIntents {
+            ContentionIntents {
                 intents: [(
                     facility,
-                    QueuedFacilityIntent {
+                    QueuedContentionIntent {
                         goal_key: goal,
                         intended_action: ActionDefId(77),
                     },
@@ -1905,7 +1909,7 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
     assert!(harness
         .world
-        .get_component_facility_queue_intents(harness.actor)
+        .get_component_contention_intents(harness.actor)
         .is_none_or(|intents| intents.intents.is_empty()));
 }
 
@@ -1936,13 +1940,13 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         .expect("harvest action should be registered");
     let mut txn = new_txn(&mut harness.world, 1);
     let mut queue = txn
-        .get_component_facility_use_queue(harness.orchard_row)
+        .get_component_contention_queue(harness.orchard_row)
         .cloned()
         .expect("exclusive orchard should have queue state");
     queue
-        .enqueue(harness.actor, harvest_action, Tick(1))
+        .enqueue(harness.actor, harvest_action, Tick(1), None)
         .unwrap();
-    txn.set_component_facility_use_queue(harness.orchard_row, queue)
+    txn.set_component_contention_queue(harness.orchard_row, queue)
         .unwrap();
     commit_txn(txn);
 
@@ -1959,7 +1963,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
     );
 
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -2032,12 +2036,12 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
     let mut runtime = crate::AgentDecisionRuntime::default();
     {
         let mut txn = new_txn(&mut harness.world, 1);
-        txn.set_component_facility_queue_intents(
+        txn.set_component_contention_intents(
             harness.actor,
-            FacilityQueueIntents {
+            ContentionIntents {
                 intents: [(
                     facility,
-                    QueuedFacilityIntent {
+                    QueuedContentionIntent {
                         goal_key: goal,
                         intended_action: ActionDefId(77),
                     },
@@ -2056,7 +2060,7 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
 
     let mut facility_intents = harness
         .world
-        .get_component_facility_queue_intents(harness.actor)
+        .get_component_contention_intents(harness.actor)
         .cloned()
         .unwrap_or_default();
     let mut blocked = BlockedIntentMemory::default();
@@ -2110,12 +2114,12 @@ fn grant_loss_does_not_record_hard_blocker() {
     let mut runtime = crate::AgentDecisionRuntime::default();
     {
         let mut txn = new_txn(&mut harness.world, 1);
-        txn.set_component_facility_queue_intents(
+        txn.set_component_contention_intents(
             harness.actor,
-            FacilityQueueIntents {
+            ContentionIntents {
                 intents: [(
                     facility,
-                    QueuedFacilityIntent {
+                    QueuedContentionIntent {
                         goal_key: goal,
                         intended_action: ActionDefId(77),
                     },
@@ -2134,7 +2138,7 @@ fn grant_loss_does_not_record_hard_blocker() {
 
     let mut facility_intents = harness
         .world
-        .get_component_facility_queue_intents(harness.actor)
+        .get_component_contention_intents(harness.actor)
         .cloned()
         .unwrap_or_default();
     let mut blocked = BlockedIntentMemory::default();
@@ -2174,7 +2178,7 @@ fn queued_actor_can_eat_without_losing_queue_membership() {
     assert_eq!(harness.active_action_name(), Some("eat"));
     let queue = harness
         .world
-        .get_component_facility_use_queue(facility)
+        .get_component_contention_queue(facility)
         .expect("queued facility should still exist");
     assert!(queue
         .waiting
@@ -3261,7 +3265,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     );
 
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     let utility = harness
         .world
         .get_component_utility_profile(harness.actor)
@@ -3466,7 +3470,7 @@ fn irrelevant_commodity_change_does_not_trigger_replan_for_sleep_goal() {
     }
 
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -3523,7 +3527,7 @@ fn relevant_commodity_change_triggers_replan_for_consume_goal() {
     }
 
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -3560,7 +3564,7 @@ fn no_plan_always_marks_runtime_dirty() {
     let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
     update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
 
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -3621,7 +3625,7 @@ fn patrol_route_change_marks_runtime_dirty() {
     commit_txn(txn);
 
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -4656,7 +4660,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         .entry(harness.actor)
         .or_default();
     let mut blocked = BlockedIntentMemory::default();
-    let mut fi = FacilityQueueIntents::default();
+    let mut fi = ContentionIntents::default();
 
     let initial_read = refresh_runtime_for_read_phase(
         &harness.world,

@@ -1952,12 +1952,12 @@ fn conformance_queue_for_facility() {
     );
     disable_ai_control(&mut ch.h, agent);
 
-    // Agent needs FacilityQueueDispositionProfile for the queue action.
+    // Agent needs ContentionDispositionProfile for the queue action.
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_facility_queue_disposition_profile(
+        txn.set_component_contention_disposition_profile(
             agent,
-            worldwake_core::FacilityQueueDispositionProfile {
+            worldwake_core::ContentionDispositionProfile {
                 queue_patience_ticks: Some(nz(50)),
             },
         )
@@ -2019,7 +2019,7 @@ fn conformance_queue_for_facility() {
 
     // After queue_for_facility_use completes, the agent should be in the queue
     // (or have been granted access if queue was empty).
-    let queue = ch.h.world.get_component_facility_use_queue(facility);
+    let queue = ch.h.world.get_component_contention_queue(facility);
     let agent_in_queue = queue.is_some_and(|q| {
         q.granted.as_ref().is_some_and(|g| g.actor == agent)
             || q.waiting.values().any(|w| w.actor == agent)

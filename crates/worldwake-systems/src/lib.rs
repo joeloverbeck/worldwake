@@ -40,7 +40,7 @@ pub use combat::{
 };
 pub use consult_record_actions::register_consult_record_action;
 pub use epistemic_actions::register_ask_witness_action;
-pub use facility_queue::facility_queue_system;
+pub use facility_queue::contention_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use investigate_actions::register_investigate_action;
 pub use justice_actions::{register_accuse_action, register_exile_action, register_fine_action};
@@ -71,7 +71,7 @@ pub fn dispatch_table() -> SystemDispatchTable {
         resource_regeneration_system,
         trade_system_tick,
         combat_system,
-        facility_queue_system,
+        contention_system,
         succession_system,
         perception_system,
         bandit_camp_system,

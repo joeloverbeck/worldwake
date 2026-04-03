@@ -15,10 +15,9 @@ use crate::{
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
-    facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
     institutional::RecordData,
-    intention::{ActiveGoal, FacilityQueueIntents},
+    intention::ActiveGoal,
     intention_disposition::IntentionDispositionProfile,
     intention_frame::IntentionFrame,
     items::{Container, ItemLot, UniqueItem},
@@ -144,15 +143,13 @@ mod tests {
         },
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
-            sample_contention_disposition_profile,
-            sample_facility_queue_disposition_profile, sample_merchandise_profile,
+            sample_contention_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
         ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        ContentionIntents, ContentionPolicy, ContentionQueue, DriveThresholds, EntityId,
-        ExclusiveFacilityPolicy, FacilityUseQueue, GoalKey,
+        ContentionIntents, ContentionPolicy, ContentionQueue, DriveThresholds, EntityId, GoalKey,
         GoalKind, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
         CommunicationProfile, PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
@@ -439,7 +436,7 @@ mod tests {
         assert_eq!(tables.iter_wound_lists().count(), 0);
         assert_eq!(tables.iter_combat_profiles().count(), 0);
         assert_eq!(tables.iter_dead_ats().count(), 0);
-        assert_eq!(tables.iter_facility_queue_disposition_profiles().count(), 0);
+        assert_eq!(tables.iter_contention_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_utility_profiles().count(), 0);
         assert_eq!(tables.iter_blocked_intent_memories().count(), 0);
         assert_eq!(tables.iter_agent_belief_stores().count(), 0);
@@ -460,8 +457,8 @@ mod tests {
         assert_eq!(tables.iter_trade_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_merchandise_profiles().count(), 0);
         assert_eq!(tables.iter_substitute_preferences().count(), 0);
-        assert_eq!(tables.iter_exclusive_facility_policies().count(), 0);
-        assert_eq!(tables.iter_facility_use_queues().count(), 0);
+        assert_eq!(tables.iter_contention_policies().count(), 0);
+        assert_eq!(tables.iter_contention_queues().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(
             tables.iter_production_output_ownership_policies().count(),
@@ -854,38 +851,19 @@ mod tests {
     }
 
     #[test]
-    fn facility_queue_disposition_profile_insert_get_remove_has_cycle() {
-        let mut tables = ComponentTables::default();
-        let id = entity(34);
-        let profile = sample_facility_queue_disposition_profile();
-
-        assert_eq!(
-            tables.insert_facility_queue_disposition_profile(id, profile.clone()),
-            None
-        );
-        assert_eq!(
-            tables.get_facility_queue_disposition_profile(id),
-            Some(&profile)
-        );
-        assert!(tables.has_facility_queue_disposition_profile(id));
-        assert_eq!(
-            tables.remove_facility_queue_disposition_profile(id),
-            Some(profile)
-        );
-        assert_eq!(tables.get_facility_queue_disposition_profile(id), None);
-    }
-
-    #[test]
     fn contention_disposition_profile_insert_get_remove_has_cycle() {
         let mut tables = ComponentTables::default();
-        let id = entity(341);
+        let id = entity(34);
         let profile = sample_contention_disposition_profile();
 
         assert_eq!(
             tables.insert_contention_disposition_profile(id, profile.clone()),
             None
         );
-        assert_eq!(tables.get_contention_disposition_profile(id), Some(&profile));
+        assert_eq!(
+            tables.get_contention_disposition_profile(id),
+            Some(&profile)
+        );
         assert!(tables.has_contention_disposition_profile(id));
         assert_eq!(
             tables.remove_contention_disposition_profile(id),
@@ -970,30 +948,33 @@ mod tests {
     fn facility_queue_components_insert_get_remove_has_cycle() {
         let mut tables = ComponentTables::default();
         let facility = entity(41);
-        let policy = ExclusiveFacilityPolicy {
+        let policy = ContentionPolicy {
             grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+            auto_promote: true,
+            max_waiters: None,
         };
-        let mut queue = FacilityUseQueue::default();
-        queue.enqueue(entity(99), ActionDefId(7), Tick(3)).unwrap();
+        let mut queue = ContentionQueue::default();
+        queue.enqueue(entity(99), ActionDefId(7), Tick(3), None)
+            .unwrap();
 
         assert_eq!(
-            tables.insert_exclusive_facility_policy(facility, policy.clone()),
+            tables.insert_contention_policy(facility, policy.clone()),
             None
         );
         assert_eq!(
-            tables.get_exclusive_facility_policy(facility),
+            tables.get_contention_policy(facility),
             Some(&policy)
         );
         assert_eq!(
-            tables.insert_facility_use_queue(facility, queue.clone()),
+            tables.insert_contention_queue(facility, queue.clone()),
             None
         );
-        assert_eq!(tables.get_facility_use_queue(facility), Some(&queue));
+        assert_eq!(tables.get_contention_queue(facility), Some(&queue));
         assert_eq!(
-            tables.remove_exclusive_facility_policy(facility),
+            tables.remove_contention_policy(facility),
             Some(policy)
         );
-        assert_eq!(tables.remove_facility_use_queue(facility), Some(queue));
+        assert_eq!(tables.remove_contention_queue(facility), Some(queue));
     }
 
     #[test]

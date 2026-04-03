@@ -335,19 +335,19 @@ fn ensure_matching_facility_grant(
     facility: EntityId,
     action_def: ActionDefId,
 ) -> Result<(), ActionError> {
-    let policy = world.get_component_exclusive_facility_policy(facility);
-    let queue = world.get_component_facility_use_queue(facility);
+    let policy = world.get_component_contention_policy(facility);
+    let queue = world.get_component_contention_queue(facility);
     let queue = match (policy, queue) {
         (None, None) => return Ok(()),
         (Some(_), Some(queue)) => queue,
         (Some(_), None) => {
             return Err(ActionError::PreconditionFailed(format!(
-                "facility {facility} is exclusive but lacks FacilityUseQueue grant state"
+                "facility {facility} is exclusive but lacks ContentionQueue grant state"
             )))
         }
         (None, Some(_)) => {
             return Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} has FacilityUseQueue grant state without ExclusiveFacilityPolicy"
+            "facility {facility} has ContentionQueue grant state without ContentionPolicy"
         )))
         }
     };
@@ -371,22 +371,22 @@ fn consume_matching_facility_grant(
 ) -> Result<(), ActionError> {
     ensure_matching_facility_grant(txn, actor, facility, action_def)?;
     if txn
-        .get_component_exclusive_facility_policy(facility)
+        .get_component_contention_policy(facility)
         .is_none()
-        && txn.get_component_facility_use_queue(facility).is_none()
+        && txn.get_component_contention_queue(facility).is_none()
     {
         return Ok(());
     }
     let mut queue = txn
-        .get_component_facility_use_queue(facility)
+        .get_component_contention_queue(facility)
         .cloned()
         .ok_or_else(|| {
             ActionError::PreconditionFailed(format!(
-                "facility {facility} lacks FacilityUseQueue grant state"
+                "facility {facility} lacks ContentionQueue grant state"
             ))
         })?;
     queue.clear_grant();
-    txn.set_component_facility_use_queue(facility, queue)
+    txn.set_component_contention_queue(facility, queue)
         .map_err(|err| ActionError::InternalError(err.to_string()))
 }
 
@@ -765,8 +765,8 @@ mod tests {
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyCostPerTick,
         CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
-        EntityId, EventId, EventLog, EventView, ExclusiveFacilityPolicy, FacilityUseQueue,
-        GrantedFacilityUse, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
+        EntityId, EventId, EventLog, EventView, ContentionPolicy, ContentionQueue,
+        ContentionGrant, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
         Permille, PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
         Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
         Seed, SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
@@ -1103,13 +1103,13 @@ mod tests {
     ) {
         let mut txn = new_txn(world, granted_at);
         let mut queue = ensure_facility_queue_components(&mut txn, facility);
-        queue.granted = Some(GrantedFacilityUse {
+        queue.granted = Some(ContentionGrant {
             actor,
             intended_action,
             granted_at: Tick(granted_at),
             expires_at: Tick(granted_at + 3),
         });
-        txn.set_component_facility_use_queue(facility, queue)
+        txn.set_component_contention_queue(facility, queue)
             .unwrap();
         commit_txn(txn);
     }
@@ -1117,7 +1117,7 @@ mod tests {
     fn provision_facility_queue(world: &mut World, facility: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
         let queue = ensure_facility_queue_components(&mut txn, facility);
-        txn.set_component_facility_use_queue(facility, queue)
+        txn.set_component_contention_queue(facility, queue)
             .unwrap();
         commit_txn(txn);
     }
@@ -1125,22 +1125,24 @@ mod tests {
     fn ensure_facility_queue_components(
         txn: &mut WorldTxn<'_>,
         facility: EntityId,
-    ) -> FacilityUseQueue {
+    ) -> ContentionQueue {
         if txn
-            .get_component_exclusive_facility_policy(facility)
+            .get_component_contention_policy(facility)
             .is_none()
         {
-            txn.set_component_exclusive_facility_policy(
+            txn.set_component_contention_policy(
                 facility,
-                ExclusiveFacilityPolicy {
+                ContentionPolicy {
                     grant_hold_ticks: nz(3),
+                    auto_promote: true,
+                    max_waiters: None,
                 },
             )
             .unwrap();
         }
-        txn.get_component_facility_use_queue(facility)
+        txn.get_component_contention_queue(facility)
             .cloned()
-            .unwrap_or_else(FacilityUseQueue::default)
+            .unwrap_or_else(ContentionQueue::default)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1653,7 +1655,7 @@ mod tests {
         .unwrap();
 
         assert!(world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .unwrap()
             .granted
             .is_none());
@@ -2292,7 +2294,7 @@ mod tests {
         .unwrap();
 
         assert!(world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .unwrap()
             .granted
             .is_none());

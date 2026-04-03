@@ -6,7 +6,7 @@ use golden_harness::*;
 use std::collections::BTreeMap;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    ActiveGoal, BeliefConfidencePolicy, CommodityKind, FacilityQueueIntents, FrameAssumption,
+    ActiveGoal, BeliefConfidencePolicy, CommodityKind, ContentionIntents, FrameAssumption,
     FrameState, GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
     IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile, PrototypePlace,
     Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick, UtilityProfile,
@@ -564,7 +564,7 @@ fn bench_world_runs_without_observers() {
 // Setup: A hungry agent at Village Square with food available only at
 //   Orchard Farm. The agent must travel (7 ticks across 3 legs). We save
 //   mid-travel, load, and assert that ActiveGoal, IntentionFrame, and
-//   FacilityQueueIntents survive the round-trip.
+//   ContentionIntents survive the round-trip.
 //
 // Proves: Promoted causal runtime state (S21-001..004) is preserved by
 //   save/load. The agent continues its journey rather than restarting.
@@ -661,8 +661,8 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     // --- Pre-save component reads ---
     let pre_active_goal: Option<ActiveGoal> = h.world.get_component_active_goal(agent).cloned();
     let pre_frame: Option<IntentionFrame> = h.world.get_component_intention_frame(agent).cloned();
-    let pre_facility: Option<FacilityQueueIntents> =
-        h.world.get_component_facility_queue_intents(agent).cloned();
+    let pre_facility: Option<ContentionIntents> =
+        h.world.get_component_contention_intents(agent).cloned();
 
     // Assert non-trivial state: at least ActiveGoal and IntentionFrame
     // must be present (acceptance criterion 3).
@@ -687,9 +687,9 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
         resumed.world.get_component_active_goal(agent).cloned();
     let post_frame: Option<IntentionFrame> =
         resumed.world.get_component_intention_frame(agent).cloned();
-    let post_facility: Option<FacilityQueueIntents> = resumed
+    let post_facility: Option<ContentionIntents> = resumed
         .world
-        .get_component_facility_queue_intents(agent)
+        .get_component_contention_intents(agent)
         .cloned();
 
     // --- Field-level equality assertions ---
@@ -704,7 +704,7 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     );
     assert_eq!(
         pre_facility, post_facility,
-        "FacilityQueueIntents must survive save/load round-trip"
+        "ContentionIntents must survive save/load round-trip"
     );
 
     // Specific field assertions for clarity (redundant but documents the contract).

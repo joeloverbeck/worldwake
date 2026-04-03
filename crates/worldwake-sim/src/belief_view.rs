@@ -7,7 +7,7 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, GrantedFacilityUse, HomeostaticNeeds, InTransitOnEdge,
+    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
@@ -452,7 +452,7 @@ pub trait RuntimeBeliefView {
         let _ = facility;
         None
     }
-    fn has_exclusive_facility_policy(&self, entity: EntityId) -> bool {
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
         let _ = entity;
         false
     }
@@ -460,7 +460,7 @@ pub trait RuntimeBeliefView {
         let _ = (facility, actor);
         None
     }
-    fn facility_grant(&self, facility: EntityId) -> Option<&GrantedFacilityUse> {
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
         let _ = facility;
         None
     }
