@@ -1,6 +1,6 @@
 # S44SCEPROCOM-003: AgentDef + spawn_agent — role-specific profiles + PatrolRouteDef
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AgentDef extended with 9 role-specific fields, PatrolRouteDef added, spawn_agent extended
@@ -23,6 +23,7 @@
 9. `SubstitutePreferences` at `trade.rs:91` — fields: `preferences: BTreeMap<TradeCategory, Vec<CommodityKind>>`. No Default. No EntityId. Directly serializable via RON — no Def wrapper needed. Confirmed.
 10. After ticket 002, AgentDef already has universal + already-defaulted profile fields. This ticket adds role-specific fields below those.
 11. Existing `MerchandiseProfileDef` pattern at `types.rs:73-78` is the precedent for Def types with string-to-EntityId resolution.
+12. Because `AgentDef` is constructed directly in several `worldwake-cli` sibling test modules, this schema widening will require local same-crate constructor fallout fixes beyond `scenario/types.rs` and `scenario/mod.rs`.
 
 ## Architecture Check
 
@@ -127,7 +128,8 @@ if let Some(ref prefs) = agent_def.substitute_preferences {
 ## Files to Touch
 
 - `crates/worldwake-cli/src/scenario/types.rs` (modify) — add PatrolRouteDef, 9 fields, imports, tests
-- `crates/worldwake-cli/src/scenario/mod.rs` (modify) — add 9 conditional setters with PatrolRoute name resolution
+- `crates/worldwake-cli/src/scenario/mod.rs` (modify) — add 9 conditional setters with PatrolRoute name resolution and focused spawn coverage
+- same-crate `worldwake-cli` test modules with direct `AgentDef` constructors (modify as needed) — constructor fallout from the widened scenario schema
 
 ## Out of Scope
 
@@ -161,11 +163,50 @@ if let Some(ref prefs) = agent_def.substitute_preferences {
 
 1. `crates/worldwake-cli/src/scenario/types.rs` — update default-fields test, add PatrolRouteDef deser test
 2. `crates/worldwake-cli/src/scenario/types.rs` — update full-deser test with role-specific profile
-3. `crates/worldwake-cli/src/scenario/mod.rs` — add spawn test for role-specific profiles and PatrolRoute resolution
+3. `crates/worldwake-cli/src/scenario/mod.rs` — add spawn tests for role-specific profile presence/absence, PatrolRoute resolution, and invalid-name failure
+4. Same-crate `worldwake-cli` test modules with direct `AgentDef` literals — update constructors to include the new optional fields
 
 ### Commands
 
-1. `cargo test -p worldwake-cli -- scenario`
-2. `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
-4. `cargo test --workspace`
+1. `cargo test -p worldwake-cli scenario::types::tests::test_agent_def_default_optional_fields`
+2. `cargo test -p worldwake-cli scenario::types::tests::test_patrol_route_def_deserializes_place_names`
+3. `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full`
+4. `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_applies_role_specific_profiles_and_patrol_route`
+5. `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_leaves_role_specific_profiles_absent_by_default`
+6. `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_rejects_invalid_patrol_route_place`
+7. `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
+8. `cargo test -p worldwake-cli`
+9. `cargo clippy --workspace --all-targets -- -D warnings`
+10. `cargo test --workspace`
+
+## Outcome
+
+Completed: 2026-04-03
+
+Implemented the missing role-specific scenario profile path in `worldwake-cli`.
+`AgentDef` now exposes the 9 role-specific fields plus `PatrolRouteDef`, and
+`spawn_agent()` now conditionally applies those components while resolving
+patrol-route place names into authoritative `PatrolRoute` state with
+`current_index = 0`.
+
+The implementation also absorbed the real same-crate schema fallout that the
+ticket reassessment identified: direct `AgentDef` constructors in sibling
+`worldwake-cli` test modules were updated to include the new optional fields so
+the widened scenario schema compiles cleanly across the crate.
+
+Deviation from original plan:
+- No architectural deviation in the owned slice.
+- The real edit surface was broader than the original pre-reassessment file list
+  because same-crate CLI test modules also constructed `AgentDef` directly.
+
+Verification:
+- `cargo test -p worldwake-cli scenario::types::tests::test_agent_def_default_optional_fields`
+- `cargo test -p worldwake-cli scenario::types::tests::test_patrol_route_def_deserializes_place_names`
+- `cargo test -p worldwake-cli scenario::types::tests::test_scenario_def_deserialize_full`
+- `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_applies_role_specific_profiles_and_patrol_route`
+- `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_leaves_role_specific_profiles_absent_by_default`
+- `cargo test -p worldwake-cli scenario::tests::test_spawn_agent_rejects_invalid_patrol_route_place`
+- `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
+- `cargo test -p worldwake-cli`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

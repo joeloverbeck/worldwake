@@ -181,6 +181,8 @@ Check that each focused selector actually matches the new or changed test names.
 
 When using exact Rust test-name selectors with `cargo test`, prefer separate invocations per selector unless you are intentionally relying on one shared substring filter. Do not assume multiple exact test names can be passed in a single `cargo test` command.
 
+When verification uses multiple `cargo test` or `cargo clippy` commands against the same workspace, prefer running them sequentially rather than in parallel. Cargo lock contention and in-flight stale compiles can make parallel runs noisier and less trustworthy after recent edits.
+
 If you change code after a broader verification pass, rerun the narrowest affected tests and any broader command whose earlier result is now stale. This includes post-clippy cleanup or other late mechanical edits in files that already passed earlier tests.
 
 When CI or clippy forces a bounded reshape of a shared function signature or parameter bundle during implementation, proactively sweep all production call sites, same-file test invocations, and public re-exports before the next verification pass. Do not rely on staggered compile fallout to discover the remaining invocation sites one by one.
