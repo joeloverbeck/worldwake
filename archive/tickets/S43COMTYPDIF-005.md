@@ -1,6 +1,6 @@
 # S43COMTYPDIF-005: Golden tests — stress-filtered communication, class-aware acceptance, alarm propagation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -16,11 +16,11 @@ The communication type differentiation system (S43) has no end-to-end proof that
 2. Golden social tests live at `crates/worldwake-ai/tests/golden_social.rs` — confirmed. This is the natural home for S43 golden tests.
 3. Golden test infrastructure: scenarios use `TestHarness` with full action registries, deterministic `ChaCha8Rng` seeding, and tick-by-tick execution with decision trace inspection.
 4. `PerceptionProfile` required on agents that need to observe post-production output — golden production tests require this. Also needed here: agents must perceive each other and world events to have beliefs worth sharing.
-5. Scenario A (stress-filtered) requires an agent with critical hunger plus both alarm-class and gossip-class beliefs. The agent must have a listener co-located. Suppress the gossip but not the alarm under stress.
+5. Scenario A (stress-filtered) is stably exposable at the decision-trace boundary, not necessarily as a same-scenario committed Tell. The honest contract is: a stressed agent with both an alarm-class and gossip-class share candidate keeps the alarm candidate viable while the gossip candidate is suppressed. The committed alarm propagation proof is owned by Scenario C.
 6. Scenario B (class-aware acceptance) requires two listeners with different `CommunicationProfile` settings. Speaker tells gossip-class info to both. The skeptical listener rejects; the default listener accepts.
 7. Scenario C (alarm relay) requires three agents in a line of places. Agent A witnesses conflict, is under survival stress, tells B (alarm class, not suppressed). B relays to C (source degrades to Report → Testimony class). Prove the alarm reaches C.
 8. Scenario isolation (precision rule 8): each scenario targets one specific branch. Competing affordances (eat, flee, trade) should be removed from setup by not providing the enabling profiles or resources, keeping only Tell-relevant infrastructure.
-9. For scenario C, the relay chain involves source degradation: A's `DirectObservation` → B receives via Tell → B's source is `Report { from: A, chain_len: 1 }` → B's `classify_communication` for that topic returns `Testimony` (not `Alarm`). This is the intended degradation behavior per spec.
+9. For scenario C, the original "alarm degrades to testimony on relay" idea is stale for live S43. `classify_communication()` treats `TellTopic::SocialObservation { WitnessedConflict }` as `Alarm` regardless of source. The honest live contract is: the observation's provenance degrades (`DirectObservation` → `Report` → `Rumor`), but the communication class remains `Alarm`, so stressed intermediaries still relay it.
 
 ## Architecture Check
 
@@ -29,11 +29,11 @@ The communication type differentiation system (S43) has no end-to-end proof that
 
 ## Verification Layers
 
-1. Alarm survives stress suppression -> decision trace: agent under critical stress emits ShareBelief(Alarm) candidate, candidate is NOT suppressed
+1. Alarm survives stress suppression -> decision trace: stressed agent's ShareBelief(Alarm) candidate remains viable (generated or ranked), not suppressed
 2. Gossip suppressed under stress -> decision trace: same agent's ShareBelief(Gossip) candidate IS suppressed
 3. Class-aware acceptance differentiation -> authoritative world state: skeptical listener's belief store does NOT contain the gossip topic; default listener's does
 4. Alarm relay through stressed intermediary -> authoritative world state: agent C's belief store contains the alarm content after relay chain A→B→C
-5. Source degradation on relay -> authoritative world state or action trace: B's shared topic is classified as Testimony (source is Report), not Alarm
+5. Alarm-class resilience across relay -> decision trace + authoritative world state: B relays the conflict observation despite critical stress, while the underlying observation source still degrades lawfully across hops
 
 ## What to Change
 
@@ -41,12 +41,9 @@ The communication type differentiation system (S43) has no end-to-end proof that
 
 In `crates/worldwake-ai/tests/golden_social.rs` (or a new `golden_communication.rs`):
 
-- Create two agents (speaker, listener) co-located at one place.
-- Give speaker critical hunger (HomeostaticNeeds with hunger at maximum depletion) to trigger stress.
-- Give speaker a `WitnessedConflict` social observation (→ Alarm) and a `CoPresence` social observation for a third entity (→ Gossip).
-- Give speaker a TellProfile, PerceptionProfile, CommunicationProfile, UtilityProfile with social_weight.
-- Tick until candidate generation.
-- Assert via decision trace: ShareBelief(Alarm) candidate emitted and NOT suppressed. ShareBelief(Gossip) candidate emitted and IS suppressed (or not emitted due to stress suppression).
+- Create a stressed speaker with one alarm-class share topic and one gossip-class share topic plus a co-located listener so the social candidate path is live.
+- Use the strongest honest assertion surface here: decision traces.
+- Assert via decision trace that the alarm-class `ShareBelief` candidate remains viable while the gossip-class one is suppressed under the same stress state.
 
 ### 2. Scenario B: Class-aware acceptance
 
@@ -57,15 +54,14 @@ In `crates/worldwake-ai/tests/golden_social.rs` (or a new `golden_communication.
 - Execute Tell to both listeners.
 - Assert: default_listener's belief store updated with the gossip topic. skeptical_listener's belief store did NOT update.
 
-### 3. Scenario C: Alarm propagation under stress
+### 3. Scenario C: Alarm propagation through a stressed intermediary
 
-- Create three agents (A, B, C) at three places in a line (place1—place2—place3). A and B co-located at place1. B and C co-located at place2 (or B travels to place2 after receiving from A).
-- Simpler setup: A and B at place1, B and C at place2. B must travel or be at both — use two-place setup where B is at place1 initially, then moves to place2.
-- Give A a `WitnessedConflict` observation (→ Alarm). Give A critical hunger (stress).
-- Tick: A tells B (alarm, not suppressed despite stress). B receives it (source degrades to Report).
-- Move B to place2 (or B is already there). B now has the belief with Report source. B classifies it as Testimony when sharing.
-- B tells C. C receives (Testimony-class acceptance).
-- Assert: C's belief store contains the WitnessedConflict observation (original content preserved, source chain extended).
+- Create three agents (A, B, C) with a relayable `WitnessedConflict` social observation and a setup that prevents A from directly telling C.
+- Give A the conflict observation as direct observation and give B critical hunger (stress).
+- Tick: A tells B. B receives the same `WitnessedConflict` content with degraded source (`Report { from: A, chain_len: 1 }`).
+- Despite critical stress, B still relays the alarm-class observation to C because `ShareBelief(Alarm)` is never suppressed.
+- C receives the same conflict observation with further degraded provenance.
+- Assert: C's belief store contains the `WitnessedConflict` content, and the stored source degraded lawfully across hops even though the communication class stayed `Alarm`.
 
 ## Files to Touch
 
@@ -81,16 +77,16 @@ In `crates/worldwake-ai/tests/golden_social.rs` (or a new `golden_communication.
 
 ### Tests That Must Pass
 
-1. Scenario A: `golden_alarm_survives_stress_suppression` — alarm-class ShareBelief is not suppressed under critical stress; gossip-class is suppressed
+1. Scenario A: `golden_alarm_survives_stress_suppression` — alarm-class ShareBelief remains viable under stress; gossip-class is suppressed
 2. Scenario B: `golden_class_aware_acceptance` — skeptical listener rejects gossip; default listener accepts
-3. Scenario C: `golden_alarm_relay_through_stressed_intermediary` — alarm content reaches C via A→B→C relay with source degradation
+3. Scenario C: `golden_alarm_relay_through_stressed_intermediary` — alarm content reaches C via A→B→C relay, and the stressed intermediary still relays it
 4. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 
 1. All scenarios use deterministic seeding — replay produces identical results
-2. Source degradation on relay: A's DirectObservation → B's Report → C's Rumor (or Report with chain_len+1)
-3. Alarm content survives relay even though classification degrades from Alarm to Testimony — the observation itself is preserved
+2. Source degradation on relay: A's DirectObservation → B's Report → C's Rumor
+3. Alarm content survives relay even though only provenance degrades — the communication class remains `Alarm` for `WitnessedConflict`
 
 ## Test Plan
 
@@ -108,3 +104,19 @@ In `crates/worldwake-ai/tests/golden_social.rs` (or a new `golden_communication.
 4. `cargo test -p worldwake-ai`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
 6. `cargo test --workspace`
+
+## Outcome
+
+- **Completion date**: 2026-04-03
+- **What changed**:
+  - Added three new S43-specific goldens in `crates/worldwake-ai/tests/golden_social.rs`: `golden_alarm_survives_stress_suppression`, `golden_class_aware_acceptance`, and `golden_alarm_relay_through_stressed_intermediary`.
+  - Refreshed generated golden inventory/docs in `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, and `docs/generated/golden-scenario-map.md`.
+- **Deviations from original plan**:
+  - Scenario A landed at the decision-trace boundary rather than a same-scenario committed-Tell boundary; this was the strongest honest live proof surface for the stress-filtered alarm-vs-gossip contract.
+  - Scenario C was corrected during reassessment: relay degrades the observation's provenance (`DirectObservation` → `Report` → `Rumor`) but does not degrade `CommunicationClass` for `WitnessedConflict`, so the live golden proves alarm-class resilience across relay instead of Alarm→Testimony degradation.
+- **Verification results**:
+  - `cargo test -p worldwake-ai --test golden_social`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

@@ -67,6 +67,7 @@ Using [docs/generated/golden-coverage-matrix.md](../../../docs/generated/golden-
 - `FOUNDATIONS` principles the spec now exercises but the golden suite still demonstrates weakly
 
 Focus on meaningful gaps, not mere count imbalances.
+If the generated matrix and scenario map disagree, or if newly added scenarios appear with thin metadata, treat the generated artifacts as incomplete for that slice and inspect the owning live `golden_*` source before judging coverage gaps.
 
 ### 5. Generate candidate emergent scenarios
 

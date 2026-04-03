@@ -1,5 +1,20 @@
 # S43: Communication Type Differentiation
 
+**Status**: COMPLETED
+
+## Outcome
+
+Implemented across `worldwake-core`, `worldwake-ai`, and `worldwake-systems`.
+
+- Added authoritative communication typing in `crates/worldwake-core/src/communication.rs`:
+  `CommunicationClass`, `CommunicationProfile`, and `classify_communication(...)`.
+- Extended `GoalKind::ShareBelief` to carry `communication_class`, and updated candidate generation to derive it from the speaker's canonical belief store.
+- Made `ShareBelief` suppression class-aware in `goal_policy.rs` and added the alarm motive boost in `ranking.rs`.
+- Removed `TellProfile.acceptance_fidelity`, moved Tell acceptance onto listener `CommunicationProfile`, and bumped `SAVE_FORMAT_VERSION` to `15`.
+- Shipped golden S43 closeout in `crates/worldwake-ai/tests/golden_social.rs`:
+  Scenario 98 (`golden_alarm_survives_stress_suppression`), Scenario 99 (`golden_class_aware_acceptance`), and Scenario 100 (`golden_alarm_relay_through_stressed_intermediary`), then refreshed the generated golden inventory/docs.
+- The original Scenario C relay narrative was corrected during implementation: relay degrades provenance, but `WitnessedConflict` remains `Alarm`-class across hops in the live contract.
+
 ## Summary
 
 Replace the single undifferentiated Tell action with typed communication classes — Alarm, Testimony, Gossip — each with distinct urgency, trust model, and suppression rules. Today all social communication routes through one `Tell` action that shares beliefs uniformly: same priority, same suppression under stress, same source degradation. This means a fleeing witness who shouts "dragon on the road!" is treated identically to idle chatter about commodity prices. FOUNDATIONS III.15 and III.18 demand that testimony, documents, records, and traces be distinct causal carriers with their own trust and urgency models.

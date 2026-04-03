@@ -8,8 +8,9 @@ use worldwake_core::{
     belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
     verify_authoritative_conservation, CommodityKind, CommunicationProfile, EntityId, EventTag,
     EventView, EvidenceRef, GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile,
-    PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservationDetail,
-    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile,
+    PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservation,
+    SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick,
+    UtilityProfile,
     WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
@@ -53,6 +54,13 @@ fn accepting_tell_profile() -> TellProfile {
     }
 }
 
+fn tell_profile_with_candidates(max_tell_candidates: u8) -> TellProfile {
+    TellProfile {
+        max_tell_candidates,
+        ..accepting_tell_profile()
+    }
+}
+
 fn rejecting_tell_profile() -> TellProfile {
     TellProfile {
         max_tell_candidates: 3,
@@ -93,6 +101,52 @@ fn ensure_empty_belief_store(
     txn.set_component_agent_belief_store(agent, worldwake_core::AgentBeliefStore::new())
         .expect("golden social test should keep belief stores writable");
     commit_txn(txn, event_log);
+}
+
+fn seed_social_observation(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    observation: SocialObservation,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+    store.record_social_observation(observation);
+
+    let mut txn = new_txn(world, observation.observed_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden social test should keep belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+fn agent_social_observation(
+    world: &worldwake_core::World,
+    agent: EntityId,
+    detail: SocialObservationDetail,
+) -> Option<SocialObservation> {
+    world
+        .get_component_agent_belief_store(agent)?
+        .social_observations
+        .iter()
+        .copied()
+        .find(|observation| observation.detail == detail)
+}
+
+fn witnessed_conflict(
+    actor: EntityId,
+    target: EntityId,
+    place: EntityId,
+    observed_tick: u64,
+    source: PerceptionSource,
+) -> SocialObservation {
+    SocialObservation {
+        detail: SocialObservationDetail::WitnessedConflict { actor, target },
+        place,
+        observed_tick: Tick(observed_tick),
+        source,
+    }
 }
 
 fn saw_inventory_discovery(
@@ -312,6 +366,22 @@ fn latest_goal_status(h: &GoldenHarness, speaker: EntityId, goal: &GoalKind) -> 
         .last()
         .expect("speaker should have at least one decision trace")
         .goal_status(goal)
+}
+
+fn committed_tell_trace(
+    h: &GoldenHarness,
+    speaker: EntityId,
+    listener: EntityId,
+    topic: &TellTopic,
+) -> Option<(TellCommitResult, bool)> {
+    h.action_trace_sink()?.events_for(speaker).into_iter().find_map(|event| {
+        let ActionTraceKind::Committed { outcome, .. } = &event.kind else {
+            return None;
+        };
+        let CommitTraceData::Tell(tell_trace) = outcome.trace.as_ref()?;
+        (tell_trace.listener == listener && &tell_trace.topic == topic)
+            .then_some((tell_trace.result, tell_trace.artifact_changed()))
+    })
 }
 
 fn wait_for_initial_tell(fixture: &mut SocialRetellFixture) -> Tick {
@@ -2313,5 +2383,558 @@ fn golden_rumor_leads_to_wasted_trip_then_discovery() {
     assert_eq!(
         first, second,
         "rumor-wasted-trip-discovery scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 98: Alarm survives critical stress while gossip is suppressed
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn run_alarm_survives_stress_suppression_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "AlarmSpeaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let dead_subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "MissingScout",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let orchard = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in [speaker, listener] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+    }
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        tell_profile_with_candidates(2),
+    );
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        keen_perception_profile(),
+    );
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    let rumor_belief = build_believed_entity_state(
+        &h.world,
+        orchard,
+        Tick(1),
+        PerceptionSource::Rumor { chain_len: 2 },
+    )
+    .expect("orchard should remain observable for rumor seeding");
+    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, rumor_belief);
+    let mut death_alarm = build_believed_entity_state(
+        &h.world,
+        dead_subject,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("dead-subject alarm should remain observable for belief seeding");
+    death_alarm.alive = false;
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        dead_subject,
+        death_alarm,
+    );
+
+    let alarm_goal = GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::EntityBelief {
+            subject: dead_subject,
+        },
+        communication_class: worldwake_core::CommunicationClass::Alarm,
+    };
+    let gossip_goal = GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::EntityBelief { subject: orchard },
+        communication_class: worldwake_core::CommunicationClass::Gossip,
+    };
+
+    let mut saw_alarm_viable = false;
+    let mut saw_gossip_suppressed = false;
+    for _ in 0..80 {
+        h.step_once();
+        let alarm_status = latest_goal_status(&h, speaker, &alarm_goal);
+        let gossip_status = latest_goal_status(&h, speaker, &gossip_goal);
+        saw_alarm_viable |= matches!(
+            alarm_status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        );
+        saw_gossip_suppressed |= gossip_status == GoalTraceStatus::Suppressed;
+
+        if saw_alarm_viable && saw_gossip_suppressed {
+            break;
+        }
+    }
+
+    assert!(
+        saw_alarm_viable,
+        "critical stress should not suppress the alarm-class ShareBelief candidate"
+    );
+    assert!(
+        saw_gossip_suppressed,
+        "high stress should suppress the gossip-class ShareBelief candidate"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_alarm_survives_stress_suppression() {
+    let first = run_alarm_survives_stress_suppression_scenario(Seed([101; 32]));
+    let second = run_alarm_survives_stress_suppression_scenario(Seed([101; 32]));
+
+    assert_eq!(
+        first, second,
+        "alarm-vs-gossip stress scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 99: Gossip acceptance diverges by listener CommunicationProfile
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn run_class_aware_acceptance_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
+
+    let speaker = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Speaker",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let default_listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "DefaultListener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let skeptical_listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SkepticalListener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let orchard = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in [speaker, default_listener, skeptical_listener] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+    }
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        focused_accepting_tell_profile(),
+    );
+    for listener in [default_listener, skeptical_listener] {
+        set_agent_tell_profile(
+            &mut h.world,
+            &mut h.event_log,
+            listener,
+            accepting_tell_profile(),
+        );
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            listener,
+            keen_perception_profile(),
+        );
+    }
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        default_listener,
+        CommunicationProfile::default(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        skeptical_listener,
+        CommunicationProfile {
+            gossip_acceptance: pm(0),
+            ..CommunicationProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        blind_perception_profile(),
+    );
+
+    for listener in [default_listener, skeptical_listener] {
+        seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            listener,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
+    let gossip_belief = build_believed_entity_state(
+        &h.world,
+        orchard,
+        Tick(1),
+        PerceptionSource::Rumor { chain_len: 2 },
+    )
+    .expect("orchard should remain observable for gossip seeding");
+    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, gossip_belief);
+
+    let topic = TellTopic::EntityBelief { subject: orchard };
+    let mut default_accepted = false;
+    let mut skeptical_rejected = false;
+
+    for _ in 0..80 {
+        h.step_once();
+        default_accepted |= committed_tell_trace(&h, speaker, default_listener, &topic)
+            == Some((TellCommitResult::Accepted, true));
+        skeptical_rejected |= committed_tell_trace(&h, speaker, skeptical_listener, &topic)
+            == Some((TellCommitResult::NotInternalized, false));
+        if default_accepted && skeptical_rejected {
+            break;
+        }
+    }
+
+    assert!(
+        default_accepted,
+        "speaker should successfully internalize gossip with the default listener profile"
+    );
+    assert!(
+        skeptical_rejected,
+        "speaker should still tell the skeptical listener, but the gossip should be rejected"
+    );
+    let default_belief = agent_belief_about(&h.world, default_listener, orchard)
+        .expect("default listener should receive the gossip belief");
+    assert_eq!(
+        default_belief.source,
+        PerceptionSource::Rumor { chain_len: 3 },
+        "gossip accepted from a rumor source should degrade to a deeper rumor on receipt"
+    );
+    assert!(
+        agent_belief_about(&h.world, skeptical_listener, orchard).is_none(),
+        "skeptical listener should reject the same gossip topic"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_class_aware_acceptance() {
+    let first = run_class_aware_acceptance_scenario(Seed([102; 32]));
+    let second = run_class_aware_acceptance_scenario(Seed([102; 32]));
+
+    assert_eq!(
+        first, second,
+        "class-aware acceptance scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 100: Alarm relays through a critically stressed intermediary
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn run_alarm_relay_through_stressed_intermediary_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let alice = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Alice",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let bob = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bob",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let carol = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Carol",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let threat = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Threat",
+        RULERS_HALL,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let victim = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Victim",
+        RULERS_HALL,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    for agent in [alice, bob, carol] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+        set_agent_tell_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            focused_accepting_tell_profile(),
+        );
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            blind_perception_profile(),
+        );
+    }
+    for listener in [bob, carol] {
+        set_agent_communication_profile(
+            &mut h.world,
+            &mut h.event_log,
+            listener,
+            accepting_communication_profile(),
+        );
+    }
+
+    let conflict = witnessed_conflict(
+        threat,
+        victim,
+        RULERS_HALL,
+        1,
+        PerceptionSource::DirectObservation,
+    );
+    seed_social_observation(&mut h.world, &mut h.event_log, alice, conflict);
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        alice,
+        bob,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let bob_received = run_until(40, || {
+        h.step_once();
+        agent_social_observation(&h.world, bob, conflict.detail).is_some()
+    });
+    assert!(
+        bob_received,
+        "Bob should receive Alice's alarm observation before the relay step"
+    );
+
+    let bob_observation = agent_social_observation(&h.world, bob, conflict.detail)
+        .expect("Bob should retain the relayed alarm observation");
+    assert_eq!(
+        bob_observation.source,
+        PerceptionSource::Report {
+            from: alice,
+            chain_len: 1
+        },
+        "the first relay hop should degrade direct observation to a report"
+    );
+
+    {
+        let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+        txn.set_ground_location(bob, ORCHARD_FARM)
+            .expect("scenario should be able to move Bob to Carol for the relay step");
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        bob,
+        carol,
+        Tick(h.scheduler.current_tick().0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let relay_goal = GoalKind::ShareBelief {
+        listener: carol,
+        topic: TellTopic::SocialObservation {
+            observation: bob_observation,
+        },
+        communication_class: worldwake_core::CommunicationClass::Alarm,
+    };
+    let mut saw_bob_alarm_viable = false;
+    let mut carol_received = false;
+    let mut bob_tell_result = None;
+
+    for _ in 0..60 {
+        h.step_once();
+        let status = latest_goal_status(&h, bob, &relay_goal);
+        saw_bob_alarm_viable |= matches!(
+            status,
+            GoalTraceStatus::GeneratedOnly | GoalTraceStatus::Ranked { .. }
+        );
+        carol_received |= agent_social_observation(&h.world, carol, conflict.detail).is_some();
+        bob_tell_result = committed_tell_trace(
+            &h,
+            bob,
+            carol,
+            &TellTopic::SocialObservation {
+                observation: bob_observation,
+            },
+        )
+        .map(|(result, _)| result);
+        if saw_bob_alarm_viable && carol_received {
+            break;
+        }
+    }
+
+    assert!(
+        saw_bob_alarm_viable,
+        "Bob's high hunger should not suppress relaying the alarm observation; bob_tell_result={bob_tell_result:?}"
+    );
+    let carol_observation = agent_social_observation(&h.world, carol, conflict.detail)
+        .expect("Carol should receive the relayed alarm observation");
+    assert_eq!(
+        carol_observation.source,
+        PerceptionSource::Rumor { chain_len: 2 },
+        "the second relay hop should further degrade the alarm provenance to rumor"
+    );
+    assert_eq!(
+        committed_tell_trace(
+            &h,
+            bob,
+            carol,
+            &TellTopic::SocialObservation {
+                observation: bob_observation,
+            },
+        ),
+        Some((TellCommitResult::Accepted, true)),
+        "Bob should commit a successful tell of the alarm observation to Carol"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_alarm_relay_through_stressed_intermediary() {
+    let first = run_alarm_relay_through_stressed_intermediary_scenario(Seed([103; 32]));
+    let second = run_alarm_relay_through_stressed_intermediary_scenario(Seed([103; 32]));
+
+    assert_eq!(
+        first, second,
+        "alarm-relay-through-stress scenario should replay deterministically"
     );
 }

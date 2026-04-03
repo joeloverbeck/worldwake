@@ -34,6 +34,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
    - for golden-driven tickets, if a claimed divergence is already proved at lower layers but does not remain stably isolatable in the current golden harness without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative for the rejected slice
+   - for golden communication or information-path tickets that rely on "degradation," verify separately what actually degrades in live code: provenance/source, confidence, communication class, eligibility, ranking, or another distinct mechanism. Do not let the ticket collapse different degradation paths into one stale narrative
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
    - when an authoritative persisted component or profile changes serialized shape, inspect the live save/load version boundary and correct version gates such as `SAVE_FORMAT_VERSION` when the format contract changed
    - when a ticket's intended behavior depends on helper math, scaling, saturation, or threshold arithmetic, inspect the exact live helper implementation and correct stale numeric prose before coding
@@ -109,6 +110,8 @@ For golden tickets, remove duplicate proof from scope unless the new scenario pr
 If a proposed golden invariant turns out to be real at lower layers but not stably exposable as an E2E golden without changing the scenario's nature, narrow the ticket to the durable golden slice and explicitly preserve the lower-layer boundary as the authoritative proof surface for the rejected piece.
 
 When a golden-driven ticket mixes still-valid negative coverage gaps with an over-claimed positive agreement proof, preserve the honest golden slice and correct the ticket to include any bounded production fix needed for the exposed contradiction instead of dropping the remaining golden work entirely.
+
+When one golden ticket contains multiple scenarios, do not force them to share one proof depth. If one scenario is best proved at decision trace while another is best proved at action trace or authoritative world state, correct each scenario to its own strongest honest boundary rather than flattening the ticket into one uniform assertion style.
 
 When a shared type changes, treat helper factories, sample fixtures, serialized scenario/config inputs, and schema examples as part of the construction-site sweep, not just direct Rust struct literals.
 
