@@ -131,7 +131,7 @@ fn build_death_and_loot_scenario(
         &mut h.event_log,
         "Looter",
         VILLAGE_SQUARE,
-        HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
+        HomeostaticNeeds::new_sated(),
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );

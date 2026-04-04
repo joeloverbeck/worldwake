@@ -1369,6 +1369,14 @@ impl RuntimeBeliefView for PlanningState<'_> {
         self.stock_storage_policy_snapshot(facility)
     }
 
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.facility_queue.as_ref())
+            .is_some()
+    }
+
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
         (actor == self.snapshot.actor()).then(|| self.actor_facility_queue_position(facility))?
     }

@@ -825,6 +825,8 @@ impl GoalKindPlannerExt for GoalKind {
                 self,
                 GoalKind::ConsumeOwnedCommodity { .. }
                     | GoalKind::AcquireCommodity { .. }
+                    | GoalKind::LootCorpse { .. }
+                    | GoalKind::BuryCorpse { .. }
                     | GoalKind::TreatWounds { .. }
                     | GoalKind::ProduceCommodity { .. }
                     | GoalKind::RestockCommodity { .. }
@@ -2247,7 +2249,26 @@ mod tests {
             burial_site: entity_id(2, 0),
         };
 
-        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Bury]);
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::QueueForFacilityUse, PlannerOpKind::Bury]
+        );
+    }
+
+    #[test]
+    fn loot_goal_uses_queue_then_loot_op_family() {
+        let goal = GoalKind::LootCorpse {
+            corpse: entity_id(1, 0),
+        };
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::QueueForFacilityUse,
+                PlannerOpKind::Loot,
+            ]
+        );
     }
 
     #[test]
@@ -4383,6 +4404,12 @@ mod tests {
         assert!(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::Restock,
+        }
+        .is_progress_barrier(&queue_step));
+        assert!(GoalKind::LootCorpse { corpse: entity(41) }.is_progress_barrier(&queue_step));
+        assert!(GoalKind::BuryCorpse {
+            corpse: entity(41),
+            burial_site: entity(42),
         }
         .is_progress_barrier(&queue_step));
         assert!(GoalKind::ProduceCommodity {

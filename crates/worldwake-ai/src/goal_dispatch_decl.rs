@@ -109,8 +109,12 @@ const MOVE_CARGO_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::MoveCargo,
     PlannerOpKind::StockManagement,
 ];
-const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
-const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
+const LOOT_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::QueueForFacilityUse,
+    PlannerOpKind::Loot,
+];
+const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::QueueForFacilityUse, PlannerOpKind::Bury];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,

@@ -10,9 +10,12 @@ use worldwake_sim::{
     step_tick, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, CombatActionPayload,
     ControllerState, DeterministicRng, InputKind, RecipeRegistry, ReplayRecordingConfig,
     ReplayState, Scheduler, SystemDispatchTable, SystemManifest, TickStepError, TickStepResult,
-    TickStepServices,
+    TickStepServices, QueueForFacilityUsePayload,
 };
-use worldwake_systems::{dispatch_table, register_attack_action, register_loot_action};
+use worldwake_systems::{
+    dispatch_table, register_attack_action, register_loot_action,
+    register_queue_for_corpse_use_action,
+};
 
 fn pm(value: u16) -> worldwake_core::Permille {
     worldwake_core::Permille::new(value).unwrap()
@@ -193,6 +196,7 @@ impl CombatHarness {
         let mut handlers = ActionHandlerRegistry::new();
         let _ = register_attack_action(&mut defs, &mut handlers);
         let _ = register_loot_action(&mut defs, &mut handlers);
+        let _ = register_queue_for_corpse_use_action(&mut defs, &mut handlers);
 
         Self {
             world,
@@ -256,6 +260,32 @@ impl CombatHarness {
         );
     }
 
+    fn queue_corpse_use(
+        &mut self,
+        actor: worldwake_core::EntityId,
+        target: worldwake_core::EntityId,
+    ) {
+        let tick = self.scheduler.current_tick();
+        sync_all_beliefs(&mut self.world, actor, tick);
+        let def_id = self.action_def_id("queue_for_corpse_use");
+        let loot_id = self.action_def_id("loot");
+        self.scheduler.input_queue_mut().enqueue(
+            tick,
+            InputKind::RequestAction {
+                actor,
+                def_id,
+                targets: vec![target],
+                payload_override: Some(ActionPayload::QueueForFacilityUse(
+                    QueueForFacilityUsePayload {
+                        intended_action: loot_id,
+                    },
+                )),
+                mode: worldwake_sim::ActionRequestMode::Strict,
+                provenance: worldwake_sim::RequestProvenance::External,
+            },
+        );
+    }
+
     fn queue_attack_recorded(
         &mut self,
         actor: worldwake_core::EntityId,
@@ -302,6 +332,36 @@ impl CombatHarness {
                     payload_override: Some(ActionPayload::Loot(worldwake_sim::LootActionPayload {
                         target,
                     })),
+                    mode: worldwake_sim::ActionRequestMode::Strict,
+                    provenance: worldwake_sim::RequestProvenance::External,
+                },
+            )
+        }
+        .clone();
+        self.replay_state.record_input(input).unwrap();
+    }
+
+    fn queue_corpse_use_recorded(
+        &mut self,
+        actor: worldwake_core::EntityId,
+        target: worldwake_core::EntityId,
+    ) {
+        let tick = self.scheduler.current_tick();
+        sync_all_beliefs(&mut self.world, actor, tick);
+        let def_id = self.action_def_id("queue_for_corpse_use");
+        let loot_id = self.action_def_id("loot");
+        let input = {
+            self.scheduler.input_queue_mut().enqueue(
+                tick,
+                InputKind::RequestAction {
+                    actor,
+                    def_id,
+                    targets: vec![target],
+                    payload_override: Some(ActionPayload::QueueForFacilityUse(
+                        QueueForFacilityUsePayload {
+                            intended_action: loot_id,
+                        },
+                    )),
                     mode: worldwake_sim::ActionRequestMode::Strict,
                     provenance: worldwake_sim::RequestProvenance::External,
                 },
@@ -370,6 +430,9 @@ fn scheduler_combat_death_and_loot_preserve_conservation() {
         Some(&DeadAt(Tick(3)))
     );
 
+    harness.queue_corpse_use(harness.attacker, harness.target);
+    harness.run_until_no_active_actions(3, false);
+    let _ = harness.step_once().unwrap();
     harness.queue_loot(harness.attacker, harness.target);
     harness.run_until_no_active_actions(2, false);
 
@@ -425,6 +488,9 @@ fn combat_recorded_runs_remain_deterministic_under_belief_seeded_requests() {
 
         harness.queue_attack_recorded(harness.attacker, harness.target);
         harness.run_until_no_active_actions(6, true);
+        harness.queue_corpse_use_recorded(harness.attacker, harness.target);
+        harness.run_until_no_active_actions(3, true);
+        let _ = harness.step_once_recorded();
         harness.queue_loot_recorded(harness.attacker, harness.target);
         harness.run_until_no_active_actions(2, true);
 

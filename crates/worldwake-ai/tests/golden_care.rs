@@ -3,6 +3,7 @@
 mod golden_harness;
 
 use golden_harness::*;
+use std::num::NonZeroU32;
 use worldwake_ai::{
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
     generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, ReasoningProfile,
@@ -10,9 +11,10 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
-    BlockerKey, BlockingFact, BodyPart, CommodityKind, DeprivationKind, EntityId, GoalKey,
-    HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, TellTopic,
-    Tick, UtilityProfile, Wound, WoundCause, WoundId, WoundList,
+    BlockerKey, BlockingFact, BodyPart, CommodityKind, ContentionPolicy, ContentionQueue,
+    DeprivationKind, EntityId, GoalKey, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
+    Quantity, Seed, StateHash, TellTopic, Tick, UtilityProfile, Wound, WoundCause, WoundId,
+    WoundList,
 };
 use worldwake_sim::{
     get_affordances, step_tick, ActionStartFailureReason, ActionTraceKind,
@@ -93,6 +95,17 @@ fn seed_wounded_agent_at(h: &mut GoldenHarness, name: &str, place: EntityId) -> 
         },
     )
     .unwrap();
+    txn.set_component_contention_queue(agent, ContentionQueue::default())
+        .unwrap();
+    txn.set_component_contention_policy(
+        agent,
+        ContentionPolicy {
+            grant_hold_ticks: NonZeroU32::new(5).unwrap(),
+            auto_promote: true,
+            max_waiters: None,
+        },
+    )
+    .unwrap();
     commit_txn(txn, &mut h.event_log);
 
     agent
@@ -100,6 +113,8 @@ fn seed_wounded_agent_at(h: &mut GoldenHarness, name: &str, place: EntityId) -> 
 
 fn run_healing_scenario(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
     let healer = seed_agent(
         &mut h.world,
         &mut h.event_log,
@@ -155,11 +170,25 @@ fn run_healing_scenario(seed: Seed) -> (StateHash, StateHash) {
 
     assert!(
         medicine_consumed,
-        "healer should consume medicine while treating the wounded patient"
+        "healer should consume medicine while treating the wounded patient; trace={:?}; events={:?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for local healing")
+            .traces_for(healer),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for local healing")
+            .events_for(healer)
     );
     assert!(
         wound_load_decreased,
-        "patient wound load should decrease after the heal action completes"
+        "patient wound load should decrease after the heal action completes; trace={:?}; events={:?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for local healing")
+            .traces_for(healer),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for local healing")
+            .events_for(healer)
     );
 
     (
@@ -183,6 +212,8 @@ fn place_ground_commodity(
 
 fn run_healer_acquires_ground_medicine_for_patient(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
     let healer = seed_agent(
         &mut h.world,
         &mut h.event_log,
@@ -233,11 +264,25 @@ fn run_healer_acquires_ground_medicine_for_patient(seed: Seed) -> (StateHash, St
     );
     assert!(
         medicine_consumed,
-        "healer should consume medicine while treating the patient"
+        "healer should consume medicine while treating the patient; trace={:?}; events={:?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for local ground-medicine care")
+            .traces_for(healer),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for local ground-medicine care")
+            .events_for(healer)
     );
     assert!(
         wound_load_decreased,
-        "patient wound load should decrease after the healer acquires and uses medicine"
+        "patient wound load should decrease after the healer acquires and uses medicine; trace={:?}; events={:?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for local ground-medicine care")
+            .traces_for(healer),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for local ground-medicine care")
+            .events_for(healer)
     );
 
     (
@@ -388,8 +433,8 @@ fn assert_remote_care_tick_zero_plan(
         tick_0_selected_plan
             .steps
             .iter()
-            .any(|step| step.op_kind == PlannerOpKind::Heal),
-        "remote care selected plan should include a heal step after medicine pickup"
+            .any(|step| step.op_kind == PlannerOpKind::QueueForFacilityUse),
+        "remote care selected plan should include a queue step after medicine pickup"
     );
 
     tick_0_trace
@@ -657,8 +702,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         deep_plan
             .steps
             .iter()
-            .any(|step| step.op_kind == PlannerOpKind::Heal),
-        "the lawful remote-care route should include healing after pickup"
+            .any(|step| step.op_kind == PlannerOpKind::QueueForFacilityUse),
+        "the lawful remote-care route should include a queue step after medicine pickup"
     );
 }
 
@@ -730,6 +775,8 @@ fn golden_healer_acquires_remote_ground_medicine_for_patient_replays_determinist
 
 fn run_self_care_with_medicine(seed: Seed) -> (StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
     let agent = seed_wounded_agent_at(&mut h, "SelfHealer", VILLAGE_SQUARE);
 
     give_commodity(
@@ -771,11 +818,25 @@ fn run_self_care_with_medicine(seed: Seed) -> (StateHash, StateHash) {
 
     assert!(
         medicine_consumed,
-        "wounded agent should consume own medicine for self-treatment"
+        "wounded agent should consume own medicine for self-treatment; trace={:?}; events={:?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for self-care")
+            .traces_for(agent),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for self-care")
+            .events_for(agent)
     );
     assert!(
         wound_load_decreased,
-        "wound load should decrease after self-treatment"
+        "wound load should decrease after self-treatment; trace={:?}; events={:?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for self-care")
+            .traces_for(agent),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled for self-care")
+            .events_for(agent)
     );
 
     (
@@ -1199,7 +1260,7 @@ fn run_care_pre_start_wound_disappearance_records_blocker(seed: Seed) -> (StateH
             .as_ref()
             .expect("selected plan should expose its next step")
             .op_kind,
-        PlannerOpKind::Heal
+        PlannerOpKind::QueueForFacilityUse
     );
 
     let tick_0_events = h

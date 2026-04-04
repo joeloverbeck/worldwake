@@ -1,8 +1,8 @@
 use crate::facility_queue_actions::exclusive_facility_workstation_tag;
 use std::collections::BTreeMap;
 use worldwake_core::{
-    CauseRef, EntityId, EntityKind, EventLog, EventTag, ContentionQueue, Tick, VisibilitySpec,
-    WitnessData, World, WorldTxn,
+    ActionDomain, CauseRef, EntityId, EntityKind, EventLog, EventTag, ContentionQueue, Tick,
+    VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
     validate_action_def_authoritatively, ActionDefRegistry, ActionInstance, ActionStatus,
@@ -14,6 +14,13 @@ struct QueueUpdateEffects<'a> {
     extra_tag: Option<EventTag>,
     extra_target: Option<EntityId>,
     cleared_waiters: &'a [worldwake_core::ContentionWaiter],
+}
+
+#[derive(Clone, Copy)]
+enum PromotableContentionKind {
+    FacilityExclusive(WorkstationTag),
+    Corpse,
+    Care,
 }
 
 pub fn contention_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -203,7 +210,6 @@ fn prune_structurally_invalid_heads(
             world,
             action_defs,
             facility,
-            queued_actor,
             intended_action,
         ) {
             return Ok(());
@@ -246,9 +252,7 @@ fn promote_ready_head(
     if !policy.auto_promote {
         return Ok(());
     }
-    if queue.granted.is_some()
-        || active_exclusive_action_on_facility(active_actions, action_defs, facility)
-    {
+    if queue.granted.is_some() || active_exclusive_action_on_entity(active_actions, action_defs, facility) {
         return Ok(());
     }
     let Some(queued) = queue.waiting.values().next() else {
@@ -286,56 +290,95 @@ fn promote_ready_head(
 fn head_is_structurally_invalid(
     world: &World,
     action_defs: &ActionDefRegistry,
-    facility: EntityId,
-    _actor: EntityId,
+    entity: EntityId,
     intended_action: worldwake_core::ActionDefId,
 ) -> bool {
-    if world.entity_kind(facility) != Some(EntityKind::Facility) || !world.is_alive(facility) {
-        return true;
-    }
-
     let Some(def) = action_defs.get(intended_action) else {
         return true;
     };
-    let Some(required_tag) = exclusive_facility_workstation_tag(def) else {
+    let Some(kind) = promotable_contention_kind(def) else {
         return true;
     };
-
-    world
-        .get_component_workstation_marker(facility)
-        .is_none_or(|marker| marker.0 != required_tag)
+    !contention_target_matches_kind(world, entity, kind)
 }
 
 fn head_is_ready_to_start(
     world: &World,
     active_actions: &BTreeMap<worldwake_sim::ActionInstanceId, ActionInstance>,
     action_defs: &ActionDefRegistry,
-    facility: EntityId,
+    entity: EntityId,
     actor: EntityId,
     intended_action: worldwake_core::ActionDefId,
 ) -> bool {
     let Some(def) = action_defs.get(intended_action) else {
         return false;
     };
-    let targets = [facility];
+    let Some(kind) = promotable_contention_kind(def) else {
+        return false;
+    };
+    if !contention_target_matches_kind(world, entity, kind) {
+        return false;
+    }
+    let targets = [entity];
 
     validate_action_def_authoritatively(world, def, actor, &targets).is_ok()
-        && !active_exclusive_action_on_facility(active_actions, action_defs, facility)
+        && !active_exclusive_action_on_entity(active_actions, action_defs, entity)
 }
 
-fn active_exclusive_action_on_facility(
+fn active_exclusive_action_on_entity(
     active_actions: &BTreeMap<worldwake_sim::ActionInstanceId, ActionInstance>,
     action_defs: &ActionDefRegistry,
-    facility: EntityId,
+    entity: EntityId,
 ) -> bool {
     active_actions.values().any(|instance| {
         instance.status == ActionStatus::Active
-            && instance.targets.first().copied() == Some(facility)
+            && instance.targets.first().copied() == Some(entity)
             && action_defs
                 .get(instance.def_id)
-                .and_then(exclusive_facility_workstation_tag)
+                .and_then(promotable_contention_kind)
                 .is_some()
     })
+}
+
+fn promotable_contention_kind(def: &worldwake_sim::ActionDef) -> Option<PromotableContentionKind> {
+    if let Some(tag) = exclusive_facility_workstation_tag(def) {
+        return Some(PromotableContentionKind::FacilityExclusive(tag));
+    }
+
+    match (def.domain, def.name.as_str()) {
+        (ActionDomain::Corpse, "loot" | "bury") => Some(PromotableContentionKind::Corpse),
+        (ActionDomain::Care, "heal") => Some(PromotableContentionKind::Care),
+        _ => None,
+    }
+}
+
+fn contention_target_matches_kind(
+    world: &World,
+    entity: EntityId,
+    kind: PromotableContentionKind,
+) -> bool {
+    match kind {
+        PromotableContentionKind::FacilityExclusive(required_tag) => {
+            if world.entity_kind(entity) != Some(EntityKind::Facility) || !world.is_alive(entity) {
+                return false;
+            }
+
+            world
+                .get_component_workstation_marker(entity)
+                .is_some_and(|marker| marker.0 == required_tag)
+        }
+        PromotableContentionKind::Corpse => {
+            world.entity_kind(entity) == Some(EntityKind::Agent)
+                && world.get_component_dead_at(entity).is_some()
+        }
+        PromotableContentionKind::Care => {
+            world.entity_kind(entity) == Some(EntityKind::Agent)
+                && world.get_component_dead_at(entity).is_none()
+                && world
+                    .get_component_wound_list(entity)
+                    .is_some_and(|wounds| !wounds.wounds.is_empty())
+        }
+    }
 }
 
 fn commit_queue_update(
@@ -396,25 +439,30 @@ fn actor_has_matching_contention_intent(
     facility: EntityId,
     intended_action: worldwake_core::ActionDefId,
 ) -> bool {
-    world
-        .get_component_contention_intents(actor)
-        .and_then(|intents| intents.intents.get(&facility))
+    let Some(intents) = world.get_component_contention_intents(actor) else {
+        return true;
+    };
+
+    intents
+        .intents
+        .get(&facility)
         .is_some_and(|intent| intent.intended_action == intended_action)
 }
 
 #[cfg(test)]
 mod tests {
     use super::contention_system;
-    use crate::{register_craft_actions, register_harvest_actions};
+    use crate::{register_craft_actions, register_harvest_actions, register_heal_action, register_loot_action};
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, CauseRef, CommodityKind, ControlSource, EntityId,
-        EntityKind, EventLog, EventTag, EventView, ContentionDispositionProfile,
-        ContentionIntents, ContentionPolicy, ContentionQueue, GoalKey, GoalKind, KnownRecipes,
-        ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        QueuedContentionIntent, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, ActionDefId, BodyPart, CauseRef, CommodityKind, ControlSource,
+        DeprivationKind, EntityId, EntityKind, EventLog, EventTag, EventView,
+        ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+        DeadAt, GoalKey, GoalKind, KnownRecipes, ProductionJob, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, QueuedContentionIntent, Quantity, ResourceSource, Seed,
+        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -424,6 +472,10 @@ mod tests {
 
     fn nz(value: u32) -> NonZeroU32 {
         NonZeroU32::new(value).unwrap()
+    }
+
+    fn pm(value: u16) -> worldwake_core::Permille {
+        worldwake_core::Permille::new(value).unwrap()
     }
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -830,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn waiter_without_matching_contention_intent_is_pruned() {
+    fn waiter_with_mismatched_contention_intent_is_pruned() {
         let recipes = build_recipe_registry();
         let (defs, _handlers, harvest_id, _craft_id) = setup_registries(&recipes);
         let (mut world, place, facility) = setup_world(WorkstationTag::OrchardRow, 4);
@@ -838,7 +890,19 @@ mod tests {
         enqueue(&mut world, facility, actor, harvest_id);
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.clear_component_contention_intents(actor).unwrap();
+            txn.set_component_contention_intents(
+                actor,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        facility,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::new(GoalKind::Sleep),
+                            intended_action: ActionDefId(999),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
 
@@ -927,6 +991,102 @@ mod tests {
         let granted = queue.granted.as_ref().unwrap();
         assert_eq!(granted.actor, actor);
         assert_eq!(granted.expires_at, Tick(6));
+        assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+    }
+
+    #[test]
+    fn dead_agent_corpse_head_is_promoted() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, corpse) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Looter", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
+            txn.set_ground_location(corpse, place).unwrap();
+            txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+            txn.set_component_contention_policy(
+                corpse,
+                ContentionPolicy {
+                    grant_hold_ticks: nz(3),
+                    auto_promote: true,
+                    max_waiters: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_queue(corpse, ContentionQueue::default())
+                .unwrap();
+            commit_txn(txn);
+            (actor, corpse)
+        };
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        enqueue(&mut world, corpse, actor, loot_id);
+        let mut log = EventLog::new();
+
+        run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
+
+        let queue = world.get_component_contention_queue(corpse).unwrap();
+        let granted = queue.granted.as_ref().unwrap();
+        assert_eq!(granted.actor, actor);
+        assert_eq!(granted.intended_action, loot_id);
+        assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+    }
+
+    #[test]
+    fn wounded_agent_care_head_is_promoted() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, patient) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Healer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            let patient = txn.create_agent("Patient", ControlSource::Ai).unwrap();
+            txn.set_ground_location(patient, place).unwrap();
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                        severity: pm(100),
+                        inflicted_at: Tick(1),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_policy(
+                patient,
+                ContentionPolicy {
+                    grant_hold_ticks: nz(3),
+                    auto_promote: true,
+                    max_waiters: None,
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_queue(patient, ContentionQueue::default())
+                .unwrap();
+            commit_txn(txn);
+            (actor, patient)
+        };
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Medicine, 1);
+        enqueue(&mut world, patient, actor, heal_id);
+        let mut log = EventLog::new();
+
+        run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
+
+        let queue = world.get_component_contention_queue(patient).unwrap();
+        let granted = queue.granted.as_ref().unwrap();
+        assert_eq!(granted.actor, actor);
+        assert_eq!(granted.intended_action, heal_id);
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
     }
 

@@ -170,6 +170,7 @@ When a ticket is an explicit staged extraction step, temporary duplicated logic 
 10. When adding a field to a shared model, trace, scenario/config type, or other cross-module state carrier, proactively search for hand-written constructors and test literals in sibling modules that build that struct directly, including same-crate test modules outside the owning file. Do not rely only on later compile fallout to discover stale fixture sites.
 11. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
 12. When a ticket splits previously uniform behavior into class-, variant-, or profile-specific rules, search for existing focused tests that currently compress those cases into one expectation and rewrite them into explicit per-case proofs instead of only adding new tests alongside stale broad assertions.
+13. When a ticket makes a new planner-visible operator lawful for an existing goal family, sweep the planner contract end to end: goal dispatch or relevant-op declarations, progress-barrier rules, goal-model expectations, and search/planner-root tests. Do not stop at affordance or candidate-generation changes if the goal family still advertises the old operator set.
 
 ### 6. Verify at the right boundary
 
@@ -205,6 +206,8 @@ When a required verification tool or script invokes broader repo checks and expo
 If the blocker is small, local, and necessary to complete the required verification path, repair it and keep the ticket scope honest about why that extra edit happened. If it is broader or would materially expand the ticket beyond its corrected boundary, stop and use 1-3-1 instead of silently absorbing unrelated work.
 
 If stronger lawful behavior now reaches completion earlier than an older focused test assumed, recalibrate the test inputs to preserve the intended proof surface instead of weakening the implementation to preserve stale timing or valuation assumptions.
+
+When broader required verification surfaces a timing-sensitive golden whose semantic contract still holds, prefer recalibrating the fixture's explicit timing budget, hold window, or other scenario timing inputs to the current lawful scheduler or queue ordering before broadening production scope.
 
 When a golden proves durable learned-state aftermath such as memory records, counters, or timestamps, assert the semantic contract unless exact tick identity is itself the owned invariant. If only ordering or recency matters, prove that boundary directly instead of pinning the record to `current_tick`.
 

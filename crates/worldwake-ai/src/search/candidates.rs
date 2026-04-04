@@ -128,7 +128,7 @@ pub(super) fn search_candidates(
     )
     .into_iter()
     .flat_map(|affordance| {
-        search_candidates_from_affordance(goal, &node.state, registry, &affordance)
+        search_candidates_from_affordance(goal, &node.state, registry, handlers, &affordance)
     })
     .collect::<Vec<_>>();
     let ask_witness_omission = conditional_ask_witness_omission_trace(
@@ -517,6 +517,7 @@ pub(super) fn search_candidates_from_affordance(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
     affordance: &Affordance,
 ) -> Vec<SearchCandidate> {
     if !affordance_matches_grounded_opportunity(goal, affordance) {
@@ -579,8 +580,20 @@ pub(super) fn search_candidates_from_affordance(
         return Vec::new();
     }
 
+    let require_current_affordability = def.name == "queue_for_care_target";
+
     intended_actions
         .into_iter()
+        .filter(|action_id| {
+            !require_current_affordability
+                || intended_action_is_currently_affordable(
+                    goal,
+                    state,
+                    registry,
+                    handlers,
+                    *action_id,
+                )
+        })
         .filter(|action_id| !state.has_actor_facility_grant(facility, *action_id))
         .map(|action_id| SearchCandidate {
             payload_override: Some(ActionPayload::QueueForFacilityUse(
@@ -591,6 +604,19 @@ pub(super) fn search_candidates_from_affordance(
             ..base.clone()
         })
         .collect()
+}
+
+fn intended_action_is_currently_affordable(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    intended_action: ActionDefId,
+) -> bool {
+    let allowed_defs = BTreeSet::from([intended_action]);
+    get_affordances_for_defs(state, state.snapshot().actor(), registry, handlers, &allowed_defs)
+        .into_iter()
+        .any(|affordance| affordance_matches_grounded_opportunity(goal, &affordance))
 }
 
 fn queue_intended_actions_for(

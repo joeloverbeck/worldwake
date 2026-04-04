@@ -2404,7 +2404,7 @@ fn run_local_detour_before_intended_action_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
-        nz(1),
+        nz(4),
         ProductionOutputOwner::Actor,
     );
     seed_actor_local_beliefs(

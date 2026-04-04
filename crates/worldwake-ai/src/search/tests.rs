@@ -3400,11 +3400,12 @@ struct ContentionCorpseFixture {
     loot_action: ActionDefId,
     bury_action: ActionDefId,
     registry: ActionDefRegistry,
+    handlers: worldwake_sim::ActionHandlerRegistry,
 }
 
 fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
     let town = prototype_place_entity(PrototypePlace::VillageSquare);
-    let (registry, _handlers) = build_registry();
+    let (registry, handlers) = build_registry();
     let loot_action = registry
         .iter()
         .find(|def| def.name == "loot")
@@ -3471,6 +3472,7 @@ fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
         loot_action,
         bury_action,
         registry,
+        handlers,
     }
 }
 
@@ -3481,11 +3483,12 @@ struct ContentionCareFixture {
     patient: EntityId,
     heal_action: ActionDefId,
     registry: ActionDefRegistry,
+    handlers: worldwake_sim::ActionHandlerRegistry,
 }
 
 fn build_contention_care_fixture() -> ContentionCareFixture {
     let town = prototype_place_entity(PrototypePlace::VillageSquare);
-    let (registry, _handlers) = build_registry();
+    let (registry, handlers) = build_registry();
     let heal_action = registry
         .iter()
         .find(|def| def.name == "heal")
@@ -3541,6 +3544,7 @@ fn build_contention_care_fixture() -> ContentionCareFixture {
         patient,
         heal_action,
         registry,
+        handlers,
     }
 }
 
@@ -3996,7 +4000,7 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
         contention_status: worldwake_core::ContentionStatus::Available,
     };
     let queue_candidates =
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &queue_affordance);
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
 
     assert_eq!(queue_candidates.len(), 1);
     assert_eq!(
@@ -4022,10 +4026,50 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &direct_loot_affordance)
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_loot_affordance)
             .is_empty(),
         "direct loot should not search as available until the actor holds the grant"
     );
+}
+
+#[test]
+fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_managed() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::LootCorpse {
+            corpse: fixture.corpse,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&fixture.registry),
+        &fixture.registry,
+        &fixture.handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("contention-managed corpse loot should search a queue-backed plan");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
 }
 
 #[test]
@@ -4063,7 +4107,7 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
         contention_status: worldwake_core::ContentionStatus::Available,
     };
     let queue_candidates =
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &queue_affordance);
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
 
     assert_eq!(queue_candidates.len(), 1);
     assert_eq!(
@@ -4089,10 +4133,51 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &direct_bury_affordance)
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_bury_affordance)
             .is_empty(),
         "direct bury should not search as available until the actor holds the grant"
     );
+}
+
+#[test]
+fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_managed() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::BuryCorpse {
+            corpse: fixture.corpse,
+            burial_site: fixture.grave_plot,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse, fixture.grave_plot]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&fixture.registry),
+        &fixture.registry,
+        &fixture.handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("contention-managed corpse burial should search a queue-backed plan");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
 }
 
 #[test]
@@ -4129,7 +4214,7 @@ fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant()
         contention_status: worldwake_core::ContentionStatus::Available,
     };
     let queue_candidates =
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &queue_affordance);
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
 
     assert_eq!(queue_candidates.len(), 1);
     assert_eq!(
@@ -4155,9 +4240,74 @@ fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant()
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &direct_heal_affordance)
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_heal_affordance)
             .is_empty(),
         "direct heal should not search as available until the actor holds the grant"
+    );
+}
+
+#[test]
+fn care_queue_affordance_does_not_expand_when_actor_cannot_currently_heal() {
+    let mut fixture = build_contention_care_fixture();
+    let medicine = fixture
+        .world
+        .entities()
+        .find(|entity| {
+            fixture
+                .world
+                .get_component_item_lot(*entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Medicine)
+        })
+        .expect("fixture should seed medicine");
+    let mut txn = WorldTxn::new(
+        &mut fixture.world,
+        Tick(2),
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::SamePlace,
+        WitnessData::default(),
+    );
+    txn.clear_possessor(medicine).unwrap();
+    txn.set_ground_location(medicine, fixture.town).unwrap();
+    let mut event_log = EventLog::new();
+    let _ = txn.commit(&mut event_log);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds {
+            patient: fixture.patient,
+        }),
+        evidence_entities: BTreeSet::from([fixture.patient]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_care_target")
+            .map(|def| def.id)
+            .expect("queue_for_care_target should be registered"),
+        bound_targets: vec![fixture.patient],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance)
+            .is_empty(),
+        "queue_for_care_target should not expand when the actor cannot currently perform heal"
     );
 }
 
@@ -4168,7 +4318,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
     let mut recipes = RecipeRegistry::new();
     recipes.register(harvest_apple_recipe_variant("Harvest Apples Alpha", 2));
     recipes.register(harvest_apple_recipe_variant("Harvest Apples Beta", 1));
-    let (registry, _handlers) = build_registry_with_recipes(&recipes);
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
     let mut world = World::new(build_prototype_world()).unwrap();
     let (actor, orchard_row) = {
         let mut txn = WorldTxn::new(
@@ -4286,7 +4436,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
-    let queue_candidates = search_candidates_from_affordance(&goal, &state, &registry, &affordance);
+    let queue_candidates = search_candidates_from_affordance(&goal, &state, &registry, &handlers, &affordance);
 
     assert_eq!(queue_candidates.len(), 2);
     let intended_actions = queue_candidates
@@ -4386,7 +4536,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
         1,
     );
     let state = PlanningState::new(&snapshot);
-    let (registry, _handlers) = build_registry();
+    let (registry, handlers) = build_registry();
     let trade_def_id = registry
         .iter()
         .find(|def| def.name == "trade")
@@ -4423,9 +4573,9 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
     };
 
     let wrong_candidates =
-        search_candidates_from_affordance(&goal, &state, &registry, &local_seller_affordance);
+        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &local_seller_affordance);
     let correct_candidates =
-        search_candidates_from_affordance(&goal, &state, &registry, &remote_seller_affordance);
+        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &remote_seller_affordance);
 
     assert!(wrong_candidates.is_empty());
     assert_eq!(correct_candidates.len(), 1);

@@ -9,9 +9,10 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     is_wound_load_fatal, load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, BodyPart,
     CauseRef, CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind,
-    Container, DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
-    EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec,
-    WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
+    Container, ContentionPolicy, ContentionQueue, DeadAt, DriveThresholds, EntityId, EntityKind,
+    EventLog, EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity,
+    StateDelta, VisibilitySpec, WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause,
+    WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -30,6 +31,22 @@ const BODY_PARTS: [BodyPart; 6] = [
     BodyPart::LeftLeg,
     BodyPart::RightLeg,
 ];
+
+fn corpse_contention_policy() -> ContentionPolicy {
+    ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(5).unwrap(),
+        auto_promote: true,
+        max_waiters: None,
+    }
+}
+
+fn care_contention_policy() -> ContentionPolicy {
+    ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(5).unwrap(),
+        auto_promote: true,
+        max_waiters: None,
+    }
+}
 
 pub fn register_attack_action(
     defs: &mut ActionDefRegistry,
@@ -160,7 +177,13 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
             .add_tag(EventTag::Combat)
             .add_target(fatality.entity);
         txn.extend_evidence(fatality.evidence);
+        clear_entity_contention_state(&mut txn, fatality.entity)
+            .map_err(|error| SystemError::new(format!("{error:?}")))?;
         txn.set_component_dead_at(fatality.entity, DeadAt(tick))
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        txn.set_component_contention_queue(fatality.entity, ContentionQueue::default())
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        txn.set_component_contention_policy(fatality.entity, corpse_contention_policy())
             .map_err(|error| SystemError::new(error.to_string()))?;
         let _ = txn.commit(event_log);
     }
@@ -201,6 +224,16 @@ fn apply_wound_progression(
     for update in updates {
         txn.set_component_wound_list(update.entity, update.wounds)
             .map_err(|error| SystemError::new(error.to_string()))?;
+        let current_wounds = txn
+            .get_component_wound_list(update.entity)
+            .ok_or_else(|| SystemError::new(format!("entity {} missing wound list after update", update.entity)))?;
+        if current_wounds.wounds.is_empty() {
+            clear_entity_contention_state(&mut txn, update.entity)
+                .map_err(|error| SystemError::new(format!("{error:?}")))?;
+        } else {
+            ensure_care_contention_state(&mut txn, update.entity)
+                .map_err(|error| SystemError::new(format!("{error:?}")))?;
+        }
     }
 
     let _ = txn.commit(event_log);
@@ -768,6 +801,68 @@ fn clear_contention_membership(
         }
     }
 
+    Ok(())
+}
+
+fn clear_contention_intent_for_entity(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    let Some(mut intents) = txn.get_component_contention_intents(actor).cloned() else {
+        return Ok(());
+    };
+    if intents.intents.remove(&entity).is_none() {
+        return Ok(());
+    }
+    if intents.intents.is_empty() {
+        txn.clear_component_contention_intents(actor)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    } else {
+        txn.set_component_contention_intents(actor, intents)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
+}
+
+fn clear_entity_contention_state(
+    txn: &mut WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    if let Some(queue) = txn.get_component_contention_queue(entity).cloned() {
+        let mut actors = BTreeSet::new();
+        if let Some(grant) = queue.granted {
+            actors.insert(grant.actor);
+        }
+        actors.extend(queue.waiting.values().map(|waiter| waiter.actor));
+        for actor in actors {
+            clear_contention_intent_for_entity(txn, actor, entity)?;
+        }
+        txn.clear_component_contention_queue(entity)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    if txn.get_component_contention_policy(entity).is_some() {
+        txn.clear_component_contention_policy(entity)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
+}
+
+fn ensure_care_contention_state(
+    txn: &mut WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    if txn.get_component_dead_at(entity).is_some() {
+        return Ok(());
+    }
+    if txn.get_component_contention_queue(entity).is_none() {
+        txn.set_component_contention_queue(entity, ContentionQueue::default())
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    if txn.get_component_contention_policy(entity).is_none() {
+        txn.set_component_contention_policy(entity, care_contention_policy())
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
     Ok(())
 }
 
@@ -1703,6 +1798,7 @@ fn commit_attack(
     next_wounds.wounds.push(wound);
     txn.set_component_wound_list(target, next_wounds)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    ensure_care_contention_state(txn, target)?;
     Ok(CommitOutcome::empty())
 }
 
@@ -1762,6 +1858,12 @@ fn commit_heal(
 ) -> Result<CommitOutcome, ActionError> {
     if let Some(patient) = instance.targets.first().copied() {
         clear_contention_membership(txn, instance.actor, patient, instance.def_id)?;
+        if txn
+            .get_component_wound_list(patient)
+            .is_some_and(|wounds| wounds.wounds.is_empty())
+        {
+            clear_entity_contention_state(txn, patient)?;
+        }
     }
     Ok(CommitOutcome::empty())
 }
@@ -1798,12 +1900,12 @@ mod tests {
         build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
         BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef,
         CommodityKind, Container, ControlSource, ContentionGrant, ContentionIntents,
-        ContentionPolicy, ContentionQueue, DeadAt, DeprivationKind, DriveThresholds, EntityId,
-        EntityKind, EventLog, EventTag, EventView, EvidenceRef, GoalKey, GoalKind,
-        HomeostaticNeeds, LoadUnits, PerceptionSource, Permille, QueuedContentionIntent,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList,
+        ContentionPolicy, ContentionQueue, ContentionWaiter, DeadAt, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
+        GoalKey, GoalKind, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
+        QueuedContentionIntent, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDuration, ActionError,
@@ -3532,6 +3634,14 @@ mod tests {
         let wounds = world.get_component_wound_list(target).unwrap();
         assert_eq!(wounds.wounds.len(), 1);
         assert_eq!(
+            world.get_component_contention_policy(target),
+            Some(&super::care_contention_policy())
+        );
+        assert_eq!(
+            world.get_component_contention_queue(target),
+            Some(&ContentionQueue::default())
+        );
+        assert_eq!(
             wounds.wounds[0].cause,
             WoundCause::Combat {
                 attacker,
@@ -4087,6 +4197,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_contention_policy(guard),
+            Some(&super::corpse_contention_policy())
+        );
+        assert_eq!(
+            world.get_component_contention_queue(guard),
+            Some(&ContentionQueue::default())
+        );
         assert_eq!(world.effective_place(guard), place_before);
         assert_eq!(
             world.controlled_commodity_quantity(guard, worldwake_core::CommodityKind::Bread),
@@ -4669,6 +4787,196 @@ mod tests {
 
         let wounds = world.get_component_wound_list(guard).unwrap();
         assert!(wounds.wounds.is_empty());
+    }
+
+    #[test]
+    fn passive_recovery_clears_care_contention_and_stale_actor_intents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let patient = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let healer = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let waiting_healer = spawn_guard(&mut world, 3, ControlSource::Ai);
+        set_recovery_state(&mut world, patient, 4, HomeostaticNeeds::new_sated());
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 10, 0, 5)],
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_policy(patient, super::care_contention_policy())
+                .unwrap();
+            txn.set_component_contention_queue(
+                patient,
+                ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        ContentionWaiter {
+                            actor: waiting_healer,
+                            intended_action: ActionDefId(77),
+                            queued_at: Tick(5),
+                        },
+                    )]),
+                    granted: Some(ContentionGrant {
+                        actor: healer,
+                        intended_action: ActionDefId(77),
+                        granted_at: Tick(5),
+                        expires_at: Tick(10),
+                    }),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(77),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                waiting_healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(77),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([24; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(6),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_wound_list(patient), Some(&WoundList::default()));
+        assert!(world.get_component_contention_queue(patient).is_none());
+        assert!(world.get_component_contention_policy(patient).is_none());
+        assert!(world.get_component_contention_intents(healer).is_none());
+        assert!(world.get_component_contention_intents(waiting_healer).is_none());
+    }
+
+    #[test]
+    fn fatality_replaces_care_contention_with_fresh_corpse_contention_and_clears_intents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let patient = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let healer = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let waiting_healer = spawn_guard(&mut world, 3, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 1000, 0, 4)],
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_policy(patient, super::care_contention_policy())
+                .unwrap();
+            txn.set_component_contention_queue(
+                patient,
+                ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        ContentionWaiter {
+                            actor: waiting_healer,
+                            intended_action: ActionDefId(88),
+                            queued_at: Tick(4),
+                        },
+                    )]),
+                    granted: Some(ContentionGrant {
+                        actor: healer,
+                        intended_action: ActionDefId(88),
+                        granted_at: Tick(4),
+                        expires_at: Tick(9),
+                    }),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(88),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                waiting_healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(88),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([25; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_dead_at(patient), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_contention_policy(patient),
+            Some(&super::corpse_contention_policy())
+        );
+        let queue = world.get_component_contention_queue(patient).unwrap();
+        assert!(queue.waiting.is_empty());
+        assert!(queue.granted.is_none());
+        assert!(world.get_component_contention_intents(healer).is_none());
+        assert!(world.get_component_contention_intents(waiting_healer).is_none());
     }
 
     #[test]
