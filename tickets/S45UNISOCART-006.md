@@ -16,7 +16,7 @@ The social artifact substrate (types, actions, perception, AI) is implemented in
 2. Golden test harness: scenarios set up a world with agents, items, places, and profiles. They then tick the simulation and assert on authoritative state, event log, and belief stores.
 3. `PerceptionProfile` is required on agents that need to observe post-action output — tests without perception profiles silently fail to observe newly created entities.
 4. All 3 scenarios require deterministic replay companions (seeded RNG, BTreeMap ordering).
-5. Scenario A (bounty lifecycle) requires: office holder posts bounty → agent perceives → agent travels to target → eliminates target → travels to claim place → claims bounty → reward transfers. This exercises PostBounty (002), perception (004), AI candidate generation (005), ClaimBounty (003).
+5. Scenario A (bounty lifecycle) requires the elimination-bounty path specifically: office holder posts an `EliminateEntity` bounty → agent perceives → agent travels to target → eliminates target → travels to claim place → claims bounty → reward transfers. This exercises PostBounty (002), perception (004), elimination-bounty AI candidate generation/planner integration (005), and ClaimBounty (003).
 6. Scenario B (expiration) requires: bounty posted with expires_at → no claim → artifact_lifecycle_system transitions to Expired → agent perceives Expired and does not pursue.
 7. Scenario C (notice discovery) requires: office posts ThreatWarning notice → agent perceives notice locally → believed artifact and route-threat consequence update → later travel/routing behavior reflects the warning.
 
@@ -30,7 +30,7 @@ The social artifact substrate (types, actions, perception, AI) is implemented in
 1. Bounty lifecycle (Scenario A): post → perceive → pursue → claim → reward → Fulfilled
    - PostBounty event emitted → event-log delta
    - Agent belief updated with bounty → belief store assertion
-   - FulfillBounty goal chosen → decision trace
+   - Elimination-bounty `FulfillBounty` goal chosen → decision trace
    - ClaimBounty committed → action trace
    - Reward transferred → authoritative world state (lot ownership)
    - Bounty state Fulfilled → authoritative world state (ArtifactHeader.state)
@@ -53,13 +53,13 @@ Create test in `crates/worldwake-ai/tests/`:
 - 2 places: TownSquare, WildernessA (connected, travel_ticks: 2)
 - 3 agents: OfficeHolder (at TownSquare, office-holding), Hunter (at TownSquare, CombatProfile, PerceptionProfile, enterprise_weight high), HostileTarget (at WildernessA, combatable)
 - Treasury: ItemLot with 10 Coin on OfficeHolder or institutional entity
-- OfficeHolder posts bounty: EliminateEntity(HostileTarget), reward 10 Coin, claim_place TownSquare
+- OfficeHolder posts bounty: `EliminateEntity(HostileTarget)`, reward 10 Coin, claim_place TownSquare
 
 **Execution**: Tick until Hunter claims bounty (bounded tick limit with assertion).
 
 **Assertions**:
 - Hunter perceived bounty at TownSquare
-- Hunter chose FulfillBounty goal
+- Hunter chose the elimination-bounty `FulfillBounty` goal
 - Hunter traveled to WildernessA
 - HostileTarget eliminated (dead or incapacitated)
 - Hunter traveled back to TownSquare
@@ -79,7 +79,7 @@ Create test in `crates/worldwake-ai/tests/`:
 **Assertions**:
 - Bounty state: Expired (after tick 10)
 - Observer perceives Expired bounty
-- No FulfillBounty candidate emitted by Observer after expiration
+- No `FulfillBounty` candidate emitted by Observer after expiration
 - Bounty entity still exists (not deleted — just Expired)
 
 ### 3. Golden test C: Notice discovery
@@ -105,6 +105,7 @@ Create test in `crates/worldwake-ai/tests/`:
 
 - Warrant, contract, debt golden tests (future artifact types)
 - Bounty competition tests (two agents racing for same bounty — valuable but defer to follow-up)
+- Delivery-bounty golden closure — depends on `S45UNISOCART-007`
 - Tell-based bounty knowledge sharing tests (works via existing Tell infrastructure)
 - CLI display golden tests (CLI display tested via cli-improvement pipeline)
 

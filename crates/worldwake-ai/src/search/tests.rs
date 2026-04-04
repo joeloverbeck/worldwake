@@ -18,12 +18,14 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile, ActionDefId, BelievedEntityState, BlockedIntent,
-    BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
-    CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
-    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
-    ContentionPolicy, ContentionQueue, ContentionGrant, HomeostaticNeeds,
+    test_utils::sample_trade_disposition_profile, ActionDefId, ArtifactKind, ArtifactState,
+    BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, BlockedIntent,
+    BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget,
+    CarryCapacity, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, EventLog, ContentionPolicy, ContentionQueue, ContentionGrant,
+    HomeostaticNeeds,
     InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
     PerceptionSource, Permille, Place, PlaceTag, PrototypePlace, Quantity, RecipeId,
     ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
@@ -5980,6 +5982,107 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
                 && candidate.authoritative_targets == vec![accused]
         }),
         "PunishAccused goals should surface the exact bound punishment candidate from goal identity once the action exists"
+    );
+}
+
+#[test]
+fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let claim_place = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.insert(actor);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.effective_places.insert(actor, claim_place);
+    view.effective_places.insert(bounty, claim_place);
+    view.entities_at.insert(claim_place, vec![actor, bounty]);
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            bounty,
+            BelievedEntityState {
+                last_known_place: Some(claim_place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                believed_artifact: Some(BelievedArtifactState {
+                    kind: ArtifactKind::Bounty,
+                    state: ArtifactState::Active,
+                    issuer,
+                    expires_at: None,
+                    bounty_terms: Some(BelievedBountyTerms {
+                        target: BountyTarget::EliminateEntity { target: entity(4) },
+                        reward_commodity: CommodityKind::Coin,
+                        reward_quantity: Quantity(25),
+                        claim_place,
+                    }),
+                    notice_topic: None,
+                    observed_tick: Tick(1),
+                }),
+                believed_contention: None,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            },
+        )],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty]),
+        &BTreeSet::from([claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty]),
+        evidence_places: BTreeSet::from([claim_place]),
+    };
+
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    assert!(
+        rel_defs.iter().any(|def_id| {
+            registry
+                .get(*def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "FulfillBounty goals should expose claim_bounty once the action is classified"
+    );
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+    assert!(
+        candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+                && candidate.authoritative_targets == vec![bounty]
+        }),
+        "FulfillBounty should synthesize the exact bound claim_bounty root candidate"
     );
 }
 

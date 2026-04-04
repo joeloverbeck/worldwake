@@ -320,6 +320,9 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::BuryCorpse { corpse, burial_site } => {
             format!("BuryCorpse({} at {})", entity_display_name(world, *corpse), entity_display_name(world, *burial_site))
         }
+        GoalKind::FulfillBounty { bounty } => {
+            format!("FulfillBounty({})", entity_display_name(world, *bounty))
+        }
         GoalKind::ShareBelief { listener, topic, communication_class } => {
             let listener_name = entity_display_name(world, *listener);
             let topic_str = format_tell_topic_brief(world, topic);
@@ -743,6 +746,15 @@ mod tests {
         let (sim, _) = one_agent_scenario("Aster");
         let err = resolve_entity(sim.state.world(), "Zephyr").unwrap_err();
         assert_eq!(err, ResolveError::NotFound("Zephyr".to_string()));
+    }
+
+    #[test]
+    fn test_format_goal_kind_fulfill_bounty() {
+        let (sim, id) = one_agent_scenario("Aster");
+        assert_eq!(
+            format_goal_kind(sim.state.world(), &GoalKind::FulfillBounty { bounty: id }),
+            "FulfillBounty(Aster)"
+        );
     }
 
     #[test]

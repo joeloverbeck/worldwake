@@ -13,9 +13,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    belief_confidence, CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, GoalKey,
-    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, Quantity, ReasoningProfile,
-    RecordKind, SuccessionLaw, WorkstationTag, OUTDOOR_RELIEF_TAGS,
+    belief_confidence, ArtifactKind, ArtifactState, BountyTarget, CommodityKind,
+    CommodityPurpose, EntityId, EpistemicSubject, GoalKey, GoalKind, InstitutionalBeliefRead,
+    Permille, PlaceTag, Quantity, ReasoningProfile, RecordKind, SuccessionLaw, WorkstationTag,
+    OUTDOOR_RELIEF_TAGS,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -388,6 +389,31 @@ fn political_step_blocked_by_unknown_vacancy(
         && state.believed_office_holder(office) != InstitutionalBeliefRead::Certain(None)
 }
 
+fn believed_bounty_terms(
+    state: &PlanningState<'_>,
+    bounty: EntityId,
+) -> Option<worldwake_core::BelievedBountyTerms> {
+    let actor = state.snapshot().actor();
+    state.known_entity_beliefs(actor)
+        .into_iter()
+        .find_map(|(entity, belief)| {
+            (entity == bounty)
+                .then(|| belief.believed_artifact.and_then(|artifact| artifact.bounty_terms))
+                .flatten()
+        })
+}
+
+fn believed_bounty_artifact_state(
+    state: &PlanningState<'_>,
+    bounty: EntityId,
+) -> Option<worldwake_core::BelievedArtifactState> {
+    let actor = state.snapshot().actor();
+    state.known_entity_beliefs(actor)
+        .into_iter()
+        .find_map(|(entity, belief)| (entity == bounty).then_some(belief.believed_artifact))
+        .flatten()
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
         GoalDispatchKey::from_goal_kind(self)
@@ -430,6 +456,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::TreatWounds { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
+            | GoalKind::FulfillBounty { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. }
@@ -805,6 +832,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::StockManagement
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
+            | PlannerOpKind::ClaimBounty
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
             | PlannerOpKind::Patrol
@@ -844,6 +872,12 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::Patrol { .. }) && step.op_kind == PlannerOpKind::Patrol {
+            return true;
+        }
+
+        if matches!(self, GoalKind::FulfillBounty { .. })
+            && step.op_kind == PlannerOpKind::ClaimBounty
+        {
             return true;
         }
 
@@ -975,6 +1009,11 @@ impl GoalKindPlannerExt for GoalKind {
                 .copied()
                 .all(|commodity| state.commodity_quantity(*corpse, commodity) == Quantity(0)),
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
+            GoalKind::FulfillBounty { bounty } => believed_bounty_artifact_state(state, *bounty)
+                .is_some_and(|artifact| {
+                    artifact.kind == ArtifactKind::Bounty
+                        && artifact.state != ArtifactState::Active
+                }),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 state.effective_support_declaration(actor, *office) == Some(*candidate)
             }
@@ -1091,6 +1130,20 @@ impl GoalKindPlannerExt for GoalKind {
                 .or(Some(*destination))
                 .into_iter()
                 .collect(),
+            GoalKind::FulfillBounty { bounty } => {
+                let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                    return Vec::new();
+                };
+                match terms.target {
+                    BountyTarget::EliminateEntity { target }
+                        if !state.is_dead(target)
+                            && state.effective_place(target).is_some() =>
+                    {
+                        state.effective_place(target).into_iter().collect()
+                    }
+                    _ => vec![terms.claim_place],
+                }
+            }
             GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
                 state.effective_place(*corpse).into_iter().collect()
             }
@@ -1215,6 +1268,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Exile
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
+            | PlannerOpKind::ClaimBounty
             | PlannerOpKind::Bury => {}
         }
 
@@ -1256,6 +1310,9 @@ impl GoalKindPlannerExt for GoalKind {
                 accused: target, ..
             } => authoritative_targets.contains(target),
             GoalKind::LootCorpse { corpse } => authoritative_targets.contains(corpse),
+            GoalKind::FulfillBounty { bounty } => {
+                op_kind != PlannerOpKind::ClaimBounty || authoritative_targets.contains(bounty)
+            }
             GoalKind::BuryCorpse {
                 corpse,
                 burial_site,
@@ -1804,6 +1861,18 @@ impl GroundedGoal {
                 GoalKind::PunishAccused { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::ClaimBounty => match &self.key.kind {
+                GoalKind::FulfillBounty { bounty }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::SpecificEntity(_)]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*bounty])
+                }
+                GoalKind::FulfillBounty { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             _ => RootCandidateSynthesis::UnsupportedGoalOp,
         }
     }
@@ -1840,15 +1909,17 @@ mod tests {
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
-        ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
-        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EpistemicSubject,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
-        SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        ActionDefId, ArtifactKind, ArtifactState, AskWitnessMemory, AskWitnessMemoryKey,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PunishmentKind, Quantity,
+        RecipeId, RecordEntryId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -3724,6 +3795,45 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![accused])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_claim_bounty_root_targets_from_goal_identity() {
+        let bounty = entity(10);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+            key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+            evidence_entities: BTreeSet::from([bounty]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "claim_bounty".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::SpecificEntity(entity(999))],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::ClaimBounty,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::Targets(vec![bounty])
         );
     }
 
@@ -7652,6 +7762,65 @@ mod tests {
             commodity: CommodityKind::Bread,
         }
         .is_satisfied(&state));
+    }
+
+    #[test]
+    fn fulfill_bounty_is_satisfied_when_believed_bounty_is_non_active() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let claim_place = entity_id(4, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        view.effective_places.insert(actor, claim_place);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Fulfilled,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::EliminateEntity {
+                                target: entity_id(5, 0),
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bounty]),
+            &BTreeSet::from([claim_place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::FulfillBounty { bounty }.is_satisfied(&state));
     }
 
     #[test]

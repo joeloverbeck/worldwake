@@ -27,6 +27,7 @@ pub enum PlannerOpKind {
     Heal,
     Loot,
     Bury,
+    ClaimBounty,
     Tell,
     ConsultRecord,
     Attack,
@@ -118,6 +119,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Care, "heal") => Some(PlannerOpKind::Heal),
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
+        (ActionDomain::Social, "claim_bounty") => Some(PlannerOpKind::ClaimBounty),
         (ActionDomain::Social, "tell") => Some(PlannerOpKind::Tell),
         (ActionDomain::Social, "consult_record") => Some(PlannerOpKind::ConsultRecord),
         (ActionDomain::Social, "bribe") => Some(PlannerOpKind::Bribe),
@@ -214,7 +216,8 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             true,
             PlannerTransitionKind::GoalModelFallback,
         ),
-        PlannerOpKind::Tell
+        PlannerOpKind::ClaimBounty
+        | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
@@ -242,6 +245,7 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
             )
         }
         PlannerOpKind::Tell
+        | PlannerOpKind::ClaimBounty
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Accuse
@@ -1583,6 +1587,7 @@ mod tests {
             PlannerOpKind::Heal,
             PlannerOpKind::Loot,
             PlannerOpKind::Bury,
+            PlannerOpKind::ClaimBounty,
             PlannerOpKind::Tell,
             PlannerOpKind::ConsultRecord,
             PlannerOpKind::Attack,
@@ -1593,14 +1598,14 @@ mod tests {
             PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 23);
+        assert_eq!(all.len(), 24);
     }
 
     #[test]
     fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
-        let intentionally_unclassified = ["post_bounty", "post_notice", "claim_bounty"];
+        let intentionally_unclassified = ["post_bounty", "post_notice"];
         let semantics_by_name = defs
             .iter()
             .filter_map(|def| {
@@ -1629,6 +1634,7 @@ mod tests {
             ("defend", PlannerOpKind::Defend),
             ("loot", PlannerOpKind::Loot),
             ("bury", PlannerOpKind::Bury),
+            ("claim_bounty", PlannerOpKind::ClaimBounty),
             ("heal", PlannerOpKind::Heal),
             ("bribe", PlannerOpKind::Bribe),
             ("threaten", PlannerOpKind::Threaten),

@@ -103,6 +103,8 @@ Do not silently skip deliverables. Do not "fix" the problem by weakening the tic
 
 When the user confirms a direction that changes the ticket's exact architecture boundary, affected files, or proof surface, update the relevant ticket sections before coding so the implementation and eventual archive remain faithful to the chosen plan. This commonly includes `Files to Touch`, `Verification Layers`, and `Test Plan`, not just the prose summary.
 
+If an initial correction exposes a second mismatch in the same owned surface, rerun the boundary check before coding instead of treating the first correction as final. When that later reassessment shows a still-claimed subdomain can no longer be landed in the current ticket and no remaining ticket honestly owns it, create or update the follow-up ticket chain immediately so the active roadmap does not keep implying missing behavior is already covered.
+
 If the mismatch is architectural, ambiguous, or would change the owned boundary rather than merely correcting stale references, do not auto-correct it. Surface it first and use 1-3-1 when needed.
 
 ### 4. Extract the implementation scope

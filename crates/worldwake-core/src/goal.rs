@@ -61,6 +61,9 @@ pub enum GoalKind {
         corpse: EntityId,
         burial_site: EntityId,
     },
+    FulfillBounty {
+        bounty: EntityId,
+    },
     ShareBelief {
         listener: EntityId,
         topic: TellTopic,
@@ -139,6 +142,7 @@ impl From<GoalKind> for GoalKey {
             | GoalKind::RaidTarget { target }
             | GoalKind::TreatWounds { patient: target }
             | GoalKind::LootCorpse { corpse: target }
+            | GoalKind::FulfillBounty { bounty: target }
             | GoalKind::ClaimOffice { office: target }
             | GoalKind::StealItem {
                 target_item: target,

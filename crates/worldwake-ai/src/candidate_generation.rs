@@ -243,6 +243,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_bounty_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -391,6 +392,80 @@ fn emit_enterprise_candidates(
     emit_restock_goals(candidates, diagnostics, ctx);
     emit_sell_goals(candidates, diagnostics, ctx);
     emit_move_cargo_goals(candidates, diagnostics, ctx);
+}
+
+fn emit_bounty_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
+
+    for (bounty, belief) in &beliefs {
+        let Some(artifact) = belief.believed_artifact.as_ref() else {
+            continue;
+        };
+        let Some(terms) = artifact.bounty_terms.as_ref() else {
+            continue;
+        };
+        if artifact.kind != worldwake_core::ArtifactKind::Bounty
+            || artifact.state != worldwake_core::ArtifactState::Active
+        {
+            continue;
+        }
+
+        let worldwake_core::BountyTarget::EliminateEntity { target } = terms.target else {
+            continue;
+        };
+
+        let target_belief = beliefs
+            .iter()
+            .find_map(|(entity, belief)| (*entity == target).then_some(belief));
+        let target_believed_dead = target_belief.is_some_and(|belief| !belief.alive);
+        if !target_believed_dead && ctx.view.effective_place(ctx.agent).is_none() {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(*bounty);
+        evidence.entities.insert(target);
+        evidence.places.insert(terms.claim_place);
+        if let Some(target_place) = target_belief.and_then(|belief| belief.last_known_place) {
+            evidence.places.insert(target_place);
+        }
+
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject: *bounty,
+                aspect: BeliefAspect::LocationAt {
+                    place: belief.last_known_place.unwrap_or(terms.claim_place),
+                },
+                source: belief.source,
+                observed_tick: belief.observed_tick,
+            });
+            if let Some(target_belief) = target_belief {
+                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                    subject: target,
+                    aspect: BeliefAspect::LocationAt {
+                        place: target_belief
+                            .last_known_place
+                            .unwrap_or(terms.claim_place),
+                    },
+                    source: target_belief.source,
+                    observed_tick: target_belief.observed_tick,
+                });
+            }
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::FulfillBounty { bounty: *bounty },
+            OpportunityAnchor::Entity(*bounty),
+            evidence,
+            trace,
+        );
+    }
 }
 
 fn emit_combat_candidates(
@@ -3878,8 +3953,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent,
-        BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart, CombatProfile,
+        AgentBeliefStore, ArtifactKind, ArtifactState, BelievedArtifactState,
+        BelievedBountyTerms, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent,
+        BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart, BountyTarget, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
         DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
         EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeedId,
@@ -4751,6 +4827,179 @@ mod tests {
         candidates
             .iter()
             .any(|candidate| candidate.key.kind == goal)
+    }
+
+    fn believed_bounty_state(
+        issuer: EntityId,
+        claim_place: EntityId,
+        target: BountyTarget,
+        state: ArtifactState,
+        reward_quantity: u32,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(claim_place),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: Some(BelievedArtifactState {
+                kind: ArtifactKind::Bounty,
+                state,
+                issuer,
+                expires_at: None,
+                bounty_terms: Some(BelievedBountyTerms {
+                    target,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(reward_quantity),
+                    claim_place,
+                }),
+                notice_topic: None,
+                observed_tick: Tick(5),
+            }),
+            believed_contention: None,
+            observed_tick: Tick(5),
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    #[test]
+    fn active_elimination_bounty_emits_fulfill_bounty_goal() {
+        let agent = entity(1);
+        let bounty = entity(2);
+        let issuer = entity(3);
+        let target = entity(4);
+        let square = entity(10);
+        let den = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, square);
+        view.entities_at.insert(square, vec![agent]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    bounty,
+                    believed_bounty_state(
+                        issuer,
+                        square,
+                        BountyTarget::EliminateEntity { target },
+                        ArtifactState::Active,
+                        250,
+                    ),
+                ),
+                (
+                    target,
+                    BelievedEntityState {
+                        last_known_place: Some(den),
+                        last_known_inventory: BTreeMap::new(),
+                        workstation_tag: None,
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        last_known_courage: None,
+                        believed_activity: None,
+                        believed_artifact: None,
+                        believed_contention: None,
+                        observed_tick: Tick(5),
+                        source: PerceptionSource::DirectObservation,
+                    },
+                ),
+            ],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        assert!(
+            contains_goal(&result.candidates, GoalKind::FulfillBounty { bounty }),
+            "active elimination bounty should emit FulfillBounty"
+        );
+    }
+
+    #[test]
+    fn non_active_or_delivery_bounties_do_not_emit_fulfill_bounty_goal() {
+        let agent = entity(1);
+        let issuer = entity(2);
+        let fulfilled_bounty = entity(3);
+        let delivery_bounty = entity(4);
+        let target = entity(5);
+        let square = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, square);
+        view.entities_at.insert(square, vec![agent]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    fulfilled_bounty,
+                    believed_bounty_state(
+                        issuer,
+                        square,
+                        BountyTarget::EliminateEntity { target },
+                        ArtifactState::Fulfilled,
+                        250,
+                    ),
+                ),
+                (
+                    delivery_bounty,
+                    believed_bounty_state(
+                        issuer,
+                        square,
+                        BountyTarget::DeliverCommodity {
+                            commodity: CommodityKind::Bread,
+                            destination: square,
+                            quantity: Quantity(3),
+                        },
+                        ArtifactState::Active,
+                        250,
+                    ),
+                ),
+            ],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::FulfillBounty {
+                    bounty: fulfilled_bounty,
+                }
+            )
+        );
+        assert!(
+            !contains_goal(
+                &result.candidates,
+                GoalKind::FulfillBounty {
+                    bounty: delivery_bounty,
+                }
+            )
+        );
     }
 
     #[test]

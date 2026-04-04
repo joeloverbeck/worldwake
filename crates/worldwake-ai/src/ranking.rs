@@ -411,6 +411,7 @@ fn priority_class(
         | GoalKind::RaidTarget { .. }
         | GoalKind::RegroupWithFaction { .. }
         | GoalKind::EstablishBanditCamp { .. }
+        | GoalKind::FulfillBounty { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Medium,
         GoalKind::Sleep => drive_priority(
@@ -585,6 +586,19 @@ fn motive_score(
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
         GoalKind::RaidTarget { .. } => raid_target_motive(candidate, context),
+        GoalKind::FulfillBounty { bounty } => context
+            .view
+            .known_entity_beliefs(context.agent)
+            .into_iter()
+            .find_map(|(entity, belief)| (entity == bounty).then_some(belief))
+            .and_then(|belief| belief.believed_artifact)
+            .and_then(|artifact| artifact.bounty_terms)
+            .map_or(0, |terms| {
+                score_product(
+                    context.utility.enterprise_weight,
+                    reward_signal_from_quantity(terms.reward_quantity),
+                )
+            }),
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::RegroupWithFaction { .. } => u32::from(context.utility.social_weight.value()),
         GoalKind::EstablishBanditCamp { .. } => {
@@ -956,6 +970,11 @@ fn enterprise_score(commodity: CommodityKind, context: &RankingContext<'_>) -> u
     score_product(context.utility.enterprise_weight, signal)
 }
 
+fn reward_signal_from_quantity(quantity: Quantity) -> Permille {
+    let scaled = quantity.0.min(1000) as u16;
+    Permille::new(scaled).unwrap_or_else(|_| Permille::new_unchecked(1000))
+}
+
 fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
 }
@@ -1315,14 +1334,15 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::MoveCargo { .. } => 14,
         GoalKind::LootCorpse { .. } => 15,
         GoalKind::BuryCorpse { .. } => 16,
-        GoalKind::ShareBelief { .. } => 17,
-        GoalKind::ClaimOffice { .. } => 18,
-        GoalKind::SupportCandidateForOffice { .. } => 19,
-        GoalKind::InvestigateViolation { .. } => 20,
-        GoalKind::Patrol { .. } => 21,
-        GoalKind::StealItem { .. } => 22,
-        GoalKind::Accuse { .. } => 23,
-        GoalKind::PunishAccused { .. } => 24,
+        GoalKind::FulfillBounty { .. } => 17,
+        GoalKind::ShareBelief { .. } => 18,
+        GoalKind::ClaimOffice { .. } => 19,
+        GoalKind::SupportCandidateForOffice { .. } => 20,
+        GoalKind::InvestigateViolation { .. } => 21,
+        GoalKind::Patrol { .. } => 22,
+        GoalKind::StealItem { .. } => 23,
+        GoalKind::Accuse { .. } => 24,
+        GoalKind::PunishAccused { .. } => 25,
     }
 }
 
@@ -1340,8 +1360,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        belief_confidence, ActionDomain, BeliefConfidencePolicy, BelievedActivity,
-        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, CombatProfile,
+        belief_confidence, ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy,
+        BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommodityValuationProfile,
         DemandObservation, DemandObservationReason, DeprivationKind, DriveThresholds, EntityId,
         EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
@@ -1866,6 +1887,41 @@ mod tests {
                 observed_tick: Tick(9),
             }),
             believed_artifact: None,
+            believed_contention: None,
+            observed_tick: Tick(9),
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn believed_bounty_state(
+        issuer: EntityId,
+        claim_place: EntityId,
+        target: BountyTarget,
+        reward_quantity: u32,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(claim_place),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: Some(BelievedArtifactState {
+                kind: ArtifactKind::Bounty,
+                state: ArtifactState::Active,
+                issuer,
+                expires_at: None,
+                bounty_terms: Some(BelievedBountyTerms {
+                    target,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(reward_quantity),
+                    claim_place,
+                }),
+                notice_topic: None,
+                observed_tick: Tick(9),
+            }),
             believed_contention: None,
             observed_tick: Tick(9),
             source: PerceptionSource::DirectObservation,
@@ -4784,6 +4840,39 @@ mod tests {
             comparison.decisive_dimension,
             super::RankedGoalComparisonDimension::MotiveScore
         );
+    }
+
+    #[test]
+    fn fulfill_bounty_uses_enterprise_weighted_reward_motive() {
+        let agent = entity(1);
+        let bounty = entity(2);
+        let issuer = entity(3);
+        let target = entity(4);
+        let claim_place = entity(5);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                bounty,
+                believed_bounty_state(
+                    issuer,
+                    claim_place,
+                    BountyTarget::EliminateEntity { target },
+                    250,
+                ),
+            )],
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::FulfillBounty { bounty })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 50_000);
     }
 
     #[test]
