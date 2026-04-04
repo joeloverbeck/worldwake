@@ -20,7 +20,7 @@ use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity,
     test_utils::sample_trade_disposition_profile, ActionDefId, BelievedEntityState, BlockedIntent,
     BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
-    CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
+    CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DeadAt,
     DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
     ContentionPolicy, ContentionQueue, ContentionGrant, HomeostaticNeeds,
@@ -424,6 +424,39 @@ fn sync_all_beliefs(world: &mut World, observer: EntityId, observed_tick: Tick) 
     for (entity, state) in snapshots {
         store.update_entity(entity, state);
     }
+    let mut txn = WorldTxn::new(
+        world,
+        observed_tick,
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::SamePlace,
+        WitnessData::default(),
+    );
+    txn.set_component_agent_belief_store(observer, store)
+        .expect("observer belief store should remain writable");
+    let mut event_log = EventLog::new();
+    let _ = txn.commit(&mut event_log);
+}
+
+fn patch_believed_entity_state<F>(
+    world: &mut World,
+    observer: EntityId,
+    entity: EntityId,
+    observed_tick: Tick,
+    patch: F,
+) where
+    F: FnOnce(&mut BelievedEntityState),
+{
+    let mut store = world
+        .get_component_agent_belief_store(observer)
+        .cloned()
+        .expect("observer must have AgentBeliefStore");
+    let state = store
+        .known_entities
+        .get_mut(&entity)
+        .expect("entity belief should exist before patching");
+    patch(state);
     let mut txn = WorldTxn::new(
         world,
         observed_tick,
@@ -3358,6 +3391,159 @@ fn enqueue_actor_for_exclusive_fixture(fixture: &mut ExclusiveOrchardFixture, qu
     sync_all_beliefs(&mut fixture.world, fixture.actor, queued_at);
 }
 
+struct ContentionCorpseFixture {
+    world: World,
+    actor: EntityId,
+    town: EntityId,
+    corpse: EntityId,
+    grave_plot: EntityId,
+    loot_action: ActionDefId,
+    bury_action: ActionDefId,
+    registry: ActionDefRegistry,
+}
+
+fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
+    let town = prototype_place_entity(PrototypePlace::VillageSquare);
+    let (registry, _handlers) = build_registry();
+    let loot_action = registry
+        .iter()
+        .find(|def| def.name == "loot")
+        .map(|def| def.id)
+        .expect("loot action should be registered");
+    let bury_action = registry
+        .iter()
+        .find(|def| def.name == "bury")
+        .map(|def| def.id)
+        .expect("bury action should be registered");
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, corpse, grave_plot) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Gravedigger", ControlSource::Ai).unwrap();
+        let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
+        let grave_plot = txn.create_entity(EntityKind::Facility);
+        let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+        txn.set_ground_location(actor, town).unwrap();
+        txn.set_ground_location(corpse, town).unwrap();
+        txn.set_ground_location(grave_plot, town).unwrap();
+        txn.set_ground_location(coins, town).unwrap();
+        txn.set_possessor(coins, corpse).unwrap();
+        txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+        txn.set_component_workstation_marker(
+            grave_plot,
+            WorkstationMarker(WorkstationTag::GravePlot),
+        )
+        .unwrap();
+        txn.set_component_contention_policy(
+            corpse,
+            ContentionPolicy {
+                grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_contention_queue(corpse, ContentionQueue::default())
+            .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, corpse, grave_plot)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+    patch_believed_entity_state(&mut world, actor, corpse, Tick(1), |state| {
+        state.last_known_inventory.insert(CommodityKind::Coin, Quantity(3));
+        state.alive = false;
+    });
+
+    ContentionCorpseFixture {
+        world,
+        actor,
+        town,
+        corpse,
+        grave_plot,
+        loot_action,
+        bury_action,
+        registry,
+    }
+}
+
+struct ContentionCareFixture {
+    world: World,
+    actor: EntityId,
+    town: EntityId,
+    patient: EntityId,
+    heal_action: ActionDefId,
+    registry: ActionDefRegistry,
+}
+
+fn build_contention_care_fixture() -> ContentionCareFixture {
+    let town = prototype_place_entity(PrototypePlace::VillageSquare);
+    let (registry, _handlers) = build_registry();
+    let heal_action = registry
+        .iter()
+        .find(|def| def.name == "heal")
+        .map(|def| def.id)
+        .expect("heal action should be registered");
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, patient) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Healer", ControlSource::Ai).unwrap();
+        let patient = txn.create_agent("Patient", ControlSource::Ai).unwrap();
+        let medicine = txn
+            .create_item_lot(CommodityKind::Medicine, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(actor, town).unwrap();
+        txn.set_ground_location(patient, town).unwrap();
+        txn.set_ground_location(medicine, town).unwrap();
+        txn.set_possessor(medicine, actor).unwrap();
+        txn.set_component_wound_list(patient, worldwake_core::WoundList { wounds: vec![wound(400)] })
+            .unwrap();
+        txn.set_component_contention_policy(
+            patient,
+            ContentionPolicy {
+                grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_contention_queue(patient, ContentionQueue::default())
+            .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, patient)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+    patch_believed_entity_state(&mut world, actor, patient, Tick(1), |state| {
+        state.wounds = vec![wound(400)];
+        state.alive = true;
+    });
+
+    ContentionCareFixture {
+        world,
+        actor,
+        town,
+        patient,
+        heal_action,
+        registry,
+    }
+}
+
 #[test]
 fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
     let fixture = build_exclusive_orchard_fixture(false);
@@ -3773,6 +3959,205 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
             .copied()
             .and_then(crate::authoritative_target),
         Some(second_orchard)
+    );
+}
+
+#[test]
+fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::LootCorpse {
+            corpse: fixture.corpse,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_corpse_use")
+            .map(|def| def.id)
+            .expect("queue_for_corpse_use should be registered"),
+        bound_targets: vec![fixture.corpse],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &queue_affordance);
+
+    assert_eq!(queue_candidates.len(), 1);
+    assert_eq!(
+        queue_candidates[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.loot_action,
+            },
+        ))
+    );
+    assert_eq!(
+        queue_candidates[0].authoritative_targets,
+        vec![fixture.corpse]
+    );
+
+    let direct_loot_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture.loot_action,
+        bound_targets: vec![fixture.corpse],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &direct_loot_affordance)
+            .is_empty(),
+        "direct loot should not search as available until the actor holds the grant"
+    );
+}
+
+#[test]
+fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::BuryCorpse {
+            corpse: fixture.corpse,
+            burial_site: fixture.grave_plot,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse, fixture.grave_plot]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_corpse_use")
+            .map(|def| def.id)
+            .expect("queue_for_corpse_use should be registered"),
+        bound_targets: vec![fixture.corpse],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &queue_affordance);
+
+    assert_eq!(queue_candidates.len(), 1);
+    assert_eq!(
+        queue_candidates[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.bury_action,
+            },
+        ))
+    );
+    assert_eq!(
+        queue_candidates[0].authoritative_targets,
+        vec![fixture.corpse]
+    );
+
+    let direct_bury_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture.bury_action,
+        bound_targets: vec![fixture.corpse, fixture.grave_plot],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &direct_bury_affordance)
+            .is_empty(),
+        "direct bury should not search as available until the actor holds the grant"
+    );
+}
+
+#[test]
+fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant() {
+    let fixture = build_contention_care_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds {
+            patient: fixture.patient,
+        }),
+        evidence_entities: BTreeSet::from([fixture.patient]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_care_target")
+            .map(|def| def.id)
+            .expect("queue_for_care_target should be registered"),
+        bound_targets: vec![fixture.patient],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &queue_affordance);
+
+    assert_eq!(queue_candidates.len(), 1);
+    assert_eq!(
+        queue_candidates[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.heal_action,
+            },
+        ))
+    );
+    assert_eq!(
+        queue_candidates[0].authoritative_targets,
+        vec![fixture.patient]
+    );
+
+    let direct_heal_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture.heal_action,
+        bound_targets: vec![fixture.patient],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &direct_heal_affordance)
+            .is_empty(),
+        "direct heal should not search as available until the actor holds the grant"
     );
 }
 

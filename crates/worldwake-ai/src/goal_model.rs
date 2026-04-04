@@ -894,7 +894,12 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. } => true,
-            GoalKind::TreatWounds { .. } => step.op_kind == PlannerOpKind::Trade,
+            GoalKind::TreatWounds { .. } => {
+                matches!(
+                    step.op_kind,
+                    PlannerOpKind::Trade | PlannerOpKind::QueueForFacilityUse
+                )
+            }
             _ => false,
         }
     }

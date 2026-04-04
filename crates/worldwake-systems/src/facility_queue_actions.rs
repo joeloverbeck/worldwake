@@ -106,25 +106,7 @@ fn validate_queue_payload_authoritatively(
             ActionError::PreconditionFailed(format!("facility {facility} lacks workstation marker"))
         })?;
 
-    if world
-        .get_component_contention_policy(facility)
-        .is_none()
-    {
-        return Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} lacks ContentionPolicy"
-        )));
-    }
-
-    let queue = world
-        .get_component_contention_queue(facility)
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("facility {facility} lacks ContentionQueue"))
-        })?;
-    if queue.has_actor(actor) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} is already queued or granted at facility {facility}"
-        )));
-    }
+    validate_contention_queue_admission(world, actor, facility)?;
 
     let intended_def = registry.get(payload.intended_action).ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
@@ -169,6 +151,62 @@ pub(crate) fn exclusive_facility_workstation_tag(def: &ActionDef) -> Option<Work
     }
 }
 
+pub(crate) fn validate_contention_queue_admission(
+    world: &World,
+    actor: EntityId,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    if world.get_component_contention_policy(entity).is_none() {
+        return Err(ActionError::PreconditionFailed(format!(
+            "entity {entity} lacks ContentionPolicy"
+        )));
+    }
+
+    let queue = world
+        .get_component_contention_queue(entity)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("entity {entity} lacks ContentionQueue"))
+        })?;
+    if queue.has_actor(actor) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is already queued or granted at entity {entity}"
+        )));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn enqueue_for_contention(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    entity: EntityId,
+    intended_action: ActionDefId,
+) -> Result<(), ActionError> {
+    let mut queue = txn
+        .get_component_contention_queue(entity)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("entity {entity} lacks ContentionQueue"))
+        })?;
+    let max_waiters = txn
+        .get_component_contention_policy(entity)
+        .map(|policy| policy.max_waiters)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("entity {entity} lacks ContentionPolicy"))
+        })?;
+
+    queue
+        .enqueue(actor, intended_action, txn.tick(), max_waiters)
+        .map_err(|err| match err {
+            worldwake_core::ContentionError::QueueFull => {
+                ActionError::PreconditionFailed("contention_rejected".to_string())
+            }
+            other => ActionError::PreconditionFailed(format!("{other:?}")),
+        })?;
+    txn.set_component_contention_queue(entity, queue)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn start_queue_for_facility_use(
     _def: &ActionDef,
@@ -204,29 +242,7 @@ fn commit_queue_for_facility_use(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    let mut queue = txn
-        .get_component_contention_queue(facility)
-        .cloned()
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("facility {facility} lacks ContentionQueue"))
-        })?;
-    let max_waiters = txn
-        .get_component_contention_policy(facility)
-        .map(|policy| policy.max_waiters)
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("facility {facility} lacks ContentionPolicy"))
-        })?;
-
-    queue
-        .enqueue(
-            instance.actor,
-            payload.intended_action,
-            txn.tick(),
-            max_waiters,
-        )
-        .map_err(|err| ActionError::PreconditionFailed(format!("{err:?}")))?;
-    txn.set_component_contention_queue(facility, queue)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    enqueue_for_contention(txn, instance.actor, facility, payload.intended_action)?;
     Ok(worldwake_sim::CommitOutcome::empty())
 }
 

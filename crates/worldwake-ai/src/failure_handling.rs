@@ -579,6 +579,9 @@ fn parse_abort_detail(detail: &str) -> Option<BlockingFact> {
         Some(BlockingFact::NoKnownPath)
     } else if detail.contains("destroyed") || detail.contains("gone") {
         Some(BlockingFact::TargetGone)
+    } else if detail.contains("contention") || detail.contains("grant") || detail.contains("queue")
+    {
+        Some(BlockingFact::ExclusiveFacilityUnavailable)
     } else {
         None
     }

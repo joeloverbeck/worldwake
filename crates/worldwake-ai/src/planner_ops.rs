@@ -89,7 +89,9 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Generic, "establish_camp") => Some(PlannerOpKind::EstablishCamp),
         (ActionDomain::Trade, "trade") => Some(PlannerOpKind::Trade),
         (ActionDomain::Trade, "staff_market") => Some(PlannerOpKind::StaffMarket),
-        (ActionDomain::Production, "queue_for_facility_use") => {
+        (ActionDomain::Production, "queue_for_facility_use")
+        | (ActionDomain::Corpse, "queue_for_corpse_use")
+        | (ActionDomain::Care, "queue_for_care_target") => {
             Some(PlannerOpKind::QueueForFacilityUse)
         }
         (ActionDomain::Production, name)

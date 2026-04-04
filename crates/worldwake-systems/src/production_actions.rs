@@ -329,36 +329,36 @@ fn consume_staged_inputs(txn: &mut WorldTxn<'_>, container: EntityId) -> Result<
     Ok(())
 }
 
-fn ensure_matching_facility_grant(
+pub(crate) fn ensure_matching_contention_grant(
     world: &World,
     actor: EntityId,
-    facility: EntityId,
+    entity: EntityId,
     action_def: ActionDefId,
 ) -> Result<(), ActionError> {
-    let policy = world.get_component_contention_policy(facility);
-    let queue = world.get_component_contention_queue(facility);
+    let policy = world.get_component_contention_policy(entity);
+    let queue = world.get_component_contention_queue(entity);
     let queue = match (policy, queue) {
         (None, None) => return Ok(()),
         (Some(_), Some(queue)) => queue,
         (Some(_), None) => {
             return Err(ActionError::PreconditionFailed(format!(
-                "facility {facility} is exclusive but lacks ContentionQueue grant state"
+                "entity {entity} is contention-managed but lacks ContentionQueue grant state"
             )))
         }
         (None, Some(_)) => {
             return Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} has ContentionQueue grant state without ContentionPolicy"
+            "entity {entity} has ContentionQueue grant state without ContentionPolicy"
         )))
         }
     };
     match queue.granted.as_ref() {
         Some(granted) if granted.actor == actor && granted.intended_action == action_def => Ok(()),
         Some(granted) => Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} grant belongs to actor {} action {:?}, not actor {actor} action {:?}",
+            "entity {entity} grant belongs to actor {} action {:?}, not actor {actor} action {:?}",
             granted.actor, granted.intended_action, action_def
         ))),
         None => Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} has no matching grant for actor {actor} action {action_def:?}"
+            "entity {entity} has no matching grant for actor {actor} action {action_def:?}"
         ))),
     }
 }
@@ -369,7 +369,7 @@ fn consume_matching_facility_grant(
     facility: EntityId,
     action_def: ActionDefId,
 ) -> Result<(), ActionError> {
-    ensure_matching_facility_grant(txn, actor, facility, action_def)?;
+    ensure_matching_contention_grant(txn, actor, facility, action_def)?;
     if txn
         .get_component_contention_policy(facility)
         .is_none()
@@ -399,7 +399,7 @@ fn validate_exclusive_facility_grant(
     world: &World,
 ) -> Result<(), ActionError> {
     let facility = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
-    ensure_matching_facility_grant(world, actor, facility, def.id)
+    ensure_matching_contention_grant(world, actor, facility, def.id)
 }
 
 fn start_harvest(
@@ -1754,7 +1754,7 @@ mod tests {
         assert_eq!(
             second_start,
             ActionError::PreconditionFailed(format!(
-                "facility {workstation} has no matching grant for actor {} action {:?}",
+                "entity {workstation} has no matching grant for actor {} action {:?}",
                 actor_b, ids[0]
             ))
         );
