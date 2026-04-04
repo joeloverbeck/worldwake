@@ -4,18 +4,18 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: Yes — golden test scenarios, save format version bump
-**Deps**: S44GENCONSUB-006, S44GENCONSUB-007, S44GENCONSUB-008
+**Deps**: S44GENCONSUB-006, S44GENCONSUB-007, S44GENCONSUB-008, S44GENCONSUB-010
 
 ## Problem
 
-The contention substrate needs end-to-end proof that multi-agent contention resolves through inspectable world state, not invisible tick order. FOUNDATIONS Canonical Scenario E requires "any resulting line, grant, blocker, or reservation is inspectable world state rather than invisible runtime magic." Three golden test scenarios prove the substrate works across the full stack: action validation, contention system, perception, and AI replanning.
+The contention substrate needs end-to-end proof that multi-agent contention resolves through inspectable world state, not invisible tick order. FOUNDATIONS Canonical Scenario E requires "any resulting line, grant, blocker, or reservation is inspectable world state rather than invisible runtime magic." The golden closeout must now cover both queue-based domains and the newly live race-mode unique-item pickup path across action validation, contention system, perception, and AI replanning.
 
 ## Assumption Reassessment (2026-04-03)
 
 1. Golden tests live in `crates/worldwake-ai/tests/` as `golden_*.rs` files. They use deterministic replay with `ChaCha8Rng` seeding. Confirmed via prior session knowledge.
 2. `SAVE_FORMAT_VERSION` at `crates/worldwake-sim/src/save_load.rs:6`, currently 15. Must be bumped for new components.
 3. Golden tests require `PerceptionProfile` on agents that need to observe post-action output (per CLAUDE.md). Critical for Scenario A where agents must perceive contention state.
-4. After S44GENCONSUB-006/007/008: ContentionQueue is attached to entities, action validation gates through grants, and perception projects contention state into beliefs.
+4. After S44GENCONSUB-006/007/008/010: ContentionQueue is attached to contention-managed entities, action validation gates through grants or race-mode rejection, and perception projects contention state into beliefs.
 5. Scenario A needs: two agents co-located with a corpse, both wanting to loot. First gets grant, second queued. After first completes, second promoted.
 6. Scenario B needs: agent queued for a facility, then travels away. System prunes departed agent.
 7. Scenario C needs: entity with `max_waiters: Some(1)`. Two agents try to join. First succeeds, second rejected. Second replans.

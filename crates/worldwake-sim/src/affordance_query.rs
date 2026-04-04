@@ -375,6 +375,11 @@ fn precondition_implied_by_target_spec(spec: &TargetSpec, precondition: Precondi
                 _ => false,
             }
         }
+        (TargetSpec::EntityAtActorPlaceAnyOf { kinds }, precondition) => match precondition {
+            Precondition::TargetExists(_) | Precondition::TargetAtActorPlace(_) => true,
+            Precondition::TargetKind { kind, .. } => kinds.contains(&kind),
+            _ => false,
+        },
         (
             TargetSpec::EntityDirectlyPossessedByActor { kind: target_kind },
             precondition,
@@ -383,6 +388,16 @@ fn precondition_implied_by_target_spec(spec: &TargetSpec, precondition: Precondi
                 true
             }
             Precondition::TargetKind { kind, .. } => *target_kind == kind,
+            _ => false,
+        },
+        (
+            TargetSpec::EntityDirectlyPossessedByActorAnyOf { kinds },
+            precondition,
+        ) => match precondition {
+            Precondition::TargetExists(_) | Precondition::TargetDirectlyPossessedByActor(_) => {
+                true
+            }
+            Precondition::TargetKind { kind, .. } => kinds.contains(&kind),
             _ => false,
         },
         _ => false,
@@ -457,12 +472,35 @@ fn enumerate_targets(
                 .filter(|entity| view.entity_kind(*entity) == Some(*kind))
                 .collect::<Vec<_>>()
         }
+        TargetSpec::EntityAtActorPlaceAnyOf { kinds } => {
+            let Some(place) = view.effective_place(actor) else {
+                return Vec::new();
+            };
+            actor_place_entity_cache
+                .entry(place)
+                .or_insert_with(|| view.entities_at(place))
+                .iter()
+                .copied()
+                .filter(|entity| {
+                    view.entity_kind(*entity)
+                        .is_some_and(|kind| kinds.contains(&kind))
+                })
+                .collect::<Vec<_>>()
+        }
         TargetSpec::EntityDirectlyPossessedByActor { kind } => {
             view.direct_possessions(actor)
                 .into_iter()
                 .filter(|entity| view.entity_kind(*entity) == Some(*kind))
                 .collect::<Vec<_>>()
         }
+        TargetSpec::EntityDirectlyPossessedByActorAnyOf { kinds } => view
+            .direct_possessions(actor)
+            .into_iter()
+            .filter(|entity| {
+                view.entity_kind(*entity)
+                    .is_some_and(|kind| kinds.contains(&kind))
+            })
+            .collect::<Vec<_>>(),
         TargetSpec::AdjacentPlace => {
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
@@ -1104,6 +1142,38 @@ mod tests {
         );
 
         assert_eq!(targets, vec![matching_b, matching_a]);
+    }
+
+    #[test]
+    fn enumerate_targets_supports_entity_at_actor_place_any_of() {
+        let actor = entity(1);
+        let place = entity(10);
+        let lot = entity(20);
+        let unique = entity(30);
+        let other_kind = entity(40);
+
+        let mut view = StubBeliefView::default();
+        for entity in [actor, lot, unique, other_kind] {
+            view.alive.insert(entity, true);
+            view.places.insert(entity, place);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(lot, EntityKind::ItemLot);
+        view.kinds.insert(unique, EntityKind::UniqueItem);
+        view.kinds.insert(other_kind, EntityKind::Facility);
+        view.colocated
+            .insert(place, vec![other_kind, unique, lot, unique]);
+
+        let targets = enumerate_targets(
+            &TargetSpec::EntityAtActorPlaceAnyOf {
+                kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
+            },
+            actor,
+            &view,
+            &mut BTreeMap::new(),
+        );
+
+        assert_eq!(targets, vec![lot, unique]);
     }
 
     #[test]

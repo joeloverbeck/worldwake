@@ -947,7 +947,11 @@ macro_rules! with_component_schema_entries {
                 query_contention_policy,
                 count_with_contention_policy,
                 "ContentionPolicy",
-                |kind| kind == EntityKind::Agent || kind == EntityKind::Facility,
+                |kind| {
+                    kind == EntityKind::Agent
+                        || kind == EntityKind::Facility
+                        || kind == EntityKind::UniqueItem
+                },
                 ContentionPolicy,
                 crate::ContentionPolicy,
                 set_component_contention_policy,
@@ -972,7 +976,11 @@ macro_rules! with_component_schema_entries {
                 query_contention_queue,
                 count_with_contention_queue,
                 "ContentionQueue",
-                |kind| kind == EntityKind::Agent || kind == EntityKind::Facility,
+                |kind| {
+                    kind == EntityKind::Agent
+                        || kind == EntityKind::Facility
+                        || kind == EntityKind::UniqueItem
+                },
                 ContentionQueue,
                 crate::ContentionQueue,
                 set_component_contention_queue,

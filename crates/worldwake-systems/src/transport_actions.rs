@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    load_of_entity, load_per_unit, ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag,
-    Quantity, VisibilitySpec, WorldTxn,
+    load_of_entity, load_per_unit, ActionDefId, BodyCostPerTick, ContentionGrant,
+    ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventTag, Quantity,
+    VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -50,16 +51,12 @@ pub fn register_transport_actions(
             name: "pick_up".to_string(),
             domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
-            targets: vec![TargetSpec::EntityAtActorPlace {
-                kind: EntityKind::ItemLot,
+            targets: vec![TargetSpec::EntityAtActorPlaceAnyOf {
+                kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
             }],
             preconditions: vec![
                 Precondition::TargetExists(0),
                 Precondition::TargetAtActorPlace(0),
-                Precondition::TargetKind {
-                    target_index: 0,
-                    kind: EntityKind::ItemLot,
-                },
                 Precondition::TargetNotInContainer(0),
                 Precondition::TargetUnpossessed(0),
                 Precondition::TargetUnownedOrActorControls(0),
@@ -71,10 +68,6 @@ pub fn register_transport_actions(
             commit_conditions: vec![
                 Precondition::TargetExists(0),
                 Precondition::TargetAtActorPlace(0),
-                Precondition::TargetKind {
-                    target_index: 0,
-                    kind: EntityKind::ItemLot,
-                },
                 Precondition::TargetNotInContainer(0),
                 Precondition::TargetUnpossessed(0),
                 Precondition::TargetUnownedOrActorControls(0),
@@ -93,16 +86,12 @@ pub fn register_transport_actions(
             name: "put_down".to_string(),
             domain: worldwake_core::ActionDomain::Transport,
             actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
-            targets: vec![TargetSpec::EntityDirectlyPossessedByActor {
-                kind: EntityKind::ItemLot,
+            targets: vec![TargetSpec::EntityDirectlyPossessedByActorAnyOf {
+                kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
             }],
             preconditions: vec![
                 Precondition::TargetExists(0),
                 Precondition::TargetAtActorPlace(0),
-                Precondition::TargetKind {
-                    target_index: 0,
-                    kind: EntityKind::ItemLot,
-                },
                 Precondition::TargetDirectlyPossessedByActor(0),
             ],
             reservation_requirements: Vec::new(),
@@ -112,10 +101,6 @@ pub fn register_transport_actions(
             commit_conditions: vec![
                 Precondition::TargetExists(0),
                 Precondition::TargetAtActorPlace(0),
-                Precondition::TargetKind {
-                    target_index: 0,
-                    kind: EntityKind::ItemLot,
-                },
                 Precondition::TargetDirectlyPossessedByActor(0),
             ],
             visibility: VisibilitySpec::ParticipantsOnly,
@@ -165,12 +150,151 @@ pub fn register_transport_actions(
     ]
 }
 
-fn require_item_lot_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
+fn require_transport_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
     instance
         .targets
         .first()
         .copied()
         .ok_or(ActionError::InvalidTarget(instance.actor))
+}
+
+fn unique_item_pickup_contention_policy() -> ContentionPolicy {
+    ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+        auto_promote: false,
+        max_waiters: Some(0),
+    }
+}
+
+fn is_transport_ground_pickup_kind(kind: EntityKind) -> bool {
+    matches!(kind, EntityKind::ItemLot | EntityKind::UniqueItem)
+}
+
+fn is_transport_direct_possession_kind(kind: EntityKind) -> bool {
+    matches!(kind, EntityKind::ItemLot | EntityKind::UniqueItem)
+}
+
+fn unique_item_pickup_contention_eligible(txn: &WorldTxn<'_>, target: EntityId) -> bool {
+    txn.entity_kind(target) == Some(EntityKind::UniqueItem)
+        && txn.effective_place(target).is_some()
+        && txn.direct_container(target).is_none()
+        && txn.possessor_of(target).is_none()
+        && txn.owner_of(target).is_none()
+}
+
+fn ensure_unique_item_pickup_contention_components(
+    txn: &mut WorldTxn<'_>,
+    target: EntityId,
+) -> Result<(), ActionError> {
+    if txn.entity_kind(target) != Some(EntityKind::UniqueItem) {
+        return Ok(());
+    }
+    match (
+        txn.get_component_contention_policy(target),
+        txn.get_component_contention_queue(target),
+    ) {
+        (None, None) => {
+            if !unique_item_pickup_contention_eligible(txn, target) {
+                return Ok(());
+            }
+            txn.set_component_contention_policy(target, unique_item_pickup_contention_policy())
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            txn.set_component_contention_queue(target, ContentionQueue::default())
+                .map_err(|err| ActionError::InternalError(err.to_string()))
+        }
+        (Some(_), Some(_)) => Ok(()),
+        (Some(_), None) => Err(ActionError::PreconditionFailed(format!(
+            "unique item {target} lacks ContentionQueue grant state"
+        ))),
+        (None, Some(_)) => Err(ActionError::PreconditionFailed(format!(
+            "unique item {target} lacks ContentionPolicy"
+        ))),
+    }
+}
+
+fn claim_or_require_unique_item_pickup_grant(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+    action_def: ActionDefId,
+    claim_if_absent: bool,
+) -> Result<(), ActionError> {
+    if txn.entity_kind(target) != Some(EntityKind::UniqueItem) {
+        return Ok(());
+    }
+    ensure_unique_item_pickup_contention_components(txn, target)?;
+    let policy = txn
+        .get_component_contention_policy(target)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("unique item {target} lacks ContentionPolicy"))
+        })?;
+    let mut queue = txn
+        .get_component_contention_queue(target)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("unique item {target} lacks ContentionQueue"))
+        })?;
+
+    match queue.granted.as_ref() {
+        Some(granted) if granted.actor == actor && granted.intended_action == action_def => {
+            return Ok(());
+        }
+        Some(_) => {
+            return Err(ActionError::PreconditionFailed(
+                "contention_rejected".to_string(),
+            ));
+        }
+        None if !claim_if_absent => {
+            return Err(ActionError::PreconditionFailed(
+                "contention_rejected".to_string(),
+            ));
+        }
+        None => {}
+    }
+
+    queue.granted = Some(ContentionGrant {
+        actor,
+        intended_action: action_def,
+        granted_at: txn.tick(),
+        expires_at: txn.tick() + u64::from(policy.grant_hold_ticks.get()),
+    });
+    txn.set_component_contention_queue(target, queue)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
+fn clear_unique_item_pickup_grant(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+    action_def: ActionDefId,
+    detach_when_ineligible: bool,
+) -> Result<(), ActionError> {
+    if txn.entity_kind(target) != Some(EntityKind::UniqueItem) {
+        return Ok(());
+    }
+    if let Some(mut queue) = txn.get_component_contention_queue(target).cloned() {
+        if queue
+            .granted
+            .as_ref()
+            .is_some_and(|granted| granted.actor == actor && granted.intended_action == action_def)
+        {
+            queue.clear_grant();
+            txn.set_component_contention_queue(target, queue)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        }
+    }
+    if detach_when_ineligible && !unique_item_pickup_contention_eligible(txn, target) {
+        if txn.get_component_contention_queue(target).is_some() {
+            txn.clear_component_contention_queue(target)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        }
+        if txn.get_component_contention_policy(target).is_some() {
+            txn.clear_component_contention_policy(target)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_pick_up(
@@ -187,7 +311,8 @@ fn validate_pick_up(
             "target {target} is not at actor {actor} place {actor_place}"
         )));
     }
-    if txn.entity_kind(target) != Some(EntityKind::ItemLot) {
+    let kind = txn.entity_kind(target).ok_or(ActionError::InvalidTarget(target))?;
+    if !is_transport_ground_pickup_kind(kind) {
         return Err(ActionError::InvalidTarget(target));
     }
     if txn.direct_container(target).is_some() {
@@ -208,24 +333,45 @@ fn validate_pick_up(
             ))
         })?;
     }
-    let lot = txn
-        .get_component_item_lot(target)
-        .ok_or(ActionError::InvalidTarget(target))?;
-    let per_unit = load_per_unit(lot.commodity).0;
-    let remaining = remaining_capacity(txn, actor)?.0;
-    if remaining < per_unit {
-        return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} has insufficient carry capacity for any {:?}",
-            lot.commodity
-        )));
-    }
-    if let Some(quantity) = requested_quantity {
-        let max_quantity = Quantity((remaining / per_unit).min(lot.quantity.0));
-        if quantity == Quantity(0) || quantity > max_quantity {
-            return Err(ActionError::PreconditionFailed(format!(
-                "requested pickup quantity {quantity:?} exceeds available movable quantity {max_quantity:?}",
-            )));
+    match kind {
+        EntityKind::ItemLot => {
+            let lot = txn
+                .get_component_item_lot(target)
+                .ok_or(ActionError::InvalidTarget(target))?;
+            let per_unit = load_per_unit(lot.commodity).0;
+            let remaining = remaining_capacity(txn, actor)?.0;
+            if remaining < per_unit {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "actor {actor} has insufficient carry capacity for any {:?}",
+                    lot.commodity
+                )));
+            }
+            if let Some(quantity) = requested_quantity {
+                let max_quantity = Quantity((remaining / per_unit).min(lot.quantity.0));
+                if quantity == Quantity(0) || quantity > max_quantity {
+                    return Err(ActionError::PreconditionFailed(format!(
+                        "requested pickup quantity {quantity:?} exceeds available movable quantity {max_quantity:?}",
+                    )));
+                }
+            }
         }
+        EntityKind::UniqueItem => {
+            if requested_quantity.is_some() {
+                return Err(ActionError::PreconditionFailed(
+                    "unique item pick_up does not accept quantity override".to_string(),
+                ));
+            }
+            let remaining = remaining_capacity(txn, actor)?.0;
+            let load = load_of_entity(txn, target)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?
+                .0;
+            if remaining < load {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "actor {actor} has insufficient carry capacity for target {target}"
+                )));
+            }
+        }
+        _ => return Err(ActionError::InvalidTarget(target)),
     }
     Ok(())
 }
@@ -236,34 +382,42 @@ fn execute_pick_up(
     target: EntityId,
     requested_quantity: Option<Quantity>,
 ) -> Result<EntityId, ActionError> {
-    validate_pick_up(txn, actor, target, requested_quantity)?;
     let actor_place = txn
         .effective_place(actor)
         .ok_or_else(|| ActionError::PreconditionFailed(format!("actor {actor} has no place")))?;
-    let lot = txn
-        .get_component_item_lot(target)
-        .cloned()
-        .ok_or(ActionError::InvalidTarget(target))?;
-    let remaining = remaining_capacity(txn, actor)?.0;
-    let per_unit = load_per_unit(lot.commodity).0;
-    let requested_quantity =
-        requested_quantity.unwrap_or(Quantity((remaining / per_unit).min(lot.quantity.0)));
-    let moved_entity = if load_of_entity(txn, target)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?
-        .0
-        <= remaining
-        && requested_quantity == lot.quantity
-    {
-        target
-    } else {
-        let (_, split_off) = txn
-            .split_lot(target, requested_quantity)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        split_off
-    };
+    match txn.entity_kind(target) {
+        Some(EntityKind::ItemLot) => {
+            let lot = txn
+                .get_component_item_lot(target)
+                .cloned()
+                .ok_or(ActionError::InvalidTarget(target))?;
+            let remaining = remaining_capacity(txn, actor)?.0;
+            let per_unit = load_per_unit(lot.commodity).0;
+            let requested_quantity =
+                requested_quantity.unwrap_or(Quantity((remaining / per_unit).min(lot.quantity.0)));
+            let moved_entity = if load_of_entity(txn, target)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?
+                .0
+                <= remaining
+                && requested_quantity == lot.quantity
+            {
+                target
+            } else {
+                let (_, split_off) = txn
+                    .split_lot(target, requested_quantity)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+                split_off
+            };
 
-    move_entity_to_direct_possession(txn, moved_entity, actor, actor_place)?;
-    Ok(moved_entity)
+            move_entity_to_direct_possession(txn, moved_entity, actor, actor_place)?;
+            Ok(moved_entity)
+        }
+        Some(EntityKind::UniqueItem) => {
+            move_entity_to_direct_possession(txn, target, actor, actor_place)?;
+            Ok(target)
+        }
+        _ => Err(ActionError::InvalidTarget(target)),
+    }
 }
 
 fn validate_put_down(
@@ -279,7 +433,8 @@ fn validate_put_down(
             "target {target} is not at actor {actor} place {actor_place}"
         )));
     }
-    if txn.entity_kind(target) != Some(EntityKind::ItemLot) {
+    let kind = txn.entity_kind(target).ok_or(ActionError::InvalidTarget(target))?;
+    if !is_transport_direct_possession_kind(kind) {
         return Err(ActionError::InvalidTarget(target));
     }
     if txn.possessor_of(target) != Some(actor) {
@@ -347,36 +502,36 @@ fn validate_steal(
 }
 
 fn start_pick_up(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &mut ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
-    validate_pick_up(
-        txn,
-        instance.actor,
-        require_item_lot_target(instance)?,
-        requested_pick_up_quantity(&instance.payload)?,
-    )?;
+    let target = require_transport_target(instance)?;
+    validate_pick_up(txn, instance.actor, target, requested_pick_up_quantity(&instance.payload)?)?;
+    claim_or_require_unique_item_pickup_grant(txn, instance.actor, target, def.id, true)?;
     Ok(None)
 }
 
 fn commit_pick_up(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_item_lot_target(instance)?;
+    let target = require_transport_target(instance)?;
+    validate_pick_up(txn, instance.actor, target, requested_pick_up_quantity(&instance.payload)?)?;
+    claim_or_require_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
     let moved_entity = execute_pick_up(
         txn,
         instance.actor,
         target,
         requested_pick_up_quantity(&instance.payload)?,
     )?;
+    clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, true)?;
     if moved_entity == target {
         Ok(CommitOutcome::empty())
     } else {
@@ -397,7 +552,7 @@ fn start_put_down(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
-    validate_put_down(txn, instance.actor, require_item_lot_target(instance)?)?;
+    validate_put_down(txn, instance.actor, require_transport_target(instance)?)?;
     Ok(None)
 }
 
@@ -409,12 +564,13 @@ fn commit_put_down(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_item_lot_target(instance)?;
+    let target = require_transport_target(instance)?;
     let actor_place = validate_put_down(txn, instance.actor, target)?;
     txn.clear_possessor(target)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(target, actor_place)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    ensure_unique_item_pickup_contention_components(txn, target)?;
     txn.add_target(target);
     Ok(CommitOutcome::empty())
 }
@@ -426,7 +582,7 @@ fn start_steal(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
-    validate_steal(txn, instance.actor, require_item_lot_target(instance)?)?;
+    validate_steal(txn, instance.actor, require_transport_target(instance)?)?;
     Ok(None)
 }
 
@@ -438,7 +594,7 @@ fn commit_steal(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_item_lot_target(instance)?;
+    let target = require_transport_target(instance)?;
     validate_steal(txn, instance.actor, target)?;
     let actor_place = txn.effective_place(instance.actor).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("actor {} has no place", instance.actor))
@@ -464,14 +620,19 @@ fn tick_transport(
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_transport(
-    _def: &ActionDef,
-    _instance: &ActionInstance,
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    if def.name == "pick_up" {
+        if let Some(target) = instance.targets.first().copied() {
+            clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
+        }
+    }
     Ok(())
 }
 
@@ -504,6 +665,9 @@ fn validate_pick_up_payload_override(
     let Some(target) = targets.first().copied() else {
         return false;
     };
+    if view.entity_kind(target) == Some(EntityKind::UniqueItem) {
+        return false;
+    }
     let Some(commodity) = view.item_lot_commodity(target) else {
         return false;
     };
@@ -529,7 +693,7 @@ mod tests {
         AgentBeliefStore, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
         EventLog, EventView, LoadUnits, PerceptionSource, Place, Quantity, SaleListing, Seed,
         StockAssignment, StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        UniqueItemKind, VisibilitySpec, WitnessData, World, WorldTxn,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
@@ -697,6 +861,18 @@ mod tests {
         assert_eq!(pick_up.name, "pick_up");
         assert_eq!(put_down.name, "put_down");
         assert_eq!(steal.name, "steal");
+        assert_eq!(
+            pick_up.targets,
+            vec![TargetSpec::EntityAtActorPlaceAnyOf {
+                kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
+            }]
+        );
+        assert_eq!(
+            put_down.targets,
+            vec![TargetSpec::EntityDirectlyPossessedByActorAnyOf {
+                kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
+            }]
+        );
         assert!(pick_up
             .preconditions
             .contains(&Precondition::TargetNotInContainer(0)));
@@ -714,6 +890,180 @@ mod tests {
         assert_eq!(steal.duration, DurationExpr::ActorTheftDisposition);
         assert_eq!(steal.visibility, VisibilitySpec::Hidden);
         assert!(steal.causal_event_tags.contains(&EventTag::Crime));
+    }
+
+    #[test]
+    fn pick_up_unique_item_claims_race_grant_and_rejects_second_claimant() {
+        let mut world = World::new(transport_topology()).unwrap();
+        let place = entity(1);
+        let (actor_a, actor_b, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor_a = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let actor_b = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            let item = txn
+                .create_unique_item(
+                    UniqueItemKind::Artifact,
+                    Some("Seal"),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+            for actor in [actor_a, actor_b] {
+                txn.set_ground_location(actor, place).unwrap();
+                txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(10)))
+                    .unwrap();
+            }
+            txn.set_ground_location(item, place).unwrap();
+            commit_txn(txn);
+            (actor_a, actor_b, item)
+        };
+        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let affordance_a = affordances_for(&world, actor_a, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == pick_up_id && affordance.bound_targets == vec![item])
+            .expect("ground unique item should expose pick_up");
+        let affordance_b = affordances_for(&world, actor_b, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == pick_up_id && affordance.bound_targets == vec![item])
+            .expect("ground unique item should expose pick_up for second actor");
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance_a,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        let policy = world
+            .get_component_contention_policy(item)
+            .expect("starting unique-item pickup should materialize contention policy");
+        assert!(!policy.auto_promote);
+        assert_eq!(policy.max_waiters, Some(0));
+        let grant = world
+            .get_component_contention_queue(item)
+            .and_then(|queue| queue.granted.as_ref())
+            .expect("starting unique-item pickup should claim a race grant");
+        assert_eq!(grant.actor, actor_a);
+        assert_eq!(grant.intended_action, pick_up_id);
+
+        let err = start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(message) if message == "contention_rejected"));
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(item), Some(actor_a));
+        assert_eq!(world.get_component_contention_policy(item), None);
+        assert_eq!(world.get_component_contention_queue(item), None);
+    }
+
+    #[test]
+    fn put_down_unique_item_attaches_race_mode_contention_state() {
+        let mut world = World::new(transport_topology()).unwrap();
+        let place = entity(1);
+        let (actor, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let item = txn
+                .create_unique_item(
+                    UniqueItemKind::Misc,
+                    Some("Token"),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(item, place).unwrap();
+            txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(10)))
+                .unwrap();
+            txn.set_possessor(item, actor).unwrap();
+            commit_txn(txn);
+            (actor, item)
+        };
+        let (defs, handlers, _, put_down_id, _) = setup_registries();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == put_down_id && affordance.bound_targets == vec![item])
+            .expect("possessed unique item should expose put_down");
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(item), None);
+        let policy = world
+            .get_component_contention_policy(item)
+            .expect("put_down should attach contention policy for unowned ground unique item");
+        assert_eq!(policy.max_waiters, Some(0));
+        assert!(!policy.auto_promote);
+        assert_eq!(
+            world.get_component_contention_queue(item),
+            Some(&ContentionQueue::default())
+        );
     }
 
     #[test]

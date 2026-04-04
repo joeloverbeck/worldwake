@@ -1,8 +1,9 @@
 use crate::facility_queue_actions::exclusive_facility_workstation_tag;
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, CauseRef, EntityId, EntityKind, EventLog, EventTag, ContentionQueue, Tick,
-    VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+    ActionDomain, CauseRef, ContentionPolicy, EntityId, EntityKind, EventLog, EventTag,
+    ContentionQueue, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
     validate_action_def_authoritatively, ActionDefRegistry, ActionInstance, ActionStatus,
@@ -36,8 +37,10 @@ pub fn contention_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         system_id: _system_id,
     } = ctx;
 
-    let facilities = world.all_entities().collect::<Vec<_>>();
-    for facility in facilities {
+    sync_ground_unique_item_contention(world, event_log, tick)?;
+
+    let contended_entities = world.all_entities().collect::<Vec<_>>();
+    for facility in contended_entities {
         if world.get_component_contention_queue(facility).is_none() {
             continue;
         }
@@ -54,6 +57,88 @@ pub fn contention_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
             facility,
             tick,
         )?;
+    }
+
+    Ok(())
+}
+
+fn unique_item_pickup_contention_policy() -> ContentionPolicy {
+    ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+        auto_promote: false,
+        max_waiters: Some(0),
+    }
+}
+
+fn unique_item_pickup_contention_eligible(world: &World, entity: EntityId) -> bool {
+    world.entity_kind(entity) == Some(EntityKind::UniqueItem)
+        && world.effective_place(entity).is_some()
+        && world.direct_container(entity).is_none()
+        && world.possessor_of(entity).is_none()
+        && world.owner_of(entity).is_none()
+}
+
+fn sync_ground_unique_item_contention(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+) -> Result<(), SystemError> {
+    let unique_items = world
+        .all_entities()
+        .filter(|entity| world.entity_kind(*entity) == Some(EntityKind::UniqueItem))
+        .collect::<Vec<_>>();
+
+    for entity in unique_items {
+        let eligible = unique_item_pickup_contention_eligible(world, entity);
+        let has_policy = world.get_component_contention_policy(entity).is_some();
+        let has_queue = world.get_component_contention_queue(entity).is_some();
+
+        if eligible && !has_policy && !has_queue {
+            let place = world.effective_place(entity);
+            let mut txn = WorldTxn::new(
+                world,
+                tick,
+                CauseRef::SystemTick(tick),
+                None,
+                place,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            txn.add_tag(EventTag::System)
+                .add_tag(EventTag::WorldMutation)
+                .add_target(entity);
+            txn.set_component_contention_policy(entity, unique_item_pickup_contention_policy())
+                .map_err(|error| SystemError::new(error.to_string()))?;
+            txn.set_component_contention_queue(entity, ContentionQueue::default())
+                .map_err(|error| SystemError::new(error.to_string()))?;
+            let _ = txn.commit(event_log);
+            continue;
+        }
+
+        if !eligible && (has_policy || has_queue) {
+            let place = world.effective_place(entity);
+            let mut txn = WorldTxn::new(
+                world,
+                tick,
+                CauseRef::SystemTick(tick),
+                None,
+                place,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            txn.add_tag(EventTag::System)
+                .add_tag(EventTag::WorldMutation)
+                .add_target(entity);
+            if has_queue {
+                txn.clear_component_contention_queue(entity)
+                    .map_err(|error| SystemError::new(error.to_string()))?;
+            }
+            if has_policy {
+                txn.clear_component_contention_policy(entity)
+                    .map_err(|error| SystemError::new(error.to_string()))?;
+            }
+            let _ = txn.commit(event_log);
+        }
     }
 
     Ok(())
@@ -461,8 +546,8 @@ mod tests {
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
         DeadAt, GoalKey, GoalKind, KnownRecipes, ProductionJob, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, QueuedContentionIntent, Quantity, ResourceSource, Seed,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        Wound, WoundCause, WoundId, WoundList,
+        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -472,6 +557,10 @@ mod tests {
 
     fn nz(value: u32) -> NonZeroU32 {
         NonZeroU32::new(value).unwrap()
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId { slot, generation: 0 }
     }
 
     fn pm(value: u16) -> worldwake_core::Permille {
@@ -1153,5 +1242,73 @@ mod tests {
             &first_queue
         );
         assert_eq!(log.len(), first_event_count);
+    }
+
+    #[test]
+    fn ground_unique_item_receives_race_mode_contention_state() {
+        let recipes = build_recipe_registry();
+        let (defs, _handlers, _harvest_id, _craft_id) = setup_registries(&recipes);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = entity(1);
+        let item = {
+            let mut txn = new_txn(&mut world, 1);
+            let item = txn
+                .create_unique_item(
+                    UniqueItemKind::Artifact,
+                    Some("Seal"),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+            txn.set_ground_location(item, place).unwrap();
+            commit_txn(txn);
+            item
+        };
+
+        run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 2);
+
+        let policy = world
+            .get_component_contention_policy(item)
+            .expect("ground unique item should receive contention policy");
+        assert_eq!(policy.max_waiters, Some(0));
+        assert!(!policy.auto_promote);
+        assert_eq!(
+            world.get_component_contention_queue(item),
+            Some(&ContentionQueue::default())
+        );
+    }
+
+    #[test]
+    fn unique_item_contention_state_is_removed_after_item_leaves_ground() {
+        let recipes = build_recipe_registry();
+        let (defs, _handlers, _harvest_id, _craft_id) = setup_registries(&recipes);
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = entity(1);
+        let (actor, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let item = txn
+                .create_unique_item(
+                    UniqueItemKind::Misc,
+                    Some("Token"),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(item, place).unwrap();
+            commit_txn(txn);
+            (actor, item)
+        };
+
+        run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 2);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_possessor(item, actor).unwrap();
+            commit_txn(txn);
+        }
+
+        run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 4);
+
+        assert_eq!(world.get_component_contention_policy(item), None);
+        assert_eq!(world.get_component_contention_queue(item), None);
     }
 }
