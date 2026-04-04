@@ -1794,6 +1794,7 @@ mod tests {
             wounds: Vec::new(),
             last_known_courage: None,
             believed_activity: None,
+            believed_contention: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -1863,6 +1864,7 @@ mod tests {
                 target,
                 observed_tick: Tick(9),
             }),
+            believed_contention: None,
             observed_tick: Tick(9),
             source: PerceptionSource::DirectObservation,
         }
@@ -4477,6 +4479,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: current_tick(),
                     source: PerceptionSource::DirectObservation,
                 },

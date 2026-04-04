@@ -507,6 +507,7 @@ fn believed_entity_state_at(
         wounds: Vec::new(),
         last_known_courage: None,
         believed_activity: None,
+        believed_contention: None,
         observed_tick,
         source: PerceptionSource::DirectObservation,
     }
@@ -8005,6 +8006,7 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_contention: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },
@@ -8100,6 +8102,7 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_contention: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },

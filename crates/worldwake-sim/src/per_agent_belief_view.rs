@@ -1486,6 +1486,7 @@ mod tests {
             },
             last_known_courage: None,
             believed_activity: None,
+            believed_contention: None,
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }

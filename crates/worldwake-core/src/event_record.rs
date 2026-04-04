@@ -659,6 +659,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     courage: None,
+                    contention_state: None,
                 },
             )]),
             visibility: VisibilitySpec::SamePlace,

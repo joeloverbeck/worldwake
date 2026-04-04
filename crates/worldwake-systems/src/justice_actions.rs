@@ -1276,6 +1276,7 @@ mod tests {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_contention: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },

@@ -296,6 +296,7 @@ mod tests {
                 target: Some(place),
                 observed_tick,
             }),
+            believed_contention: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }

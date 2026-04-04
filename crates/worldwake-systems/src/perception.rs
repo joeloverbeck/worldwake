@@ -945,9 +945,10 @@ mod tests {
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, prototype_place_entity, ActionDefId,
         ActionDomain, AgentBeliefStore, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedActivity, BelievedEntityState, CauseRef, CommodityKind, ComponentDelta,
-        ComponentKind, ComponentValue, Container, ControlSource, DeadAt, EntityKind, EventLog,
-        EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+        BelievedActivity, BelievedContentionState, BelievedEntityState, CauseRef, CommodityKind,
+        ComponentDelta, ComponentKind, ComponentValue, ContentionGrant, ContentionQueue,
+        ContentionWaiter, Container, ControlSource, DeadAt, EntityKind, EventLog, EventPayload,
+        EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, LoadUnits, MismatchKind, ObservedEntitySnapshot,
         OfficeForceState, PendingEvent, PerceptionProfile, PerceptionSource, Permille,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, PrototypePlace, Quantity,
@@ -1023,6 +1024,7 @@ mod tests {
             alive: true,
             wounds: Vec::new(),
             courage: None,
+            contention_state: None,
         }
     }
 
@@ -2382,6 +2384,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2498,6 +2501,82 @@ mod tests {
     }
 
     #[test]
+    fn passive_same_place_observation_projects_contention_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, target, grantee) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_entity(EntityKind::Facility);
+            let grantee = txn.create_agent("Grantee", ControlSource::Ai).unwrap();
+            let waiter = txn.create_agent("Waiter", ControlSource::Ai).unwrap();
+            for entity in [observer, target, grantee, waiter] {
+                txn.set_ground_location(entity, place).unwrap();
+            }
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_contention_queue(
+                target,
+                ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        ContentionWaiter {
+                            actor: waiter,
+                            intended_action: ActionDefId(9),
+                            queued_at: Tick(2),
+                        },
+                    )]),
+                    granted: Some(ContentionGrant {
+                        actor: grantee,
+                        intended_action: ActionDefId(8),
+                        granted_at: Tick(2),
+                        expires_at: Tick(6),
+                    }),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target, grantee)
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x21; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world
+            .get_component_agent_belief_store(observer)
+            .expect("observer should have a belief store");
+        let target_belief = beliefs
+            .get_entity(&target)
+            .expect("colocated target should be directly observed");
+        assert_eq!(
+            target_belief.believed_contention,
+            Some(BelievedContentionState {
+                grant_holder: Some(grantee),
+                queue_length: 1,
+                observed_tick: Tick(3),
+            })
+        );
+    }
+
+    #[test]
     fn passive_same_place_observation_respects_zero_fidelity() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -2564,6 +2643,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2637,6 +2717,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2716,6 +2797,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3375,6 +3457,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3440,6 +3523,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3538,6 +3622,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3594,6 +3679,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3677,6 +3763,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3771,6 +3858,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3862,6 +3950,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3987,6 +4076,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_contention: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },

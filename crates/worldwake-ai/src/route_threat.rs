@@ -163,6 +163,7 @@ mod tests {
                 target: None,
                 observed_tick,
             }),
+            believed_contention: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }

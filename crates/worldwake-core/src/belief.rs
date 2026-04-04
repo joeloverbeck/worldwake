@@ -655,6 +655,8 @@ pub struct ObservedEntitySnapshot {
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub courage: Option<Permille>,
+    #[serde(default)]
+    pub contention_state: Option<BelievedContentionState>,
 }
 
 impl ObservedEntitySnapshot {
@@ -673,6 +675,7 @@ impl ObservedEntitySnapshot {
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
             believed_activity: None,
+            believed_contention: self.contention_state,
             observed_tick,
             source,
         }
@@ -686,6 +689,13 @@ pub struct BelievedActivity {
     pub observed_tick: Tick,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedContentionState {
+    pub grant_holder: Option<EntityId>,
+    pub queue_length: u32,
+    pub observed_tick: Tick,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BelievedEntityState {
     pub last_known_place: Option<EntityId>,
@@ -696,6 +706,8 @@ pub struct BelievedEntityState {
     pub wounds: Vec<Wound>,
     pub last_known_courage: Option<Permille>,
     pub believed_activity: Option<BelievedActivity>,
+    #[serde(default)]
+    pub believed_contention: Option<BelievedContentionState>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
 }
@@ -1114,6 +1126,22 @@ pub fn build_observed_entity_snapshot(
         courage: world
             .get_component_utility_profile(entity)
             .map(|p| p.courage),
+        contention_state: build_believed_contention_state(world, entity, Tick(0)),
+    })
+}
+
+#[must_use]
+pub fn build_believed_contention_state(
+    world: &World,
+    entity: EntityId,
+    observed_tick: Tick,
+) -> Option<BelievedContentionState> {
+    let queue = world.get_component_contention_queue(entity)?;
+    Some(BelievedContentionState {
+        grant_holder: queue.granted.as_ref().map(|grant| grant.actor),
+        queue_length: u32::try_from(queue.waiting.len())
+            .expect("contention queue length should fit in u32"),
+        observed_tick,
     })
 }
 
@@ -1124,8 +1152,12 @@ pub fn build_believed_entity_state(
     observed_tick: Tick,
     source: PerceptionSource,
 ) -> Option<BelievedEntityState> {
-    build_observed_entity_snapshot(world, entity)
-        .map(|snapshot| snapshot.to_believed_entity_state(observed_tick, source))
+    build_observed_entity_snapshot(world, entity).map(|mut snapshot| {
+        if let Some(contention) = snapshot.contention_state.as_mut() {
+            contention.observed_tick = observed_tick;
+        }
+        snapshot.to_believed_entity_state(observed_tick, source)
+    })
 }
 
 /// How the agent acquired a belief snapshot.
@@ -1378,14 +1410,15 @@ mod tests {
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
         recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
         AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BelievedActivity,
-        BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
-        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+        BelievedContentionState, BelievedEntityState, HeardBeliefDisposition,
+        HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile,
+        PerceptionSource, RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState,
+        SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
+        TellProfile, TellTopic, ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, current_institutional_belief_topics,
-        institutional_claim_same_memory_lane, traits::Component, ActionDomain,
+        institutional_claim_same_memory_lane, traits::Component, ActionDefId, ActionDomain,
         BelievedInstitutionalClaim, BodyPart, CommodityKind, ControlSource, DeadAt, EntityId,
         InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, Permille, Quantity, TheftFacts, Tick, World, Wound,
@@ -1459,6 +1492,7 @@ mod tests {
             wounds: vec![sample_wound(1, observed_tick)],
             last_known_courage: None,
             believed_activity: None,
+            believed_contention: None,
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
@@ -2307,6 +2341,11 @@ mod tests {
             alive: true,
             wounds: vec![sample_wound(1, 4)],
             courage: None,
+            contention_state: Some(BelievedContentionState {
+                grant_holder: Some(entity(11)),
+                queue_length: 2,
+                observed_tick: Tick(4),
+            }),
         };
 
         let bytes = bincode::serialize(&snapshot).unwrap();
@@ -3049,6 +3088,7 @@ mod tests {
         );
         assert!(snapshot.alive);
         assert_eq!(snapshot.wounds, vec![wound]);
+        assert_eq!(snapshot.believed_contention, None);
         assert_eq!(snapshot.observed_tick, Tick(9));
         assert_eq!(
             snapshot.source,
@@ -3084,6 +3124,117 @@ mod tests {
         assert!(snapshot.alive);
         assert!(snapshot.wounds.is_empty());
         assert_eq!(snapshot.courage, None); // no UtilityProfile set
+        assert_eq!(snapshot.contention_state, None);
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_projects_contention_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let target = world
+            .create_agent("Target", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let grantee = world
+            .create_agent("Grantee", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let waiter = world
+            .create_agent("Waiter", ControlSource::Ai, Tick(1))
+            .unwrap();
+
+        for entity in [target, grantee, waiter] {
+            world.set_ground_location(entity, place).unwrap();
+        }
+        world
+            .insert_component_contention_queue(
+                target,
+                crate::ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        crate::ContentionWaiter {
+                            actor: waiter,
+                            intended_action: ActionDefId(7),
+                            queued_at: Tick(3),
+                        },
+                    )]),
+                    granted: Some(crate::ContentionGrant {
+                        actor: grantee,
+                        intended_action: ActionDefId(6),
+                        granted_at: Tick(4),
+                        expires_at: Tick(9),
+                    }),
+                },
+            )
+            .unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, target).unwrap();
+        assert_eq!(
+            snapshot.contention_state,
+            Some(BelievedContentionState {
+                grant_holder: Some(grantee),
+                queue_length: 1,
+                observed_tick: Tick(0),
+            })
+        );
+
+        let believed =
+            snapshot.to_believed_entity_state(Tick(8), PerceptionSource::DirectObservation);
+        assert_eq!(
+            believed.believed_contention,
+            Some(BelievedContentionState {
+                grant_holder: Some(grantee),
+                queue_length: 1,
+                observed_tick: Tick(0),
+            })
+        );
+    }
+
+    #[test]
+    fn build_believed_entity_state_projects_contention_with_current_tick() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let target = world
+            .create_agent("Target", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let grantee = world
+            .create_agent("Grantee", ControlSource::Ai, Tick(1))
+            .unwrap();
+
+        for entity in [target, grantee] {
+            world.set_ground_location(entity, place).unwrap();
+        }
+        world
+            .insert_component_contention_queue(
+                target,
+                crate::ContentionQueue {
+                    next_ordinal: 0,
+                    waiting: BTreeMap::new(),
+                    granted: Some(crate::ContentionGrant {
+                        actor: grantee,
+                        intended_action: ActionDefId(4),
+                        granted_at: Tick(4),
+                        expires_at: Tick(9),
+                    }),
+                },
+            )
+            .unwrap();
+
+        let believed = build_believed_entity_state(
+            &world,
+            target,
+            Tick(12),
+            PerceptionSource::DirectObservation,
+        )
+        .unwrap();
+
+        assert_eq!(
+            believed.believed_contention,
+            Some(BelievedContentionState {
+                grant_holder: Some(grantee),
+                queue_length: 0,
+                observed_tick: Tick(12),
+            })
+        );
     }
 
     #[test]
