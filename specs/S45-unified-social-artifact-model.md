@@ -10,22 +10,24 @@ The fix introduces a `SocialArtifact` component family with shared identity, cus
 
 Derived from the ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`, Issues #6 and Feature 1) validated against the actual codebase. Confirmed: only 4 `RecordKind` values exist (OfficeRegister, FactionRoster, SupportLedger, CrimeRegister). No bounties, warrants, contracts, debts, notices, or obligations as world entities. The existing `RecordData` pattern (entries with supersession, issuer, home place, consultation) provides a partial model but is institution-bound and lacks general artifact semantics.
 
+Note: `EntityKind::Contract` and `EntityKind::Rumor` currently exist as empty placeholder variants — no components are registered on them and no systems reference them. This spec consolidates social artifacts under a unified `EntityKind::SocialArtifact` with typed content via `ArtifactKind`, and removes the empty Contract/Rumor variants per Principle 28.
+
 ## Phase
 
 Phase 5: Architectural Substrates
 
 ## Crates
 
-- `worldwake-core` (new `SocialArtifact`, `ArtifactKind`, `ArtifactState`, `BountyTerms`, `NoticeContent` types; new `EntityKind::SocialArtifact` or extension of existing entity kinds)
+- `worldwake-core` (new `SocialArtifact`, `ArtifactKind`, `ArtifactState`, `BountyTerms`, `NoticeContent` types; new `EntityKind::SocialArtifact`; removal of empty `EntityKind::Contract` and `EntityKind::Rumor`)
 - `worldwake-sim` (artifact lifecycle actions; affordance generation for artifact interaction)
-- `worldwake-systems` (artifact-domain action handlers: post bounty, claim bounty, post notice, read notice)
+- `worldwake-systems` (artifact-domain action handlers: post bounty, claim bounty, post notice)
 - `worldwake-ai` (artifact-aware candidate generation; bounty-pursuit goals)
 
 ## Dependencies
 
-- S44 (Generalized Contention) is beneficial for bounty claim competition but not blocking. Claim contention can use the substrate once available.
-- E16c (institutional records) is completed — the existing `RecordData` pattern informs but does not constrain this spec.
-- E17 (crime/justice) is completed — bounties and warrants extend the justice chain.
+- S44 (Generalized Contention) is beneficial for bounty claim competition but not blocking. Claim contention can use the substrate once available. (Archived: `archive/specs/S44-generalized-contention-substrate.md`)
+- E16c (institutional records) is completed — the existing `RecordData` pattern informs but does not constrain this spec. (Archived: `archive/specs/E16c-institutional-beliefs-and-record-consultation.md`)
+- E17 (crime/justice) is completed — bounties and warrants extend the justice chain. (Archived: `archive/specs/E17-crime-theft-justice.md`)
 
 ## FOUNDATIONS Alignment
 
@@ -33,6 +35,7 @@ Phase 5: Architectural Substrates
 - **Principle 4, Persistent Identity, Object Permanence, and Explicit Transfer**: Social artifacts have stable identity. A bounty exists at a place, was issued by someone, can be read, claimed, expired, or destroyed.
 - **Principle 7, Locality**: Agents learn about artifacts by co-located perception (reading a posted notice) or social transmission (being told about a bounty). No global bounty board.
 - **Principle 18, Memory, Evidence, and Records Are World State**: Artifacts are not UI abstractions — they exist as entities/components that can be created, copied, destroyed, forged, or contested.
+- **Principle 28, No Backward Compatibility**: Empty `EntityKind::Contract` and `EntityKind::Rumor` variants are removed and consolidated under the unified `SocialArtifact` kind with `ArtifactKind` discriminant. No backward compatibility shims.
 - **Canonical Scenario A**: Beast attack → report → bounty → hunt → reward. This requires bounties as world entities.
 
 ## Design Goals
@@ -45,23 +48,44 @@ Phase 5: Architectural Substrates
 
 ## Deliverables
 
-### 1. `EntityKind::SocialArtifact` (`worldwake-core`)
+### 1. `EntityKind::SocialArtifact` and Contract/Rumor removal (`worldwake-core`)
 
-Add a new entity kind for social artifacts:
+The current `EntityKind` enum (11 variants):
 
 ```rust
 pub enum EntityKind {
     Agent,
-    Place,
     ItemLot,
     UniqueItem,
     Container,
-    Office,
+    Facility,
+    Place,
     Faction,
+    Office,
+    Contract,   // REMOVE — empty placeholder, zero consumers
+    Rumor,      // REMOVE — empty placeholder, zero consumers
     Record,
-    SocialArtifact,  // NEW
 }
 ```
+
+After this spec (11 variants — net zero change):
+
+```rust
+pub enum EntityKind {
+    Agent,
+    ItemLot,
+    UniqueItem,
+    Container,
+    Facility,
+    Place,
+    Faction,
+    Office,
+    Record,
+    SocialArtifact,  // NEW — unified kind for bounties, notices, and future artifact types
+}
+```
+
+Contract and Rumor are removed per Principle 28. They have no components registered in `component_schema.rs`, no systems reference them, and no entities are allocated with these kinds. Future contract and rumor implementations will use `SocialArtifact` with `ArtifactKind::Contract` / `ArtifactKind::Rumor`.
 
 Social artifacts are allocated through the standard generational allocator and participate in the full entity lifecycle (placement, ownership, archival).
 
@@ -99,7 +123,7 @@ pub enum ArtifactKind {
     Bounty,
     /// Public or semi-public informational posting.
     Notice,
-    // Future: Warrant, Contract, Debt, Obligation
+    // Future: Warrant, Contract, Debt, Obligation, Rumor
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -206,6 +230,8 @@ Register on `EntityKind::SocialArtifact`:
 
 ### 6. Artifact lifecycle actions (`worldwake-systems`)
 
+All artifact actions use `ActionDomain::Social`.
+
 **PostBounty action**:
 - Preconditions: issuer is an office holder or has personal funds; co-located with posting place.
 - Duration: 1-2 ticks (the act of posting).
@@ -216,7 +242,11 @@ Register on `EntityKind::SocialArtifact`:
 - Preconditions: claimant co-located with `claim_place`; holds required proof; bounty is Active.
 - Duration: 1-2 ticks (presenting the claim).
 - Effects: Validates proof, transfers reward from source to claimant, sets bounty state to Fulfilled.
-- Contention: If S44 is available, bounty claims go through `ContentionQueue`. Otherwise, first valid claim wins.
+- Contention: Bounty claims go through `ContentionQueue` (S44 substrate). A `ContentionPolicy` with `max_waiters: Some(0)` (race mode) is attached to the bounty entity at creation — first valid claimant to start the action wins. Subsequent claimants receive a structured `QueueFull` rejection and can replan.
+- Partial failures:
+  - Treasury depleted between posting and claim: ClaimBounty commit checks treasury balance. If insufficient, the claim fails with a clear "treasury depleted" error; bounty remains Active but the claimant receives no reward. The bounty may be withdrawn by the issuer or expire naturally.
+  - Proof contested: If `ProofRequirement::WitnessTestimony` is required but no qualifying witness testimony exists in the claimant's belief store, claim is rejected with "insufficient proof."
+  - Claimant leaves claim_place mid-action: Action aborts; bounty remains Active.
 - Event: Emits bounty-claimed event.
 
 **PostNotice action**:
@@ -228,28 +258,64 @@ Register on `EntityKind::SocialArtifact`:
 
 ### 7. Artifact perception integration
 
-The perception system must recognize `SocialArtifact` entities and create appropriate beliefs:
+The perception system already iterates all co-located entities generically via `world.entities_effectively_at(place)` (`perception.rs:214`). No entity-kind-specific iteration logic is needed.
 
-- When an agent perceives a bounty, create a `BelievedBounty` entry (or equivalent) in the agent's belief store with terms, posting place, and issuer.
-- When an agent perceives a notice, internalize the notice content as an institutional belief or entity belief depending on topic.
+The new work is an **artifact-specific belief creation handler** within the perception system that:
+1. When an agent perceives an entity with `ArtifactHeader`, reads the header and type-specific content component (`BountyTerms` or `NoticeContent`).
+2. Populates a `BelievedArtifactState` field on the perceived entity's `BelievedEntityState`.
+3. For notices, also internalizes notice content as an institutional belief or entity belief depending on topic.
 
-This enables agents to plan toward bounty fulfillment through the standard goal system without special-case perception.
+```rust
+/// Believed state of a perceived social artifact.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedArtifactState {
+    /// What kind of artifact this is.
+    pub kind: ArtifactKind,
+    /// Believed lifecycle state at time of observation.
+    pub state: ArtifactState,
+    /// Who issued it.
+    pub issuer: EntityId,
+    /// When it expires (if known).
+    pub expires_at: Option<Tick>,
+    /// For bounties: believed target and reward.
+    pub bounty_terms: Option<BelievedBountyTerms>,
+    /// For notices: believed topic.
+    pub notice_topic: Option<NoticeTopic>,
+    /// Tick when this artifact state was observed.
+    pub observed_tick: Tick,
+}
+
+/// Simplified bounty terms as perceived by an agent.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedBountyTerms {
+    pub target: BountyTarget,
+    pub reward_commodity: CommodityKind,
+    pub reward_quantity: Quantity,
+    pub claim_place: EntityId,
+}
+```
+
+This is added as `pub believed_artifact: Option<BelievedArtifactState>` on `BelievedEntityState`, following the existing pattern of `believed_contention: Option<BelievedContentionState>`.
+
+Agents who perceived a bounty/notice can share that knowledge via Tell (using existing social transmission). Source degradation applies normally. An agent who hears about a bounty second-hand holds a believed artifact state with lower confidence than one who read it directly.
 
 ### 8. AI integration — bounty pursuit goals
 
-Add `GoalKind::FulfillBounty { bounty: EntityId }` to the goal enum:
+Add `GoalKind::FulfillBounty { bounty: EntityId }` to the goal enum. Note: `GoalKind` derives `Copy` — all fields must be Copy types (`EntityId` is Copy).
 
-- **Candidate generation**: When an agent believes an Active bounty exists and the agent can potentially fulfill the terms (has combat ability for EliminateEntity, has goods for DeliverCommodity), emit a bounty-pursuit candidate.
+- **Candidate generation**: Add `emit_bounty_candidates()` in `candidate_generation.rs`. When an agent believes an Active bounty exists (via `believed_artifact` on a `BelievedEntityState`) and the agent can potentially fulfill the terms (has combat ability for EliminateEntity, has goods for DeliverCommodity), emit a bounty-pursuit candidate.
 - **Ranking**: Bounty pursuit ranked by `enterprise_weight` × reward value, competing with other enterprise goals.
 - **Planning**: GOAP search for: Travel to target → accomplish target action → Travel to claim place → ClaimBounty.
-- **Invalidation**: Invalidated when believed bounty state changes to Fulfilled, Expired, or Withdrawn.
+- **Invalidation**: Invalidated when believed bounty state changes to Fulfilled, Expired, or Withdrawn. If the bounty becomes Fulfilled between plan formation and ClaimBounty execution (e.g., another agent claimed it first), the action fails at precondition check and `handle_plan_failure` triggers replanning — the agent abandons the fulfilled bounty and considers other goals.
 
 ### 9. Artifact expiration system
 
-A per-tick `artifact_lifecycle_system()` that:
+A per-tick `artifact_lifecycle_system()` registered as `SystemId::ArtifactLifecycle` that:
 1. Checks all Active artifacts against current tick.
-2. Transitions expired artifacts to `ArtifactState::Expired`.
-3. Optionally emits expiration events for perception.
+2. Transitions expired artifacts to `ArtifactState::Expired` at the **beginning** of the tick in which `current_tick >= expires_at`. This ensures no actions can target an expired artifact within the expiration tick.
+3. Emits expiration events for perception (co-located agents perceive the state change).
+
+System ordering: runs after action domain systems and before Perception, alongside Contention.
 
 ### 10. Golden tests
 
@@ -315,46 +381,91 @@ Dampened by: notices expire, new information contradicts stale notices, agents w
 | `BountyTerms` on artifact entity | **Stored authoritative state** |
 | `NoticeContent` on artifact entity | **Stored authoritative state** |
 | `ArtifactState` transitions | **Stored authoritative state** (lifecycle mutations via explicit actions or expiration system) |
-| Agent's `BelievedBounty` in belief store | **Derived belief** — perceived snapshot, may be stale |
+| Agent's `BelievedArtifactState` in belief store | **Derived belief** — perceived snapshot, may be stale |
 | Bounty pursuit candidate in AI pipeline | **Derived** — generated per-tick from beliefs, ephemeral |
+
+### H.5 Contention and exclusive affordances
+
+Bounty claims are a contested exclusive affordance — only one claimant should collect the reward for a given bounty.
+
+**Resolution mechanism**: At bounty creation, a `ContentionPolicy` is attached to the `SocialArtifact` entity with `max_waiters: Some(0)` (race mode). This means:
+- First valid claimant to start the ClaimBounty action receives the grant.
+- Subsequent claimants receive `ContentionError::QueueFull` — a structured rejection they can replan from.
+- No waiting queue: agents who lose the race immediately replan (choose a different bounty, return to other goals).
+
+**Tie-breaking**: Same-tick ties resolved by the contention substrate's ordinal-based ordering (deterministic, seeded).
+
+PostBounty and PostNotice are not contested — any eligible agent can post independently.
+
+### H.6 Partial failures and aftermath
+
+| Failure | Aftermath |
+|---------|-----------|
+| ClaimBounty: treasury depleted | Claim fails at commit. Bounty remains Active. Claimant wastes time but gains no reward. Bounty may be withdrawn or expire. |
+| ClaimBounty: proof insufficient | Claim rejected at precondition. Claimant must acquire valid proof. Bounty remains Active. |
+| ClaimBounty: claimant leaves mid-action | Action aborts. Bounty remains Active. Contention grant released. |
+| ClaimBounty: bounty already Fulfilled | Precondition fails. Claimant replans via `handle_plan_failure`. |
+| ClaimBounty: bounty Expired during travel | Precondition fails. Agent perceives expired state on arrival. |
+| PostBounty: issuer lacks funds/authority | Precondition fails. No artifact created. |
+
+Every failure produces new state — no silent dead ends. Failed claims leave the agent at the claim place with updated beliefs, triggering replanning.
+
+### H.7 Belief staleness and correction
+
+Agents can become wrong about artifacts in several ways:
+1. **Stale Active belief**: Agent believes bounty is Active, but it was claimed or expired. Correction: agent returns to posting place and perceives the updated state, or hears via Tell from another agent who perceived the change.
+2. **Unknown bounty**: Agent never visited the posting place and has no belief about the bounty. No correction needed — ignorance is the default state.
+3. **Second-hand staleness**: Agent heard about a bounty via Tell chain. The heard belief carries lower confidence and standard staleness decay. Agent may choose to verify by visiting the posting place before investing in pursuit.
+
+**Provenance markers**: `BelievedArtifactState.observed_tick` and the `PerceptionSource` on the parent `BelievedEntityState` provide freshness and source-chain metadata. Agents with higher `stale_evidence_barrier_threshold` (from `EpistemicDispositionProfile`) are more likely to verify stale bounty beliefs before acting on them.
+
+### H.8 Temporal resolution
+
+- **Expiration**: `artifact_lifecycle_system()` runs at the beginning of each tick, before action domain systems. An artifact with `expires_at == current_tick` transitions to Expired before any actions can target it in that tick. This prevents race conditions between expiration and last-moment claims.
+- **Creation visibility**: A newly posted artifact is placed at the posting location during the PostBounty/PostNotice action commit. It becomes perceivable by co-located agents on the next perception system pass (same tick, since Perception runs after action domain systems).
+- **Claim finality**: ClaimBounty commit sets `ArtifactState::Fulfilled` atomically. The contention race (H.5) prevents multiple simultaneous claims.
 
 ## Cross-System Interactions (Principle 12)
 
 - **Office/faction system** writes artifact creation events when authorized agents post bounties/notices.
-- **Perception system** reads artifact entities at same place → writes to agent belief stores.
+- **Perception system** reads artifact entities at same place → writes to agent belief stores (via `BelievedArtifactState`).
 - **AI candidate generation** reads believed artifacts from beliefs → emits pursuit candidates.
 - **Action system** reads artifact state and proof conditions → validates claims.
 - **Artifact lifecycle system** reads current tick → transitions expired artifacts.
+- **Contention system** manages bounty claim exclusivity via race-mode `ContentionPolicy`.
 - **Tell system** carries artifact knowledge through standard social transmission.
-- **Economy** — reward transfer uses existing commodity transfer mechanisms.
+- **Economy** — reward transfer uses existing commodity transfer mechanisms (`transfer_selected_lots`).
 
 No system invokes another's privileged behavior. All interaction through state and event log.
 
 ## Future Extensions (not in this spec)
 
-| Artifact Type | Description | Prerequisite |
-|---------------|-------------|--------------|
-| Warrant | Institutional order to apprehend/detain a named agent | Extended rights model |
-| Contract | Two-party agreement with obligations and penalties | Obligation substrate |
-| Debt | Owed quantity from debtor to creditor with repayment terms | Obligation substrate |
-| Patrol Order | Standing duty assignment with route and schedule | E19 guard patrol |
-| Trade License | Permission to trade at a specific market | Market infrastructure |
+| Artifact Type | ArtifactKind variant | Description | Prerequisite |
+|---------------|---------------------|-------------|--------------|
+| Warrant | `Warrant` | Institutional order to apprehend/detain a named agent | Extended rights model |
+| Contract | `Contract` | Two-party agreement with obligations and penalties | Obligation substrate |
+| Debt | `Debt` | Owed quantity from debtor to creditor with repayment terms | Obligation substrate |
+| Patrol Order | `PatrolOrder` | Standing duty assignment with route and schedule | E19 guard patrol |
+| Trade License | `TradeLicense` | Permission to trade at a specific market | Market infrastructure |
+| Rumor | `Rumor` | Persistent social claim with source and credibility | Social transmission |
 
-All future types reuse `ArtifactHeader` + type-specific content components.
+All future types reuse `ArtifactHeader` + type-specific content components. The empty `EntityKind::Contract` and `EntityKind::Rumor` variants are removed by this spec; future implementations use `EntityKind::SocialArtifact` with the appropriate `ArtifactKind`.
 
 ## Migration Path
 
-1. Add `EntityKind::SocialArtifact` to the entity kind enum.
-2. Add `ArtifactHeader`, `ArtifactKind`, `ArtifactState` to `worldwake-core`.
-3. Add `BountyTerms`, `BountyTarget`, `ProofRequirement`, `RewardSource` to `worldwake-core`.
-4. Add `NoticeContent`, `NoticeTopic` to `worldwake-core`.
-5. Register components in schema for `EntityKind::SocialArtifact`.
-6. Add `artifact_lifecycle_system()` to `worldwake-systems`.
-7. Add PostBounty, ClaimBounty, PostNotice action handlers.
-8. Extend perception for artifact entities.
-9. Add `GoalKind::FulfillBounty` with candidate generation and planning support.
-10. Write golden tests.
-11. Bump `SAVE_FORMAT_VERSION`.
+1. Remove `EntityKind::Contract` and `EntityKind::Rumor` (zero consumers; update `ALL_ENTITY_KINDS` test constant).
+2. Add `EntityKind::SocialArtifact` to the entity kind enum.
+3. Add `ArtifactHeader`, `ArtifactKind`, `ArtifactState` to `worldwake-core`.
+4. Add `BountyTerms`, `BountyTarget`, `ProofRequirement`, `RewardSource` to `worldwake-core`.
+5. Add `NoticeContent`, `NoticeTopic` to `worldwake-core`.
+6. Add `BelievedArtifactState`, `BelievedBountyTerms` to `worldwake-core` belief module.
+7. Register components in schema for `EntityKind::SocialArtifact`.
+8. Add `SystemId::ArtifactLifecycle` and `artifact_lifecycle_system()` to `worldwake-systems`.
+9. Add PostBounty, ClaimBounty, PostNotice action handlers using `ActionDomain::Social`.
+10. Extend perception for artifact entities (artifact-specific belief creation handler).
+11. Add `GoalKind::FulfillBounty` with candidate generation and planning support.
+12. Write golden tests.
+13. Bump `SAVE_FORMAT_VERSION` from 17 to 18.
 
 ## Verification
 
