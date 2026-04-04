@@ -1,0 +1,98 @@
+=== EXPLORE WORKFLOW ===
+
+> world
+  OK: Clean overview with agent/item counts
+
+> agents
+  OK: Clear with control source and location
+
+> look
+  OK: Entities, connections with travel times
+
+> needs
+  OK: Bar chart with urgency levels
+
+> inventory
+  OK: Items with load capacity
+
+=== ACT WORKFLOW ===
+
+> actions (at Thornwall Village)
+  20 actions listed. No declare_support, queue_for_facility_use, staff_market.
+  CHECKLIST: 4.1 PASS — 20 actions, no hidden crashers
+
+> do 6 (travel Eldergrove Forest)
+  Requested: travel
+  CHECKLIST: 2.3 PASS — do N names action correctly
+
+> tick 1
+  Kael: started travel(Eldergrove Forest)
+  Guard Theron: started patrol(Dusty Trail)
+  CHECKLIST: 1.1 PASS — tick names agents and actions
+  CHECKLIST: 2.1 PASS — tick summary shows action type (tell, patrol, travel, pick_up)
+
+> status (mid-travel)
+  action: travel (2 ticks remaining)
+  CHECKLIST: 2.4 PASS — shows action name and remaining ticks
+
+> actions (at Eldergrove, 15 actions)
+  All 7 tried successfully (drink, sleep, wash, relieve_wilderness, tell, bribe, travel)
+  CHECKLIST: 4.2 PASS — zero crashes from properly-selected actions
+  CHECKLIST: 4.3 PASS — no opaque errors
+
+=== CONTROL WORKFLOW ===
+
+> switch Merchant Vara
+  OK: Clear confirmation
+
+> observe + tick 3
+  Per-agent summaries each tick
+  OK
+
+> switch Kael
+  OK: Shows in-transit status
+
+=== DEBUG WORKFLOW ===
+
+> event 12 (Decision by Merchant Vara)
+  ActiveGoal: Merchant Vara chose ShareBelief { listener: EntityId { slot: 5 ... }, ... }
+  CHECKLIST: 1.2 PASS — shows goal kind (ShareBelief)
+  ISSUE: EntityIds still raw in ShareBelief goal display
+
+> event 13 (Decision by Forager Lina)
+  ActiveGoal: Forager Lina chose ConsumeOwnedCommodity { commodity: Apple }
+  CHECKLIST: 1.3 PASS — can tell goal from output
+  OK: Goal kind is clear and readable
+
+> event 242 (ActionCommitted by Kael — drink)
+  9 deltas: Water quantity 4→3, item create/archive, HomeostaticNeeds set
+  CHECKLIST: 3.1 PASS — deltas say WHAT changed
+  CHECKLIST: 3.2 PASS — quantity shows numeric values
+  CHECKLIST: 3.3 PASS — can distinguish goal/belief/needs/quantity deltas
+
+> event (Social tell committed, earlier ticks)
+  AgentBeliefStore on Merchant Vara: told Kael about location of Mill
+  AgentBeliefStore on Kael: heard location of Mill from Merchant Vara
+  OK: Excellent semantic belief deltas
+
+> trace 242
+  Only shows the single event (cause: system tick 23)
+  CHECKLIST: 6.1 PASS — output is readable, but chain is 1 link deep
+  CHECKLIST: 6.2 FAIL — only 1 link, can't evaluate multi-link chains
+  CHECKLIST: 6.3 FAIL — no multi-link chain found to follow
+
+> trace (no args)
+  error: <EVENT_ID> required
+  CHECKLIST: 5.2 PASS — says EVENT_ID
+
+> inspect Nonexistent
+  CHECKLIST: 5.3 PASS — suggests valid names
+
+> switch Nonexistent
+  CHECKLIST: 5.4 PASS — suggests valid names
+
+> help
+  CHECKLIST: 5.1 PASS — all commands described
+
+> save + load
+  OK

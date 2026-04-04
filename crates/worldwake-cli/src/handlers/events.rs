@@ -2,16 +2,24 @@
 //!
 //! All handlers are read-only — zero world mutation.
 
-use worldwake_core::{cause::CauseRef, event_log::EventLog, event_record::EventView, ids::EventId};
+use worldwake_core::{
+    cause::CauseRef, event_log::EventLog, event_record::EventView as _, ids::EntityId,
+    ids::EventId, EventTag,
+};
 use worldwake_sim::SimulationState;
+use worldwake_systems::ActionRegistries;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
 use crate::display::{entity_display_name, format_state_delta};
 
 /// Format a single event as a summary line.
 ///
-/// Example: `[E42] tick 15 — ActionCommitted by Kael`
-fn format_event_summary(sim: &SimulationState, event_id: EventId) -> Option<String> {
+/// Example: `[E42] tick 15 — ActionCommitted(tell) by Kael`
+fn format_event_summary(
+    sim: &SimulationState,
+    event_id: EventId,
+    registries: &ActionRegistries,
+) -> Option<String> {
     let record = sim.event_log().get(event_id)?;
     let world = sim.world();
 
@@ -25,17 +33,44 @@ fn format_event_summary(sim: &SimulationState, event_id: EventId) -> Option<Stri
         tags.join(", ")
     };
 
+    // Append action name for ActionStarted events
+    let action_suffix = if record.tags().contains(&EventTag::ActionStarted) {
+        resolve_actor_action_name(sim, record.actor_id(), registries)
+            .map(|name| format!("({name})"))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
     let actor_str = match record.actor_id() {
         Some(actor) => format!(" by {}", entity_display_name(world, actor)),
         None => String::new(),
     };
 
     Some(format!(
-        "[E{}] tick {} — {}{actor_str}",
+        "[E{}] tick {} — {}{action_suffix}{actor_str}",
         event_id.0,
         record.tick().0,
         tag_str
     ))
+}
+
+/// Try to resolve the action name for an actor from the scheduler's active actions.
+fn resolve_actor_action_name(
+    sim: &SimulationState,
+    actor_id: Option<EntityId>,
+    registries: &ActionRegistries,
+) -> Option<String> {
+    let actor = actor_id?;
+    for action in sim.scheduler().active_actions().values() {
+        if action.actor == actor {
+            return registries
+                .defs
+                .get(action.def_id)
+                .map(|def| def.name.clone());
+        }
+    }
+    None
 }
 
 /// Format a `CauseRef` for display.
@@ -52,7 +87,11 @@ fn format_cause(cause: &CauseRef) -> String {
 ///
 /// Defaults to 10 if `n` is None. Displays newest first.
 #[allow(clippy::unnecessary_wraps)] // Must return CommandResult for dispatch interface.
-pub fn handle_events(sim: &SimulationState, n: Option<usize>) -> CommandResult {
+pub fn handle_events(
+    sim: &SimulationState,
+    n: Option<usize>,
+    registries: &ActionRegistries,
+) -> CommandResult {
     let count = n.unwrap_or(10);
     let log = sim.event_log();
     let total = log.len();
@@ -68,7 +107,7 @@ pub fn handle_events(sim: &SimulationState, n: Option<usize>) -> CommandResult {
     // Show newest first (reverse order).
     for i in (start..total).rev() {
         let event_id = EventId(u64::try_from(i).expect("event index fits u64"));
-        if let Some(line) = format_event_summary(sim, event_id) {
+        if let Some(line) = format_event_summary(sim, event_id, registries) {
             println!("  {line}");
         }
     }
@@ -77,7 +116,11 @@ pub fn handle_events(sim: &SimulationState, n: Option<usize>) -> CommandResult {
 }
 
 /// Show full details for a single event by ID.
-pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
+pub fn handle_event(
+    sim: &SimulationState,
+    id: u64,
+    registries: &ActionRegistries,
+) -> CommandResult {
     let event_id = EventId(id);
     let log = sim.event_log();
 
@@ -103,6 +146,13 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
             tags.join(", ")
         }
     );
+
+    // Action name for ActionStarted events
+    if record.tags().contains(&EventTag::ActionStarted) {
+        if let Some(name) = resolve_actor_action_name(sim, record.actor_id(), registries) {
+            println!("  action: {name}");
+        }
+    }
 
     // Cause
     println!("  cause: {}", format_cause(&record.cause()));
@@ -160,7 +210,11 @@ pub fn handle_event(sim: &SimulationState, id: u64) -> CommandResult {
 ///
 /// Walks `CauseRef::Event` links backward, printing each event with
 /// increasing indentation. Caps at 100 hops with a warning.
-pub fn handle_trace(sim: &SimulationState, id: u64) -> CommandResult {
+pub fn handle_trace(
+    sim: &SimulationState,
+    id: u64,
+    registries: &ActionRegistries,
+) -> CommandResult {
     let event_id = EventId(id);
     let log = sim.event_log();
 
@@ -178,7 +232,7 @@ pub fn handle_trace(sim: &SimulationState, id: u64) -> CommandResult {
     for (depth, eid) in chain.iter().enumerate() {
         let indent = "  ".repeat(depth + 1);
         let prefix = if depth == 0 { "" } else { "<- " };
-        if let Some(line) = format_event_summary(sim, *eid) {
+        if let Some(line) = format_event_summary(sim, *eid, registries) {
             println!("{indent}{prefix}{line}");
         }
     }
@@ -305,7 +359,7 @@ mod tests {
         let mut sim = spawned.state;
         emit_bootstrap(&mut sim);
 
-        let result = handle_events(&sim, None);
+        let result = handle_events(&sim, None, &spawned.action_registries);
         assert!(result.is_ok());
         assert!(!sim.event_log().is_empty());
     }
@@ -322,7 +376,7 @@ mod tests {
         }
 
         // Should show all events (fewer than default 10).
-        let result = handle_events(&sim, None);
+        let result = handle_events(&sim, None, &spawned.action_registries);
         assert!(result.is_ok());
         assert_eq!(sim.event_log().len(), baseline + 3);
         assert!(sim.event_log().len() <= 10);
@@ -338,7 +392,7 @@ mod tests {
         }
 
         // Requesting 3 when 10 exist — should succeed.
-        let result = handle_events(&sim, Some(3));
+        let result = handle_events(&sim, Some(3), &spawned.action_registries);
         assert!(result.is_ok());
     }
 
@@ -348,7 +402,7 @@ mod tests {
         let mut sim = spawned.state;
         let eid = emit_bootstrap(&mut sim);
 
-        let result = handle_event(&sim, eid.0);
+        let result = handle_event(&sim, eid.0, &spawned.action_registries);
         assert!(result.is_ok());
 
         // Verify event record exists with expected fields.
@@ -362,7 +416,7 @@ mod tests {
         let spawned = spawn_scenario(&minimal_scenario()).unwrap();
         let sim = spawned.state;
 
-        let result = handle_event(&sim, 9999);
+        let result = handle_event(&sim, 9999, &spawned.action_registries);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -381,7 +435,7 @@ mod tests {
         let grandchild = emit_caused(&mut sim, child);
 
         // Trace from grandchild should walk backward through the chain.
-        let result = handle_trace(&sim, grandchild.0);
+        let result = handle_trace(&sim, grandchild.0, &spawned.action_registries);
         assert!(result.is_ok());
 
         // Verify the chain is correct via EventLog API.
@@ -397,7 +451,7 @@ mod tests {
         let root = emit_bootstrap(&mut sim);
 
         // Trace from root should show single event (no cause).
-        let result = handle_trace(&sim, root.0);
+        let result = handle_trace(&sim, root.0, &spawned.action_registries);
         assert!(result.is_ok());
 
         let chain = sim.event_log().trace_event_cause(root);
@@ -409,7 +463,7 @@ mod tests {
         let spawned = spawn_scenario(&minimal_scenario()).unwrap();
         let sim = spawned.state;
 
-        let result = handle_trace(&sim, 9999);
+        let result = handle_trace(&sim, 9999, &spawned.action_registries);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(

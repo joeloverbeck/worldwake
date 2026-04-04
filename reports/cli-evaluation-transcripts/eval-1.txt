@@ -1,0 +1,169 @@
+=== EXPLORE WORKFLOW ===
+
+> world
+  Thornwall Village: 2 agents, 40 items
+  Eldergrove Forest: 1 agents, 8 items
+  Dusty Trail: 1 agents, 2 items
+  OK: Clean overview with agent/item counts per place
+
+> agents
+  Kael [human] at Thornwall Village — idle
+  Merchant Vara [ai] at Thornwall Village — idle
+  Forager Lina [ai] at Eldergrove Forest — idle
+  Guard Theron [ai] at Dusty Trail — idle
+  OK: Clear format with control source and location
+
+> places
+  Full place list with tags and connections showing travel ticks
+  OK: Well-formatted with travel times
+
+> look
+  Thornwall Village with entities, connections listed
+  OK: Clear location view
+
+> inspect Merchant Vara
+  Shows all components with ‰ values, profile details
+  OK: Very detailed component dump
+
+> goods
+  Global goods summary by commodity type and location
+  OK: Clear
+
+> needs
+  Bar chart format with urgency levels
+  OK: Visual and informative
+
+> inventory
+  Item list with load capacity
+  OK: Clean
+
+> relations Kael
+  Shows possessions and placement
+  OK: Clear relation display
+
+> inventory Merchant Vara
+  (no items) Load: 0/20
+  OK: Handles empty inventory
+
+=== ACT WORKFLOW ===
+
+> actions
+  22 actions listed with targets and durations
+  OK: Comprehensive list
+
+> do 1 (sleep)
+  Requested: sleep
+  OK: Action accepted
+
+> tick 1
+  --- Tick 0 --- (7 events) [actions: 2 started, 1 completed]
+  ISSUE: Tick summary says "2 started, 1 completed" but not WHICH actions or by WHOM
+  CHECKLIST: 1.1 FAIL — tick doesn't name goals/intents for agents
+
+> do 5 (staff_market)
+  Requested: staff_market
+  error: tick error: Action(PreconditionFailed("actor e5g0 lacks trade disposition profile"))
+  ISSUE: Action listed but crashes. Error shows raw EntityId "e5g0" instead of agent name.
+  CHECKLIST: 4.3 FAIL — staff_market crashes with opaque error
+
+> do 8 (declare_support)
+  Requested: bribe (MISMATCH — list shows declare_support at #8 but confirmation says bribe)
+  On retry: error: tick error: Action(PreconditionFailed("action def adef13 requires DeclareSupport payload"))
+  ISSUE: 1) Numbering mismatch between action list and do command. 2) Crash with opaque payload error.
+  CHECKLIST: 4.3 FAIL — declare_support crashes
+  CHECKLIST: 2.3 PARTIAL — do N shows action name but sometimes mismatched
+
+> do 4 (queue_for_facility_use)
+  error: tick error: Action(PreconditionFailed("action def adef6 requires QueueForFacilityUse payload"))
+  ISSUE: Third action that crashes with opaque payload error
+  CHECKLIST: 4.3 FAIL — queue_for_facility_use crashes
+
+> status
+  Kael at Thornwall Village, action: idle, needs bars
+  OK: Clear when idle
+  CHECKLIST: 2.4 — not tested during in-progress action
+
+=== CONTROL WORKFLOW ===
+
+> switch Merchant Vara
+  Now controlling Merchant Vara at Thornwall Village
+  OK: Clear confirmation
+
+> status (as Merchant Vara)
+  Shows needs, action: idle
+  OK: Shows correct agent
+
+> observe
+  Observer mode — simulation runs without human control
+  OK: Clear mode switch
+
+> tick 3
+  3 tick summaries with event/action counts
+  ISSUE: Same as before — no agent names or action types in tick summaries
+  CHECKLIST: 1.1 FAIL — tick never names goals
+
+> switch Kael
+  Now controlling Kael in transit to Thornwall Village (1 ticks remaining)
+  OK: Shows in-transit status
+
+=== DEBUG WORKFLOW ===
+
+> events 10
+  Event list with tick, tags, actor
+  OK: Reasonable event listing format
+
+> event 166 (Decision by Kael)
+  deltas (1): AgentData: set on Kael
+  ISSUE: Decision event shows "AgentData: set" but not WHAT decision (which goal)
+  CHECKLIST: 1.2 FAIL — delta doesn't show goal kind
+  CHECKLIST: 3.1 FAIL — delta is component name only, no content
+
+> event 157 (ActionStarted by Guard Theron)
+  targets: 5× Bread, deltas: (none)
+  ISSUE: ActionStarted doesn't name the action type. Is this pick_up? steal?
+  CHECKLIST: 2.1 FAIL — ActionStarted doesn't name action type
+
+> event 158 (ActionCommitted by Guard Theron)
+  deltas: PossessedBy: added (5× Bread → Guard Theron)
+  OK: PossessedBy delta is informative — shows who got what
+  ISSUE: Still no action type name in the event
+  CHECKLIST: 2.2 FAIL — ActionCommitted doesn't name action type
+  CHECKLIST: 3.2 PASS — PossessedBy delta shows meaningful values
+
+> event 145 (Social ActionCommitted by Guard Theron)
+  deltas: AgentBeliefStore: set on Guard Theron, AgentBeliefStore: set on Merchant Vara
+  ISSUE: Social action committed but we can't see WHAT beliefs were shared
+  CHECKLIST: 3.1 FAIL — AgentBeliefStore deltas are opaque
+
+> trace 158
+  Only shows the single event — no parent chain
+  CHECKLIST: 6.1 FAIL — trace is shallow, no causal chain
+
+> trace 145
+  Only shows the single event
+  CHECKLIST: 6.2 FAIL — no who/what/triggered links
+
+> trace (no args)
+  error: <ID> required
+  ISSUE: Doesn't explain what kind of ID (event ID)
+  CHECKLIST: 5.2 FAIL — trace error doesn't say "event ID"
+
+> inspect Nonexistent
+  error: suggests valid entity names
+  CHECKLIST: 5.3 PASS
+
+> switch Nonexistent
+  error: suggests valid agent names
+  CHECKLIST: 5.4 PASS
+
+> help
+  All commands with descriptions
+  CHECKLIST: 5.1 PASS
+
+> save /tmp/cli-eval-save.bin
+  Saved to /tmp/cli-eval-save.bin
+  OK
+
+> load /tmp/cli-eval-save.bin
+  Loaded from /tmp/cli-eval-save.bin — tick 16
+  OK

@@ -5,9 +5,11 @@
 use worldwake_core::{
     control::ControlSource,
     delta::{
-        ComponentDelta, EntityDelta, QuantityDelta, RelationDelta, ReservationDelta, StateDelta,
+        ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
+        ReservationDelta, StateDelta,
     },
     drives::ThresholdBand,
+    goal::GoalKind,
     ids::EntityId,
     items::CommodityKind,
     numerics::{Permille, Quantity},
@@ -181,10 +183,20 @@ pub fn format_state_delta(world: &World, delta: &StateDelta) -> String {
         StateDelta::Component(ComponentDelta::Set {
             entity,
             component_kind,
-            ..
+            after,
+            before,
         }) => {
             let name = entity_display_name(world, *entity);
-            format!("{component_kind:?}: set on {name}")
+            match component_kind {
+                ComponentKind::ActiveGoal => format_active_goal_delta(&name, after, world),
+                ComponentKind::AgentBeliefStore => {
+                    format_belief_store_delta(&name, before.as_ref(), after, world)
+                }
+                ComponentKind::HomeostaticNeeds => {
+                    format_needs_delta(&name, before.as_ref(), after)
+                }
+                _ => format!("{component_kind:?}: set on {name}"),
+            }
         }
         StateDelta::Component(ComponentDelta::Removed {
             entity,
@@ -259,6 +271,269 @@ fn format_relation_delta(
             format!("HostileTo: {verb} ({s} → {t})")
         }
         _ => format!("{kind:?}: {verb}"),
+    }
+}
+
+/// Format an `ActiveGoal` delta showing the goal kind with resolved entity names.
+fn format_active_goal_delta(agent_name: &str, after: &ComponentValue, world: &World) -> String {
+    if let ComponentValue::ActiveGoal(goal) = after {
+        let kind_str = format_goal_kind(world, &goal.goal_key.kind);
+        format!("ActiveGoal: {agent_name} chose {kind_str}")
+    } else {
+        format!("ActiveGoal: set on {agent_name}")
+    }
+}
+
+/// Format a `GoalKind` with resolved entity names instead of raw `EntityId` values.
+pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
+    match kind {
+        GoalKind::ConsumeOwnedCommodity { commodity } => format!("ConsumeOwnedCommodity({commodity:?})"),
+        GoalKind::AcquireCommodity { commodity, purpose } => format!("AcquireCommodity({commodity:?}, {purpose:?})"),
+        GoalKind::Sleep => "Sleep".to_string(),
+        GoalKind::Relieve => "Relieve".to_string(),
+        GoalKind::Wash => "Wash".to_string(),
+        GoalKind::EngageHostile { target } => {
+            format!("EngageHostile({})", entity_display_name(world, *target))
+        }
+        GoalKind::RaidTarget { target } => {
+            format!("RaidTarget({})", entity_display_name(world, *target))
+        }
+        GoalKind::ReduceDanger => "ReduceDanger".to_string(),
+        GoalKind::TreatWounds { patient } => {
+            format!("TreatWounds({})", entity_display_name(world, *patient))
+        }
+        GoalKind::RegroupWithFaction { faction } => {
+            format!("RegroupWithFaction({})", entity_display_name(world, *faction))
+        }
+        GoalKind::EstablishBanditCamp { faction } => {
+            format!("EstablishBanditCamp({})", entity_display_name(world, *faction))
+        }
+        GoalKind::ProduceCommodity { recipe_id } => format!("ProduceCommodity({recipe_id:?})"),
+        GoalKind::SellCommodity { commodity } => format!("SellCommodity({commodity:?})"),
+        GoalKind::RestockCommodity { commodity } => format!("RestockCommodity({commodity:?})"),
+        GoalKind::MoveCargo { commodity, destination } => {
+            format!("MoveCargo({commodity:?} → {})", entity_display_name(world, *destination))
+        }
+        GoalKind::LootCorpse { corpse } => {
+            format!("LootCorpse({})", entity_display_name(world, *corpse))
+        }
+        GoalKind::BuryCorpse { corpse, burial_site } => {
+            format!("BuryCorpse({} at {})", entity_display_name(world, *corpse), entity_display_name(world, *burial_site))
+        }
+        GoalKind::ShareBelief { listener, topic, communication_class } => {
+            let listener_name = entity_display_name(world, *listener);
+            let topic_str = format_tell_topic_brief(world, topic);
+            format!("ShareBelief({communication_class:?}, tell {listener_name} about {topic_str})")
+        }
+        GoalKind::ClaimOffice { office } => {
+            format!("ClaimOffice({})", entity_display_name(world, *office))
+        }
+        GoalKind::SupportCandidateForOffice { office, candidate } => {
+            format!("SupportCandidate({} for {})", entity_display_name(world, *candidate), entity_display_name(world, *office))
+        }
+        GoalKind::InvestigateViolation { place, .. } => {
+            format!("InvestigateViolation(at {})", entity_display_name(world, *place))
+        }
+        GoalKind::Patrol { place } => {
+            format!("Patrol({})", entity_display_name(world, *place))
+        }
+        GoalKind::StealItem { target_item } => {
+            format!("StealItem({})", entity_display_name(world, *target_item))
+        }
+        GoalKind::Accuse { accused, .. } => {
+            format!("Accuse({})", entity_display_name(world, *accused))
+        }
+        GoalKind::PunishAccused { accused, punishment, .. } => {
+            format!("PunishAccused({}, {punishment:?})", entity_display_name(world, *accused))
+        }
+    }
+}
+
+/// Format a `HomeostaticNeeds` delta showing which fields changed.
+fn format_needs_delta(
+    agent_name: &str,
+    before: Option<&ComponentValue>,
+    after: &ComponentValue,
+) -> String {
+    let ComponentValue::HomeostaticNeeds(after_needs) = after else {
+        return format!("HomeostaticNeeds: set on {agent_name}");
+    };
+
+    let before_needs = before.and_then(|b| {
+        if let ComponentValue::HomeostaticNeeds(n) = b {
+            Some(n)
+        } else {
+            None
+        }
+    });
+
+    if let Some(bn) = before_needs {
+        let mut changes = Vec::new();
+        if bn.hunger != after_needs.hunger {
+            changes.push(format!("hunger {}→{}‰", bn.hunger.value(), after_needs.hunger.value()));
+        }
+        if bn.thirst != after_needs.thirst {
+            changes.push(format!("thirst {}→{}‰", bn.thirst.value(), after_needs.thirst.value()));
+        }
+        if bn.fatigue != after_needs.fatigue {
+            changes.push(format!("fatigue {}→{}‰", bn.fatigue.value(), after_needs.fatigue.value()));
+        }
+        if bn.bladder != after_needs.bladder {
+            changes.push(format!("bladder {}→{}‰", bn.bladder.value(), after_needs.bladder.value()));
+        }
+        if bn.dirtiness != after_needs.dirtiness {
+            changes.push(format!("dirtiness {}→{}‰", bn.dirtiness.value(), after_needs.dirtiness.value()));
+        }
+        if changes.is_empty() {
+            format!("HomeostaticNeeds: unchanged on {agent_name}")
+        } else {
+            format!("HomeostaticNeeds on {agent_name}: {}", changes.join(", "))
+        }
+    } else {
+        format!(
+            "HomeostaticNeeds on {agent_name}: hunger={}‰, thirst={}‰, fatigue={}‰, bladder={}‰, dirtiness={}‰",
+            after_needs.hunger.value(), after_needs.thirst.value(), after_needs.fatigue.value(),
+            after_needs.bladder.value(), after_needs.dirtiness.value()
+        )
+    }
+}
+
+/// Format an `AgentBeliefStore` delta showing what changed.
+fn format_belief_store_delta(
+    agent_name: &str,
+    before: Option<&ComponentValue>,
+    after: &ComponentValue,
+    world: &World,
+) -> String {
+    let ComponentValue::AgentBeliefStore(after_store) = after else {
+        return format!("AgentBeliefStore: set on {agent_name}");
+    };
+
+    let before_store = before.and_then(|b| {
+        if let ComponentValue::AgentBeliefStore(s) = b {
+            Some(s)
+        } else {
+            None
+        }
+    });
+
+    let mut changes = Vec::new();
+
+    // Diff known entities
+    let before_entities = before_store.map_or(0, |s| s.known_entities.len());
+    let after_entities = after_store.known_entities.len();
+    if after_entities > before_entities {
+        let new_count = after_entities - before_entities;
+        // Find the new entities by diffing keys
+        if let Some(bs) = before_store {
+            for (entity_id, state) in &after_store.known_entities {
+                if !bs.known_entities.contains_key(entity_id) {
+                    let ename = entity_display_name(world, *entity_id);
+                    if let Some(place) = state.last_known_place {
+                        let pname = entity_display_name(world, place);
+                        changes.push(format!("learned {ename} at {pname}"));
+                    } else {
+                        changes.push(format!("learned about {ename}"));
+                    }
+                }
+            }
+        } else {
+            changes.push(format!("learned about {new_count} entities"));
+        }
+    }
+
+    // Diff heard beliefs (Tell reception)
+    let before_heard = before_store.map_or(0, |s| s.heard_beliefs.len());
+    let after_heard = after_store.heard_beliefs.len();
+    if after_heard > before_heard {
+        if let Some(bs) = before_store {
+            for key in after_store.heard_beliefs.keys() {
+                if !bs.heard_beliefs.contains_key(key) {
+                    let speaker = entity_display_name(world, key.counterparty);
+                    let topic = format_tell_topic_brief(world, &key.topic);
+                    changes.push(format!("heard {topic} from {speaker}"));
+                }
+            }
+        } else {
+            changes.push(format!(
+                "received {} beliefs",
+                after_heard - before_heard
+            ));
+        }
+    }
+
+    // Diff told beliefs (Tell sending)
+    let before_told = before_store.map_or(0, |s| s.told_beliefs.len());
+    let after_told = after_store.told_beliefs.len();
+    if after_told > before_told {
+        if let Some(bs) = before_store {
+            for key in after_store.told_beliefs.keys() {
+                if !bs.told_beliefs.contains_key(key) {
+                    let listener = entity_display_name(world, key.counterparty);
+                    let topic = format_tell_topic_brief(world, &key.topic);
+                    changes.push(format!("told {listener} about {topic}"));
+                }
+            }
+        }
+    }
+
+    // Diff social observations
+    let before_social = before_store.map_or(0, |s| s.social_observations.len());
+    let after_social = after_store.social_observations.len();
+    if after_social > before_social {
+        changes.push(format!(
+            "{} new social observation(s)",
+            after_social - before_social
+        ));
+    }
+
+    // Diff institutional beliefs
+    let before_inst = before_store.map_or(0, |s| s.institutional_beliefs.len());
+    let after_inst = after_store.institutional_beliefs.len();
+    if after_inst > before_inst {
+        changes.push(format!(
+            "{} new institutional belief(s)",
+            after_inst - before_inst
+        ));
+    }
+
+    if changes.is_empty() {
+        // Entity beliefs may have been updated (not added) — check for changed values
+        if let Some(bs) = before_store {
+            let mut updated = 0;
+            for (entity_id, after_state) in &after_store.known_entities {
+                if let Some(before_state) = bs.known_entities.get(entity_id) {
+                    if before_state != after_state {
+                        updated += 1;
+                    }
+                }
+            }
+            if updated > 0 {
+                changes.push(format!("updated {updated} entity belief(s)"));
+            }
+        }
+    }
+
+    if changes.is_empty() {
+        format!("AgentBeliefStore: updated on {agent_name}")
+    } else {
+        format!("AgentBeliefStore on {agent_name}: {}", changes.join(", "))
+    }
+}
+
+/// Brief human-readable description of a `TellTopic`.
+fn format_tell_topic_brief(world: &World, topic: &worldwake_core::TellTopic) -> String {
+    match topic {
+        worldwake_core::TellTopic::EntityBelief { subject } => {
+            let name = entity_display_name(world, *subject);
+            format!("location of {name}")
+        }
+        worldwake_core::TellTopic::SocialObservation { observation } => {
+            format!("{:?}", observation.detail.kind())
+        }
+        worldwake_core::TellTopic::InstitutionalClaim { claim } => {
+            format!("{claim:?}")
+        }
     }
 }
 

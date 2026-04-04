@@ -82,14 +82,28 @@ pub fn run_single_command(
     // Auto-populate affordances if command is `do N` (affordances are empty
     // in a fresh ReplState). Call get_affordances directly to avoid printing
     // the action list — the user only wants the `do` output.
+    // Apply the same filters as handle_actions() to keep indices aligned.
     if words.first().is_some_and(|w| w.eq_ignore_ascii_case("do")) {
         if let Some(entity) = sim.controller_state().controlled_entity() {
             let runtime =
                 PerAgentBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
             let view =
                 PerAgentBeliefView::with_runtime_from_world(entity, sim.world(), runtime);
-            repl_state.last_affordances =
+            let mut affordances =
                 get_affordances(&view, entity, &registries.defs, &registries.handlers);
+            affordances.retain(|a| !a.bound_targets.contains(&entity));
+            affordances.retain(|a| {
+                registries
+                    .defs
+                    .get(a.def_id)
+                    .is_none_or(|def| {
+                        !crate::handlers::actions::HIDDEN_ACTIONS
+                            .contains(&def.name.as_str())
+                    })
+            });
+            affordances
+                .dedup_by(|a, b| a.def_id == b.def_id && a.bound_targets == b.bound_targets);
+            repl_state.last_affordances = affordances;
         }
     }
 
