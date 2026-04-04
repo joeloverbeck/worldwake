@@ -1145,7 +1145,7 @@ mod tests {
 
         match (Precondition::TargetKind {
             target_index: 5,
-            kind: EntityKind::Rumor,
+            kind: EntityKind::SocialArtifact,
         }) {
             Precondition::TargetKind { target_index, .. } => {
                 let _: u8 = target_index;

@@ -26,6 +26,7 @@ use crate::{
     patrol::{PatrolProfile, PatrolRoute},
     pursuit::PursuitProfile,
     reasoning_profile::ReasoningProfile,
+    social_artifact::{ArtifactHeader, BountyTerms, NoticeContent},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
@@ -209,6 +210,7 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_artifact: None,
                     believed_contention: None,
                     observed_tick: Tick(7),
                     source: PerceptionSource::DirectObservation,

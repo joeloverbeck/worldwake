@@ -5,6 +5,7 @@ use crate::{
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
     WorkstationTag, World, Wound,
+    social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -675,6 +676,7 @@ impl ObservedEntitySnapshot {
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
             believed_activity: None,
+            believed_artifact: None,
             believed_contention: self.contention_state,
             observed_tick,
             source,
@@ -697,6 +699,25 @@ pub struct BelievedContentionState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedBountyTerms {
+    pub target: BountyTarget,
+    pub reward_commodity: CommodityKind,
+    pub reward_quantity: Quantity,
+    pub claim_place: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedArtifactState {
+    pub kind: ArtifactKind,
+    pub state: ArtifactState,
+    pub issuer: EntityId,
+    pub expires_at: Option<Tick>,
+    pub bounty_terms: Option<BelievedBountyTerms>,
+    pub notice_topic: Option<NoticeTopic>,
+    pub observed_tick: Tick,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BelievedEntityState {
     pub last_known_place: Option<EntityId>,
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
@@ -706,6 +727,8 @@ pub struct BelievedEntityState {
     pub wounds: Vec<Wound>,
     pub last_known_courage: Option<Permille>,
     pub believed_activity: Option<BelievedActivity>,
+    #[serde(default)]
+    pub believed_artifact: Option<BelievedArtifactState>,
     #[serde(default)]
     pub believed_contention: Option<BelievedContentionState>,
     pub observed_tick: Tick,
@@ -1492,6 +1515,7 @@ mod tests {
             wounds: vec![sample_wound(1, observed_tick)],
             last_known_courage: None,
             believed_activity: None,
+            believed_artifact: None,
             believed_contention: None,
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,

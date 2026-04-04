@@ -66,6 +66,7 @@ pub mod production;
 pub mod pursuit;
 pub mod reasoning_profile;
 pub mod relations;
+pub mod social_artifact;
 pub mod test_utils;
 pub mod topology;
 pub mod trade;
@@ -90,11 +91,12 @@ pub use belief::{
     recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
     social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
     to_shared_belief_snapshot, AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey,
-    BeliefConfidencePolicy, BelievedActivity, BelievedContentionState, BelievedEntityState,
-    HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
-    PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
-    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+    BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
+    BelievedContentionState, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
+    TellProfile, TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
@@ -176,6 +178,10 @@ pub use production::{
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
+pub use social_artifact::{
+    ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, NoticeContent,
+    NoticeTopic, ProofRequirement, RewardSource,
+};
 pub use topology::{
     build_prototype_world, prototype_place_entity, Place, PlaceTag, PlaceTagSet, PrototypePlace,
     Route, Topology, TravelEdge, OUTDOOR_RELIEF_TAGS,

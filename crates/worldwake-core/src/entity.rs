@@ -14,9 +14,8 @@ pub enum EntityKind {
     Place,
     Faction,
     Office,
-    Contract,
-    Rumor,
     Record,
+    SocialArtifact,
 }
 
 /// Authoritative metadata for a single entity.
@@ -33,7 +32,7 @@ mod tests {
     use crate::Tick;
     use serde::{de::DeserializeOwned, Serialize};
 
-    const ALL_ENTITY_KINDS: [EntityKind; 11] = [
+    const ALL_ENTITY_KINDS: [EntityKind; 10] = [
         EntityKind::Agent,
         EntityKind::ItemLot,
         EntityKind::UniqueItem,
@@ -42,9 +41,8 @@ mod tests {
         EntityKind::Place,
         EntityKind::Faction,
         EntityKind::Office,
-        EntityKind::Contract,
-        EntityKind::Rumor,
         EntityKind::Record,
+        EntityKind::SocialArtifact,
     ];
 
     fn assert_entity_kind_bounds<

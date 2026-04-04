@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 17;
+pub const SAVE_FORMAT_VERSION: u32 = 18;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -296,6 +296,7 @@ mod tests {
                 target: Some(place),
                 observed_tick,
             }),
+            believed_artifact: None,
             believed_contention: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,

@@ -2,6 +2,7 @@
 
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
+    ArtifactHeader, BountyTerms,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
     CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
     ComponentValue, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
@@ -16,6 +17,7 @@ use crate::{
     RouteExperience, SourceReliability, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
+    NoticeContent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -511,6 +513,7 @@ impl World {
                 | EntityKind::UniqueItem
                 | EntityKind::Container
                 | EntityKind::Record
+                | EntityKind::SocialArtifact
         )
     }
 
@@ -700,6 +703,7 @@ mod tests {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_artifact: None,
                 believed_contention: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
