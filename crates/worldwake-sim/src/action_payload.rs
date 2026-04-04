@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, CombatWeaponRef, CommodityKind, EntityId, PunishmentKind, Quantity, RecipeId,
-    RecordEntryId, TellTopic, UniqueItemKind, ViolationId, WorkstationTag,
+    ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
+    ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
+    TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -28,6 +29,8 @@ pub enum ActionPayload {
     AskWitness(AskWitnessPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
     StaffMarket(StaffMarketPayload),
+    PostBounty(PostBountyActionPayload),
+    PostNotice(PostNoticeActionPayload),
 }
 
 impl ActionPayload {
@@ -190,6 +193,22 @@ impl ActionPayload {
             _ => None,
         }
     }
+
+    #[must_use]
+    pub const fn as_post_bounty(&self) -> Option<&PostBountyActionPayload> {
+        match self {
+            Self::PostBounty(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_post_notice(&self) -> Option<&PostNoticeActionPayload> {
+        match self {
+            Self::PostNotice(payload) => Some(payload),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -313,21 +332,45 @@ pub struct StaffMarketPayload {
     pub commodity: CommodityKind,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct PostBountyActionPayload {
+    pub posting_place: EntityId,
+    pub issuing_authority: Option<EntityId>,
+    pub expires_at: Option<Tick>,
+    pub jurisdiction: Option<EntityId>,
+    pub target: BountyTarget,
+    pub proof_requirement: ProofRequirement,
+    pub reward_commodity: CommodityKind,
+    pub reward_quantity: Quantity,
+    pub reward_source: RewardSource,
+    pub claim_place: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct PostNoticeActionPayload {
+    pub posting_place: EntityId,
+    pub issuing_authority: Option<EntityId>,
+    pub expires_at: Option<Tick>,
+    pub jurisdiction: Option<EntityId>,
+    pub topic: NoticeTopic,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload,
         CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
         DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
-        InvestigateActionPayload, LootActionPayload, PressForceClaimActionPayload,
-        PunishActionPayload, QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-        YieldForceClaimActionPayload,
+        InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+        PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
+        QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use worldwake_core::{
-        ActionDefId, CombatWeaponRef, CommodityKind, EntityId, PunishmentKind, Quantity, RecipeId,
-        RecordEntryId, TellTopic, UniqueItemKind, ViolationId, WorkstationTag,
+        ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
+        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
+        TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -525,6 +568,64 @@ mod tests {
         }
     }
 
+    fn sample_post_bounty_payload() -> PostBountyActionPayload {
+        PostBountyActionPayload {
+            posting_place: EntityId {
+                slot: 30,
+                generation: 0,
+            },
+            issuing_authority: Some(EntityId {
+                slot: 31,
+                generation: 0,
+            }),
+            expires_at: Some(Tick(32)),
+            jurisdiction: Some(EntityId {
+                slot: 33,
+                generation: 0,
+            }),
+            target: BountyTarget::EliminateEntity {
+                target: EntityId {
+                    slot: 34,
+                    generation: 0,
+                },
+            },
+            proof_requirement: ProofRequirement::PhysicalEvidence,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(35),
+            reward_source: RewardSource::InstitutionalTreasury {
+                treasury_entity: EntityId {
+                    slot: 36,
+                    generation: 0,
+                },
+            },
+            claim_place: EntityId {
+                slot: 37,
+                generation: 0,
+            },
+        }
+    }
+
+    fn sample_post_notice_payload() -> PostNoticeActionPayload {
+        PostNoticeActionPayload {
+            posting_place: EntityId {
+                slot: 38,
+                generation: 0,
+            },
+            issuing_authority: None,
+            expires_at: Some(Tick(39)),
+            jurisdiction: Some(EntityId {
+                slot: 40,
+                generation: 0,
+            }),
+            topic: NoticeTopic::ThreatWarning {
+                place: EntityId {
+                    slot: 41,
+                    generation: 0,
+                },
+            },
+        }
+    }
+
     fn sample_ask_witness_entity_only_payload() -> AskWitnessPayload {
         AskWitnessPayload {
             target: EntityId {
@@ -562,6 +663,8 @@ mod tests {
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
         assert_traits::<StaffMarketPayload>();
+        assert_traits::<PostBountyActionPayload>();
+        assert_traits::<PostNoticeActionPayload>();
     }
 
     #[test]
@@ -805,6 +908,8 @@ mod tests {
         let investigate = ActionPayload::Investigate(sample_investigate_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
         let ask_witness = ActionPayload::AskWitness(sample_ask_witness_payload());
+        let post_bounty = ActionPayload::PostBounty(sample_post_bounty_payload());
+        let post_notice = ActionPayload::PostNotice(sample_post_notice_payload());
 
         assert_eq!(combat.as_consult_record(), None);
         assert_eq!(combat.as_tell(), None);
@@ -890,6 +995,16 @@ mod tests {
             ask_witness.as_ask_witness(),
             Some(&sample_ask_witness_payload())
         );
+        assert_eq!(ask_witness.as_post_bounty(), None);
+        assert_eq!(ask_witness.as_post_notice(), None);
+
+        assert_eq!(post_bounty.as_post_bounty(), Some(&sample_post_bounty_payload()));
+        assert_eq!(post_bounty.as_post_notice(), None);
+        assert_eq!(post_bounty.as_trade(), None);
+
+        assert_eq!(post_notice.as_post_notice(), Some(&sample_post_notice_payload()));
+        assert_eq!(post_notice.as_post_bounty(), None);
+        assert_eq!(post_notice.as_tell(), None);
     }
 
     #[test]
@@ -913,6 +1028,8 @@ mod tests {
         assert_eq!(none.as_investigate(), None);
         assert_eq!(none.as_queue_for_facility_use(), None);
         assert_eq!(none.as_ask_witness(), None);
+        assert_eq!(none.as_post_bounty(), None);
+        assert_eq!(none.as_post_notice(), None);
     }
 
     #[test]
@@ -1086,11 +1203,33 @@ mod tests {
     }
 
     #[test]
+    fn post_bounty_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::PostBounty(sample_post_bounty_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn post_notice_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::PostNotice(sample_post_notice_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
     fn staff_market_accessor_returns_inner() {
         let payload = ActionPayload::StaffMarket(sample_staff_market_payload());
         assert_eq!(payload.as_staff_market(), Some(&sample_staff_market_payload()));
         assert_eq!(payload.as_trade(), None);
         assert_eq!(payload.as_harvest(), None);
+        assert_eq!(payload.as_post_bounty(), None);
+        assert_eq!(payload.as_post_notice(), None);
 
         assert_eq!(ActionPayload::None.as_staff_market(), None);
     }

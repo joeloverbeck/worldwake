@@ -70,9 +70,10 @@ pub use action_payload::{
     AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload, CombatActionPayload,
     ConsultRecordActionPayload, CraftActionPayload, DeclareSupportActionPayload,
     EstablishCampActionPayload, HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
-    PressForceClaimActionPayload, PunishActionPayload, QueueForFacilityUsePayload,
-    StaffMarketPayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-    TransportActionPayload, YieldForceClaimActionPayload,
+    PostBountyActionPayload, PostNoticeActionPayload, PressForceClaimActionPayload,
+    PunishActionPayload, QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload,
+    ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+    YieldForceClaimActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,

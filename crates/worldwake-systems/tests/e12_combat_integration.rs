@@ -473,10 +473,10 @@ fn scheduler_rejects_new_attack_requests_from_dead_actors() {
             actor: harness.target,
             def_id: attack_id,
             targets: vec![harness.attacker],
-            payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+            payload_override: Some(Box::new(ActionPayload::Combat(CombatActionPayload {
                 target: harness.attacker,
                 weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
-            })),
+            }))),
         }
     );
 }

@@ -6349,6 +6349,13 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
             default_perception_profile(),
         );
     }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
 
     set_theft_profile(
         &mut h,

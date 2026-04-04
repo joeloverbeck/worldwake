@@ -41,6 +41,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - for golden communication or information-path tickets that rely on "degradation," verify separately what actually degrades in live code: provenance/source, confidence, communication class, eligibility, ranking, or another distinct mechanism. Do not let the ticket collapse different degradation paths into one stale narrative
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
    - when a ticket changes a shared serialized event/log carrier such as `EventPayload`, `EventRecord`, or another append-only causal model, sweep all workspace crates for hand-written literals, fixture builders, and harness constructors instead of limiting the fallout search to the owning crate
+   - when a ticket widens a commonly embedded shared enum such as `ActionPayload`, inspect error, trace, request, and report carriers that store that enum by value, not just direct payload consumers. Size-driven CI fallout such as `result_large_err` can surface far from the owning payload file once the enum grows
    - when an authoritative persisted component or profile changes serialized shape, inspect the live save/load version boundary and correct version gates such as `SAVE_FORMAT_VERSION` when the format contract changed
    - when a ticket's intended behavior depends on helper math, scaling, saturation, or threshold arithmetic, inspect the exact live helper implementation and correct stale numeric prose before coding
    - when a ticket proposes concrete default or profile values, compare them against live representative fixtures, schema samples, and world-roundtrip examples before coding; if the ticket's values are placeholders or stale, correct them to the strongest live baseline first
@@ -217,6 +218,8 @@ If stronger lawful behavior now reaches completion earlier than an older focused
 
 When broader required verification surfaces a timing-sensitive golden whose semantic contract still holds, prefer recalibrating the fixture's explicit timing budget, hold window, or other scenario timing inputs to the current lawful scheduler or queue ordering before broadening production scope.
 
+When a golden's narrative assumes an agent already locally observes co-located entities, risks, or other same-place facts at tick 0, verify that the setup explicitly seeds those local beliefs or the exact perception prerequisites needed to produce them. Do not rely on an implicit first-tick perception warmup if the scenario prose claims the observation is already present.
+
 When a golden proves durable learned-state aftermath such as memory records, counters, or timestamps, assert the semantic contract unless exact tick identity is itself the owned invariant. If only ordering or recency matters, prove that boundary directly instead of pinning the record to `current_tick`.
 
 If focused implementation or verification shows that the corrected ticket still over-claims what the live harness can stably prove, narrow the ticket again before final verification so the archive-ready proof surface matches the strongest honest demonstrated boundary.
@@ -224,6 +227,8 @@ If focused implementation or verification shows that the corrected ticket still 
 If an attempted acceptance proof reveals a deeper shared-layer contradiction outside the ticket's corrected scope, do not silently pull that broader fix into the current ticket. Update the ticket's proof surface back to the owned boundary unless the broader change is already in scope or the user explicitly confirms the expansion.
 
 When long-running verification commands are already in flight, prefer polling or reusing those sessions rather than spawning duplicate cargo or tool invocations. This keeps verification readable and avoids unnecessary process or session churn in constrained environments.
+
+When a ticket adds new registered actions or systems, triage broad integration or golden failures for catalog-order drift, completeness assertions, planner-surface assumptions, or other registry-expansion fallout before assuming the new feature's direct runtime logic is broken. Distinguish those secondary verification failures from the ticket's primary owned behavior.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 

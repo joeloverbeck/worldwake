@@ -3,7 +3,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ArtifactHeader {
     pub kind: ArtifactKind,
     pub issuer: EntityId,
@@ -31,7 +31,7 @@ pub enum ArtifactState {
     Destroyed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct BountyTerms {
     pub target: BountyTarget,
     pub proof_requirement: ProofRequirement,
@@ -43,7 +43,7 @@ pub struct BountyTerms {
 
 impl Component for BountyTerms {}
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum BountyTarget {
     EliminateEntity { target: EntityId },
     DeliverCommodity {
@@ -53,28 +53,28 @@ pub enum BountyTarget {
     },
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum ProofRequirement {
     PhysicalEvidence,
     WitnessTestimony,
     SelfReport,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum RewardSource {
     InstitutionalTreasury { treasury_entity: EntityId },
     PersonalFunds { issuer: EntityId },
     ReservedLot { lot: EntityId },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct NoticeContent {
     pub topic: NoticeTopic,
 }
 
 impl Component for NoticeContent {}
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum NoticeTopic {
     ThreatWarning { place: EntityId },
     OfficeVacancy { office: EntityId },

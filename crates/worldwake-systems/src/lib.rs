@@ -4,6 +4,8 @@
 //! Depends on `worldwake-core` and `worldwake-sim`.
 
 pub mod action_registry;
+pub mod artifact_actions;
+pub mod artifact_lifecycle;
 pub mod bandit_camp;
 pub mod bandit_camp_actions;
 pub mod combat;
@@ -32,6 +34,8 @@ pub mod transport_actions;
 pub mod travel_actions;
 
 pub use action_registry::{build_full_action_registries, register_all_actions, ActionRegistries};
+pub use artifact_actions::register_artifact_actions;
+pub use artifact_lifecycle::artifact_lifecycle_system;
 pub use bandit_camp::bandit_camp_system;
 pub use bandit_camp_actions::register_establish_camp_action;
 pub use combat::{
@@ -72,6 +76,7 @@ pub fn dispatch_table() -> SystemDispatchTable {
         resource_regeneration_system,
         trade_system_tick,
         combat_system,
+        artifact_lifecycle_system,
         contention_system,
         succession_system,
         perception_system,

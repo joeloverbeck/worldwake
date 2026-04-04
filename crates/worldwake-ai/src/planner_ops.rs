@@ -1600,6 +1600,7 @@ mod tests {
     fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
+        let intentionally_unclassified = ["post_bounty", "post_notice"];
         let semantics_by_name = defs
             .iter()
             .filter_map(|def| {
@@ -1651,7 +1652,10 @@ mod tests {
         ];
         let unclassified = defs
             .iter()
-            .filter(|def| !table.contains_key(&def.id))
+            .filter(|def| {
+                !table.contains_key(&def.id)
+                    && !intentionally_unclassified.contains(&def.name.as_str())
+            })
             .map(|def| def.name.as_str())
             .collect::<Vec<_>>();
 
@@ -1659,6 +1663,10 @@ mod tests {
             unclassified.is_empty(),
             "unexpected unclassified actions: {unclassified:?}"
         );
+        for name in intentionally_unclassified {
+            assert!(defs.iter().any(|def| def.name == name));
+            assert!(!semantics_by_name.contains_key(name));
+        }
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);

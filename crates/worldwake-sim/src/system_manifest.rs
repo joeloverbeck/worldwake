@@ -54,6 +54,7 @@ define_system_ids! {
     (Production, "production"),
     (Trade, "trade"),
     (Combat, "combat"),
+    (ArtifactLifecycle, "artifact_lifecycle"),
     (Contention, "contention"),
     (Politics, "politics"),
     (Perception, "perception"),
@@ -108,6 +109,16 @@ impl SystemManifest {
         .expect("canonical system order must not contain duplicates")
     }
 
+    /// Returns the authoritative pre-action system order.
+    ///
+    /// These systems run before input drain and action admission for the tick.
+    /// They exist for world-state transitions whose timing must be authoritative
+    /// before any same-tick action can begin.
+    pub fn pre_action() -> Self {
+        Self::new([SystemId::ArtifactLifecycle])
+            .expect("pre-action system order must not contain duplicates")
+    }
+
     pub fn ordered_ids(&self) -> &[SystemId] {
         &self.ordered_ids
     }
@@ -157,6 +168,7 @@ mod tests {
         assert_eq!(SystemId::Production.to_string(), "production");
         assert_eq!(SystemId::Trade.to_string(), "trade");
         assert_eq!(SystemId::Combat.to_string(), "combat");
+        assert_eq!(SystemId::ArtifactLifecycle.to_string(), "artifact_lifecycle");
         assert_eq!(SystemId::BanditCamp.to_string(), "bandit_camp");
         assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");
@@ -173,6 +185,7 @@ mod tests {
                 SystemId::Production,
                 SystemId::Trade,
                 SystemId::Combat,
+                SystemId::ArtifactLifecycle,
                 SystemId::Contention,
                 SystemId::Politics,
                 SystemId::Perception,
@@ -245,6 +258,13 @@ mod tests {
                 SystemId::Patrol,
             ]
         );
+    }
+
+    #[test]
+    fn pre_action_manifest_matches_fixed_scheduler_order() {
+        let manifest = SystemManifest::pre_action();
+
+        assert_eq!(manifest.ordered_ids(), &[SystemId::ArtifactLifecycle]);
     }
 
     #[test]

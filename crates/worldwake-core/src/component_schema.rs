@@ -1025,6 +1025,7 @@ macro_rules! with_component_schema_entries {
                 |kind| {
                     kind == EntityKind::Agent
                         || kind == EntityKind::Facility
+                        || kind == EntityKind::SocialArtifact
                         || kind == EntityKind::UniqueItem
                 },
                 ContentionPolicy,
@@ -1054,6 +1055,7 @@ macro_rules! with_component_schema_entries {
                 |kind| {
                     kind == EntityKind::Agent
                         || kind == EntityKind::Facility
+                        || kind == EntityKind::SocialArtifact
                         || kind == EntityKind::UniqueItem
                 },
                 ContentionQueue,
