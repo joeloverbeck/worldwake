@@ -9,6 +9,10 @@
 // Updated 2026-04-03: S44 — Added universal and role-specific profiles to exercise
 //   agent diversity: perception, tell, reasoning, communication, drive thresholds,
 //   metabolism, patrol, pursuit, justice, theft, commodity valuation, facility queue.
+// Updated 2026-04-04: S44-generalized-contention-substrate — Renamed
+//   facility_queue_disposition → contention_disposition. Added missing profiles:
+//   epistemic_disposition, intention_disposition, preference_profile, carry_capacity,
+//   violation_disposition, substitute_preferences across agents.
 (
     seed: 7777,
     places: [
@@ -79,6 +83,12 @@
                 testimony_acceptance: 850,
                 gossip_acceptance: 600,
             ),
+            epistemic_disposition: (
+                stale_evidence_barrier_threshold: 400,
+                witness_query_duration_ticks: 2,
+                ask_memory_retention_ticks: 12,
+            ),
+            carry_capacity: 50,
         ),
         // AI merchant at village — talkative, skeptical of gossip, thoughtful planner
         (
@@ -149,8 +159,11 @@
                 recipe_place_horizon: 3,
                 indirect_value_decay_per_step: 300,
             ),
-            facility_queue_disposition: (
+            contention_disposition: (
                 queue_patience_ticks: Some(30),
+            ),
+            substitute_preferences: (
+                preferences: { Food: [Grain, Apple, Bread] },
             ),
         ),
         // AI forager in the forest — dehydrates fast, urgent thirst, tempted by theft
@@ -206,6 +219,13 @@
                 travel_thirst_multiplier: 0,
                 travel_bladder_multiplier: 0,
                 wilderness_relief_dirtiness_penalty: 0,
+            ),
+            preference_profile: (
+                route_caution_weight: 400,
+                source_trust_weight: 300,
+                route_memory_capacity: 24,
+                source_memory_capacity: 18,
+                memory_retention_ticks: 400,
             ),
             theft_disposition: (
                 steal_duration_ticks: 3,
@@ -293,6 +313,18 @@
                 min_location_confidence: 500,
                 max_pursuit_travel_ticks: 8,
             ),
+            intention_disposition: (
+                domain_patience: { Travel: 15, Care: 20 },
+                default_patience_ticks: 30,
+                commitment_switch_margin: 200,
+            ),
+            violation_disposition: (
+                investigation_duration_ticks: 3,
+                violation_memory_retention_ticks: 100,
+                investigation_motive_weight: 600,
+                ownership_motive_bonus: 300,
+            ),
+            carry_capacity: 40,
             justice_disposition: (
                 accusation_motive_weight: 700,
                 fine_severity: 500,
