@@ -657,6 +657,8 @@ pub struct ObservedEntitySnapshot {
     pub wounds: Vec<Wound>,
     pub courage: Option<Permille>,
     #[serde(default)]
+    pub artifact_state: Option<BelievedArtifactState>,
+    #[serde(default)]
     pub contention_state: Option<BelievedContentionState>,
 }
 
@@ -676,7 +678,7 @@ impl ObservedEntitySnapshot {
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
             believed_activity: None,
-            believed_artifact: None,
+            believed_artifact: self.artifact_state.clone(),
             believed_contention: self.contention_state,
             observed_tick,
             source,
@@ -1149,7 +1151,36 @@ pub fn build_observed_entity_snapshot(
         courage: world
             .get_component_utility_profile(entity)
             .map(|p| p.courage),
+        artifact_state: build_believed_artifact_state(world, entity, Tick(0)),
         contention_state: build_believed_contention_state(world, entity, Tick(0)),
+    })
+}
+
+#[must_use]
+pub fn build_believed_artifact_state(
+    world: &World,
+    entity: EntityId,
+    observed_tick: Tick,
+) -> Option<BelievedArtifactState> {
+    let header = world.get_component_artifact_header(entity)?;
+    let bounty_terms = world
+        .get_component_bounty_terms(entity)
+        .map(|terms| BelievedBountyTerms {
+            target: terms.target,
+            reward_commodity: terms.reward_commodity,
+            reward_quantity: terms.reward_quantity,
+            claim_place: terms.claim_place,
+        });
+    let notice_topic = world.get_component_notice_content(entity).map(|notice| notice.topic);
+
+    Some(BelievedArtifactState {
+        kind: header.kind,
+        state: header.state,
+        issuer: header.issuer,
+        expires_at: header.expires_at,
+        bounty_terms,
+        notice_topic,
+        observed_tick,
     })
 }
 
@@ -1176,6 +1207,9 @@ pub fn build_believed_entity_state(
     source: PerceptionSource,
 ) -> Option<BelievedEntityState> {
     build_observed_entity_snapshot(world, entity).map(|mut snapshot| {
+        if let Some(artifact) = snapshot.artifact_state.as_mut() {
+            artifact.observed_tick = observed_tick;
+        }
         if let Some(contention) = snapshot.contention_state.as_mut() {
             contention.observed_tick = observed_tick;
         }
@@ -1442,10 +1476,10 @@ mod tests {
     use crate::{
         build_prototype_world, current_institutional_belief_topics,
         institutional_claim_same_memory_lane, traits::Component, ActionDefId, ActionDomain,
-        BelievedInstitutionalClaim, BodyPart, CommodityKind, ControlSource, DeadAt, EntityId,
-        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, Permille, Quantity, TheftFacts, Tick, World, Wound,
-        WoundCause, WoundId, WoundList,
+        BelievedArtifactState, BelievedBountyTerms, BelievedInstitutionalClaim, BodyPart,
+        CommodityKind, ControlSource, DeadAt, EntityId, EntityKind, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+        Permille, Quantity, TheftFacts, Tick, World, Wound, WoundCause, WoundId, WoundList,
     };
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeMap;
@@ -2365,6 +2399,7 @@ mod tests {
             alive: true,
             wounds: vec![sample_wound(1, 4)],
             courage: None,
+            artifact_state: None,
             contention_state: Some(BelievedContentionState {
                 grant_holder: Some(entity(11)),
                 queue_length: 2,
@@ -3214,6 +3249,65 @@ mod tests {
     }
 
     #[test]
+    fn build_observed_entity_snapshot_projects_artifact_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let issuer = world
+            .create_agent("Issuer", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let artifact = world.create_entity(EntityKind::SocialArtifact, Tick(1));
+
+        world.set_ground_location(issuer, place).unwrap();
+        world.set_ground_location(artifact, place).unwrap();
+        world
+            .insert_component_artifact_header(
+                artifact,
+                crate::ArtifactHeader {
+                    kind: crate::ArtifactKind::Bounty,
+                    issuer,
+                    issuing_authority: None,
+                    created_at: Tick(2),
+                    expires_at: Some(Tick(7)),
+                    state: crate::ArtifactState::Active,
+                    jurisdiction: None,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_bounty_terms(
+                artifact,
+                crate::BountyTerms {
+                    target: crate::BountyTarget::EliminateEntity { target: issuer },
+                    proof_requirement: crate::ProofRequirement::SelfReport,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(9),
+                    reward_source: crate::RewardSource::PersonalFunds { issuer },
+                    claim_place: place,
+                },
+            )
+            .unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, artifact).unwrap();
+        assert_eq!(
+            snapshot.artifact_state,
+            Some(BelievedArtifactState {
+                kind: crate::ArtifactKind::Bounty,
+                state: crate::ArtifactState::Active,
+                issuer,
+                expires_at: Some(Tick(7)),
+                bounty_terms: Some(BelievedBountyTerms {
+                    target: crate::BountyTarget::EliminateEntity { target: issuer },
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(9),
+                    claim_place: place,
+                }),
+                notice_topic: None,
+                observed_tick: Tick(0),
+            })
+        );
+    }
+
+    #[test]
     fn build_believed_entity_state_projects_contention_with_current_tick() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -3256,6 +3350,64 @@ mod tests {
             Some(BelievedContentionState {
                 grant_holder: Some(grantee),
                 queue_length: 0,
+                observed_tick: Tick(12),
+            })
+        );
+    }
+
+    #[test]
+    fn build_believed_entity_state_projects_artifact_with_current_tick() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let issuer = world
+            .create_agent("Issuer", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let office = world.create_office("Harbormaster", Tick(1)).unwrap();
+        let artifact = world.create_entity(EntityKind::SocialArtifact, Tick(1));
+
+        world.set_ground_location(issuer, place).unwrap();
+        world.set_ground_location(office, place).unwrap();
+        world.set_ground_location(artifact, place).unwrap();
+        world
+            .insert_component_artifact_header(
+                artifact,
+                crate::ArtifactHeader {
+                    kind: crate::ArtifactKind::Notice,
+                    issuer,
+                    issuing_authority: None,
+                    created_at: Tick(2),
+                    expires_at: Some(Tick(8)),
+                    state: crate::ArtifactState::Active,
+                    jurisdiction: None,
+                },
+            )
+            .unwrap();
+        world
+            .insert_component_notice_content(
+                artifact,
+                crate::NoticeContent {
+                    topic: NoticeTopic::OfficeVacancy { office },
+                },
+            )
+            .unwrap();
+
+        let believed = build_believed_entity_state(
+            &world,
+            artifact,
+            Tick(12),
+            PerceptionSource::DirectObservation,
+        )
+        .unwrap();
+
+        assert_eq!(
+            believed.believed_artifact,
+            Some(BelievedArtifactState {
+                kind: crate::ArtifactKind::Notice,
+                state: crate::ArtifactState::Active,
+                issuer,
+                expires_at: Some(Tick(8)),
+                bounty_terms: None,
+                notice_topic: Some(NoticeTopic::OfficeVacancy { office }),
                 observed_tick: Tick(12),
             })
         );

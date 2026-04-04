@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: S45UNISOCART-003, S45UNISOCART-005
+**Deps**: S45UNISOCART-004, S45UNISOCART-005
 
 ## Problem
 
@@ -18,7 +18,7 @@ The social artifact substrate (types, actions, perception, AI) is implemented in
 4. All 3 scenarios require deterministic replay companions (seeded RNG, BTreeMap ordering).
 5. Scenario A (bounty lifecycle) requires: office holder posts bounty → agent perceives → agent travels to target → eliminates target → travels to claim place → claims bounty → reward transfers. This exercises PostBounty (002), perception (004), AI candidate generation (005), ClaimBounty (003).
 6. Scenario B (expiration) requires: bounty posted with expires_at → no claim → artifact_lifecycle_system transitions to Expired → agent perceives Expired and does not pursue.
-7. Scenario C (notice discovery) requires: office posts ThreatWarning notice → agent travels to posting place → perceives notice → internalizes threat warning belief → adjusts behavior.
+7. Scenario C (notice discovery) requires: office posts ThreatWarning notice → agent perceives notice locally → believed artifact and route-threat consequence update → later travel/routing behavior reflects the warning.
 
 ## Architecture Check
 
@@ -39,8 +39,8 @@ The social artifact substrate (types, actions, perception, AI) is implemented in
    - Agent perceives Expired → belief store assertion
    - No FulfillBounty candidate emitted → decision trace absence
 3. Notice discovery (Scenario C):
-   - Notice perceived → belief store assertion (believed_artifact)
-   - Threat warning internalized → place-related belief updated
+   - Notice perceived → belief store assertion (`believed_artifact`)
+   - Threat warning increases remembered route threat / perceived travel cost for the warned place
 4. Multi-layer ticket: each golden test maps invariants to specific proof surfaces as listed above.
 
 ## What to Change
@@ -89,12 +89,12 @@ Create test in `crates/worldwake-ai/tests/`:
 - 1 agent: Traveler (at DangerousRoute, PerceptionProfile, enterprise_weight moderate)
 - ThreatWarning notice posted at TownSquare for DangerousRoute
 
-**Execution**: Tick until Traveler reaches TownSquare and perceives notice.
+**Execution**: Tick until Traveler perceives the notice, then prove warned-route behavior through the existing route-threat / travel-choice surface.
 
 **Assertions**:
 - Traveler perceived notice at TownSquare
 - Traveler's believed_artifact includes NoticeTopic::ThreatWarning for DangerousRoute
-- Traveler's place-related beliefs updated with threat warning
+- Traveler's remembered route threat or resulting travel preference reflects the warning
 
 ## Files to Touch
 

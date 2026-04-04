@@ -680,6 +680,7 @@ mod tests {
                     alive: true,
                     wounds: Vec::new(),
                     courage: None,
+                    artifact_state: None,
                     contention_state: None,
                 },
             )]),
