@@ -1600,7 +1600,7 @@ mod tests {
     fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
-        let intentionally_unclassified = ["post_bounty", "post_notice"];
+        let intentionally_unclassified = ["post_bounty", "post_notice", "claim_bounty"];
         let semantics_by_name = defs
             .iter()
             .filter_map(|def| {

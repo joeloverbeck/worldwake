@@ -99,6 +99,7 @@ mod tests {
             "consult_record",
             "post_bounty",
             "post_notice",
+            "claim_bounty",
             "bribe",
             "threaten",
             "declare_support",
