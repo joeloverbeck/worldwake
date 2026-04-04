@@ -464,6 +464,10 @@ pub trait RuntimeBeliefView {
         let _ = facility;
         None
     }
+    fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+        let _ = entity;
+        false
+    }
     fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
         let _ = (facility, actor);
         None

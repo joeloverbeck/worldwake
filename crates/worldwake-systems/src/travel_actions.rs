@@ -682,6 +682,7 @@ mod tests {
             bound_targets: vec![entity(3)],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut next_instance_id = ActionInstanceId(1);
         let mut rng = test_rng();
@@ -736,6 +737,7 @@ mod tests {
             bound_targets: vec![destination],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut next_instance_id = ActionInstanceId(1);
         let mut rng = test_rng();

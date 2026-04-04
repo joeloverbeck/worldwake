@@ -3898,6 +3898,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         bound_targets: vec![orchard_row],
         payload_override: None,
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
     let queue_candidates = search_candidates_from_affordance(&goal, &state, &registry, &affordance);
@@ -4019,6 +4020,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
             requested_quantity: Quantity(1),
         })),
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
     let remote_seller_affordance = Affordance {
         def_id: trade_def_id,
@@ -4032,6 +4034,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
             requested_quantity: Quantity(1),
         })),
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
     let wrong_candidates =

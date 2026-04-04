@@ -805,6 +805,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -958,6 +959,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1026,6 +1028,7 @@ mod tests {
                 violation_id: first_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1522,6 +1525,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1595,6 +1599,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1652,6 +1657,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();

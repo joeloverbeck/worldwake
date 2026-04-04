@@ -73,6 +73,19 @@ pub enum ContentionError {
     QueueFull,
 }
 
+/// Derived affordance-time summary of an actor's relation to a contended entity.
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize,
+)]
+pub enum ContentionStatus {
+    #[default]
+    Unmanaged,
+    Granted,
+    Queued { position: u32 },
+    Available,
+    Full,
+}
+
 impl ContentionQueue {
     pub fn enqueue(
         &mut self,
@@ -178,7 +191,8 @@ impl ContentionQueue {
 mod tests {
     use super::{
         ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
-        ContentionPolicy, ContentionQueue, ContentionWaiter, QueuedContentionIntent,
+        ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter,
+        QueuedContentionIntent,
     };
     use crate::{traits::Component, ActionDefId, GoalKey, GoalKind, Tick};
     use serde::{de::DeserializeOwned, Serialize};
@@ -207,6 +221,7 @@ mod tests {
         assert_value_bounds::<ContentionIntents>();
         assert_value_bounds::<QueuedContentionIntent>();
         assert_value_bounds::<ContentionDispositionProfile>();
+        assert_value_bounds::<ContentionStatus>();
     }
 
     #[test]
@@ -366,5 +381,10 @@ mod tests {
 
         assert_eq!(intents_roundtrip, intents);
         assert_eq!(disposition_roundtrip, disposition);
+    }
+
+    #[test]
+    fn contention_status_defaults_to_unmanaged() {
+        assert_eq!(ContentionStatus::default(), ContentionStatus::Unmanaged);
     }
 }

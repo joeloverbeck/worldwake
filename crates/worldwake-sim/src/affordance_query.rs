@@ -3,7 +3,7 @@ use crate::{
     Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, EntityId, EntityKind};
+use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind};
 
 #[must_use]
 pub fn get_affordances(
@@ -161,6 +161,35 @@ fn expand_payload_variants(
         ..affordance.clone()
     })
     .collect()
+}
+
+fn derive_contention_status(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    targets: &[EntityId],
+) -> ContentionStatus {
+    let Some(entity) = targets
+        .iter()
+        .copied()
+        .find(|target| view.has_contention_policy(*target))
+    else {
+        return ContentionStatus::Unmanaged;
+    };
+
+    if view
+        .facility_grant(entity)
+        .is_some_and(|grant| grant.actor == actor)
+    {
+        return ContentionStatus::Granted;
+    }
+    if let Some(position) = view.facility_queue_position(entity, actor) {
+        return ContentionStatus::Queued { position };
+    }
+    if view.contention_queue_is_full(entity) {
+        return ContentionStatus::Full;
+    }
+
+    ContentionStatus::Available
 }
 
 fn payload_variants(
@@ -456,6 +485,7 @@ fn enumerate_targets(
 fn enumerate_bindings(
     specs: &[TargetSpec],
     actor: EntityId,
+    view: &dyn RuntimeBeliefView,
     target_cache: &BTreeMap<TargetSpec, Vec<EntityId>>,
     current: &mut Vec<EntityId>,
     affordances: &mut Vec<Affordance>,
@@ -470,6 +500,7 @@ fn enumerate_bindings(
             enumerate_bindings(
                 remaining,
                 actor,
+                view,
                 target_cache,
                 current,
                 affordances,
@@ -485,6 +516,7 @@ fn enumerate_bindings(
         bound_targets: current.clone(),
         payload_override: None,
         explanation: None,
+        contention_status: derive_contention_status(view, actor, current),
     });
 }
 
@@ -502,6 +534,7 @@ fn enumerate_affordances_for_def(
             .map(|bound_targets| Affordance {
                 def_id: def.id,
                 actor,
+                contention_status: derive_contention_status(view, actor, &bound_targets),
                 bound_targets,
                 payload_override: None,
                 explanation: None,
@@ -518,6 +551,7 @@ fn enumerate_affordances_for_def(
     enumerate_bindings(
         &def.targets,
         actor,
+        view,
         target_cache,
         &mut bound_targets,
         &mut affordances,
@@ -545,10 +579,11 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, ActionDefId, ActionDomain, BelievedEntityState, BodyCostPerTick,
         CauseRef, CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind,
-        ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Quantity, RecipeId, ResourceSource, TellProfile, Tick, TradeDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        ContentionGrant, ContentionStatus, ControlSource, DemandObservation, DriveThresholds,
+        EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TellProfile,
+        Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, Wound,
     };
 
     #[derive(Default)]
@@ -574,6 +609,10 @@ mod tests {
         wounds: BTreeMap<EntityId, bool>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
         control: BTreeMap<EntityId, bool>,
+        contention_policies: BTreeMap<EntityId, bool>,
+        contention_positions: BTreeMap<(EntityId, EntityId), u32>,
+        contention_grants: BTreeMap<EntityId, worldwake_core::ContentionGrant>,
+        contention_full: BTreeMap<EntityId, bool>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         demand_memories: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
@@ -720,6 +759,25 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.control.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn has_contention_policy(&self, entity: EntityId) -> bool {
+            self.contention_policies
+                .get(&entity)
+                .copied()
+                .unwrap_or(false)
+        }
+
+        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+            self.contention_positions.get(&(facility, actor)).copied()
+        }
+
+        fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
+            self.contention_grants.get(&facility)
+        }
+
+        fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+            self.contention_full.get(&entity).copied().unwrap_or(false)
         }
 
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
@@ -995,6 +1053,24 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn contention_status_for(
+        view: &StubBeliefView,
+        actor: EntityId,
+        target: EntityId,
+    ) -> ContentionStatus {
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(target)],
+            vec![Precondition::TargetExists(0)],
+        ));
+
+        let affordances = get_affordances(view, actor, &registry, &handler_registry(1));
+        assert_eq!(affordances.len(), 1);
+        affordances[0].contention_status
     }
 
     #[test]
@@ -1429,6 +1505,111 @@ mod tests {
             affordances[0].payload_override,
             Some(ActionPayload::Harvest(_))
         ));
+    }
+
+    #[test]
+    fn get_affordances_marks_unmanaged_targets_as_unmanaged() {
+        let actor = entity(1);
+        let target = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Facility);
+        view.places.insert(actor, entity(10));
+        view.places.insert(target, entity(10));
+
+        assert_eq!(
+            contention_status_for(&view, actor, target),
+            ContentionStatus::Unmanaged
+        );
+    }
+
+    #[test]
+    fn get_affordances_marks_matching_grant_as_granted() {
+        let actor = entity(1);
+        let target = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Facility);
+        view.places.insert(actor, entity(10));
+        view.places.insert(target, entity(10));
+        view.contention_policies.insert(target, true);
+        view.contention_grants.insert(
+            target,
+            ContentionGrant {
+                actor,
+                intended_action: ActionDefId(0),
+                granted_at: Tick(5),
+                expires_at: Tick(8),
+            },
+        );
+
+        assert_eq!(
+            contention_status_for(&view, actor, target),
+            ContentionStatus::Granted
+        );
+    }
+
+    #[test]
+    fn get_affordances_marks_existing_queue_membership_with_position() {
+        let actor = entity(1);
+        let target = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Facility);
+        view.places.insert(actor, entity(10));
+        view.places.insert(target, entity(10));
+        view.contention_policies.insert(target, true);
+        view.contention_positions.insert((target, actor), 2);
+
+        assert_eq!(
+            contention_status_for(&view, actor, target),
+            ContentionStatus::Queued { position: 2 }
+        );
+    }
+
+    #[test]
+    fn get_affordances_marks_open_contention_targets_as_available() {
+        let actor = entity(1);
+        let target = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Facility);
+        view.places.insert(actor, entity(10));
+        view.places.insert(target, entity(10));
+        view.contention_policies.insert(target, true);
+
+        assert_eq!(
+            contention_status_for(&view, actor, target),
+            ContentionStatus::Available
+        );
+    }
+
+    #[test]
+    fn get_affordances_marks_full_contention_targets_as_full() {
+        let actor = entity(1);
+        let target = entity(2);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Facility);
+        view.places.insert(actor, entity(10));
+        view.places.insert(target, entity(10));
+        view.contention_policies.insert(target, true);
+        view.contention_full.insert(target, true);
+
+        assert_eq!(
+            contention_status_for(&view, actor, target),
+            ContentionStatus::Full
+        );
     }
 
     #[test]

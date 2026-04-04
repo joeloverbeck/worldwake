@@ -2284,6 +2284,7 @@ mod tests {
                 bound_targets: vec![self.counterparty],
                 payload_override: Some(ActionPayload::Trade(self.payload.clone())),
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             };
             let mut active = BTreeMap::new();
             let instance_id = start_action(
@@ -2310,6 +2311,7 @@ mod tests {
                 bound_targets: vec![self.counterparty],
                 payload_override: Some(ActionPayload::Trade(self.payload.clone())),
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             };
             let mut active = BTreeMap::new();
             start_action(
@@ -3745,6 +3747,7 @@ mod tests {
                     commodity: self.commodity,
                 })),
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             };
             let mut active = BTreeMap::new();
             let instance_id = start_action(
@@ -3780,6 +3783,7 @@ mod tests {
                     commodity,
                 })),
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             };
             let mut active = BTreeMap::new();
             start_action(

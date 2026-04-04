@@ -503,6 +503,7 @@ fn resolve_affordance(
                 bound_targets: targets.to_vec(),
                 payload_override: payload_override.clone(),
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             RequestBindingKind::BestEffortFallback,
         ),

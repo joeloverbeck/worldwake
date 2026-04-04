@@ -70,6 +70,7 @@ fn revalidate_exact_target_step(
         bound_targets: targets.to_vec(),
         payload_override: None,
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
     requested_affordance_matches(
         &synthetic,

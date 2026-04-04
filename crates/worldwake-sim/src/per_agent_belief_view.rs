@@ -709,6 +709,18 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .and_then(|queue| queue.granted.as_ref())
     }
 
+    fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+        let Some(policy) = self.world.get_component_contention_policy(entity) else {
+            return false;
+        };
+        let Some(queue) = self.world.get_component_contention_queue(entity) else {
+            return false;
+        };
+        policy
+            .max_waiters
+            .is_some_and(|limit| queue.waiting.len() >= usize::from(limit))
+    }
+
     fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
         self.world
             .get_component_contention_queue(facility)

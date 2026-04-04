@@ -401,6 +401,7 @@ mod tests {
                 QueueForFacilityUsePayload { intended_action },
             )),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         }
     }
 

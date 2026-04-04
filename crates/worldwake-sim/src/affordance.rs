@@ -1,7 +1,7 @@
 use crate::{ActionDef, ActionPayload};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use worldwake_core::{ActionDefId, EntityId};
+use worldwake_core::{ActionDefId, ContentionStatus, EntityId};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Affordance {
@@ -10,6 +10,7 @@ pub struct Affordance {
     pub bound_targets: Vec<EntityId>,
     pub payload_override: Option<ActionPayload>,
     pub explanation: Option<String>,
+    pub contention_status: ContentionStatus,
 }
 
 impl Affordance {
@@ -41,6 +42,7 @@ impl Ord for Affordance {
             .then_with(|| self.actor.cmp(&other.actor))
             .then_with(|| self.payload_override.cmp(&other.payload_override))
             .then_with(|| self.explanation.cmp(&other.explanation))
+            .then_with(|| self.contention_status.cmp(&other.contention_status))
     }
 }
 
@@ -57,9 +59,9 @@ mod tests {
     use serde::{de::DeserializeOwned, Serialize};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
-    use worldwake_core::EntityId;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, Quantity, VisibilitySpec,
+        ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, ContentionStatus, EntityId,
+        Quantity, VisibilitySpec,
     };
 
     fn assert_traits<T: Clone + Eq + Ord + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -106,6 +108,7 @@ mod tests {
                 bound_targets: vec![entity(4)],
                 payload_override: None,
                 explanation: Some("later".to_string()),
+                contention_status: ContentionStatus::Unmanaged,
             },
             Affordance {
                 def_id: ActionDefId(1),
@@ -113,6 +116,7 @@ mod tests {
                 bound_targets: vec![entity(7)],
                 payload_override: None,
                 explanation: Some("human".to_string()),
+                contention_status: ContentionStatus::Unmanaged,
             },
             Affordance {
                 def_id: ActionDefId(1),
@@ -120,6 +124,7 @@ mod tests {
                 bound_targets: vec![entity(3)],
                 payload_override: None,
                 explanation: None,
+                contention_status: ContentionStatus::Unmanaged,
             },
         ];
 
@@ -150,6 +155,7 @@ mod tests {
             bound_targets: vec![entity(3), entity(5)],
             payload_override: None,
             explanation: None,
+            contention_status: ContentionStatus::Unmanaged,
         };
 
         assert!(affordance.matches_request_identity(
@@ -201,6 +207,7 @@ mod tests {
                 target: entity(8),
             })),
             explanation: None,
+            contention_status: ContentionStatus::Unmanaged,
         };
 
         assert_eq!(

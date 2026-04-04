@@ -782,6 +782,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -828,6 +829,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -936,6 +938,7 @@ mod tests {
                 quantity: Quantity(1),
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1095,6 +1098,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1344,6 +1348,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1689,6 +1694,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1730,6 +1736,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1779,6 +1786,7 @@ mod tests {
             bound_targets: vec![lot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();

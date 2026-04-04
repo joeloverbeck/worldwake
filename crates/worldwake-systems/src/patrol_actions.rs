@@ -291,6 +291,7 @@ mod tests {
             bound_targets: vec![place],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         }
     }
 

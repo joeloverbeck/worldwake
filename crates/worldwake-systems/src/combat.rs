@@ -2242,6 +2242,7 @@ mod tests {
             bound_targets: vec![corpse],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2320,6 +2321,7 @@ mod tests {
             bound_targets: vec![corpse],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2408,6 +2410,7 @@ mod tests {
             bound_targets: vec![corpse],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2479,6 +2482,7 @@ mod tests {
             bound_targets: vec![corpse, grave_plot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2532,6 +2536,7 @@ mod tests {
                 bound_targets: vec![corpse],
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -2599,6 +2604,7 @@ mod tests {
             bound_targets: vec![dead_target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2636,6 +2642,7 @@ mod tests {
                 bound_targets: vec![dead_target],
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -2661,6 +2668,7 @@ mod tests {
                 bound_targets: vec![dead_target],
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -3245,6 +3253,7 @@ mod tests {
                 bound_targets: Vec::new(),
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -3270,6 +3279,7 @@ mod tests {
                 bound_targets: Vec::new(),
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,

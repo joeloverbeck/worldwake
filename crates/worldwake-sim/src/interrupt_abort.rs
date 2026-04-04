@@ -382,6 +382,7 @@ mod tests {
             bound_targets: vec![target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut defs = ActionDefRegistry::new();
