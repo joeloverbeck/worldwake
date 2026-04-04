@@ -3,7 +3,8 @@
 use worldwake_ai::AgentTickDriver;
 use worldwake_core::{drives::ThresholdBand, numerics::Permille};
 use worldwake_sim::{
-    step_tick, AutonomousControllerRuntime, SimulationState, SystemDispatchTable, TickStepServices,
+    step_tick, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, SimulationState,
+    SystemDispatchTable, TickStepServices,
 };
 use worldwake_systems::ActionRegistries;
 
@@ -44,6 +45,7 @@ pub fn handle_tick(
 
     for _ in 0..n {
         let mut controllers = AutonomousControllerRuntime::new(vec![driver]);
+        let mut action_trace = ActionTraceSink::new();
 
         let (world, event_log, scheduler, controller, rng, recipe_registry) = sim.tick_parts_mut();
 
@@ -59,7 +61,7 @@ pub fn handle_tick(
                 recipe_registry,
                 systems: dispatch_table,
                 input_producer: Some(&mut controllers),
-                action_trace: None,
+                action_trace: Some(&mut action_trace),
                 request_resolution_trace: None,
                 politics_trace: None,
                 perception_trace: None,
@@ -68,26 +70,39 @@ pub fn handle_tick(
         )
         .map_err(|e| CommandError::new(format!("tick error: {e:?}")))?;
 
-        let mut summary_parts = Vec::new();
-        if result.actions_started > 0 {
-            summary_parts.push(format!("{} started", result.actions_started));
-        }
-        if result.actions_completed > 0 {
-            summary_parts.push(format!("{} completed", result.actions_completed));
-        }
-        if result.actions_aborted > 0 {
-            summary_parts.push(format!("{} aborted", result.actions_aborted));
-        }
-        let summary = if summary_parts.is_empty() {
-            String::new()
-        } else {
-            format!(" [actions: {}]", summary_parts.join(", "))
-        };
-
         println!(
-            "--- Tick {} --- ({} events){summary}",
+            "--- Tick {} --- ({} events)",
             result.tick.0, result.events_emitted_count
         );
+
+        // Per-agent action lifecycle summary from trace events
+        for trace_event in action_trace.events() {
+            let actor_name = entity_display_name(sim.world(), trace_event.actor);
+            let action_name = &trace_event.action_name;
+            match &trace_event.kind {
+                ActionTraceKind::Started { targets } => {
+                    let target_str = if targets.is_empty() {
+                        String::new()
+                    } else {
+                        let names: Vec<_> = targets
+                            .iter()
+                            .map(|t| entity_display_name(sim.world(), *t))
+                            .collect();
+                        format!("({})", names.join(", "))
+                    };
+                    println!("  {actor_name}: started {action_name}{target_str}");
+                }
+                ActionTraceKind::Committed { .. } => {
+                    println!("  {actor_name}: completed {action_name}");
+                }
+                ActionTraceKind::Aborted { .. } => {
+                    println!("  {actor_name}: aborted {action_name}");
+                }
+                ActionTraceKind::StartFailed { .. } => {
+                    println!("  {actor_name}: failed to start {action_name}");
+                }
+            }
+        }
     }
 
     Ok(CommandOutcome::Continue)

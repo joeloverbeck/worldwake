@@ -10,13 +10,20 @@ use crate::commands::{CommandError, CommandOutcome, CommandResult};
 use crate::display::entity_display_name;
 use crate::repl::ReplState;
 
-/// Action names that are internal merchant/stock operations, not meaningful
-/// user choices. Filtered from the human action menu.
-const HIDDEN_ACTIONS: &[&str] = &[
+/// Action names filtered from the human action menu. Includes internal
+/// operations, actions requiring complex payloads the CLI can't construct,
+/// and enforcement actions that need institutional context.
+pub const HIDDEN_ACTIONS: &[&str] = &[
     "store_stock",
     "collect_display_stock",
     "stage_stock_for_sale",
     "unstage_stock",
+    "declare_support",
+    "queue_for_facility_use",
+    "staff_market",
+    "steal",
+    "fine",
+    "exile",
 ];
 
 /// List available actions for the controlled agent.

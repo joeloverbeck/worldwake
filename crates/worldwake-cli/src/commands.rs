@@ -48,8 +48,11 @@ pub enum CliCommand {
     Events { n: Option<usize> },
     /// Show event details
     Event { id: u64 },
-    /// Trace causal chain
-    Trace { id: u64 },
+    /// Trace causal chain from an event
+    Trace {
+        #[arg(value_name = "EVENT_ID")]
+        id: u64,
+    },
     /// Switch control to agent
     Switch {
         #[arg(trailing_var_arg = true, num_args = 1..)]
