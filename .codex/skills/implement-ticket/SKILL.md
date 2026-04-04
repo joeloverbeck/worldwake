@@ -35,6 +35,7 @@ Keep the workflow compact and deterministic. Reassess first, then implement. Do 
    - described architecture still matches the live code
    - stated coverage gaps are real and classified correctly
    - for golden-driven tickets, claimed missing scenarios are not already covered by the current `golden_*` suites or the generated golden inventory/docs
+   - for golden-only or golden-closeout tickets, identify the strongest existing owning `golden_*` suite before accepting the ticket's proposed file list; if the scenario belongs in an existing suite, correct the ticket to reuse that ownership surface instead of creating a new golden file by habit
    - for golden-driven tickets, if a claimed divergence is already proved at lower layers but does not remain stably isolatable in the current golden harness without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative for the rejected slice
    - for golden communication or information-path tickets that rely on "degradation," verify separately what actually degrades in live code: provenance/source, confidence, communication class, eligibility, ranking, or another distinct mechanism. Do not let the ticket collapse different degradation paths into one stale narrative
    - when shared types change, serialized fixtures, bundled scenarios, schema examples, and other non-Rust deserialization inputs still match the live struct shape
@@ -214,7 +215,11 @@ When broader required verification surfaces a timing-sensitive golden whose sema
 
 When a golden proves durable learned-state aftermath such as memory records, counters, or timestamps, assert the semantic contract unless exact tick identity is itself the owned invariant. If only ordering or recency matters, prove that boundary directly instead of pinning the record to `current_tick`.
 
+If focused implementation or verification shows that the corrected ticket still over-claims what the live harness can stably prove, narrow the ticket again before final verification so the archive-ready proof surface matches the strongest honest demonstrated boundary.
+
 If an attempted acceptance proof reveals a deeper shared-layer contradiction outside the ticket's corrected scope, do not silently pull that broader fix into the current ticket. Update the ticket's proof surface back to the owned boundary unless the broader change is already in scope or the user explicitly confirms the expansion.
+
+When long-running verification commands are already in flight, prefer polling or reusing those sessions rather than spawning duplicate cargo or tool invocations. This keeps verification readable and avoids unnecessary process or session churn in constrained environments.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) when relevant, especially:
 

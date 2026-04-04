@@ -149,6 +149,9 @@ Established typed social communication through `CommunicationClass`, authoritati
 ### S44: Scenario Profile Completeness — COMPLETED
 Established scenario-definable universal and role-specific agent profiles, overrideable defaulted profile components, loud known-agent runtime profile enforcement, and mirrored documentation contract updates across `docs/spec-drafting-rules.md`, `CLAUDE.md`, and `AGENTS.md`. Archived spec: `archive/specs/S44-scenario-profile-completeness.md`.
 
+### S44 (duplicate id): Generalized Contention Substrate — COMPLETED
+Established the reusable contention substrate across queue, grant, race, perception, affordance, and persistence boundaries: `ContentionQueue`/`ContentionPolicy` replaced the old facility-only queue path, corpse/care/unique-item contention now resolves through explicit world state, `BelievedContentionState` exposes local contention perception, and the golden/save-load closeout shipped through Scenarios 101-104 with `SAVE_FORMAT_VERSION` 16. Archived spec: `archive/specs/S44-generalized-contention-substrate.md`.
+
 All completed specs are archived under `archive/specs/`.
 
 ---
@@ -209,7 +212,8 @@ S40 ✅ ──→ E22 ✅ (integration should cover lawful remote combat pursuit
 S42 ✅ (no deps — per-agent reasoning style completed)
 S43 ✅ (no deps — communication type differentiation completed)
 S42 ✅, S43 ✅ ──→ S44 ✅ (scenario profile completeness completed)
-S45 remains the next active Phase 5 spec; the earlier S44-style contention substrate is beneficial for future claim competition but not blocking per the live S45 spec
+S44-generalized-contention-substrate ✅ (duplicate S-number in historical planning material; completed independently of scenario-profile completeness)
+S45 remains the next active Phase 5 spec
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
 S26 ✅ (planner conformance tests completed — 32 tests across all action families)
@@ -462,7 +466,7 @@ S36 ✅ ──→ S40 ✅
 
 ### Phase 5: Architectural Substrates
 
-Derived from the external ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs address confirmed architectural gaps in agent reasoning diversity (FND IV.22), communication type differentiation (FND III.15/18), scenario profile completeness for agent behavior substrate configuration, and social artifact modeling (FND IV.25).
+Derived from the external ChatGPT architecture review (`brainstorming/improvements-to-ai-architecture.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs address confirmed architectural gaps in agent reasoning diversity (FND IV.22), communication type differentiation (FND III.15/18), scenario profile completeness for agent behavior substrate configuration, generalized contention for scarce affordances, and social artifact modeling (FND IV.25).
 
 **Step 17** (parallel, no deps):
 - **S42**: Per-Agent Reasoning Style — ✅ COMPLETED
@@ -479,6 +483,11 @@ Derived from the external ChatGPT architecture review (`brainstorming/improvemen
   - already-defaulted agent profiles are overrideable per agent
   - known-agent universal profile reads no longer hide missing-state bugs behind silent fallback
   - the profile-completeness rule is now mirrored across spec-drafting and repo-guidance docs
+- **S44 (duplicate id)**: Generalized Contention Substrate — ✅ COMPLETED
+  - archived spec: `archive/specs/S44-generalized-contention-substrate.md`
+  - generalized contention replaced the old facility-only queue path with explicit queue/grant/race world state
+  - corpse, care, facility, and ground unique-item contention now resolve through the shared substrate
+  - contention state is visible through affordances, beliefs, perception, and save/load, with golden closure in Scenarios 101-104
 
 **Step 19** (next active Phase 5 step):
 - **S45**: Unified Social Artifact Model
@@ -493,13 +502,15 @@ Dependency graph:
 S42 ✅ (no deps, parallel)
 S43 ✅ (no deps, parallel)
 S42 ✅, S43 ✅ ──→ S44 ✅
-S45 (next active Phase 5 spec; contention follow-on beneficial but not blocking)
+S44-generalized-contention-substrate ✅ (duplicate S-number; completed in parallel planning history)
+S45 (next active Phase 5 spec)
 ```
 
 #### Phase 5 Gate
 - [x] Two agents with different `ReasoningProfile` produce observably different behavior (S42)
 - [x] Alarm-class communication survives stress suppression while gossip is suppressed (S43)
 - [x] Scenario-spawned agents receive the full universal/role-specific profile substrate, and known-agent universal profile reads no longer hide missing-state bugs (S44)
+- [x] Generalized contention resolves contested corpse, facility, care, and unique-item access through inspectable queue/grant/race world state, including perception and save/load closure (`S44-generalized-contention-substrate.md`)
 - [ ] End-to-end bounty lifecycle: post → perceive → pursue → claim → reward (S45)
 - [ ] All Phase 4 and 4+ gate criteria still hold
 - [ ] `cargo test --workspace` passes
@@ -540,6 +551,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S42-per-agent-reasoning-style.md`~~ | 5 | 17 | ✅ COMPLETED |
 | ~~`S43-communication-type-differentiation.md`~~ | 5 | 17 | ✅ COMPLETED |
 | ~~`S44-scenario-profile-completeness.md`~~ | 5 | 18 | ✅ COMPLETED |
+| ~~`S44-generalized-contention-substrate.md`~~ | 5 | 18 | ✅ COMPLETED |
 | `S45-unified-social-artifact-model.md` | 5 | 19 | none |
 
 ## Crate Dependency Graph
@@ -565,4 +577,4 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | ✅ COMPLETED |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39, S48 | Merchant economy depth, learned preferences, side-benefit scoring, S38 golden closeout | ✅ COMPLETED |
-| 5: Architectural Substrates | S42–S45 | Agent reasoning diversity, communication types, scenario profile completeness, social artifacts | IN PROGRESS (S42, S43, and S44 complete; S45 pending) |
+| 5: Architectural Substrates | S42–S45 plus duplicate-id `S44-generalized-contention-substrate` | Agent reasoning diversity, communication types, scenario profile completeness, generalized contention, social artifacts | IN PROGRESS (S42, S43, both S44 specs, and generalized contention complete; S45 pending) |

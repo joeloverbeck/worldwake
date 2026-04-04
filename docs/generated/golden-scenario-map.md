@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 119
+- Scenario blocks with explicit metadata: 123
 - Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 263
+- Tests associated with scenario blocks: 271
 
 ## Scenario Inventory
 
@@ -23,48 +23,50 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:657` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
 | `7` | Deprivation Cascade | `golden_ai_decisions.rs:746` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
 | `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1941` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
-| `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:724` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
-| `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:814` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
-| `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:902` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
-| `2c-invalidation` | Care goal invalidates when patient self-heals | `golden_care.rs:1009` | `golden_care_goal_invalidation_when_patient_heals`<br>`golden_care_pre_start_wound_disappearance_records_blocker` | `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`<br>`golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically` |
-| `8b` | Corpse Burial | `golden_combat.rs:711` | `golden_bury_corpse` | — |
-| `7f` | ReduceDanger Defensive Mitigation | `golden_combat.rs:1412` | `golden_reduce_danger_defensive_mitigation`<br>`golden_defend_replans_after_finite_stance_expires`<br>`golden_defend_changed_conditions` | `golden_defend_changed_conditions_replays_deterministically` |
-| `7g` | Wound Bleed, Clotting, and Natural Recovery | `golden_combat.rs:1631` | `golden_wound_bleed_clotting_natural_recovery` | `golden_wound_bleed_clotting_natural_recovery_replays_deterministically` |
-| `30` | Recovery-Aware Priority Boost Eats Before Wash | `golden_combat.rs:1667` | `golden_recovery_aware_boost_eats_before_wash` | `golden_recovery_aware_boost_eats_before_wash_replays_deterministically` |
-| `8` | Death Cascade and Opportunistic Loot | `golden_combat.rs:1704` | `golden_death_cascade_and_opportunistic_loot` | `golden_death_cascade_and_opportunistic_loot_replays_deterministically` |
-| `8c` | Loot Suppression Under Self-Care Pressure | `golden_combat.rs:1757` | `golden_loot_suppressed_under_self_care_pressure` | `golden_loot_suppressed_under_self_care_pressure_replays_deterministically` |
-| `8d` | Death While Traveling | `golden_combat.rs:1794` | `golden_death_while_traveling` | `golden_death_while_traveling_replays_deterministically` |
-| `7c` | Hostility-Driven Living Combat | `golden_combat.rs:1830` | `golden_combat_between_living_agents`<br>`golden_seed_sensitivity_living_combat_different_outcomes` | `golden_combat_between_living_agents_replays_deterministically` |
-| `S03a` | Multi-Corpse Loot Binding | `golden_combat.rs:1888` | `golden_multi_corpse_loot_binding` | `golden_multi_corpse_loot_binding_replays_deterministically` |
-| `S03b` | Bury Suppressed Under Stress | `golden_combat.rs:2086` | `golden_bury_suppressed_under_stress` | `golden_bury_suppressed_under_stress_replays_deterministically` |
-| `S03c` | Suppression Then Binding Combined | `golden_combat.rs:2261` | `golden_suppression_then_binding_combined`<br>`golden_action_trace_records_loot_lifecycle` | `golden_suppression_then_binding_combined_replays_deterministically` |
+| `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:759` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
+| `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:865` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
+| `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:953` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
+| `2c-invalidation` | Care goal invalidates when patient self-heals | `golden_care.rs:1060` | `golden_care_goal_invalidation_when_patient_heals`<br>`golden_care_pre_start_wound_disappearance_records_blocker` | `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`<br>`golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically` |
+| `8b` | Corpse Burial | `golden_combat.rs:753` | `golden_bury_corpse` | — |
+| `7f` | ReduceDanger Defensive Mitigation | `golden_combat.rs:1454` | `golden_reduce_danger_defensive_mitigation`<br>`golden_defend_replans_after_finite_stance_expires`<br>`golden_defend_changed_conditions` | `golden_defend_changed_conditions_replays_deterministically` |
+| `7g` | Wound Bleed, Clotting, and Natural Recovery | `golden_combat.rs:1673` | `golden_wound_bleed_clotting_natural_recovery` | `golden_wound_bleed_clotting_natural_recovery_replays_deterministically` |
+| `30` | Recovery-Aware Priority Boost Eats Before Wash | `golden_combat.rs:1709` | `golden_recovery_aware_boost_eats_before_wash` | `golden_recovery_aware_boost_eats_before_wash_replays_deterministically` |
+| `8` | Death Cascade and Opportunistic Loot | `golden_combat.rs:1746` | `golden_death_cascade_and_opportunistic_loot` | `golden_death_cascade_and_opportunistic_loot_replays_deterministically` |
+| `8c` | Loot Suppression Under Self-Care Pressure | `golden_combat.rs:1799` | `golden_loot_suppressed_under_self_care_pressure` | `golden_loot_suppressed_under_self_care_pressure_replays_deterministically` |
+| `8d` | Death While Traveling | `golden_combat.rs:1836` | `golden_death_while_traveling` | `golden_death_while_traveling_replays_deterministically` |
+| `7c` | Hostility-Driven Living Combat | `golden_combat.rs:1872` | `golden_combat_between_living_agents`<br>`golden_seed_sensitivity_living_combat_different_outcomes` | `golden_combat_between_living_agents_replays_deterministically` |
+| `S03a` | Multi-Corpse Loot Binding | `golden_combat.rs:1930` | `golden_multi_corpse_loot_binding` | `golden_multi_corpse_loot_binding_replays_deterministically` |
+| `S03b` | Bury Suppressed Under Stress | `golden_combat.rs:2128` | `golden_bury_suppressed_under_stress` | `golden_bury_suppressed_under_stress_replays_deterministically` |
+| `S03c` | Suppression Then Binding Combined | `golden_combat.rs:2303` | `golden_suppression_then_binding_combined` | `golden_suppression_then_binding_combined_replays_deterministically` |
+| `101` | Corpse Contention Projects Visible Queue And Grant State | `golden_combat.rs:2556` | `golden_corpse_contention_projects_visible_queue_and_grant_state`<br>`golden_action_trace_records_loot_lifecycle` | `golden_corpse_contention_projects_visible_queue_and_grant_state_replays_deterministically` |
 | `89` | Unreachable Workstation Suppresses Indirect Firewood Value | `golden_commodity_opportunity.rs:151` | `golden_unreachable_workstation_suppresses_recipe_input_value` | `golden_unreachable_workstation_suppresses_recipe_input_value_replays_deterministically` |
 | `90` | No Known Recipe Prevents Indirect Firewood Motive | `golden_commodity_opportunity.rs:179` | `golden_no_known_recipe_suppresses_recipe_input_value` | — |
-| `6` | Deterministic Replay Fidelity | `golden_determinism.rs:138` | `golden_deterministic_replay_fidelity`<br>`golden_save_load_round_trip_under_ai` | — |
-| `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:201` | `golden_world_runs_without_observers`<br>`bench_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
-| `S21-005` | Save/Load Preserves Promoted Commitments | `golden_determinism.rs:556` | `golden_save_load_preserves_promoted_commitments` | `golden_save_load_preserves_promoted_commitments_replays_deterministically` |
-| `S22-007` | Save/load verification for IntentionFrame and | `golden_determinism.rs:771` | `golden_save_load_preserves_suspended_intention_frame`<br>`golden_save_load_preserves_intention_disposition_profile`<br>`golden_save_load_preserves_frame_assumptions` | — |
-| `44` | Wounded Politician Enterprise vs Care Priority | `golden_emergent.rs:513` | `golden_wounded_politician_pain_first`<br>`golden_wounded_politician_enterprise_first`<br>`golden_care_weight_divergence_under_observation`<br>`golden_care_travel_to_remote_patient`<br>`golden_loot_corpse_self_care_chain` | `golden_wounded_politician_replays_deterministically`<br>`golden_care_weight_divergence_replays_deterministically`<br>`golden_care_travel_to_remote_patient_replays_deterministically`<br>`golden_loot_corpse_self_care_chain_replays_deterministically` |
-| `45` | Combat Death Triggers Force Succession | `golden_emergent.rs:1234` | `golden_combat_death_triggers_force_succession` | `golden_combat_death_triggers_force_succession_replays_deterministically` |
-| `46` | Social Tell Propagates Political Knowledge | `golden_emergent.rs:1579` | `golden_tell_propagates_political_knowledge`<br>`golden_same_place_office_fact_still_requires_tell`<br>`golden_remote_office_claim_start_failure_loses_gracefully`<br>`golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact`<br>`golden_force_controller_departure_enables_rival_claim`<br>`golden_force_claim_creates_hostility_witnessed_and_propagated`<br>`golden_contested_force_state_propagates_through_belief_system` | `golden_tell_propagates_political_knowledge_replays_deterministically`<br>`golden_same_place_office_fact_still_requires_tell_replays_deterministically`<br>`golden_remote_office_claim_start_failure_loses_gracefully_replays_deterministically`<br>`golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically`<br>`golden_force_controller_departure_enables_rival_claim_replays_deterministically`<br>`golden_force_claim_creates_hostility_witnessed_and_propagated_replays_deterministically`<br>`golden_contested_force_state_propagates_through_belief_system_replays_deterministically` |
-| `35` | Same-Place Concurrent Violations Stay Distinct | `golden_emergent.rs:4253` | `golden_same_place_concurrent_violations_stay_distinct` | `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically` |
-| `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4633` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
-| `37` | Theft Leads Owner To Local Suspected Theft Discovery | `golden_emergent.rs:4868` | `golden_theft_leads_owner_to_local_suspected_theft_discovery` | `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically` |
-| `38` | Witnessed Theft Enables Accusation Chain | `golden_emergent.rs:5245` | `golden_witnessed_theft_accusation_chain` | `golden_witnessed_theft_accusation_chain_replays_deterministically` |
-| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5818` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
-| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:6122` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
-| `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6405` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
-| `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6654` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
-| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7213` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
+| `6` | Deterministic Replay Fidelity | `golden_determinism.rs:139` | `golden_deterministic_replay_fidelity`<br>`golden_save_load_round_trip_under_ai` | — |
+| `S02` | World Runs Without Observers (Principle 6) | `golden_determinism.rs:202` | `golden_world_runs_without_observers`<br>`bench_world_runs_without_observers` | `golden_world_runs_without_observers_replays_deterministically` |
+| `S21-005` | Save/Load Preserves Promoted Commitments | `golden_determinism.rs:557` | `golden_save_load_preserves_promoted_commitments` | `golden_save_load_preserves_promoted_commitments_replays_deterministically` |
+| `S22-007` | Save/load verification for IntentionFrame and | `golden_determinism.rs:772` | `golden_save_load_preserves_suspended_intention_frame`<br>`golden_save_load_preserves_intention_disposition_profile`<br>`golden_save_load_preserves_frame_assumptions` | — |
+| `104` | Save/Load Preserves Generalized Contention World And Belief State | `golden_determinism.rs:1015` | `golden_save_load_preserves_generalized_contention_state` | `golden_save_load_preserves_generalized_contention_state_replays_deterministically` |
+| `44` | Wounded Politician Enterprise vs Care Priority | `golden_emergent.rs:514` | `golden_wounded_politician_pain_first`<br>`golden_wounded_politician_enterprise_first`<br>`golden_care_weight_divergence_under_observation`<br>`golden_care_travel_to_remote_patient`<br>`golden_loot_corpse_self_care_chain` | `golden_wounded_politician_replays_deterministically`<br>`golden_care_weight_divergence_replays_deterministically`<br>`golden_care_travel_to_remote_patient_replays_deterministically`<br>`golden_loot_corpse_self_care_chain_replays_deterministically` |
+| `45` | Combat Death Triggers Force Succession | `golden_emergent.rs:1235` | `golden_combat_death_triggers_force_succession` | `golden_combat_death_triggers_force_succession_replays_deterministically` |
+| `46` | Social Tell Propagates Political Knowledge | `golden_emergent.rs:1580` | `golden_tell_propagates_political_knowledge`<br>`golden_same_place_office_fact_still_requires_tell`<br>`golden_remote_office_claim_start_failure_loses_gracefully`<br>`golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact`<br>`golden_force_controller_departure_enables_rival_claim`<br>`golden_force_claim_creates_hostility_witnessed_and_propagated`<br>`golden_contested_force_state_propagates_through_belief_system` | `golden_tell_propagates_political_knowledge_replays_deterministically`<br>`golden_same_place_office_fact_still_requires_tell_replays_deterministically`<br>`golden_remote_office_claim_start_failure_loses_gracefully_replays_deterministically`<br>`golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically`<br>`golden_force_controller_departure_enables_rival_claim_replays_deterministically`<br>`golden_force_claim_creates_hostility_witnessed_and_propagated_replays_deterministically`<br>`golden_contested_force_state_propagates_through_belief_system_replays_deterministically` |
+| `35` | Same-Place Concurrent Violations Stay Distinct | `golden_emergent.rs:4254` | `golden_same_place_concurrent_violations_stay_distinct` | `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically` |
+| `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4634` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
+| `37` | Theft Leads Owner To Local Suspected Theft Discovery | `golden_emergent.rs:4869` | `golden_theft_leads_owner_to_local_suspected_theft_discovery` | `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically` |
+| `38` | Witnessed Theft Enables Accusation Chain | `golden_emergent.rs:5247` | `golden_witnessed_theft_accusation_chain` | `golden_witnessed_theft_accusation_chain_replays_deterministically` |
+| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5675` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
+| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:5979` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
+| `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6262` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
+| `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6511` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
+| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7070` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
 | `91` | Hostile Completed Travel Reweights the Next Route Choice | `golden_experience_preferences.rs:519` | `golden_hostile_completed_travel_flips_next_route_choice` | `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically` |
 | `92` | Combat-Aborted Travel Still Creates Hostile Route Memory | `golden_experience_preferences.rs:553` | `golden_combat_aborted_travel_flips_next_route_choice` | `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically` |
 | `93` | Preference Profiles Create Route Diversity From the Same Memory | `golden_experience_preferences.rs:584` | `golden_preference_profile_diversifies_route_selection` | `golden_preference_profile_diversifies_route_selection_replays_deterministically` |
-| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:88` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
-| `27` | Controlled Agent Death | `golden_integration.rs:1007` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
-| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1273` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
-| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2488` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
-| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3417` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
-| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4452` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
+| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:86` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
+| `27` | Controlled Agent Death | `golden_integration.rs:1005` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
+| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1271` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
+| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2486` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
+| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3415` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
+| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4442` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
 | `75` | Displayed Lot Retains SaleListing Through Presence Cycle | `golden_merchant_selling.rs:392` | `staff_market_retains_displayed_listing_through_presence_cycle` | `staff_market_retains_displayed_listing_replays_deterministically` |
 | `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:467` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
 | `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:579` | `unlisted_stock_not_sellable` | — |
@@ -100,11 +102,13 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `55` | Patrol Route Adaptation Retargets After Local Report | `golden_patrol.rs:588` | `golden_patrol_route_adaptation_retargets_after_local_report` | — |
 | `56` | Patrol Locality Requires Guard-Local Report | `golden_patrol.rs:676` | `golden_patrol_locality_requires_guard_local_report` | — |
 | `57` | Patrol-Driven Crime Discovery Chain | `golden_patrol.rs:765` | `golden_patrol_driven_crime_discovery` | `golden_patrol_driven_crime_discovery_replays_deterministically` |
-| `3` | Resource Contention with Conservation | `golden_production.rs:2516` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback` | — |
-| `3b` | Observed Harvest Competition Redirects To Remote Sibling | `golden_production.rs:2671` | `golden_observed_harvest_competition_redirects_to_remote_sibling`<br>`golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_grant_expiry_before_intended_action`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`<br>`golden_facility_queue_patience_timeout_replays_deterministically` |
-| `4` | Materialization Barrier Chain | `golden_production.rs:2909` | `golden_materialization_barrier_chain` | — |
-| `6b` | Multi-Recipe Craft Path | `golden_production.rs:3009` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically` |
-| `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:3166` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
+| `3` | Resource Contention with Conservation | `golden_production.rs:2848` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback` | — |
+| `3b` | Observed Harvest Competition Redirects To Remote Sibling | `golden_production.rs:3003` | `golden_observed_harvest_competition_redirects_to_remote_sibling`<br>`golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue` | `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically` |
+| `102` | Departed Waiter Pruned From Facility Queue | `golden_production.rs:3150` | `golden_departed_waiter_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_local_detour_reuses_existing_grant_before_harvest`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_facility_queue_patience_timeout_replays_deterministically` |
+| `4` | Materialization Barrier Chain | `golden_production.rs:3287` | `golden_materialization_barrier_chain` | — |
+| `6b` | Multi-Recipe Craft Path | `golden_production.rs:3387` | `golden_acquire_commodity_recipe_input`<br>`golden_remote_acquire_commodity_recipe_input`<br>`golden_multi_recipe_craft_path`<br>`golden_capacity_constrained_ground_lot_pickup` | `golden_remote_acquire_commodity_recipe_input_replays_deterministically`<br>`golden_resource_exhaustion_race_replays_deterministically`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`<br>`golden_exclusive_queue_contention_replays_deterministically`<br>`golden_dead_agent_pruned_from_facility_queue_replays_deterministically`<br>`golden_departed_waiter_pruned_from_facility_queue_replays_deterministically` |
+| `103` | Unique-Item Race Rejection Redirects To Local Alternative | `golden_production.rs:3561` | `golden_unique_item_race_rejection_redirects_to_local_alternative` | `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically` |
+| `3f` | Faction-Owned Production — Member vs Outsider | `golden_production.rs:3621` | `golden_faction_ownership_producer_owner_delegation` | `golden_faction_ownership_producer_owner_delegation_replays_deterministically` |
 | `68` | Bandit witnesses traveler leave, pursues, attacks | `golden_pursuit.rs:339` | `golden_bandit_witnesses_and_pursues` | `golden_bandit_witnesses_and_pursues_replays_deterministically` |
 | `69` | Bandit pursues stale target, arrival failure | `golden_pursuit.rs:480` | `golden_stale_pursuit_arrival_failure` | `golden_stale_pursuit_arrival_failure_replays_deterministically` |
 | `70` | Combat → flee → re-pursue | `golden_pursuit.rs:624` | `golden_combat_flee_re_pursue` | `golden_combat_flee_re_pursue_replays_deterministically` |
@@ -261,7 +265,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-self: Wounded agent self-treats with medicine
 
-- Source: `golden_care.rs:724`
+- Source: `golden_care.rs:759`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care
@@ -279,7 +283,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
 
-- Source: `golden_care.rs:814`
+- Source: `golden_care.rs:865`
 - Systems: AI, Care, Transport, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care, Transport
@@ -296,7 +300,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-report: Indirect wound report does NOT trigger care goal
 
-- Source: `golden_care.rs:902`
+- Source: `golden_care.rs:953`
 - Systems: AI, Care, Perception
 - GoalKinds: TreatWounds(other)
 - ActionDomains: Care
@@ -314,7 +318,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-invalidation: Care goal invalidates when patient self-heals
 
-- Source: `golden_care.rs:1009`
+- Source: `golden_care.rs:1060`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(other), TreatWounds(self)
 - ActionDomains: Care
@@ -331,7 +335,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 8b: Corpse Burial
 
-- Source: `golden_combat.rs:711`
+- Source: `golden_combat.rs:753`
 - Systems: AI, Corpse, Conservation
 - GoalKinds: BuryCorpse
 - ActionDomains: Corpse
@@ -349,7 +353,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 7f: ReduceDanger Defensive Mitigation
 
-- Source: `golden_combat.rs:1412`
+- Source: `golden_combat.rs:1454`
 - Systems: AI, Combat, Conservation
 - GoalKinds: ReduceDanger, EngageHostile
 - ActionDomains: Combat
@@ -367,7 +371,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 7g: Wound Bleed, Clotting, and Natural Recovery
 
-- Source: `golden_combat.rs:1631`
+- Source: `golden_combat.rs:1673`
 - Systems: Combat, Needs
 - GoalKinds: (none direct)
 - ActionDomains: Combat
@@ -385,7 +389,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 30: Recovery-Aware Priority Boost Eats Before Wash
 
-- Source: `golden_combat.rs:1667`
+- Source: `golden_combat.rs:1709`
 - Systems: AI, Needs, Combat
 - GoalKinds: ConsumeOwnedCommodity, Wash
 - ActionDomains: Needs
@@ -403,7 +407,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 8: Death Cascade and Opportunistic Loot
 
-- Source: `golden_combat.rs:1704`
+- Source: `golden_combat.rs:1746`
 - Systems: Needs, Combat, Corpse, Conservation
 - GoalKinds: LootCorpse
 - ActionDomains: Corpse
@@ -421,7 +425,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 8c: Loot Suppression Under Self-Care Pressure
 
-- Source: `golden_combat.rs:1757`
+- Source: `golden_combat.rs:1799`
 - Systems: Needs, AI, Corpse, Conservation
 - GoalKinds: LootCorpse, ConsumeOwnedCommodity
 - ActionDomains: Corpse, Needs
@@ -439,7 +443,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 8d: Death While Traveling
 
-- Source: `golden_combat.rs:1794`
+- Source: `golden_combat.rs:1836`
 - Systems: Needs, AI, Travel, Combat, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -457,7 +461,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 7c: Hostility-Driven Living Combat
 
-- Source: `golden_combat.rs:1830`
+- Source: `golden_combat.rs:1872`
 - Systems: AI, Combat, Conservation
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -475,7 +479,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S03a: Multi-Corpse Loot Binding
 
-- Source: `golden_combat.rs:1888`
+- Source: `golden_combat.rs:1930`
 - Systems: AI, Corpse, Conservation
 - GoalKinds: LootCorpse
 - ActionDomains: Corpse
@@ -493,7 +497,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S03b: Bury Suppressed Under Stress
 
-- Source: `golden_combat.rs:2086`
+- Source: `golden_combat.rs:2128`
 - Systems: Needs, AI, Corpse, Production
 - GoalKinds: BuryCorpse, ConsumeOwnedCommodity
 - ActionDomains: Corpse, Needs
@@ -511,21 +515,39 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S03c: Suppression Then Binding Combined
 
-- Source: `golden_combat.rs:2261`
+- Source: `golden_combat.rs:2303`
 - Systems: Needs, AI, Corpse, Conservation
 - GoalKinds: LootCorpse, ConsumeOwnedCommodity
 - ActionDomains: Corpse, Needs
 - Places: VillageSquare
 - Principles: Conservation, Maximal Emergence
-- Primary tests: `golden_suppression_then_binding_combined`, `golden_action_trace_records_loot_lifecycle`
+- Primary tests: `golden_suppression_then_binding_combined`
 - Replay tests: `golden_suppression_then_binding_combined_replays_deterministically`
-- All tests: `golden_suppression_then_binding_combined`, `golden_suppression_then_binding_combined_replays_deterministically`, `golden_action_trace_records_loot_lifecycle`
+- All tests: `golden_suppression_then_binding_combined`, `golden_suppression_then_binding_combined_replays_deterministically`
 
 **Setup**: Two corpses (Coin(5), Coin(3)), hungry scavenger (pm(800)) with Bread(1).
 
 **Proves**: Hunger suppresses both LootCorpse goals. Eats first. Suppression lifts. matches_binding selects correct target. Sequential loot. Conservation holds.
 
 **Cross-system chain**: High hunger -> loot suppression -> eat -> relief -> matches_binding -> sequential loot.
+
+### Scenario 101: Corpse Contention Projects Visible Queue And Grant State
+
+- Source: `golden_combat.rs:2556`
+- Systems: Combat, Contention, Perception, AI
+- GoalKinds: LootCorpse
+- ActionDomains: Corpse
+- Places: VillageSquare
+- Principles: 7, 8, 9, 20
+- Primary tests: `golden_corpse_contention_projects_visible_queue_and_grant_state`, `golden_action_trace_records_loot_lifecycle`
+- Replay tests: `golden_corpse_contention_projects_visible_queue_and_grant_state_replays_deterministically`
+- All tests: `golden_corpse_contention_projects_visible_queue_and_grant_state`, `golden_corpse_contention_projects_visible_queue_and_grant_state_replays_deterministically`, `golden_action_trace_records_loot_lifecycle`
+
+**Setup**: Two hungry looters and one dead bread-carrying corpse share VillageSquare. The corpse carries explicit contention state and more bread than one looter can carry in a single loot commit.
+
+**Proves**: corpse looting resolves through real queue/grant state, the waiting actor can perceive that contention state locally, and the second looter is promoted after the first partial loot commit.
+
+**Cross-system chain**: contested corpse loot -> first grant -> second waiter queued -> local believed contention projection -> first partial loot commit -> second grant -> second partial loot commit.
 
 ### Scenario 89: Unreachable Workstation Suppresses Indirect Firewood Value
 
@@ -559,7 +581,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 6: Deterministic Replay Fidelity
 
-- Source: `golden_determinism.rs:138`
+- Source: `golden_determinism.rs:139`
 - Systems: All
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -576,7 +598,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S02: World Runs Without Observers (Principle 6)
 
-- Source: `golden_determinism.rs:201`
+- Source: `golden_determinism.rs:202`
 - Systems: Needs, Production, Travel, Enterprise, Trade, AI, Conservation
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume), RestockCommodity
 - ActionDomains: Needs, Production, Travel
@@ -594,7 +616,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S21-005: Save/Load Preserves Promoted Commitments
 
-- Source: `golden_determinism.rs:556`
+- Source: `golden_determinism.rs:557`
 - Systems: Needs, Production, Travel, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -603,7 +625,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Replay tests: `golden_save_load_preserves_promoted_commitments_replays_deterministically`
 - All tests: `golden_save_load_preserves_promoted_commitments`, `golden_save_load_preserves_promoted_commitments_replays_deterministically`
 
-**Setup**: A hungry agent at Village Square with food available only at Orchard Farm. The agent must travel (7 ticks across 3 legs). We save mid-travel, load, and assert that ActiveGoal, IntentionFrame, and FacilityQueueIntents survive the round-trip.
+**Setup**: A hungry agent at Village Square with food available only at Orchard Farm. The agent must travel (7 ticks across 3 legs). We save mid-travel, load, and assert that ActiveGoal, IntentionFrame, and ContentionIntents survive the round-trip.
 
 **Proves**: Promoted causal runtime state (S21-001..004) is preserved by save/load. The agent continues its journey rather than restarting.
 
@@ -611,14 +633,32 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario S22-007: Save/load verification for IntentionFrame and
 
-- Source: `golden_determinism.rs:771`
+- Source: `golden_determinism.rs:772`
 - Primary tests: `golden_save_load_preserves_suspended_intention_frame`, `golden_save_load_preserves_intention_disposition_profile`, `golden_save_load_preserves_frame_assumptions`
 - Replay tests: None
 - All tests: `golden_save_load_preserves_suspended_intention_frame`, `golden_save_load_preserves_intention_disposition_profile`, `golden_save_load_preserves_frame_assumptions`
 
+### Scenario 104: Save/Load Preserves Generalized Contention World And Belief State
+
+- Source: `golden_determinism.rs:1015`
+- Systems: SaveLoad, Contention, Perception
+- GoalKinds: LootCorpse
+- ActionDomains: Corpse
+- Places: VillageSquare
+- Principles: 8, 9, 12
+- Primary tests: `golden_save_load_preserves_generalized_contention_state`
+- Replay tests: `golden_save_load_preserves_generalized_contention_state_replays_deterministically`
+- All tests: `golden_save_load_preserves_generalized_contention_state`, `golden_save_load_preserves_generalized_contention_state_replays_deterministically`
+
+**Setup**: a dead bread-carrying corpse has real contention policy, one active grant, one queued waiter, and one observing agent with a direct `BelievedContentionState`.
+
+**Proves**: generalized contention world state and its projected local belief survive save/load round-trip without drift.
+
+**Cross-system chain**: contention state projected into belief -> save -> load -> same queue, same policy, same believed contention state.
+
 ### Scenario 44: Wounded Politician Enterprise vs Care Priority
 
-- Source: `golden_emergent.rs:513`
+- Source: `golden_emergent.rs:514`
 - Systems: Care, Politics, AI, Succession
 - GoalKinds: TreatWounds, ClaimOffice
 - ActionDomains: Care, Social
@@ -632,7 +672,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 45: Combat Death Triggers Force Succession
 
-- Source: `golden_emergent.rs:1234`
+- Source: `golden_emergent.rs:1235`
 - Systems: Combat, Politics, AI
 - GoalKinds: EngageHostile
 - ActionDomains: Combat, Social
@@ -644,7 +684,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 46: Social Tell Propagates Political Knowledge
 
-- Source: `golden_emergent.rs:1579`
+- Source: `golden_emergent.rs:1580`
 - Systems: PressForceClaim (two claimants), Force-Control State Machine (contested state detection), Perception (witness observes contested political event), Institutional Belief Projection (ForceControl belief with `contested: true`), Travel, Social Tell, Belief Store (remote belief with contested flag), action tracing, deterministic replay
 - GoalKinds: ShareBelief
 - ActionDomains: Social, Generic
@@ -662,7 +702,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 35: Same-Place Concurrent Violations Stay Distinct
 
-- Source: `golden_emergent.rs:4253`
+- Source: `golden_emergent.rs:4254`
 - Systems: Perception, AI, Generic Actions
 - GoalKinds: InvestigateViolation
 - ActionDomains: Generic
@@ -674,7 +714,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 36: Entity Missing Triggers Investigation
 
-- Source: `golden_emergent.rs:4633`
+- Source: `golden_emergent.rs:4634`
 - Systems: Perception, AI, Generic Actions
 - GoalKinds: InvestigateViolation
 - ActionDomains: Generic
@@ -686,7 +726,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 37: Theft Leads Owner To Local Suspected Theft Discovery
 
-- Source: `golden_emergent.rs:4868`
+- Source: `golden_emergent.rs:4869`
 - Systems: Transport, Perception, AI, Generic Actions
 - GoalKinds: StealItem, InvestigateViolation
 - ActionDomains: Transport, Generic, Travel
@@ -698,7 +738,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 38: Witnessed Theft Enables Accusation Chain
 
-- Source: `golden_emergent.rs:5245`
+- Source: `golden_emergent.rs:5247`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -710,7 +750,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5818`
+- Source: `golden_emergent.rs:5675`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -722,7 +762,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:6122`
+- Source: `golden_emergent.rs:5979`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -734,7 +774,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 42: Witness Deterrence Suppresses Theft Candidate
 
-- Source: `golden_emergent.rs:6405`
+- Source: `golden_emergent.rs:6262`
 - Systems: AI, Perception, Needs
 - GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
 - ActionDomains: Needs
@@ -746,7 +786,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
-- Source: `golden_emergent.rs:6654`
+- Source: `golden_emergent.rs:6511`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -758,7 +798,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7213`
+- Source: `golden_emergent.rs:7070`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel
@@ -815,7 +855,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
-- Source: `golden_integration.rs:88`
+- Source: `golden_integration.rs:86`
 - Systems: Needs, Trade, Travel, Combat, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity, AcquireCommodity
 - ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
@@ -833,7 +873,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1007`
+- Source: `golden_integration.rs:1005`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -851,7 +891,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1273`
+- Source: `golden_integration.rs:1271`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Epistemic, Social, Generic (≥ 4 required)
@@ -869,7 +909,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 21: Ruler Death → Office Vacancy → Patrol Gap → Route Predation
 
-- Source: `golden_integration.rs:2488`
+- Source: `golden_integration.rs:2486`
 - Systems: Succession, Combat, AI, Needs, Patrol, Trade, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, EngageHostile
 - ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
@@ -887,7 +927,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
 
-- Source: `golden_integration.rs:3417`
+- Source: `golden_integration.rs:3415`
 - Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
 - ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
@@ -905,7 +945,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:4452`
+- Source: `golden_integration.rs:4442`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -1458,7 +1498,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 3: Resource Contention with Conservation
 
-- Source: `golden_production.rs:2516`
+- Source: `golden_production.rs:2848`
 - Systems: Needs, Production, Travel, Conservation
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -1475,15 +1515,15 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 3b: Observed Harvest Competition Redirects To Remote Sibling
 
-- Source: `golden_production.rs:2671`
+- Source: `golden_production.rs:3003`
 - Systems: Perception, Production, Travel, AI
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
 - Places: VillageSquare, OrchardFarm
 - Principles: 7, 12, 20, 27
-- Primary tests: `golden_observed_harvest_competition_redirects_to_remote_sibling`, `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`, `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_dead_agent_pruned_from_facility_queue`, `golden_facility_queue_patience_timeout`, `golden_grant_expiry_before_intended_action`, `golden_materialized_output_ownership_prevents_theft`
-- Replay tests: `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`, `golden_facility_queue_patience_timeout_replays_deterministically`
-- All tests: `golden_observed_harvest_competition_redirects_to_remote_sibling`, `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`, `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`, `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_dead_agent_pruned_from_facility_queue`, `golden_facility_queue_patience_timeout`, `golden_facility_queue_patience_timeout_replays_deterministically`, `golden_grant_expiry_before_intended_action`, `golden_materialized_output_ownership_prevents_theft`
+- Primary tests: `golden_observed_harvest_competition_redirects_to_remote_sibling`, `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`, `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_dead_agent_pruned_from_facility_queue`
+- Replay tests: `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`
+- All tests: `golden_observed_harvest_competition_redirects_to_remote_sibling`, `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`, `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`, `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`, `golden_dead_agent_pruned_from_facility_queue`
 
 **Setup**: Occupant and Observer start at VillageSquare with two lawful orchard production opportunities: one local, one remote. Occupant starts the local harvest first. Observer is re-enabled on the next tick after local perception can lawfully record Occupant's active production.
 
@@ -1491,9 +1531,27 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: local active harvest -> perceived `BelievedActivity` -> `agents_active_at(place, Production, None)` -> competition discount on the occupied local production opportunity -> remote sibling selected -> travel and remote harvest execution.
 
+### Scenario 102: Departed Waiter Pruned From Facility Queue
+
+- Source: `golden_production.rs:3150`
+- Systems: Contention, Travel, Production
+- GoalKinds: RestockCommodity
+- ActionDomains: Production, Travel
+- Places: OrchardFarm, VillageSquare
+- Principles: 8, 9, 20
+- Primary tests: `golden_departed_waiter_pruned_from_facility_queue`, `golden_facility_queue_patience_timeout`, `golden_local_detour_reuses_existing_grant_before_harvest`, `golden_materialized_output_ownership_prevents_theft`
+- Replay tests: `golden_facility_queue_patience_timeout_replays_deterministically`
+- All tests: `golden_departed_waiter_pruned_from_facility_queue`, `golden_facility_queue_patience_timeout`, `golden_facility_queue_patience_timeout_replays_deterministically`, `golden_local_detour_reuses_existing_grant_before_harvest`, `golden_materialized_output_ownership_prevents_theft`
+
+**Setup**: one actor holds the facility grant while two hungry waiters queue. The queue head then leaves the place through lawful travel before promotion.
+
+**Proves**: queue membership is tied to real co-location. A departed waiter is pruned from the authoritative queue and the next local waiter is promoted.
+
+**Cross-system chain**: grant holder blocks facility -> two waiters queue -> head departs -> queue prune -> next waiter promoted.
+
 ### Scenario 4: Materialization Barrier Chain
 
-- Source: `golden_production.rs:2909`
+- Source: `golden_production.rs:3287`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -1510,14 +1568,14 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 6b: Multi-Recipe Craft Path
 
-- Source: `golden_production.rs:3009`
+- Source: `golden_production.rs:3387`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
 - Places: VillageSquare
 - Primary tests: `golden_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input`, `golden_multi_recipe_craft_path`, `golden_capacity_constrained_ground_lot_pickup`
-- Replay tests: `golden_remote_acquire_commodity_recipe_input_replays_deterministically`, `golden_resource_exhaustion_race_replays_deterministically`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`, `golden_exclusive_queue_contention_replays_deterministically`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
-- All tests: `golden_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input_replays_deterministically`, `golden_multi_recipe_craft_path`, `golden_capacity_constrained_ground_lot_pickup`, `golden_resource_exhaustion_race_replays_deterministically`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`, `golden_exclusive_queue_contention_replays_deterministically`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
+- Replay tests: `golden_remote_acquire_commodity_recipe_input_replays_deterministically`, `golden_resource_exhaustion_race_replays_deterministically`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`, `golden_exclusive_queue_contention_replays_deterministically`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`, `golden_departed_waiter_pruned_from_facility_queue_replays_deterministically`
+- All tests: `golden_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input`, `golden_remote_acquire_commodity_recipe_input_replays_deterministically`, `golden_multi_recipe_craft_path`, `golden_capacity_constrained_ground_lot_pickup`, `golden_resource_exhaustion_race_replays_deterministically`, `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`, `golden_exclusive_queue_contention_replays_deterministically`, `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`, `golden_departed_waiter_pruned_from_facility_queue_replays_deterministically`
 
 **Setup**: Agent with 1 firewood, knows 3 recipes. Mill workstation at Village Square.
 
@@ -1525,9 +1583,27 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: Recipe selection -> craft action -> output materialization -> replan -> eat.
 
+### Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
+
+- Source: `golden_production.rs:3561`
+- Systems: Transport, Contention, Production, AI
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Transport, Production
+- Places: OrchardFarm
+- Principles: 8, 9, 20, 21
+- Primary tests: `golden_unique_item_race_rejection_redirects_to_local_alternative`
+- Replay tests: `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically`
+- All tests: `golden_unique_item_race_rejection_redirects_to_local_alternative`, `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically`
+
+**Setup**: a ground unique tool and a local orchard share OrchardFarm. One actor claims the tool through `pick_up`; a second AI actor attempts the same `pick_up` request and is rejected by the race-mode contention grant.
+
+**Proves**: the losing actor records a structured `contention_rejected` start failure and then replans to a lawful local harvest alternative rather than acting on the already-claimed item.
+
+**Cross-system chain**: winner pick_up grant -> loser `contention_rejected` -> next AI tick sees start failure -> local harvest selected -> hunger relief.
+
 ### Scenario 3f: Faction-Owned Production — Member vs Outsider
 
-- Source: `golden_production.rs:3166`
+- Source: `golden_production.rs:3621`
 - Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Transport, Needs
@@ -1537,11 +1613,11 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Replay tests: `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
 - All tests: `golden_faction_ownership_producer_owner_delegation`, `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
 
-**Setup**: Faction-owned orchard at Orchard Farm (ProducerOwner policy). Member Kael and outsider Wren both hungry. Fallback Actor-policy orchard at Village Square.
+**Setup**: Faction-owned orchard at Orchard Farm (ProducerOwner policy). Member Kael and outsider Wren both hungry.
 
-**Proves**: Harvest output owned by faction. Member picks up via institutional delegation. Outsider blocked, replans to fallback. Conservation holds.
+**Proves**: Harvest output owned by faction. Member picks up via institutional delegation. Outsider is blocked strongly enough to abandon the orchard. Conservation holds.
 
-**Cross-system chain**: ProducerOwner policy -> faction-owned output -> member pickup / outsider blocked -> outsider travel + fallback -> hunger relief for both.
+**Cross-system chain**: ProducerOwner policy -> faction-owned output -> member pickup / outsider blocked -> outsider departure from the faction orchard.
 
 ### Scenario 68: Bandit witnesses traveler leave, pursues, attacks
 

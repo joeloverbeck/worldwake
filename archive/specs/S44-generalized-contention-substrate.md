@@ -1,5 +1,7 @@
 # S44: Generalized Contention Substrate
 
+**Status**: COMPLETED
+
 ## Summary
 
 Extend the facility queue's grant/queue/expiry pattern into a reusable contention substrate that any exclusive affordance can use. Today only workstation-class facilities (`FacilityUseQueue`) resolve multi-agent contention through inspectable world state. All other exclusive affordances — item pickup, corpse looting, patient treatment, witness questioning, bounty claiming, storage access — resolve by engine tick order with no world-visible arbitration artifact. FOUNDATIONS II.8 and II.9 demand that contested affordances resolve through explicit world processes: "reservation, queue, grant, lock, contested race, or some other concrete world process."
@@ -335,3 +337,29 @@ The existing `SystemId::FacilityQueue` slot becomes `SystemId::Contention`.
 - Golden test C proves full-queue rejection and replanning.
 - Save/load round-trip preserves `ContentionQueue`, `ContentionPolicy`, `ContentionIntents`, and `ContentionDispositionProfile`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed: 2026-04-04
+
+What changed:
+- Added the generalized contention substrate in `worldwake-core`: `ContentionQueue`, `ContentionPolicy`, `ContentionGrant`, `ContentionWaiter`, `ContentionIntents`, `QueuedContentionIntent`, `ContentionDispositionProfile`, and `ContentionStatus`.
+- Removed the old facility-only contention path and migrated the runtime onto the generalized substrate, including `SystemId::Contention`.
+- Added lawful queue admission and grant-gated start behavior for corpse and care contention, plus race-mode contention for ground unique-item pickup.
+- Extended affordance, belief-view, and perception surfaces with generalized contention visibility, including `BelievedContentionState`.
+- Bumped `SAVE_FORMAT_VERSION` to `16`.
+- Added generalized contention golden closeout coverage in Scenarios 101-104 and refreshed the generated golden inventory/docs.
+
+Deviations from original plan:
+- The numbering overlapped with the unrelated `S44-scenario-profile-completeness.md`; both specs now exist as historical planning material with the same S-number, so roadmap references must use explicit filenames/titles.
+- The live rollout widened Phase 1 beyond the earlier `Agent || Facility` registration note by making `UniqueItem` a lawful race-mode contention domain.
+- The final unique-item golden proved authoritative rejection plus lawful alternative-path aftermath rather than a pinned planner-specific redirect trace.
+
+Verification results:
+- Passed `cargo test -p worldwake-core contention`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test -p worldwake-sim`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

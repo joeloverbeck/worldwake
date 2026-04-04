@@ -6,8 +6,9 @@ use golden_harness::*;
 use std::collections::BTreeMap;
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    ActiveGoal, BeliefConfidencePolicy, CommodityKind, ContentionIntents, FrameAssumption,
-    FrameState, GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
+    ActiveGoal, BeliefConfidencePolicy, BelievedContentionState, CommodityKind, ContentionGrant,
+    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, FrameAssumption, FrameState,
+    GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
     IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile, PrototypePlace,
     Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick, UtilityProfile,
     WorkstationTag,
@@ -1008,4 +1009,221 @@ fn golden_save_load_preserves_frame_assumptions() {
     assert_eq!(post_load.last_progress_tick, Some(Tick(8)));
     assert_eq!(post_load.stalled_ticks, 2);
     assert_eq!(post_load.patience_limit, 40);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 104: Save/Load Preserves Generalized Contention World And Belief State
+// ---------------------------------------------------------------------------
+//
+// Systems: SaveLoad, Contention, Perception
+// GoalKinds: LootCorpse
+// ActionDomains: Corpse
+// Places: VillageSquare
+// Principles: 8, 9, 12
+//
+// Setup: a dead bread-carrying corpse has real contention policy, one active
+//   grant, one queued waiter, and one observing agent with a direct
+//   `BelievedContentionState`.
+//
+// Proves: generalized contention world state and its projected local belief
+//   survive save/load round-trip without drift.
+//
+// Chain: contention state projected into belief -> save -> load -> same queue,
+//   same policy, same believed contention state.
+
+fn build_generalized_contention_roundtrip_scenario(
+    seed: Seed,
+) -> (
+    GoldenHarness,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+    worldwake_core::EntityId,
+) {
+    let mut h = GoldenHarness::new(seed);
+    let granted_actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Granted",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let queued_actor = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Queued",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let observer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Observer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        PerceptionProfile {
+            memory_capacity: 20,
+            memory_retention_ticks: 100,
+            observation_fidelity: pm(1000),
+            confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
+        },
+    );
+
+    let corpse = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Corpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(6),
+    );
+
+    let loot_action = h
+        .defs
+        .iter()
+        .find(|def| def.name == "loot")
+        .map(|def| def.id)
+        .expect("loot action should be registered");
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_contention_policy(
+            corpse,
+            ContentionPolicy {
+                grant_hold_ticks: nz(4),
+                auto_promote: true,
+                max_waiters: None,
+            },
+        )
+        .unwrap();
+        let mut queue = ContentionQueue {
+            next_ordinal: 0,
+            waiting: BTreeMap::new(),
+            granted: Some(ContentionGrant {
+                actor: granted_actor,
+                intended_action: loot_action,
+                granted_at: Tick(0),
+                expires_at: Tick(4),
+            }),
+        };
+        queue.enqueue(queued_actor, loot_action, Tick(0), None).unwrap();
+        txn.set_component_contention_queue(corpse, queue).unwrap();
+        txn.commit(&mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    (h, corpse, observer, granted_actor)
+}
+
+fn run_generalized_contention_roundtrip_scenario(seed: Seed) -> (StateHash, StateHash) {
+    let (h, corpse, observer, granted_actor) = build_generalized_contention_roundtrip_scenario(seed);
+
+    let pre_policy = h
+        .world
+        .get_component_contention_policy(corpse)
+        .cloned()
+        .expect("corpse contention policy should exist before save");
+    let pre_queue = h
+        .world
+        .get_component_contention_queue(corpse)
+        .cloned()
+        .expect("corpse contention queue should exist before save");
+    let pre_belief = h
+        .world
+        .get_component_agent_belief_store(observer)
+        .and_then(|store| store.get_entity(&corpse))
+        .and_then(|state| state.believed_contention)
+        .expect("observer should hold believed contention state before save");
+
+    let resumed = h.save_load_roundtrip();
+
+    let post_policy = resumed
+        .world
+        .get_component_contention_policy(corpse)
+        .cloned()
+        .expect("corpse contention policy should survive save/load");
+    let post_queue = resumed
+        .world
+        .get_component_contention_queue(corpse)
+        .cloned()
+        .expect("corpse contention queue should survive save/load");
+    let post_belief = resumed
+        .world
+        .get_component_agent_belief_store(observer)
+        .and_then(|store| store.get_entity(&corpse))
+        .and_then(|state| state.believed_contention)
+        .expect("observer believed contention state should survive save/load");
+
+    assert_eq!(
+        pre_policy, post_policy,
+        "ContentionPolicy must survive save/load round-trip"
+    );
+    assert_eq!(
+        pre_queue, post_queue,
+        "ContentionQueue must survive save/load round-trip"
+    );
+    assert_eq!(
+        pre_belief, post_belief,
+        "BelievedContentionState must survive save/load round-trip"
+    );
+    assert_eq!(
+        post_belief,
+        BelievedContentionState {
+            grant_holder: Some(granted_actor),
+            queue_length: 1,
+            observed_tick: Tick(0),
+        },
+        "loaded believed contention state should preserve grant holder, queue length, and observation tick"
+    );
+
+    (
+        hash_world(&resumed.world).unwrap(),
+        hash_event_log(&resumed.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_save_load_preserves_generalized_contention_state() {
+    let _ = run_generalized_contention_roundtrip_scenario(Seed([110; 32]));
+}
+
+#[test]
+fn golden_save_load_preserves_generalized_contention_state_replays_deterministically() {
+    let seed = Seed([111; 32]);
+    let first = run_generalized_contention_roundtrip_scenario(seed);
+    let second = run_generalized_contention_roundtrip_scenario(seed);
+
+    assert_eq!(
+        first, second,
+        "generalized contention save/load scenario should replay deterministically"
+    );
 }

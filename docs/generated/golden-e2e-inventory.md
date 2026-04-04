@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 21
 - Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 278
+- Total `golden_*` tests: 286
 
 ## Per-File Inventory
 
@@ -15,16 +15,16 @@ Do not hand-edit it.
 |------|------------------|
 | `golden_ai_decisions.rs` | 18 |
 | `golden_care.rs` | 18 |
-| `golden_combat.rs` | 25 |
+| `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
-| `golden_determinism.rs` | 10 |
+| `golden_determinism.rs` | 12 |
 | `golden_emergent.rs` | 47 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 16 |
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 22 |
 | `golden_patrol.rs` | 8 |
-| `golden_production.rs` | 24 |
+| `golden_production.rs` | 28 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
@@ -103,6 +103,8 @@ Do not hand-edit it.
 - `golden_bury_suppressed_under_stress_replays_deterministically`
 - `golden_suppression_then_binding_combined`
 - `golden_suppression_then_binding_combined_replays_deterministically`
+- `golden_corpse_contention_projects_visible_queue_and_grant_state`
+- `golden_corpse_contention_projects_visible_queue_and_grant_state_replays_deterministically`
 - `golden_action_trace_records_loot_lifecycle`
 
 ### `golden_commodity_opportunity.rs`
@@ -123,6 +125,8 @@ Do not hand-edit it.
 - `golden_save_load_preserves_suspended_intention_frame`
 - `golden_save_load_preserves_intention_disposition_profile`
 - `golden_save_load_preserves_frame_assumptions`
+- `golden_save_load_preserves_generalized_contention_state`
+- `golden_save_load_preserves_generalized_contention_state_replays_deterministically`
 
 ### `golden_emergent.rs`
 
@@ -271,9 +275,10 @@ Do not hand-edit it.
 - `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`
 - `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`
 - `golden_dead_agent_pruned_from_facility_queue`
+- `golden_departed_waiter_pruned_from_facility_queue`
 - `golden_facility_queue_patience_timeout`
 - `golden_facility_queue_patience_timeout_replays_deterministically`
-- `golden_grant_expiry_before_intended_action`
+- `golden_local_detour_reuses_existing_grant_before_harvest`
 - `golden_materialized_output_ownership_prevents_theft`
 - `golden_materialization_barrier_chain`
 - `golden_acquire_commodity_recipe_input`
@@ -285,6 +290,9 @@ Do not hand-edit it.
 - `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`
 - `golden_exclusive_queue_contention_replays_deterministically`
 - `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
+- `golden_departed_waiter_pruned_from_facility_queue_replays_deterministically`
+- `golden_unique_item_race_rejection_redirects_to_local_alternative`
+- `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically`
 - `golden_faction_ownership_producer_owner_delegation`
 - `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
 
