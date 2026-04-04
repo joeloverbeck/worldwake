@@ -1171,6 +1171,7 @@ fn run_same_place_observation(
             tick,
             cause: CauseRef::Bootstrap,
             actor_id: Some(observed_actor),
+            action_name: None,
             target_ids: vec![observed_actor],
             evidence: Vec::new(),
             place_id: Some(place),

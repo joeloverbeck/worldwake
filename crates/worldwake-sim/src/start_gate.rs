@@ -155,7 +155,8 @@ pub fn start_action(
             ActionError::InternalError("action instance id overflowed".to_string())
         })?);
 
-    txn.add_tag(EventTag::ActionStarted);
+    txn.set_action_name(def.name.clone())
+        .add_tag(EventTag::ActionStarted);
     for target in &instance.targets {
         txn.add_target(*target);
     }
@@ -531,6 +532,7 @@ mod tests {
         let record = log.get(worldwake_core::EventId(0)).unwrap();
         assert_eq!(record.cause(), CauseRef::Bootstrap);
         assert_eq!(record.actor_id(), Some(actor));
+        assert_eq!(record.action_name(), Some("action-0"));
         assert_eq!(record.place_id(), Some(place));
         assert_eq!(record.target_ids(), vec![target]);
         assert!(record.tags().contains(&EventTag::ActionStarted));

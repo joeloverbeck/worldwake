@@ -300,6 +300,7 @@ mod tests {
             tick,
             cause: CauseRef::Bootstrap,
             actor_id: Some(actor),
+            action_name: None,
             target_ids: vec![target],
             evidence: Vec::new(),
             place_id: None,

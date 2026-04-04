@@ -837,6 +837,7 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
         tick,
         cause: CauseRef::SystemTick(tick),
         actor_id: None,
+        action_name: None,
         target_ids: Vec::new(),
         evidence: Vec::new(),
         place_id: None,

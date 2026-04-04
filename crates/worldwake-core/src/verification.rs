@@ -509,6 +509,7 @@ mod tests {
                 tick: Tick(event_id.0 + 1),
                 cause,
                 actor_id: Some(entity(1)),
+                action_name: None,
                 target_ids: vec![entity(2)],
                 evidence: Vec::new(),
                 place_id: Some(entity(3)),

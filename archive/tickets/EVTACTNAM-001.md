@@ -1,6 +1,6 @@
 # EVTACTNAM-001: Add action_name to EventPayload for action lifecycle events
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — EventPayload extended with new field
@@ -17,7 +17,11 @@ The root fix: store the action name on the event itself at emission time, when t
 1. `EventPayload` at `crates/worldwake-core/src/event_record.rs:45-57` has 11 fields. No `action_name` field. Confirmed.
 2. `EventTag::ActionStarted`, `ActionCommitted`, `ActionAborted`, `ActionInterrupted` at `event_tag.rs:12-15`. These tag events that should carry the action name.
 3. ActionStarted event emitted at `crates/worldwake-sim/src/start_gate.rs:158` via `txn.add_tag(EventTag::ActionStarted)` — the action def is available at this point (`def` variable has `def.name`).
-4. ActionCommitted events are emitted by individual action handlers in `worldwake-systems` via event transaction builders. The action def name is available in the handler context.
+4. The ticket's original `worldwake-systems` sweep is stale. Action lifecycle events are emitted through shared sim-side transaction paths, not per-handler bespoke `EventPayload` construction:
+   - `ActionCommitted` is tagged in `crates/worldwake-sim/src/tick_action.rs`
+   - `ActionAborted` / `ActionInterrupted` flow through `crates/worldwake-sim/src/action_termination.rs`
+   - the canonical event payload construction happens in `crates/worldwake-core/src/world_txn.rs`
+   So the real implementation boundary is core payload/txn + sim lifecycle emitters + CLI display, with only mechanical `EventPayload { ... }` fallout elsewhere.
 5. `EventPayload` derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize`. Adding `Option<String>` is compatible with all derives.
 6. `SAVE_FORMAT_VERSION` at `save_load.rs:6` — must bump because `EventPayload` serialization changes.
 7. The CLI's `handlers/events.rs` already resolves action names for ActionStarted events by querying the scheduler. This ticket enables the same for ActionCommitted by reading the field directly from the event.
@@ -33,7 +37,8 @@ The root fix: store the action name on the event itself at emission time, when t
 1. ActionStarted events carry action_name -> focused test: emit ActionStarted, verify event has action_name = Some("tell")
 2. ActionCommitted events carry action_name -> focused test: commit action, verify event has action_name
 3. Non-action events have None -> existing system events should have action_name = None
-4. CLI displays action name for both ActionStarted and ActionCommitted -> smoke test
+4. CLI summary formatting uses event-carried action names for both ActionStarted and ActionCommitted -> focused handler test
+5. CLI `event <id>` detail path prints the event-carried action name when present -> focused handler test
 5. Save format version bumped -> old saves won't silently load with wrong EventPayload shape
 
 ## What to Change
@@ -67,7 +72,7 @@ In `crates/worldwake-sim/src/start_gate.rs`, where `EventTag::ActionStarted` is 
 
 ### 3. Populate action_name at ActionCommitted emission
 
-In action handler commit functions across `crates/worldwake-systems/src/` — the action def name is available via the handler context. Set `action_name: Some(action_name.clone())` when building the commit event.
+In the shared sim lifecycle path (`crates/worldwake-sim/src/tick_action.rs`) — where `EventTag::ActionCommitted` is added — also set `action_name: Some(def.name.clone())` on the transaction before commit.
 
 ### 4. Update CLI event display
 
@@ -87,8 +92,9 @@ Every place that constructs `EventPayload` directly (tests, canonical world buil
 ## Files to Touch
 
 - `crates/worldwake-core/src/event_record.rs` (modify) — add field, update EventView
+- `crates/worldwake-core/src/world_txn.rs` (modify) — carry action_name through transaction → event conversion
 - `crates/worldwake-sim/src/start_gate.rs` (modify) — populate at ActionStarted
-- `crates/worldwake-systems/src/*.rs` (modify) — populate at ActionCommitted in handler commit fns
+- `crates/worldwake-sim/src/tick_action.rs` (modify) — populate at ActionCommitted
 - `crates/worldwake-cli/src/handlers/events.rs` (modify) — display from event, remove scheduler lookup
 - `crates/worldwake-sim/src/save_load.rs` (modify) — bump version
 - Various test files (modify) — add `action_name: None` to EventPayload constructors
@@ -106,14 +112,14 @@ Every place that constructs `EventPayload` directly (tests, canonical world buil
 1. ActionStarted event has `action_name = Some("tell")` (or appropriate name)
 2. ActionCommitted event has `action_name = Some("pick_up")` (or appropriate name)
 3. System/Discovery events have `action_name = None`
-4. CLI `event <id>` for ActionCommitted shows `action: pick_up` line
+4. CLI `event <id>` detail rendering shows `action: pick_up` when the event carries an action name
 5. CLI event summary shows `ActionCommitted(pick_up)` format
 6. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
 1. `action_name` is `None` for all non-action events
-2. `action_name` is `Some` for all ActionStarted and ActionCommitted events
+2. `action_name` is `Some` for ActionStarted and ActionCommitted events
 3. Save format version is bumped
 
 ## Test Plan
@@ -122,7 +128,8 @@ Every place that constructs `EventPayload` directly (tests, canonical world buil
 
 1. `crates/worldwake-core/src/event_record.rs` — verify EventPayload with action_name serializes/deserializes
 2. `crates/worldwake-sim/src/start_gate.rs` — verify ActionStarted event carries name
-3. `crates/worldwake-cli/src/handlers/events.rs` — update existing event tests with action_name field
+3. `crates/worldwake-sim/src/tick_action.rs` — verify ActionCommitted event carries name
+4. `crates/worldwake-cli/src/handlers/events.rs` — verify summary/detail rendering use event-carried action_name
 
 ### Commands
 
@@ -131,3 +138,21 @@ Every place that constructs `EventPayload` directly (tests, canonical world buil
 3. `cargo test -p worldwake-cli`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `cargo test --workspace`
+
+## Outcome
+
+- Completed on 2026-04-04.
+- Added `action_name: Option<String>` to `EventPayload` and exposed it through `EventView`.
+- Extended `WorldTxn` so action lifecycle emitters can set the action name once and carry it into the append-only event log.
+- Populated `action_name` for `ActionStarted` and `ActionCommitted` in the shared sim lifecycle paths.
+- Updated CLI event summary and detail rendering to use the stored event-carried action name instead of reconstructing it from live scheduler state.
+- Bumped `SAVE_FORMAT_VERSION` to `17` because the serialized event payload shape changed.
+- Updated direct `EventPayload { ... }` literals across core, sim, systems, AI harnesses, and CLI tests to initialize `action_name`.
+- Deviation from original plan: the ticket's original `worldwake-systems` commit-handler sweep was stale; the live implementation boundary was core payload/txn plus shared sim emitters and CLI rendering, and the ticket was corrected before coding.
+- Out-of-scope behavior remained unchanged: `ActionAborted` and `ActionInterrupted` events still do not carry `action_name`.
+- Verification performed:
+  - `cargo test -p worldwake-core event_record`
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-cli`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

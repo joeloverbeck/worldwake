@@ -189,7 +189,8 @@ fn tick_action_inner(
             Ok(outcome) => {
                 instance.status = ActionStatus::Committed;
                 release_reservations(&mut txn, &instance.reservation_ids)?;
-                txn.add_tag(EventTag::ActionCommitted);
+                txn.set_action_name(def.name.clone())
+                    .add_tag(EventTag::ActionCommitted);
                 for tag in &def.causal_event_tags {
                     txn.add_tag(*tag);
                 }
@@ -385,6 +386,7 @@ mod tests {
             tick,
             cause: CauseRef::Bootstrap,
             actor_id: Some(actor),
+            action_name: None,
             target_ids: vec![target],
             evidence: Vec::new(),
             place_id: None,
@@ -860,6 +862,7 @@ mod tests {
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
         let event_id = log.events_by_tag(EventTag::ActionCommitted)[0];
         let record = log.get(event_id).unwrap();
+        assert_eq!(record.action_name(), Some("action-0"));
         assert!(record.tags().contains(&EventTag::ActionCommitted));
         assert!(record.tags().contains(&EventTag::Travel));
         assert_eq!(record.target_ids(), vec![target]);
@@ -940,6 +943,8 @@ mod tests {
         assert!(!active_actions.contains_key(&instance_id));
         assert_eq!(hook_state().lock().unwrap().commit_calls, 1);
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
+        let event_id = log.events_by_tag(EventTag::ActionCommitted)[0];
+        assert_eq!(log.get(event_id).unwrap().action_name(), Some("defend"));
     }
 
     #[test]

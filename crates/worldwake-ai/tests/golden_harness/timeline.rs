@@ -297,6 +297,7 @@ mod tests {
             tick,
             cause: CauseRef::Bootstrap,
             actor_id: Some(entity(1)),
+            action_name: None,
             target_ids: Vec::new(),
             evidence: Vec::new(),
             place_id: None,

@@ -13,6 +13,7 @@ pub trait EventView {
     fn tick(&self) -> Tick;
     fn cause(&self) -> CauseRef;
     fn actor_id(&self) -> Option<EntityId>;
+    fn action_name(&self) -> Option<&str>;
     fn target_ids(&self) -> &[EntityId];
     fn evidence(&self) -> &[EvidenceRef];
     fn place_id(&self) -> Option<EntityId>;
@@ -46,6 +47,7 @@ pub struct EventPayload {
     pub tick: Tick,
     pub cause: CauseRef,
     pub actor_id: Option<EntityId>,
+    pub action_name: Option<String>,
     pub target_ids: Vec<EntityId>,
     pub evidence: Vec<EvidenceRef>,
     pub place_id: Option<EntityId>,
@@ -73,6 +75,10 @@ impl EventView for PendingEvent {
 
     fn actor_id(&self) -> Option<EntityId> {
         self.payload.actor_id
+    }
+
+    fn action_name(&self) -> Option<&str> {
+        self.payload.action_name.as_deref()
     }
 
     fn target_ids(&self) -> &[EntityId] {
@@ -119,6 +125,10 @@ impl EventView for EventRecord {
 
     fn actor_id(&self) -> Option<EntityId> {
         self.payload.actor_id
+    }
+
+    fn action_name(&self) -> Option<&str> {
+        self.payload.action_name.as_deref()
     }
 
     fn target_ids(&self) -> &[EntityId] {
@@ -183,7 +193,7 @@ impl EventRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{EventPayload, EventRecord, EvidenceRef, PendingEvent};
+    use super::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
     use crate::MismatchKind;
     use crate::{
         CauseRef, ComponentDelta, ComponentKind, ComponentValue, EventTag, QuantityDelta,
@@ -237,6 +247,7 @@ mod tests {
             tick: Tick(9),
             cause: CauseRef::Event(EventId(1)),
             actor_id: Some(entity(2)),
+            action_name: Some("tell".to_string()),
             target_ids: vec![entity(5), entity(3), entity(5), entity(4)],
             evidence: Vec::new(),
             place_id: Some(entity(6)),
@@ -264,6 +275,7 @@ mod tests {
         assert_eq!(pending.payload.tick, Tick(9));
         assert_eq!(pending.payload.cause, CauseRef::Event(EventId(1)));
         assert_eq!(pending.payload.actor_id, Some(entity(2)));
+        assert_eq!(pending.action_name(), Some("tell"));
         assert_eq!(
             pending.payload.target_ids,
             vec![entity(3), entity(4), entity(5)]
@@ -284,6 +296,7 @@ mod tests {
             tick: Tick(9),
             cause: CauseRef::Event(EventId(1)),
             actor_id: Some(entity(2)),
+            action_name: Some("tell".to_string()),
             target_ids: vec![entity(5), entity(3), entity(5), entity(4)],
             evidence: Vec::new(),
             place_id: Some(entity(6)),
@@ -313,6 +326,7 @@ mod tests {
         assert_eq!(record.payload.tick, Tick(9));
         assert_eq!(record.payload.cause, CauseRef::Event(EventId(1)));
         assert_eq!(record.payload.actor_id, Some(entity(2)));
+        assert_eq!(record.action_name(), Some("tell"));
         assert_eq!(
             record.payload.target_ids,
             vec![entity(3), entity(4), entity(5)]
@@ -333,6 +347,7 @@ mod tests {
             tick: Tick(0),
             cause: CauseRef::Bootstrap,
             actor_id: None,
+            action_name: None,
             target_ids: Vec::new(),
             evidence: Vec::new(),
             place_id: None,
@@ -357,6 +372,7 @@ mod tests {
             tick: Tick(18),
             cause: CauseRef::SystemTick(Tick(18)),
             actor_id: Some(entity(1)),
+            action_name: Some("travel".to_string()),
             target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
             evidence: vec![
                 EvidenceRef::Wound {
@@ -404,6 +420,7 @@ mod tests {
         let roundtrip: PendingEvent = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, pending);
+        assert_eq!(roundtrip.action_name(), Some("travel"));
         assert_eq!(
             roundtrip.payload.target_ids,
             vec![entity(2), entity(3), entity(4)]
@@ -441,6 +458,7 @@ mod tests {
             tick: Tick(21),
             cause: CauseRef::Bootstrap,
             actor_id: Some(entity(1)),
+            action_name: None,
             target_ids: vec![entity(2)],
             evidence: vec![
                 EvidenceRef::Mismatch {
@@ -510,6 +528,7 @@ mod tests {
             tick: Tick(21),
             cause: CauseRef::Bootstrap,
             actor_id: Some(entity(1)),
+            action_name: None,
             target_ids: vec![entity(2)],
             evidence: vec![
                 EvidenceRef::Mismatch {
@@ -581,6 +600,7 @@ mod tests {
                 tick: Tick(21),
                 cause: CauseRef::Bootstrap,
                 actor_id: Some(entity(1)),
+                action_name: None,
                 target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
                 evidence: vec![
                     EvidenceRef::Mismatch {
@@ -645,6 +665,7 @@ mod tests {
             tick: Tick(7),
             cause: CauseRef::Bootstrap,
             actor_id: Some(entity(1)),
+            action_name: None,
             target_ids: vec![entity(2)],
             evidence: Vec::new(),
             place_id: Some(entity(3)),
@@ -690,6 +711,7 @@ mod tests {
                 tick: Tick(18),
                 cause: CauseRef::SystemTick(Tick(18)),
                 actor_id: Some(entity(1)),
+                action_name: Some("travel".to_string()),
                 target_ids: vec![entity(4), entity(2), entity(4), entity(3)],
                 evidence: vec![EvidenceRef::Wound {
                     entity: entity(1),
@@ -728,6 +750,7 @@ mod tests {
         let roundtrip: EventRecord = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, record);
+        assert_eq!(roundtrip.action_name(), Some("travel"));
         assert_eq!(
             roundtrip.payload.target_ids,
             vec![entity(2), entity(3), entity(4)]
@@ -755,6 +778,7 @@ mod tests {
                 tick: Tick(22),
                 cause: CauseRef::SystemTick(Tick(22)),
                 actor_id: Some(entity(3)),
+                action_name: None,
                 target_ids: vec![entity(8)],
                 evidence: vec![EvidenceRef::Mismatch {
                     observer: entity(3),

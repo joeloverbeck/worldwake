@@ -702,6 +702,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
         tick: Tick(0),
         cause: CauseRef::Bootstrap,
         actor_id: None,
+        action_name: None,
         target_ids: Vec::new(),
         evidence: Vec::new(),
         place_id: Some(origin),
