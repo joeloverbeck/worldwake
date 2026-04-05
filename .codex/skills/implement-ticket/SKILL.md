@@ -245,6 +245,8 @@ When broader required verification surfaces a timing-sensitive golden whose sema
 
 When a golden's narrative assumes an agent already locally observes co-located entities, risks, or other same-place facts at tick 0, verify that the setup explicitly seeds those local beliefs or the exact perception prerequisites needed to produce them. Do not rely on an implicit first-tick perception warmup if the scenario prose claims the observation is already present.
 
+When a golden uses external action requests or other scripted setup to drive part of the world state and that actor's autonomous reasoning is not itself part of the owned proof surface, explicitly set that actor's `ControlSource` to `Human` or `None` before relying on the scripted path. Do not leave a setup actor on `Ai` by default and then treat autonomous interference as evidence about the ticket's intended invariant.
+
 When a golden proves durable learned-state aftermath such as memory records, counters, or timestamps, assert the semantic contract unless exact tick identity is itself the owned invariant. If only ordering or recency matters, prove that boundary directly instead of pinning the record to `current_tick`.
 
 If focused implementation or verification shows that the corrected ticket still over-claims what the live harness can stably prove, narrow the ticket again before final verification so the archive-ready proof surface matches the strongest honest demonstrated boundary.

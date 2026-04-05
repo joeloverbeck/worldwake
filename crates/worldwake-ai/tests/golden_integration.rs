@@ -45,15 +45,16 @@ use worldwake_core::{
     BeliefConfidencePolicy, BelievedActivity, BelievedInstitutionalClaim, BountyTarget,
     BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt, DemandMemory,
     DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule, EntityId,
-    FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    EvidenceKind, FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
     MerchandiseProfile, MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute,
     PerceptionProfile, PerceptionSource, PlaceTag, ProductionOutputOwner, ProofRequirement,
-    PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardSource,
-    RightKind, Seed, SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
-    TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
-    WorkstationTag, hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    PrototypePlace, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
+    ResourceSource, RewardSource, RightKind, Seed, SocialObservationDetail, StateHash,
+    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, Tick, Topology,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, ViolationDispositionProfile,
+    ViolationKind, ViolationMemory, WorkstationTag, hash_event_log, hash_world,
+    prototype_place_entity, total_authoritative_commodity_quantity,
     verify_authoritative_conservation,
 };
 use worldwake_sim::{
@@ -653,6 +654,42 @@ fn set_control_source(
 ) {
     let mut txn = new_txn(&mut h.world, tick);
     txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn default_perception_profile() -> PerceptionProfile {
+    PerceptionProfile {
+        memory_capacity: 64,
+        memory_retention_ticks: 240,
+        observation_fidelity: pm(1000),
+        confidence_policy: BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
+    }
+}
+
+fn set_violation_profile(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    profile: ViolationDispositionProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_violation_disposition_profile(agent, profile)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn set_theft_profile(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    profile: TheftDispositionProfile,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_theft_disposition_profile(agent, profile)
         .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
@@ -7094,5 +7131,359 @@ fn golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically(
     assert_eq!(
         first, second,
         "S58 autonomous warning notice scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 114: Theft evidence persists, is perceived locally, and decays
+// ---------------------------------------------------------------------------
+//
+// Systems: Transport, Perception, Evidence decay, AI
+// GoalKinds: InvestigateViolation
+// ActionDomains: Transport, Travel, Generic
+// Places: VillageSquare, CommonHouse, GeneralStore
+// Principles: 3, 7, 10, 14, 18
+//
+// Setup: an AI thief at VillageSquare steals owned bread from a real container,
+// then departs lawfully with the stolen lot. A guard at CommonHouse is seeded
+// with a stale belief that the lot is still at VillageSquare, then later
+// returns lawfully to the square with perception and violation profiles.
+//
+// Proves: S52's evidence substrate is live end to end without over-claiming
+// the current AI boundary. Theft commit creates authoritative scene evidence,
+// the returning guard passively perceives that evidence at the current place,
+// and the same reobservation tick produces a lawful mismatch-driven
+// `InvestigateViolation` candidate. The evidence then decays away on the
+// authoritative schedule while commodity conservation is preserved.
+
+fn run_s52_theft_evidence_discovery(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
+    h.driver.enable_tracing();
+
+    let theft_scene = VILLAGE_SQUARE;
+    let guard_home = prototype_place_entity(PrototypePlace::CommonHouse);
+    let thief_hideout = prototype_place_entity(PrototypePlace::GeneralStore);
+
+    let victim = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S52 Victim",
+        guard_home,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, victim, ControlSource::None, 0);
+
+    let thief = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S52 Thief",
+        theft_scene,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_control_source(&mut h, thief, ControlSource::Human, 0);
+    let guard = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S52 Guard",
+        guard_home,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_control_source(&mut h, guard, ControlSource::Human, 0);
+
+    let sharp_perception = default_perception_profile();
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, thief, sharp_perception);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, guard, sharp_perception);
+    set_theft_profile(
+        &mut h,
+        thief,
+        TheftDispositionProfile {
+            steal_duration_ticks: nz(2),
+            theft_motive_weight: pm(1000),
+            witness_risk_penalty: pm(0),
+        },
+        0,
+    );
+    set_violation_profile(
+        &mut h,
+        guard,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: nz(2),
+            violation_memory_retention_ticks: 80,
+            investigation_motive_weight: pm(1000),
+            ownership_motive_bonus: pm(0),
+        },
+        0,
+    );
+
+    let (stash, stolen_lot) = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let stash = txn
+            .create_container(Container {
+                capacity: worldwake_core::LoadUnits(20),
+                allowed_commodities: None,
+                allows_unique_items: false,
+                allows_nested_containers: false,
+            })
+            .unwrap();
+        txn.set_ground_location(stash, theft_scene).unwrap();
+        txn.set_owner(stash, victim).unwrap();
+
+        let stolen_lot = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(5))
+            .unwrap();
+        txn.put_into_container(stolen_lot, stash).unwrap();
+        txn.set_owner(stolen_lot, victim).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        (stash, stolen_lot)
+    };
+
+    let total_bread_before = total_authoritative_commodity_quantity(&h.world, CommodityKind::Bread);
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        stolen_lot,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        guard,
+        stolen_lot,
+        worldwake_core::BelievedEntityState {
+            last_known_place: Some(theft_scene),
+            last_known_inventory: std::collections::BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+
+    request_action_with_payload(&mut h, thief, "steal", vec![stolen_lot], None);
+
+    let mut steal_commit_tick = None;
+    for _ in 0..12 {
+        h.step_once();
+        steal_commit_tick = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(thief)
+            .iter()
+            .find_map(|event| {
+                (event.action_name == "steal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some(event.tick)
+            });
+        if steal_commit_tick.is_some() {
+            break;
+        }
+    }
+    let thief_action_summaries = h.action_trace_sink().map_or_else(Vec::new, |sink| {
+        sink.events_for(thief)
+            .into_iter()
+            .map(worldwake_sim::ActionTraceEvent::summary)
+            .collect::<Vec<_>>()
+    });
+    let thief_request_summaries = h
+        .request_resolution_trace_sink()
+        .map_or_else(Vec::new, |sink| {
+            sink.events_for(thief)
+                .into_iter()
+                .map(worldwake_sim::RequestResolutionTraceEvent::summary)
+                .collect::<Vec<_>>()
+        });
+    let steal_commit_tick = steal_commit_tick.unwrap_or_else(|| {
+        panic!(
+            "thief should commit the container theft; request_traces={thief_request_summaries:?}; action_traces={thief_action_summaries:?}"
+        )
+    });
+    let scene_after_theft = h
+        .world
+        .get_component_scene_evidence(theft_scene)
+        .expect("container theft should leave scene evidence");
+    assert!(
+        scene_after_theft.evidence.iter().any(|entry| {
+            entry.kind
+                == EvidenceKind::ContainerTampered {
+                    container: stash,
+                    tampered_at: steal_commit_tick,
+                }
+        }),
+        "theft should create ContainerTampered evidence at the scene"
+    );
+
+    set_control_source(&mut h, thief, ControlSource::Human, steal_commit_tick.0);
+    let travel_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("full registries should include travel");
+
+    let thief_departure_tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        thief_departure_tick,
+        InputKind::RequestAction {
+            actor: thief,
+            def_id: travel_def_id,
+            targets: vec![thief_hideout],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+    assert_eq!(
+        h.world.effective_place(thief),
+        Some(thief_hideout),
+        "thief should leave the scene with the stolen lot before the guard returns",
+    );
+    assert_eq!(
+        h.world.effective_place(stolen_lot),
+        Some(thief_hideout),
+        "the stolen lot should move with the thief after departure",
+    );
+
+    let guard_departure_tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        guard_departure_tick,
+        InputKind::RequestAction {
+            actor: guard,
+            def_id: travel_def_id,
+            targets: vec![theft_scene],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+    h.step_once();
+    assert_eq!(
+        h.world.effective_place(guard),
+        Some(theft_scene),
+        "guard should return lawfully to the theft scene",
+    );
+
+    let detection_tick = h.scheduler.current_tick();
+    set_control_source(&mut h, guard, ControlSource::Ai, detection_tick.0);
+    h.step_once();
+
+    let guard_belief = agent_belief_about(&h.world, guard, theft_scene)
+        .expect("guard should observe the current place after returning");
+    assert!(
+        guard_belief
+            .believed_evidence
+            .as_ref()
+            .is_some_and(|state| state.entries.iter().any(|entry| {
+                entry.kind
+                    == EvidenceKind::ContainerTampered {
+                        container: stash,
+                        tampered_at: steal_commit_tick,
+                    }
+            })),
+        "guard should locally perceive the container tampering evidence on return",
+    );
+
+    let detection_trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(guard, detection_tick)
+        .expect("guard should produce a decision trace on the reobservation tick");
+    let detection_planning = match &detection_trace.outcome {
+        DecisionOutcome::Planning(planning) => planning.as_ref(),
+        other => panic!("expected planning trace after guard return, got {other:?}"),
+    };
+    let violation_id = detection_planning
+        .candidates
+        .generated
+        .iter()
+        .find_map(|goal| match goal.goal_key.kind {
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place,
+            } if place == theft_scene => Some(violation_id),
+            _ => None,
+        })
+        .expect("guard reobservation should generate an investigate goal for the missing lot");
+    assert!(
+        detection_planning.selection.selected_goal_is(
+            GoalKind::InvestigateViolation {
+                violation_id,
+                place: theft_scene,
+            }
+            .into()
+        ),
+        "guard should select the investigate branch after perceiving scene evidence and the local mismatch",
+    );
+
+    let target_decay_tick = Tick(steal_commit_tick.0 + 201);
+    while h.scheduler.current_tick().0 < target_decay_tick.0 {
+        h.step_once();
+    }
+    let scene_after_decay = h.world.get_component_scene_evidence(theft_scene);
+    assert!(
+        scene_after_decay.is_none_or(|scene| scene.evidence.iter().all(|entry| {
+            !matches!(
+                entry.kind,
+                EvidenceKind::ContainerTampered { container, .. } if container == stash
+            ) && !matches!(
+                entry.kind,
+                EvidenceKind::DisturbanceMarker {
+                    place,
+                    kind: worldwake_core::DisturbanceKind::ForcedEntry,
+                    ..
+                } if place == theft_scene
+            )
+        })),
+        "theft residue should decay away after its authoritative decay window; remaining_scene={scene_after_decay:?}",
+    );
+
+    verify_authoritative_conservation(&h.world, CommodityKind::Bread, total_bread_before)
+        .expect("theft evidence scenario should preserve bread conservation");
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_s52_theft_evidence_discovery() {
+    let _ = run_s52_theft_evidence_discovery(Seed([117; 32]));
+}
+
+#[test]
+fn golden_s52_theft_evidence_discovery_replays_deterministically() {
+    let first = run_s52_theft_evidence_discovery(Seed([118; 32]));
+    let second = run_s52_theft_evidence_discovery(Seed([118; 32]));
+    assert_eq!(
+        first, second,
+        "S52 theft evidence discovery scenario should replay deterministically"
     );
 }
