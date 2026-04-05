@@ -4,15 +4,16 @@ mod heuristic;
 mod transition;
 
 use crate::{
-    shared_collections::SharedVec, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    shared_collections::SharedVec,
 };
 use candidates::{
-    root_candidate_payload_status, search_candidates, unsupported_goal, SearchCandidate,
+    SearchCandidate, root_candidate_payload_status, search_candidates, unsupported_goal,
 };
 #[cfg(test)]
 use candidates::{search_candidate_from_planner, search_candidates_from_affordance};
-use frontier::{compare_search_nodes, FrontierEntry};
+use frontier::{FrontierEntry, compare_search_nodes};
 #[cfg(test)]
 use heuristic::compute_heuristic;
 use heuristic::{
@@ -185,26 +186,26 @@ pub fn search_plan(
                 Ok(result) => result,
                 Err(reason) => {
                     candidates_skipped += 1;
-                    if let Some(trace_index) = candidate.trace_index {
-                        if let Some(trace) = root_candidates.get_mut(trace_index) {
-                            trace.outcome =
-                                crate::decision_trace::RootCandidateOutcome::Skipped(reason);
-                        }
+                    if let Some(trace_index) = candidate.trace_index
+                        && let Some(trace) = root_candidates.get_mut(trace_index)
+                    {
+                        trace.outcome =
+                            crate::decision_trace::RootCandidateOutcome::Skipped(reason);
                     }
                     continue;
                 }
             };
-            if let Some(trace_index) = candidate.trace_index {
-                if let Some(trace) = root_candidates.get_mut(trace_index) {
-                    trace.payload_status = root_candidate_payload_status(
-                        candidate.payload_override.as_ref(),
-                        successor
-                            .steps
-                            .as_slice()
-                            .last()
-                            .and_then(|step| step.payload_override.as_ref()),
-                    );
-                }
+            if let Some(trace_index) = candidate.trace_index
+                && let Some(trace) = root_candidates.get_mut(trace_index)
+            {
+                trace.payload_status = root_candidate_payload_status(
+                    candidate.payload_override.as_ref(),
+                    successor
+                        .steps
+                        .as_slice()
+                        .last()
+                        .and_then(|step| step.payload_override.as_ref()),
+                );
             }
             if let Some(terminal_kind) = terminal {
                 terminal_successors.push((terminal_kind, successor));

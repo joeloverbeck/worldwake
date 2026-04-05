@@ -1,13 +1,13 @@
 //! Handlers for agent control commands: `switch` and `observe`.
 
 use worldwake_core::{
-    components::AgentData, control::ControlSource, ids::EntityId, CauseRef, VisibilitySpec,
-    WitnessData, WorldTxn,
+    CauseRef, VisibilitySpec, WitnessData, WorldTxn, components::AgentData, control::ControlSource,
+    ids::EntityId,
 };
 use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
-use crate::display::{entity_display_name, format_location, resolve_entity, ResolveError};
+use crate::display::{ResolveError, entity_display_name, format_location, resolve_entity};
 
 /// Set an agent's `ControlSource` via a `WorldTxn`, recording the change in the event log.
 ///

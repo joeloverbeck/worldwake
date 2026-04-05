@@ -98,22 +98,22 @@ fn matches_scope(
         return true;
     }
     // Place must match if blocker has one
-    if let Some(blocker_place) = blocker.place {
-        if query_place != Some(blocker_place) {
-            return false;
-        }
+    if let Some(blocker_place) = blocker.place
+        && query_place != Some(blocker_place)
+    {
+        return false;
     }
     // Target must match if blocker has one
-    if let Some(blocker_target) = blocker.target {
-        if query_target != Some(blocker_target) {
-            return false;
-        }
+    if let Some(blocker_target) = blocker.target
+        && query_target != Some(blocker_target)
+    {
+        return false;
     }
     // Action must match if blocker has one
-    if let Some(blocker_action) = blocker.action_def {
-        if query_action != Some(blocker_action) {
-            return false;
-        }
+    if let Some(blocker_action) = blocker.action_def
+        && query_action != Some(blocker_action)
+    {
+        return false;
     }
     true
 }
@@ -167,11 +167,11 @@ pub enum BlockingFact {
 mod tests {
     use super::{BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact};
     use crate::{
+        ActionDefId, CommodityKind, GoalKind, Tick, UniqueItemKind,
         test_utils::{entity_id, sample_blocked_intent, sample_blocker_key, sample_goal_key},
         traits::Component,
-        ActionDefId, CommodityKind, GoalKind, Tick, UniqueItemKind,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}

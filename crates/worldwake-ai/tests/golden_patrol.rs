@@ -7,11 +7,11 @@ use worldwake_ai::{
     DecisionOutcome, GoalKey, OpportunityAnchor, OpportunityKey, PlanningPipelineTrace,
 };
 use worldwake_core::{
-    prototype_place_entity, AgentBeliefStore, BeliefConfidencePolicy, CommodityKind, GoalKind,
-    HomeostaticNeeds, InstitutionalKnowledgeSource, PatrolProfile, PatrolRoute, PerceptionProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, RecordedViolation, Seed,
-    SocialObservation, SocialObservationDetail, TheftFacts, Tick, UtilityProfile,
-    ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
+    AgentBeliefStore, BeliefConfidencePolicy, CommodityKind, GoalKind, HomeostaticNeeds,
+    InstitutionalKnowledgeSource, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
+    Permille, PrototypePlace, Quantity, RecordedViolation, Seed, SocialObservation,
+    SocialObservationDetail, TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile,
+    ViolationId, ViolationKind, ViolationMemory, prototype_place_entity,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind};
 
@@ -903,21 +903,19 @@ fn run_patrol_driven_crime_discovery(
             .trace_sink()
             .expect("decision tracing should stay enabled")
             .trace_at(guard, tick_before)
+            && let DecisionOutcome::Planning(planning) = &trace.outcome
         {
-            if let DecisionOutcome::Planning(planning) = &trace.outcome {
-                let planning = planning.as_ref();
-                if generated_violation_id.is_none() {
-                    generated_violation_id =
-                        planning.candidates.generated.iter().find_map(|goal| {
-                            match goal.goal_key.kind {
-                                GoalKind::InvestigateViolation {
-                                    violation_id,
-                                    place,
-                                } if place == general_store => Some(violation_id),
-                                _ => None,
-                            }
-                        });
-                }
+            let planning = planning.as_ref();
+            if generated_violation_id.is_none() {
+                generated_violation_id = planning.candidates.generated.iter().find_map(|goal| {
+                    match goal.goal_key.kind {
+                        GoalKind::InvestigateViolation {
+                            violation_id,
+                            place,
+                        } if place == general_store => Some(violation_id),
+                        _ => None,
+                    }
+                });
             }
         }
 
@@ -992,7 +990,9 @@ fn run_patrol_driven_crime_discovery(
 
     let planning_after_arrival = planning_trace_at(&h, guard, arrival_tick);
     assert!(
-        planning_after_arrival.selection.selected_goal_is(patrol_goal(general_store))
+        planning_after_arrival
+            .selection
+            .selected_goal_is(patrol_goal(general_store))
             || planning_after_arrival
                 .candidates
                 .generated

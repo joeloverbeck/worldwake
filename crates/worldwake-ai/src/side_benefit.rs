@@ -120,7 +120,7 @@ fn capped_total_value(primary_motive: u32, side_benefits: &[SideBenefit]) -> u32
 
 #[cfg(test)]
 mod tests {
-    use super::{build_plan_value, detect_side_benefits, PlanValue, SideBenefit};
+    use super::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
     use crate::{
         CommodityPurpose, GoalPriorityClass, GroundedGoal, PlanTerminalKind, PlannedPlan,
         PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,

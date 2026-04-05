@@ -269,9 +269,9 @@ pub fn classify_frame_plan_relation(
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
-        has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry,
-        ExhaustionRetryState, FramePlanRelation, MaterializationBindings,
+        AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState, FramePlanRelation,
+        MaterializationBindings, classify_frame_plan_relation, frame_runtime_snapshot,
+        frame_travel_destination, has_active_frame_travel, has_frame,
     };
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
@@ -355,10 +355,12 @@ mod tests {
         assert!(runtime.last_commodity_signature.is_empty());
         assert!(runtime.last_unique_item_signature.is_empty());
         assert_eq!(runtime.last_patrol_route, None);
-        assert!(runtime
-            .materialization_bindings
-            .hypothetical_to_authoritative
-            .is_empty());
+        assert!(
+            runtime
+                .materialization_bindings
+                .hypothetical_to_authoritative
+                .is_empty()
+        );
     }
 
     #[test]

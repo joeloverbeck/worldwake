@@ -82,8 +82,8 @@ pub use action_semantics::{
 pub use action_state::ActionState;
 pub use action_status::ActionStatus;
 pub use action_trace::{
-    derive_start_failure_legality_trace, ActionStartLegalityTrace, ActionTraceDetail,
-    ActionTraceEvent, ActionTraceKind, ActionTraceSink,
+    ActionStartLegalityTrace, ActionTraceDetail, ActionTraceEvent, ActionTraceKind,
+    ActionTraceSink, derive_start_failure_legality_trace,
 };
 pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
@@ -94,16 +94,16 @@ pub use affordance_query::{
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };
-pub use belief_view::{estimate_duration_from_beliefs, GoalBeliefView, RuntimeBeliefView};
-pub use commodity_opportunity::{commodity_opportunity_score, CommodityOpportunityBreakdown};
+pub use belief_view::{GoalBeliefView, RuntimeBeliefView, estimate_duration_from_beliefs};
+pub use commodity_opportunity::{CommodityOpportunityBreakdown, commodity_opportunity_score};
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use institutional_knowledge_trace::{
-    build_record_consultation_trace_event, InstitutionalBeliefReadSummary,
-    InstitutionalBeliefTransitionTrace, InstitutionalKnowledgeTraceEvent,
-    InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource,
+    InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
+    InstitutionalKnowledgeTraceEvent, InstitutionalKnowledgeTraceSink,
+    InstitutionalKnowledgeTraceSource, build_record_consultation_trace_event,
 };
 pub use interrupt_abort::{abort_action, interrupt_action};
 pub use per_agent_belief_view::{PerAgentBeliefRuntime, PerAgentBeliefView};
@@ -117,8 +117,8 @@ pub use recipe_def::RecipeDefinition;
 pub use recipe_registry::RecipeRegistry;
 pub use replan_needed::ReplanNeeded;
 pub use replay_execution::{
-    record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler,
-    ReplayCheckpointError, ReplayError,
+    ReplayCheckpointError, ReplayError, record_tick_checkpoint, replay_and_verify,
+    seed_replay_inputs_from_scheduler,
 };
 pub use replay_state::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
 pub use request_resolution_trace::{
@@ -127,7 +127,7 @@ pub use request_resolution_trace::{
     ResolvedRequestTrace,
 };
 pub use save_load::{
-    load, load_from_bytes, save, save_to_bytes, SaveError, SAVE_FORMAT_VERSION, SAVE_MAGIC,
+    SAVE_FORMAT_VERSION, SAVE_MAGIC, SaveError, load, load_from_bytes, save, save_to_bytes,
 };
 pub use saveable_runtime::SaveableRuntime;
 pub use scheduler::{
@@ -136,14 +136,14 @@ pub use scheduler::{
 };
 pub use simulation_state::SimulationState;
 pub use social_relay::{
-    belief_chain_len, listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
+    TellTopicOmission, TellTopicOmissionReason, TellTopicSelection, belief_chain_len,
+    listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
     listener_aware_tell_topic_selection, relayable_social_subjects, relayable_tell_topics,
-    TellTopicOmission, TellTopicOmissionReason, TellTopicSelection,
 };
 pub use start_gate::start_action;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
-pub use tick_action::{tick_action, TickOutcome};
+pub use tick_action::{TickOutcome, tick_action};
 pub use tick_input_producer::{TickInputContext, TickInputError, TickInputProducer};
-pub use tick_step::{step_tick, TickStepError, TickStepResult, TickStepServices};
-pub use trade_valuation::{evaluate_trade_bundle, TradeAcceptance, TradeRejectionReason};
+pub use tick_step::{TickStepError, TickStepResult, TickStepServices, step_tick};
+pub use trade_valuation::{TradeAcceptance, TradeRejectionReason, evaluate_trade_bundle};

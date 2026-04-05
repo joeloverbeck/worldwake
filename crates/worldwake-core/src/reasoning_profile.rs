@@ -44,8 +44,8 @@ impl Component for ReasoningProfile {}
 #[cfg(test)]
 mod tests {
     use super::ReasoningProfile;
-    use crate::{traits::Component, ControlSource, EntityKind, Tick, Topology, World};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}

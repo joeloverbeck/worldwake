@@ -17,7 +17,7 @@ pub struct RecipeDefinition {
 #[cfg(test)]
 mod tests {
     use super::RecipeDefinition;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::num::NonZeroU32;
     use worldwake_core::{
         BodyCostPerTick, CommodityKind, Permille, Quantity, UniqueItemKind, WorkstationTag,

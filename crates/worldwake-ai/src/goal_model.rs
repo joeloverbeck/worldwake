@@ -1,4 +1,6 @@
 use crate::{
+    GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
+    PlanningState,
     decision_trace::{
         CompetitionDiscount, PrerequisiteExclusionReason, PrerequisiteExclusionTrace,
         PrerequisiteGuidanceTrace, SourceReliabilityDiscount,
@@ -7,15 +9,14 @@ use crate::{
     enterprise::{merchant_home_place, restock_gap_at_destination},
     institutional_queries::consulted_office_holder_read_for_record_data,
     pressure::DangerAssessment,
-    GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
-    PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    belief_confidence, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
-    EntityId, EpistemicSubject, GoalKey, GoalKind, InstitutionalBeliefRead, Permille, PlaceTag,
-    Quantity, ReasoningProfile, RecordKind, SuccessionLaw, WorkstationTag, OUTDOOR_RELIEF_TAGS,
+    ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose, EntityId,
+    EpistemicSubject, GoalKey, GoalKind, InstitutionalBeliefRead, OUTDOOR_RELIEF_TAGS, Permille,
+    PlaceTag, Quantity, ReasoningProfile, RecordKind, SuccessionLaw, WorkstationTag,
+    belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -487,34 +488,34 @@ impl GoalKindPlannerExt for GoalKind {
         def: &ActionDef,
         semantics: &PlannerOpSemantics,
     ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
-        if let GoalKind::FulfillBounty { bounty } = self {
-            if matches!(
+        if let GoalKind::FulfillBounty { bounty } = self
+            && matches!(
                 semantics.op_kind,
                 PlannerOpKind::Attack | PlannerOpKind::ClaimBounty
-            ) {
-                let Some(terms) = believed_bounty_terms(state, *bounty) else {
-                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
-                };
-                match (semantics.op_kind, terms.target) {
-                    (PlannerOpKind::Attack, BountyTarget::EliminateEntity { target }) => {
-                        let Some(actual_target) = targets.first().copied() else {
-                            return Err(GoalPayloadOverrideError::MissingTarget);
-                        };
-                        if actual_target != target || state.is_dead(target) {
-                            return Err(GoalPayloadOverrideError::UnsupportedGoal);
-                        }
-                        return Ok(Some(ActionPayload::Combat(CombatActionPayload {
-                            target: actual_target,
-                            weapon: worldwake_core::CombatWeaponRef::Unarmed,
-                        })));
+            )
+        {
+            let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                return Err(GoalPayloadOverrideError::UnsupportedGoal);
+            };
+            match (semantics.op_kind, terms.target) {
+                (PlannerOpKind::Attack, BountyTarget::EliminateEntity { target }) => {
+                    let Some(actual_target) = targets.first().copied() else {
+                        return Err(GoalPayloadOverrideError::MissingTarget);
+                    };
+                    if actual_target != target || state.is_dead(target) {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
                     }
-                    (PlannerOpKind::ClaimBounty, BountyTarget::EliminateEntity { target }) => {
-                        if !state.is_dead(target) {
-                            return Err(GoalPayloadOverrideError::UnsupportedGoal);
-                        }
-                    }
-                    _ => {}
+                    return Ok(Some(ActionPayload::Combat(CombatActionPayload {
+                        target: actual_target,
+                        weapon: worldwake_core::CombatWeaponRef::Unarmed,
+                    })));
                 }
+                (PlannerOpKind::ClaimBounty, BountyTarget::EliminateEntity { target }) => {
+                    if !state.is_dead(target) {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -1524,10 +1525,9 @@ fn places_with_resource_source(
         if state
             .resource_source(entity_id)
             .is_some_and(|s| s.commodity == commodity && s.available_quantity > Quantity(0))
+            && let Some(place) = state.effective_place(entity_id)
         {
-            if let Some(place) = state.effective_place(entity_id) {
-                places.insert(place);
-            }
+            places.insert(place);
         }
     }
     places.into_iter().collect()
@@ -1552,14 +1552,13 @@ fn places_with_sellers(
 ) {
     let already: BTreeSet<EntityId> = existing.iter().copied().collect();
     for &entity_id in state.snapshot().entities.keys() {
-        if let Some(profile) = state.merchandise_profile(entity_id) {
-            if profile.sale_kinds.contains(&commodity) {
-                if let Some(place) = state.effective_place(entity_id) {
-                    if !already.contains(&place) && !existing.contains(&place) {
-                        existing.push(place);
-                    }
-                }
-            }
+        if let Some(profile) = state.merchandise_profile(entity_id)
+            && profile.sale_kinds.contains(&commodity)
+            && let Some(place) = state.effective_place(entity_id)
+            && !already.contains(&place)
+            && !existing.contains(&place)
+        {
+            existing.push(place);
         }
     }
 }
@@ -1716,14 +1715,13 @@ fn depleted_source_exclusions_for_acquisition(
     for &entity_id in state.snapshot().entities.keys() {
         if state.resource_source(entity_id).is_some_and(|source| {
             source.commodity == commodity && source.available_quantity == Quantity(0)
-        }) {
-            if let Some(place) = state.effective_place(entity_id) {
-                exclusions.insert(PrerequisiteExclusionTrace {
-                    place,
-                    commodity,
-                    reason: PrerequisiteExclusionReason::DepletedResourceSource,
-                });
-            }
+        }) && let Some(place) = state.effective_place(entity_id)
+        {
+            exclusions.insert(PrerequisiteExclusionTrace {
+                place,
+                commodity,
+                reason: PrerequisiteExclusionReason::DepletedResourceSource,
+            });
         }
     }
     exclusions
@@ -1777,10 +1775,10 @@ fn places_with_place_tag(state: &PlanningState<'_>, tag: PlaceTag) -> Vec<Entity
 fn places_with_workstation(state: &PlanningState<'_>, tag: WorkstationTag) -> Vec<EntityId> {
     let mut places = BTreeSet::new();
     for &entity_id in state.snapshot().entities.keys() {
-        if state.workstation_tag(entity_id) == Some(tag) {
-            if let Some(place) = state.effective_place(entity_id) {
-                places.insert(place);
-            }
+        if state.workstation_tag(entity_id) == Some(tag)
+            && let Some(place) = state.effective_place(entity_id)
+        {
+            places.insert(place);
         }
     }
     places.into_iter().collect()
@@ -2115,23 +2113,23 @@ pub struct RankedGoal {
 #[cfg(test)]
 mod tests {
     use super::{
-        grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
         GoalKindPlannerExt, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal, RankedGoal,
-        RankedGoalProvenanceFamily, RootCandidateSynthesis,
+        RankedGoalProvenanceFamily, RootCandidateSynthesis, grounded_goal_epistemic_subjects,
+        grounded_goal_matches_epistemic_barrier,
     };
     use crate::{
-        build_planning_snapshot, build_semantics_table,
+        CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
+        PlannerTransitionKind, PlanningState, ReasoningProfile, build_planning_snapshot,
+        build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
-        search_plan, CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind,
-        PlannerOpSemantics, PlannerTransitionKind, PlanningState, ReasoningProfile,
+        search_plan,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        test_utils::{entity_id, sample_trade_disposition_profile},
         ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, AskWitnessMemory,
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
@@ -2143,14 +2141,16 @@ mod tests {
         PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
         RewardSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
-        estimate_duration_from_beliefs, AccuseActionPayload, ActionDef, ActionDefRegistry,
-        ActionDuration, ActionHandlerId, ActionPayload, AskWitnessPayload, BribeActionPayload,
-        ConsultRecordActionPayload, DurationExpr, Interruptibility, InvestigateActionPayload,
-        PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView,
-        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
+        ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
+        DurationExpr, Interruptibility, InvestigateActionPayload, PunishActionPayload,
+        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -2324,9 +2324,11 @@ mod tests {
             target_item: entity_id(9, 0),
         };
         assert!(steal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
-        assert!(steal
-            .relevant_op_kinds()
-            .contains(&PlannerOpKind::MoveCargo));
+        assert!(
+            steal
+                .relevant_op_kinds()
+                .contains(&PlannerOpKind::MoveCargo)
+        );
 
         let accuse = GoalKind::Accuse {
             crime_register: entity_id(9, 0),
@@ -2529,9 +2531,10 @@ mod tests {
 
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Trade));
-        assert!(goal
-            .relevant_op_kinds()
-            .contains(&PlannerOpKind::QueueForFacilityUse));
+        assert!(
+            goal.relevant_op_kinds()
+                .contains(&PlannerOpKind::QueueForFacilityUse)
+        );
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Harvest));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Craft));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::MoveCargo));
@@ -2603,11 +2606,13 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(GoalKind::MoveCargo {
-            commodity: CommodityKind::Bread,
-            destination,
-        }
-        .is_satisfied(&state));
+        assert!(
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -2647,11 +2652,13 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(!GoalKind::MoveCargo {
-            commodity: CommodityKind::Bread,
-            destination,
-        }
-        .is_satisfied(&state));
+        assert!(
+            !GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -2693,11 +2700,13 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(!GoalKind::MoveCargo {
-            commodity: CommodityKind::Bread,
-            destination,
-        }
-        .is_satisfied(&state));
+        assert!(
+            !GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -2754,11 +2763,13 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(!GoalKind::MoveCargo {
-            commodity: CommodityKind::Bread,
-            destination: facility,
-        }
-        .is_satisfied(&state));
+        assert!(
+            !GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: facility,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -2814,11 +2825,13 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(GoalKind::MoveCargo {
-            commodity: CommodityKind::Bread,
-            destination: facility,
-        }
-        .is_satisfied(&state));
+        assert!(
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Bread,
+                destination: facility,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     struct TestBeliefView {
@@ -4845,21 +4858,27 @@ mod tests {
             expected_materializations: Vec::new(),
         };
 
-        assert!(GoalKind::AcquireCommodity {
-            commodity: CommodityKind::Apple,
-            purpose: CommodityPurpose::Restock,
-        }
-        .is_progress_barrier(&queue_step));
+        assert!(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::Restock,
+            }
+            .is_progress_barrier(&queue_step)
+        );
         assert!(GoalKind::LootCorpse { corpse: entity(41) }.is_progress_barrier(&queue_step));
-        assert!(GoalKind::BuryCorpse {
-            corpse: entity(41),
-            burial_site: entity(42),
-        }
-        .is_progress_barrier(&queue_step));
-        assert!(GoalKind::ProduceCommodity {
-            recipe_id: RecipeId(0),
-        }
-        .is_progress_barrier(&queue_step));
+        assert!(
+            GoalKind::BuryCorpse {
+                corpse: entity(41),
+                burial_site: entity(42),
+            }
+            .is_progress_barrier(&queue_step)
+        );
+        assert!(
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(0),
+            }
+            .is_progress_barrier(&queue_step)
+        );
         assert!(!GoalKind::Sleep.is_progress_barrier(&queue_step));
     }
 
@@ -5054,9 +5073,10 @@ mod tests {
             consulted.believed_office_holder(office),
             InstitutionalBeliefRead::Certain(None)
         );
-        assert!(goal
-            .build_payload_override(None, &consulted, &[], &declare_def, &declare_semantics)
-            .is_ok());
+        assert!(
+            goal.build_payload_override(None, &consulted, &[], &declare_def, &declare_semantics)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -5763,9 +5783,10 @@ mod tests {
         );
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
-        assert!(goal
-            .prerequisite_places(&state, &recipes, &ReasoningProfile::default())
-            .is_empty());
+        assert!(
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default())
+                .is_empty()
+        );
     }
 
     #[test]
@@ -5945,9 +5966,10 @@ mod tests {
             commodity: CommodityKind::Apple,
         };
 
-        assert!(goal
-            .prerequisite_places(&state, &recipes, &ReasoningProfile::default())
-            .is_empty());
+        assert!(
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default())
+                .is_empty()
+        );
     }
 
     #[test]
@@ -5975,9 +5997,10 @@ mod tests {
             commodity: CommodityKind::Bread,
         };
 
-        assert!(goal
-            .prerequisite_places(&state, &recipes, &ReasoningProfile::default())
-            .is_empty());
+        assert!(
+            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default())
+                .is_empty()
+        );
     }
 
     #[test]
@@ -7168,6 +7191,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick,
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -8030,10 +8054,12 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(GoalKind::SellCommodity {
-            commodity: CommodityKind::Bread,
-        }
-        .is_satisfied(&state));
+        assert!(
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -8066,10 +8092,12 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(!GoalKind::SellCommodity {
-            commodity: CommodityKind::Bread,
-        }
-        .is_satisfied(&state));
+        assert!(
+            !GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -8096,10 +8124,12 @@ mod tests {
             build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([market]), 1);
         let state = PlanningState::new(&snapshot);
 
-        assert!(!GoalKind::SellCommodity {
-            commodity: CommodityKind::Bread,
-        }
-        .is_satisfied(&state));
+        assert!(
+            !GoalKind::SellCommodity {
+                commodity: CommodityKind::Bread,
+            }
+            .is_satisfied(&state)
+        );
     }
 
     #[test]
@@ -8143,6 +8173,7 @@ mod tests {
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -8206,6 +8237,7 @@ mod tests {
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -8244,12 +8276,14 @@ mod tests {
 
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
         assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::MoveCargo));
-        assert!(goal
-            .relevant_op_kinds()
-            .contains(&PlannerOpKind::StockManagement));
-        assert!(goal
-            .relevant_op_kinds()
-            .contains(&PlannerOpKind::ClaimBounty));
+        assert!(
+            goal.relevant_op_kinds()
+                .contains(&PlannerOpKind::StockManagement)
+        );
+        assert!(
+            goal.relevant_op_kinds()
+                .contains(&PlannerOpKind::ClaimBounty)
+        );
     }
 
     #[test]
@@ -8308,6 +8342,7 @@ mod tests {
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -8383,6 +8418,7 @@ mod tests {
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -8464,6 +8500,7 @@ mod tests {
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },

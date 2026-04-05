@@ -1,6 +1,6 @@
 use crate::{
-    action_semantics::consultation_duration_ticks, ActionDuration, ActionPayload, DurationExpr,
-    RecipeDefinition,
+    ActionDuration, ActionPayload, DurationExpr, RecipeDefinition,
+    action_semantics::consultation_duration_ticks,
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
@@ -570,7 +570,7 @@ pub trait RuntimeBeliefView {
         None
     }
     fn intention_disposition_profile(&self, agent: EntityId)
-        -> Option<IntentionDispositionProfile>;
+    -> Option<IntentionDispositionProfile>;
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
@@ -1482,8 +1482,8 @@ mod tests {
     use super::estimate_duration_from_beliefs;
     use crate::{ActionPayload, DurationExpr, PerAgentBeliefView};
     use worldwake_core::{
-        build_prototype_world, AgentBeliefStore, CauseRef, ControlSource, EventLog, PatrolProfile,
-        Permille, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        AgentBeliefStore, CauseRef, ControlSource, EventLog, PatrolProfile, Permille, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {

@@ -37,7 +37,7 @@ pub enum ActionState {
 #[cfg(test)]
 mod tests {
     use super::ActionState;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId};
 
     fn assert_traits<

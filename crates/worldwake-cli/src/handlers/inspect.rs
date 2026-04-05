@@ -9,8 +9,8 @@ use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
 use crate::display::{
-    entity_display_name, format_location, format_needs_bar, format_quantity, resolve_entity,
-    ResolveError,
+    ResolveError, entity_display_name, format_location, format_needs_bar, format_quantity,
+    resolve_entity,
 };
 
 /// Display-only threshold band for needs bars (same as tick.rs).
@@ -185,7 +185,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         );
     }
     if let Some(dead) = world.get_component_dead_at(entity) {
-        println!("  DeadAt: tick {}", dead.0 .0);
+        println!("  DeadAt: tick {}", dead.0.0);
     }
     if let Some(up) = world.get_component_utility_profile(entity) {
         println!("  UtilityProfile:");
@@ -265,7 +265,13 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
             mp.hunger_rate, mp.thirst_rate, mp.fatigue_rate, mp.bladder_rate, mp.dirtiness_rate
         );
         println!("    rest_efficiency: {}", mp.rest_efficiency);
-        println!("    tolerances: starvation={} ticks, dehydration={} ticks, exhaustion={} ticks, bladder={} ticks", mp.starvation_tolerance_ticks, mp.dehydration_tolerance_ticks, mp.exhaustion_collapse_ticks, mp.bladder_accident_tolerance_ticks);
+        println!(
+            "    tolerances: starvation={} ticks, dehydration={} ticks, exhaustion={} ticks, bladder={} ticks",
+            mp.starvation_tolerance_ticks,
+            mp.dehydration_tolerance_ticks,
+            mp.exhaustion_collapse_ticks,
+            mp.bladder_accident_tolerance_ticks
+        );
         println!(
             "    durations: toilet={} ticks, wash={} ticks",
             mp.toilet_ticks, mp.wash_ticks
@@ -279,8 +285,13 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         );
     }
     if let Some(dep) = world.get_component_deprivation_exposure(entity) {
-        println!("  DeprivationExposure: hunger={} ticks, thirst={} ticks, fatigue={} ticks, bladder={} ticks",
-            dep.hunger_critical_ticks, dep.thirst_critical_ticks, dep.fatigue_critical_ticks, dep.bladder_critical_ticks);
+        println!(
+            "  DeprivationExposure: hunger={} ticks, thirst={} ticks, fatigue={} ticks, bladder={} ticks",
+            dep.hunger_critical_ticks,
+            dep.thirst_critical_ticks,
+            dep.fatigue_critical_ticks,
+            dep.bladder_critical_ticks
+        );
     }
     if let Some(bim) = world.get_component_blocked_intent_memory(entity) {
         println!("  BlockedIntentMemory: {} entries", bim.intents.len());
@@ -295,7 +306,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("  Container: capacity={}", c.capacity.0);
     }
     if let Some(cc) = world.get_component_carry_capacity(entity) {
-        println!("  CarryCapacity: {}", cc.0 .0);
+        println!("  CarryCapacity: {}", cc.0.0);
     }
     if let Some(kr) = world.get_component_known_recipes(entity) {
         let recipes: Vec<String> = kr.recipes.iter().map(|r| format!("{}", r.0)).collect();
@@ -418,10 +429,10 @@ pub fn handle_inventory(sim: &SimulationState, entity_input: Option<&str>) -> Co
     }
 
     // Total load vs capacity.
-    if let Ok(total_load) = load_of_entity(world, entity) {
-        if let Some(capacity) = world.get_component_carry_capacity(entity) {
-            println!("  Load: {}/{}", total_load.0, capacity.0 .0);
-        }
+    if let Ok(total_load) = load_of_entity(world, entity)
+        && let Some(capacity) = world.get_component_carry_capacity(entity)
+    {
+        println!("  Load: {}/{}", total_load.0, capacity.0.0);
     }
 
     Ok(CommandOutcome::Continue)
@@ -590,7 +601,7 @@ pub fn handle_relations(sim: &SimulationState, entity_input: &str) -> CommandRes
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
+    use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
     use worldwake_core::{
         control::ControlSource,
         ids::EntityId,

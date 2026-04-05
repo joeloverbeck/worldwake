@@ -41,25 +41,25 @@ use worldwake_ai::{
     AgentTickDriver, CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, AgentBeliefStore, AgentData, ArtifactKind, ArtifactState,
-    BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
-    BelievedInstitutionalClaim, BountyTarget, BountyTerms, CombatProfile, CommodityKind, Container,
-    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-    EffectiveRight, EligibilityRule, EntityId, FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, NoticeTopic,
-    PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PlaceTag,
-    ProductionOutputOwner, ProofRequirement, PursuitProfile, Quantity, RecordData, RecordEntryId,
-    RecordKind, ResourceSource, RewardSource, RightKind, Seed, SocialObservationDetail, StateHash,
-    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, Tick, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, ViolationDispositionProfile,
-    ViolationKind, ViolationMemory, WorkstationTag,
+    AgentBeliefStore, AgentData, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
+    BeliefConfidencePolicy, BelievedActivity, BelievedInstitutionalClaim, BountyTarget,
+    BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt, DemandMemory,
+    DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule, EntityId,
+    FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute,
+    PerceptionProfile, PerceptionSource, PlaceTag, ProductionOutputOwner, ProofRequirement,
+    PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardSource,
+    RightKind, Seed, SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
+    TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    WorkstationTag, hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    verify_authoritative_conservation,
 };
 use worldwake_sim::{
-    get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
-    CombatActionPayload, ControllerState, InputKind, PerAgentBeliefView, PostBountyActionPayload,
-    PostNoticeActionPayload, RequestProvenance,
+    ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, CombatActionPayload,
+    ControllerState, InputKind, PerAgentBeliefView, PostBountyActionPayload,
+    PostNoticeActionPayload, RequestProvenance, get_affordances,
 };
 
 // ---------------------------------------------------------------------------
@@ -918,22 +918,22 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
 
         // Check decision traces for Agent A: non-empty candidate list means
         // the AI pipeline is generating goals for the newly-Ai agent.
-        if let Some(sink) = h.driver.trace_sink() {
-            if let Some(trace) = sink.trace_at(agent_a, processed_tick) {
-                match &trace.outcome {
-                    DecisionOutcome::Planning(planning) => {
-                        if !planning.candidates.ranked.is_empty() {
-                            agent_a_generated_candidates = true;
-                        }
+        if let Some(sink) = h.driver.trace_sink()
+            && let Some(trace) = sink.trace_at(agent_a, processed_tick)
+        {
+            match &trace.outcome {
+                DecisionOutcome::Planning(planning) => {
+                    if !planning.candidates.ranked.is_empty() {
+                        agent_a_generated_candidates = true;
                     }
-                    DecisionOutcome::ActiveAction { .. } => {
-                        // Agent A may still be finishing the travel action
-                        // started while Human — that's fine, it means the
-                        // simulation preserved the in-progress action.
-                    }
-                    DecisionOutcome::Dead => {
-                        panic!("Agent A should not be dead during T24");
-                    }
+                }
+                DecisionOutcome::ActiveAction { .. } => {
+                    // Agent A may still be finishing the travel action
+                    // started while Human — that's fine, it means the
+                    // simulation preserved the in-progress action.
+                }
+                DecisionOutcome::Dead => {
+                    panic!("Agent A should not be dead during T24");
                 }
             }
         }
@@ -3309,17 +3309,14 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
 
         // Check combat at GateRoad without guard: any combat actor at GateRoad
         // during a tick when no guard is at GateRoad.
-        if !guard_at_gate {
-            if let Some(sink) = h.action_trace_sink() {
-                let tick_events = sink.events_at(Tick(tick.0.saturating_sub(1)));
-                for event in &tick_events {
-                    if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
-                        if def.domain == worldwake_core::ActionDomain::Combat
-                            && h.world.effective_place(event.actor) == Some(PLACE_T21_GATE_ROAD)
-                        {
-                            combat_at_gate_without_guard = true;
-                        }
-                    }
+        if !guard_at_gate && let Some(sink) = h.action_trace_sink() {
+            let tick_events = sink.events_at(Tick(tick.0.saturating_sub(1)));
+            for event in &tick_events {
+                if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name)
+                    && def.domain == worldwake_core::ActionDomain::Combat
+                    && h.world.effective_place(event.actor) == Some(PLACE_T21_GATE_ROAD)
+                {
+                    combat_at_gate_without_guard = true;
                 }
             }
         }
@@ -3409,17 +3406,17 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
     // --- Verification 7: Succession completes within 2880 ticks ---
     // If succession did not complete, verify that the vacancy existed and note it.
     // The ticket says succession should complete within 2880 ticks.
-    if let Some(vt) = vacancy_tick {
-        if succession_completed {
-            let final_tick = h.scheduler.current_tick();
-            assert!(
-                final_tick.0 <= vt.0 + 2880,
-                "Succession must complete within 2880 ticks of vacancy; \
-                 vacancy at tick {}, current tick {}",
-                vt.0,
-                final_tick.0,
-            );
-        }
+    if let Some(vt) = vacancy_tick
+        && succession_completed
+    {
+        let final_tick = h.scheduler.current_tick();
+        assert!(
+            final_tick.0 <= vt.0 + 2880,
+            "Succession must complete within 2880 ticks of vacancy; \
+             vacancy at tick {}, current tick {}",
+            vt.0,
+            final_tick.0,
+        );
         // Succession may not complete if the scenario is still ongoing — this is
         // acceptable as long as vacancy was detected and the downstream chain
         // (patrol gap → predation) was observed.
@@ -4071,17 +4068,15 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
         }
 
         // Check theft via action trace.
-        if !theft_committed {
-            if let Some(sink) = h.action_trace_sink() {
-                for event in sink.events_for(thief) {
-                    if event.action_name == "steal"
-                        && matches!(event.kind, ActionTraceKind::Committed { .. })
-                    {
-                        theft_committed = true;
-                        // Theft before vacancy means pre-vacancy theft.
-                        if !vacancy_detected {
-                            pre_vacancy_theft = true;
-                        }
+        if !theft_committed && let Some(sink) = h.action_trace_sink() {
+            for event in sink.events_for(thief) {
+                if event.action_name == "steal"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                {
+                    theft_committed = true;
+                    // Theft before vacancy means pre-vacancy theft.
+                    if !vacancy_detected {
+                        pre_vacancy_theft = true;
                     }
                 }
             }
@@ -6082,14 +6077,14 @@ fn run_s45_delivery_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
             delivered_tick = Some(h.scheduler.current_tick());
         }
 
-        if let Some(sink) = h.action_trace_sink() {
-            if let Some(event) = sink.events_for(courier).iter().find(|event| {
+        if let Some(sink) = h.action_trace_sink()
+            && let Some(event) = sink.events_for(courier).iter().find(|event| {
                 event.action_name == "claim_bounty"
                     && matches!(event.kind, ActionTraceKind::Committed { .. })
-            }) {
-                claim_tick = Some(event.tick);
-                break;
-            }
+            })
+        {
+            claim_tick = Some(event.tick);
+            break;
         }
     }
 
@@ -6743,6 +6738,7 @@ fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
             }),
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },

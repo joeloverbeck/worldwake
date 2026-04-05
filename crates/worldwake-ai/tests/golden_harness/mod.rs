@@ -14,11 +14,10 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
-    BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
-    CombatStance, CommodityKind, CommunicationProfile, ComponentDelta, ComponentKind,
-    ComponentValue, ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
+    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
+    CommunicationProfile, ComponentDelta, ComponentKind, ComponentValue,
+    ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
     DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
     EventRecord, EventTag, EventView, FactionData, FactionPurpose, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
@@ -27,14 +26,15 @@ use worldwake_core::{
     RecipeId, RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource, Seed,
     SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
     ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
+    build_prototype_world, hash_serializable, prototype_place_entity, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
-    ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
-    RecipeRegistry, ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink,
-    SaveableRuntime, Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    ActionDefRegistry, ActionHandlerRegistry, ActionTraceSink, AutonomousControllerRuntime,
+    ControllerState, DeterministicRng, InstitutionalKnowledgeTraceSink, PerceptionTraceSink,
+    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
+    RequestResolutionTraceSink, SaveableRuntime, Scheduler, SimulationState, SystemManifest,
+    TickStepResult, TickStepServices, load_from_bytes, save_to_bytes, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -928,6 +928,7 @@ pub fn seed_known_office_at_place(
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: tick,
             source: PerceptionSource::DirectObservation,
         },

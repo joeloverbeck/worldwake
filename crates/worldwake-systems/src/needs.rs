@@ -319,12 +319,11 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
-        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EntityId, EventLog, EventTag, EventView,
-        HomeostaticNeeds, MetabolismProfile, Permille, Quantity, Seed, Tick,
-        TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause,
-        WoundId, WoundList,
+        BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, EventLog, EventTag, EventView, HomeostaticNeeds,
+        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1383,10 +1382,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(event_log.len(), 2);
-        assert!(world
-            .get_component_demand_memory(trader)
-            .unwrap()
-            .observations
-            .is_empty());
+        assert!(
+            world
+                .get_component_demand_memory(trader)
+                .unwrap()
+                .observations
+                .is_empty()
+        );
     }
 }

@@ -166,9 +166,10 @@ mod tests {
 
         let err = verify_live_lot_conservation(&world, CommodityKind::Coin, 10).unwrap_err();
         assert!(matches!(err, WorldError::InvariantViolation(_)));
-        assert!(err
-            .to_string()
-            .contains("live-lot conservation violation for Coin: expected 10, found 11"));
+        assert!(
+            err.to_string()
+                .contains("live-lot conservation violation for Coin: expected 10, found 11")
+        );
     }
 
     #[test]
@@ -201,14 +202,15 @@ mod tests {
 
         let err = verify_authoritative_conservation(&world, CommodityKind::Apple, 9).unwrap_err();
         assert!(matches!(err, WorldError::InvariantViolation(_)));
-        assert!(err
-            .to_string()
-            .contains("authoritative conservation violation for Apple: expected 9, found 10"));
+        assert!(
+            err.to_string()
+                .contains("authoritative conservation violation for Apple: expected 9, found 10")
+        );
     }
 
     #[test]
-    fn verify_live_lot_conservation_tracks_split_and_merge_without_double_counting_archived_sources(
-    ) {
+    fn verify_live_lot_conservation_tracks_split_and_merge_without_double_counting_archived_sources()
+     {
         let mut world = test_world();
         let lot = world
             .create_item_lot(CommodityKind::Waste, Quantity(10), Tick(1))

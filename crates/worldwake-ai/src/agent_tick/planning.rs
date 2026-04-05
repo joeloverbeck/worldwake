@@ -8,10 +8,10 @@ use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goa
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::PlanSearchResult;
 use crate::{
-    authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    RankedGoal,
+    AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionRetryState, OpportunityKey,
+    PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, RankedGoal, authoritative_target,
+    build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step, search_plan,
+    select_best_plan,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -250,10 +250,10 @@ pub(super) fn build_candidate_plans(
     let mut results = Vec::with_capacity(candidates_to_plan.len());
     let mut continue_same_goal_after_found = None;
     for ranked in candidates_to_plan {
-        if let Some(found_goal) = continue_same_goal_after_found {
-            if ranked.grounded.key != found_goal {
-                break;
-            }
+        if let Some(found_goal) = continue_same_goal_after_found
+            && ranked.grounded.key != found_goal
+        {
+            break;
         }
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
@@ -724,44 +724,43 @@ pub(super) fn plan_and_validate_next_step_traced(
             let current_goal_still_top = ranked_candidates
                 .first()
                 .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
-            if current_goal_still_top {
-                if let Some(step) = current_step(runtime).cloned() {
-                    let valid = revalidate_next_step(
-                        &view,
-                        agent,
-                        &step,
-                        &runtime.materialization_bindings,
-                        action_defs,
-                        action_handlers,
+            if current_goal_still_top && let Some(step) = current_step(runtime).cloned() {
+                let valid = revalidate_next_step(
+                    &view,
+                    agent,
+                    &step,
+                    &runtime.materialization_bindings,
+                    action_defs,
+                    action_handlers,
+                );
+                if valid {
+                    runtime.dirty = DirtySet::default();
+                    plan_continued = true;
+                    selection_trace.selected_opportunity =
+                        runtime.current_plan.as_ref().map(|plan| plan.opportunity);
+                    selection_trace.selected_plan =
+                        runtime.current_plan.as_ref().and_then(|plan| {
+                            selected_plan_value(ranked_candidates, plan, side_benefit_weight).map(
+                                |plan_value| {
+                                    summarize_selected_plan(
+                                        plan,
+                                        runtime.current_step_index,
+                                        action_defs,
+                                        None,
+                                        &plan_value,
+                                    )
+                                },
+                            )
+                        });
+                    selection_trace.selected_plan_source =
+                        Some(SelectedPlanSource::SnapshotContinuation);
+                    return (
+                        Some(step),
+                        Some(true),
+                        plan_continued,
+                        Some(plan_search_trace),
+                        Some(selection_trace),
                     );
-                    if valid {
-                        runtime.dirty = DirtySet::default();
-                        plan_continued = true;
-                        selection_trace.selected_opportunity =
-                            runtime.current_plan.as_ref().map(|plan| plan.opportunity);
-                        selection_trace.selected_plan =
-                            runtime.current_plan.as_ref().and_then(|plan| {
-                                selected_plan_value(ranked_candidates, plan, side_benefit_weight)
-                                    .map(|plan_value| {
-                                        summarize_selected_plan(
-                                            plan,
-                                            runtime.current_step_index,
-                                            action_defs,
-                                            None,
-                                            &plan_value,
-                                        )
-                                    })
-                            });
-                        selection_trace.selected_plan_source =
-                            Some(SelectedPlanSource::SnapshotContinuation);
-                        return (
-                            Some(step),
-                            Some(true),
-                            plan_continued,
-                            Some(plan_search_trace),
-                            Some(selection_trace),
-                        );
-                    }
                 }
             }
         }
@@ -863,24 +862,24 @@ pub(super) fn plan_and_validate_next_step_traced(
                 action_defs,
             );
 
-            if let Some(prev) = previous_goal {
-                if prev != selected_goal {
-                    let prev_rank = ranked_candidates.iter().find(|c| c.grounded.key == prev);
-                    let new_rank = ranked_candidates
-                        .iter()
-                        .find(|c| c.grounded.key == selected_goal);
-                    let kind = match (prev_rank, new_rank) {
-                        (Some(p), Some(n)) if n.priority_class > p.priority_class => {
-                            crate::GoalSwitchKind::HigherPriorityGoal
-                        }
-                        _ => crate::GoalSwitchKind::SameClassMargin,
-                    };
-                    selection_trace.goal_switch = Some(GoalSwitchSummary {
-                        from: prev,
-                        to: selected_goal,
-                        kind,
-                    });
-                }
+            if let Some(prev) = previous_goal
+                && prev != selected_goal
+            {
+                let prev_rank = ranked_candidates.iter().find(|c| c.grounded.key == prev);
+                let new_rank = ranked_candidates
+                    .iter()
+                    .find(|c| c.grounded.key == selected_goal);
+                let kind = match (prev_rank, new_rank) {
+                    (Some(p), Some(n)) if n.priority_class > p.priority_class => {
+                        crate::GoalSwitchKind::HigherPriorityGoal
+                    }
+                    _ => crate::GoalSwitchKind::SameClassMargin,
+                };
+                selection_trace.goal_switch = Some(GoalSwitchSummary {
+                    from: prev,
+                    to: selected_goal,
+                    kind,
+                });
             }
 
             runtime.materialization_bindings.clear();
@@ -978,24 +977,23 @@ pub(super) fn plan_search_result_to_trace(
 #[cfg(test)]
 mod tests {
     use super::{
-        has_pending_budget_retry, record_exhausted_goals, selected_plan_value,
-        summarize_ranked_goal, summarize_selected_plan, CandidatePlanSearch,
+        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals, selected_plan_value,
+        summarize_ranked_goal, summarize_selected_plan,
     };
     use crate::{
-        build_semantics_table,
-        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
-        feasibility::FeasibilityHint,
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlannedStep, RankedGoal, ReasoningProfile,
+        PlannedStep, RankedGoal, ReasoningProfile, build_semantics_table,
+        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+        feasibility::FeasibilityHint,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, CauseRef, CommodityKind,
-        CommodityPurpose, ControlSource, EventLog, HomeostaticNeeds, MerchandiseProfile, Permille,
-        Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-        World, WorldTxn,
+        ActionDefId, ActionDomain, CauseRef, CommodityKind, CommodityPurpose, ControlSource,
+        EventLog, HomeostaticNeeds, MerchandiseProfile, Permille, Place, Quantity, Tick, Topology,
+        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,

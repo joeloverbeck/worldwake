@@ -20,7 +20,7 @@ impl Component for AgentData {}
 #[cfg(test)]
 mod tests {
     use super::{AgentData, Name};
-    use crate::{traits::Component, ControlSource};
+    use crate::{ControlSource, traits::Component};
 
     fn assert_component_bounds<T: Component>() {}
 

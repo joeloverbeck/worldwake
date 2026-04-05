@@ -557,9 +557,9 @@ fn classify_need_band(value: worldwake_core::Permille, band: ThresholdBand) -> u
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_need_band, condition_changed, derive_invalidation_conditions,
-        invalidate_exhausted_goals, need_threshold_band, need_value, ExhaustionBaseline,
-        ExhaustionInvalidationCondition, StealTargetAccessState, StealTargetSnapshot,
+        ExhaustionBaseline, ExhaustionInvalidationCondition, StealTargetAccessState,
+        StealTargetSnapshot, classify_need_band, condition_changed, derive_invalidation_conditions,
+        invalidate_exhausted_goals, need_threshold_band, need_value,
     };
     use crate::{ExhaustionEntry, ExhaustionRetryState, GoalKey, OpportunityKey};
     use std::collections::BTreeMap;
@@ -1065,6 +1065,7 @@ mod tests {
                         observed_tick: worldwake_core::Tick(2),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: worldwake_core::Tick(2),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -1109,6 +1110,7 @@ mod tests {
                         observed_tick: worldwake_core::Tick(2),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: worldwake_core::Tick(2),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -1164,6 +1166,7 @@ mod tests {
                         observed_tick: worldwake_core::Tick(2),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: worldwake_core::Tick(2),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -1212,6 +1215,7 @@ mod tests {
                         observed_tick: worldwake_core::Tick(2),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: worldwake_core::Tick(2),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -1470,8 +1474,8 @@ mod tests {
     }
 
     #[test]
-    fn condition_changed_need_band_is_conservative_when_baseline_missing_and_stable_when_current_missing(
-    ) {
+    fn condition_changed_need_band_is_conservative_when_baseline_missing_and_stable_when_current_missing()
+     {
         let agent = entity(1);
         let condition = ExhaustionInvalidationCondition::NeedChangedBands {
             need: HomeostaticNeedId::Fatigue,

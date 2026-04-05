@@ -194,8 +194,8 @@ mod tests {
         ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter,
         QueuedContentionIntent,
     };
-    use crate::{traits::Component, ActionDefId, GoalKey, GoalKind, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{ActionDefId, GoalKey, GoalKind, Tick, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
     use std::num::NonZeroU32;

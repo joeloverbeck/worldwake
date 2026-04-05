@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 22;
+pub const SAVE_FORMAT_VERSION: u32 = 23;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -190,29 +190,28 @@ fn split_length_prefixed_payload<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        load, load_from_bytes, save, save_to_bytes, SaveError, LEGACY_SAVE_FORMAT_VERSION,
-        SAVE_FORMAT_VERSION, SAVE_MAGIC,
+        LEGACY_SAVE_FORMAT_VERSION, SAVE_FORMAT_VERSION, SAVE_MAGIC, SaveError, load,
+        load_from_bytes, save, save_to_bytes,
     };
     use crate::{
-        step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, ControllerState,
-        DeterministicRng, InputKind, RecipeDefinition, RecipeRegistry, ReplayCheckpoint,
-        ReplayRecordingConfig, ReplayState, SaveableRuntime, Scheduler, SimulationState,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemId, SystemManifest,
-        TickStepServices,
+        ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionState, ActionStatus, ControllerState, DeterministicRng, InputKind,
+        RecipeDefinition, RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState,
+        SaveableRuntime, Scheduler, SimulationState, SystemDispatchTable, SystemError,
+        SystemExecutionContext, SystemId, SystemManifest, TickStepServices, step_tick,
     };
     use std::num::NonZeroU64;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        build_prototype_world,
-        test_utils::{
-            sample_preference_profile, sample_route_experience, sample_source_reliability,
-        },
         ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity, BelievedEntityState,
         BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId, EventLog, EventPayload,
         PendingEvent, PerceptionSource, Quantity, ReservationId, Seed, StateHash, Tick, TickRange,
         UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
+        test_utils::{
+            sample_preference_profile, sample_route_experience, sample_source_reliability,
+        },
     };
 
     fn state_hash(byte: u8) -> StateHash {
@@ -298,6 +297,7 @@ mod tests {
             }),
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }

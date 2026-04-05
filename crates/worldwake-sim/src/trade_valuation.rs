@@ -1,4 +1,4 @@
-use crate::{commodity_opportunity_score, GoalBeliefView};
+use crate::{GoalBeliefView, commodity_opportunity_score};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
@@ -178,10 +178,10 @@ fn insufficient_payment_reason(offered: &[(CommodityKind, Quantity)]) -> TradeRe
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_bundle_changes, build_current_holdings, evaluate_trade_bundle, snapshot,
-        TradeAcceptance, TradeRejectionReason,
+        TradeAcceptance, TradeRejectionReason, apply_bundle_changes, build_current_holdings,
+        evaluate_trade_bundle, snapshot,
     };
-    use crate::{commodity_opportunity_score, RecipeDefinition, RuntimeBeliefView};
+    use crate::{RecipeDefinition, RuntimeBeliefView, commodity_opportunity_score};
     use std::collections::BTreeMap;
     use std::num::NonZeroU8;
     use worldwake_core::{

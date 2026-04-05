@@ -342,12 +342,12 @@ pub(crate) fn ensure_matching_contention_grant(
         (Some(_), None) => {
             return Err(ActionError::PreconditionFailed(format!(
                 "entity {entity} is contention-managed but lacks ContentionQueue grant state"
-            )))
+            )));
         }
         (None, Some(_)) => {
             return Err(ActionError::PreconditionFailed(format!(
                 "entity {entity} has ContentionQueue grant state without ContentionPolicy"
-            )))
+            )));
         }
     };
     match queue.granted.as_ref() {
@@ -766,20 +766,20 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyCostPerTick,
-        CauseRef, CommodityKind, Container, ContentionGrant, ContentionPolicy, ContentionQueue,
-        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
-        EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille,
-        PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
-        RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource, Seed,
-        SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn,
+        AgentBeliefStore, BodyCostPerTick, CauseRef, CommodityKind, Container, ContentionGrant,
+        ContentionPolicy, ContentionQueue, ControlSource, DeprivationExposure, DriveThresholds,
+        EntityId, EventId, EventLog, EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile,
+        PerceptionSource, Permille, PreferenceProfile, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
+        ReliabilityRecord, ResourceSource, Seed, SourceKey, SourceReliability, StateDelta, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, DeterministicRng, ExternalAbortReason, PerAgentBeliefView, RecipeRegistry,
-        SystemExecutionContext, SystemId, TickOutcome, TradeActionPayload,
+        ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
+        ActionInstanceId, ActionPayload, DeterministicRng, ExternalAbortReason, PerAgentBeliefView,
+        RecipeRegistry, SystemExecutionContext, SystemId, TickOutcome, TradeActionPayload,
+        abort_action, get_affordances, start_action, tick_action,
     };
 
     use super::*;
@@ -1538,13 +1538,15 @@ mod tests {
 
         let (mut world_missing_recipe, actor_missing_recipe, _, _) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
-        assert!(affordances_for(
-            &world_missing_recipe,
-            actor_missing_recipe,
-            &defs,
-            &handlers
-        )
-        .is_empty());
+        assert!(
+            affordances_for(
+                &world_missing_recipe,
+                actor_missing_recipe,
+                &defs,
+                &handlers
+            )
+            .is_empty()
+        );
 
         let (mut world_wrong_tag, actor_wrong_tag, _, _) =
             setup_world(false, WorkstationTag::Mill, 5);
@@ -1660,11 +1662,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(world
-            .get_component_contention_queue(workstation)
-            .unwrap()
-            .granted
-            .is_none());
+        assert!(
+            world
+                .get_component_contention_queue(workstation)
+                .unwrap()
+                .granted
+                .is_none()
+        );
 
         abort_action(
             instance_id,
@@ -2006,9 +2010,10 @@ mod tests {
                 },
             ]
         );
-        assert!(def
-            .preconditions
-            .contains(&Precondition::TargetLacksProductionJob(0)));
+        assert!(
+            def.preconditions
+                .contains(&Precondition::TargetLacksProductionJob(0))
+        );
         assert_eq!(
             def.payload,
             ActionPayload::Craft(CraftActionPayload {
@@ -2206,13 +2211,15 @@ mod tests {
             CommodityKind::Grain,
             2,
         );
-        assert!(affordances_for(
-            &world_missing_recipe,
-            actor_missing_recipe,
-            &defs,
-            &handlers
-        )
-        .is_empty());
+        assert!(
+            affordances_for(
+                &world_missing_recipe,
+                actor_missing_recipe,
+                &defs,
+                &handlers
+            )
+            .is_empty()
+        );
 
         let (mut world_missing_tool, actor_missing_tool, _, place_missing_tool) =
             craft_fixture(false);
@@ -2308,11 +2315,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(world
-            .get_component_contention_queue(workstation)
-            .unwrap()
-            .granted
-            .is_none());
+        assert!(
+            world
+                .get_component_contention_queue(workstation)
+                .unwrap()
+                .granted
+                .is_none()
+        );
 
         abort_action(
             instance_id,

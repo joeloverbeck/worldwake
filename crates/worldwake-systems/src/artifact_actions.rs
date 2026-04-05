@@ -422,19 +422,19 @@ fn validate_post_bounty_context(
     validate_expiration_tick(current_tick, payload.expires_at)?;
     validate_bounty_target(world, payload.target)?;
     validate_reward_source(world, actor, payload)?;
-    if let Some(authority) = payload.issuing_authority {
-        if world.entity_kind(authority).is_none() {
-            return Err(ActionError::PreconditionFailed(format!(
-                "issuing authority {authority} does not exist"
-            )));
-        }
+    if let Some(authority) = payload.issuing_authority
+        && world.entity_kind(authority).is_none()
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "issuing authority {authority} does not exist"
+        )));
     }
-    if let Some(jurisdiction) = payload.jurisdiction {
-        if world.entity_kind(jurisdiction).is_none() {
-            return Err(ActionError::PreconditionFailed(format!(
-                "jurisdiction entity {jurisdiction} does not exist"
-            )));
-        }
+    if let Some(jurisdiction) = payload.jurisdiction
+        && world.entity_kind(jurisdiction).is_none()
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "jurisdiction entity {jurisdiction} does not exist"
+        )));
     }
     Ok(())
 }
@@ -467,19 +467,19 @@ fn validate_post_notice_context(
         }
         NoticeTopic::Institutional { .. } => {}
     }
-    if let Some(authority) = payload.issuing_authority {
-        if world.entity_kind(authority).is_none() {
-            return Err(ActionError::PreconditionFailed(format!(
-                "issuing authority {authority} does not exist"
-            )));
-        }
+    if let Some(authority) = payload.issuing_authority
+        && world.entity_kind(authority).is_none()
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "issuing authority {authority} does not exist"
+        )));
     }
-    if let Some(jurisdiction) = payload.jurisdiction {
-        if world.entity_kind(jurisdiction).is_none() {
-            return Err(ActionError::PreconditionFailed(format!(
-                "jurisdiction entity {jurisdiction} does not exist"
-            )));
-        }
+    if let Some(jurisdiction) = payload.jurisdiction
+        && world.entity_kind(jurisdiction).is_none()
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "jurisdiction entity {jurisdiction} does not exist"
+        )));
     }
     Ok(())
 }
@@ -1223,16 +1223,16 @@ mod tests {
     use super::{register_artifact_actions, register_post_bounty_action};
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, AgentBeliefStore, BelievedArtifactState,
-        BelievedBountyTerms, BelievedEntityState, CauseRef, CommodityKind, ContentionQueue,
-        ControlSource, DeadAt, EventLog, EventTag, PerceptionSource, ProofRequirement,
-        PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        AgentBeliefStore, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        CauseRef, CommodityKind, ContentionQueue, ControlSource, DeadAt, EventLog, EventTag,
+        PerceptionSource, ProofRequirement, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        start_action, tick_action, ActionDefRegistry, ActionError, ActionExecutionAuthority,
-        ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload, Affordance,
-        DeterministicRng, PerAgentBeliefView, PostBountyActionPayload, PostNoticeActionPayload,
-        TickOutcome,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
+        ActionHandlerRegistry, ActionInstanceId, ActionPayload, Affordance, DeterministicRng,
+        PerAgentBeliefView, PostBountyActionPayload, PostNoticeActionPayload, TickOutcome,
+        start_action, tick_action,
     };
 
     use super::*;
@@ -1723,11 +1723,13 @@ mod tests {
             Quantity(0)
         );
         assert_eq!(sum_commodity(&world, CommodityKind::Coin), total_before);
-        assert!(world
-            .get_component_contention_queue(bounty)
-            .unwrap()
-            .granted
-            .is_none());
+        assert!(
+            world
+                .get_component_contention_queue(bounty)
+                .unwrap()
+                .granted
+                .is_none()
+        );
     }
 
     #[test]
@@ -2075,6 +2077,7 @@ mod tests {
                         observed_tick: Tick(4),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(4),
                     source: PerceptionSource::DirectObservation,
                 },

@@ -5,13 +5,13 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeMap;
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     ActiveGoal, BeliefConfidencePolicy, BelievedContentionState, CommodityKind, ContentionGrant,
     ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, FrameAssumption, FrameState,
     GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
     IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile, PrototypePlace,
     Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick, UtilityProfile,
-    WorkstationTag,
+    WorkstationTag, hash_event_log, hash_world, prototype_place_entity,
+    total_authoritative_commodity_quantity,
 };
 
 // ---------------------------------------------------------------------------
@@ -645,16 +645,15 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     let mut save_tick = None;
     for tick in 0..30 {
         h.step_once();
-        if save_tick.is_none() {
-            if let Some(action_name) = h.agent_active_action_name(agent) {
-                if action_name == "travel" {
-                    // Found mid-travel — save after one more tick to be solidly
-                    // in the middle of a leg.
-                    h.step_once();
-                    save_tick = Some(tick + 2); // +1 for the extra step, +1 for 0-indexing
-                    break;
-                }
-            }
+        if save_tick.is_none()
+            && let Some(action_name) = h.agent_active_action_name(agent)
+            && action_name == "travel"
+        {
+            // Found mid-travel — save after one more tick to be solidly
+            // in the middle of a leg.
+            h.step_once();
+            save_tick = Some(tick + 2); // +1 for the extra step, +1 for 0-indexing
+            break;
         }
     }
     let save_tick = save_tick.expect("Agent should have started traveling within 30 ticks");

@@ -366,7 +366,7 @@ mod tests {
         QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
         TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{
         ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
         ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,

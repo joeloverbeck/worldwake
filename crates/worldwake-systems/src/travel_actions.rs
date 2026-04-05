@@ -322,14 +322,14 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, AgentBeliefStore, CauseRef, Container, ControlSource,
-        EdgeExperience, EventLog, EventPayload, EventView, EvidenceKind, InTransitOnEdge,
-        LoadUnits, MetabolismProfile, PendingEvent, PerceptionSource, Place, PreferenceProfile,
-        Quantity, RouteExperience, Seed, Tick, Topology, TravelEdge, WitnessData, World,
+        AgentBeliefStore, CauseRef, Container, ControlSource, EdgeExperience, EventLog,
+        EventPayload, EventView, EvidenceKind, InTransitOnEdge, LoadUnits, MetabolismProfile,
+        PendingEvent, PerceptionSource, Place, PreferenceProfile, Quantity, RouteExperience, Seed,
+        Tick, Topology, TravelEdge, WitnessData, World, build_believed_entity_state,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionInstance, ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome,
+        ActionExecutionAuthority, ActionInstance, ActionInstanceId, DeterministicRng,
+        PerAgentBeliefView, TickOutcome, abort_action, get_affordances, start_action, tick_action,
     };
 
     use super::*;

@@ -6,10 +6,10 @@ use golden_harness::*;
 use std::num::NonZeroU8;
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, GoalKind};
 use worldwake_core::{
-    hash_event_log, hash_world, CommodityKind, CommodityValuationProfile, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, Quantity, Seed, Tick, UtilityProfile, WorkstationTag,
+    CommodityKind, CommodityValuationProfile, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    Quantity, Seed, Tick, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
-use worldwake_sim::{evaluate_trade_bundle, GoalBeliefView, PerAgentBeliefView, TradeAcceptance};
+use worldwake_sim::{GoalBeliefView, PerAgentBeliefView, TradeAcceptance, evaluate_trade_bundle};
 
 fn valuation_profile() -> CommodityValuationProfile {
     CommodityValuationProfile {
@@ -141,7 +141,8 @@ fn run_recipe_input_snapshot_scenario(
         "local same-place setup should not over-claim a positive trade-side recipe-input contract"
     );
     assert_eq!(
-        ai_has_candidate, mill_reachable && knows_recipe,
+        ai_has_candidate,
+        mill_reachable && knows_recipe,
         "negative S06 scenarios should only emit a recipe-input candidate when both recipe knowledge and workstation reachability hold"
     );
 

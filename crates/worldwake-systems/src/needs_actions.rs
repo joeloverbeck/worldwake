@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile,
-    Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn, OUTDOOR_RELIEF_TAGS,
+    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -486,16 +486,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
-        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
+        ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
         DisturbanceKind, DriveThresholds, EntityId, EventLog, EventTag, EvidenceKind,
         HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        DeterministicRng, PerAgentBeliefView, TickOutcome,
+        ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
+        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome, abort_action,
+        get_affordances, start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -969,9 +969,11 @@ mod tests {
         let (defs, handlers) = setup_registries();
 
         let affordances = affordances_for(&world, actor, &defs, &handlers);
-        assert!(affordances
-            .iter()
-            .all(|affordance| affordance.def_id != ActionDefId(0)));
+        assert!(
+            affordances
+                .iter()
+                .all(|affordance| affordance.def_id != ActionDefId(0))
+        );
     }
 
     // --- Possession-requirement tests (S01PROOUTOWNCLA-010) ---

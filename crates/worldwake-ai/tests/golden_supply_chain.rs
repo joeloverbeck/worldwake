@@ -26,14 +26,13 @@ use worldwake_ai::{
     PlannerOpKind, ReasoningProfile, SelectedPlanReplacementKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
-    total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, BeliefConfidencePolicy,
-    BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation, DemandObservationReason,
-    EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
-    Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
-    WorkstationTag,
+    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds,
+    KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
+    UtilityProfile, WorkstationTag, build_believed_entity_state, hash_event_log, hash_world,
+    prototype_place_entity, total_authoritative_commodity_quantity, total_live_lot_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
@@ -640,7 +639,9 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         "merchant should travel before harvesting remote firewood; events={merchant_events:?}"
     );
     assert!(
-        travel_commits.iter().any(|commit| *commit > harvest_commit && *commit < craft_commit),
+        travel_commits
+            .iter()
+            .any(|commit| *commit > harvest_commit && *commit < craft_commit),
         "merchant should return home after harvesting and before crafting; events={merchant_events:?}"
     );
     assert!(
@@ -958,9 +959,11 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         Some(SelectedPlanSource::SearchSelection),
         "stale-belief scenario should start from a fresh search result"
     );
-    assert!(tick_zero_planning
-        .selection
-        .selected_goal_is(restock_bread_goal));
+    assert!(
+        tick_zero_planning
+            .selection
+            .selected_goal_is(restock_bread_goal)
+    );
     assert_eq!(
         selected_tick_zero_plan
             .next_step
@@ -991,14 +994,16 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .candidates
         .evidence_for_opportunity(initial_selected_opportunity)
         .expect("initial stale branch should record typed candidate evidence provenance");
-    assert!(initial_candidate_trace
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == CandidateEvidenceKind::ResourceSource
-                && contributor.entity == orchard_source
-                && contributor.place == ORCHARD_FARM
-        }));
+    assert!(
+        initial_candidate_trace
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == CandidateEvidenceKind::ResourceSource
+                    && contributor.entity == orchard_source
+                    && contributor.place == ORCHARD_FARM
+            })
+    );
 
     let fallback_replan_trace =
         trace_sink
@@ -1035,9 +1040,11 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .selected_plan
         .as_ref()
         .expect("fallback planning should select a bandit-camp plan");
-    assert!(replan_planning
-        .selection
-        .selected_goal_is(restock_bread_goal));
+    assert!(
+        replan_planning
+            .selection
+            .selected_goal_is(restock_bread_goal)
+    );
     let replacement = replan_planning
         .selection
         .plan_replacement
@@ -1074,14 +1081,16 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .candidates
         .evidence_for_opportunity(fallback_selected_opportunity)
         .expect("fallback replan should record typed candidate evidence provenance");
-    assert!(fallback_candidate_trace
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == CandidateEvidenceKind::ResourceSource
-                && contributor.entity == bandit_source
-                && contributor.place == bandit_camp
-        }));
+    assert!(
+        fallback_candidate_trace
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == CandidateEvidenceKind::ResourceSource
+                    && contributor.entity == bandit_source
+                    && contributor.place == bandit_camp
+            })
+    );
     assert!(fallback_candidate_trace.exclusions.iter().any(|exclusion| {
         exclusion.kind == CandidateEvidenceKind::ResourceSource
             && exclusion.entity == orchard_source
@@ -1432,9 +1441,11 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         Some(SelectedPlanSource::SearchSelection),
         "ask_witness scenario should start from a fresh search result"
     );
-    assert!(tick_zero_planning
-        .selection
-        .selected_goal_is(restock_apple_goal));
+    assert!(
+        tick_zero_planning
+            .selection
+            .selected_goal_is(restock_apple_goal)
+    );
     assert_eq!(
         selected_tick_zero_plan
             .next_step

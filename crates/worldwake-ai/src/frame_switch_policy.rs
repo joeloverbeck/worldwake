@@ -1,6 +1,6 @@
 use crate::{
-    goal_switching::{compare_goal_switch, GoalSwitchKind},
     FramePlanRelation, GoalPriorityClass,
+    goal_switching::{GoalSwitchKind, compare_goal_switch},
 };
 use worldwake_core::Permille;
 

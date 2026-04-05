@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, PerceptionSource,
     RecordedViolation, SocialObservation, SocialObservationDetail, TheftFacts, ViolationId,
-    ViolationKind, VisibilitySpec, World, WorldTxn,
+    ViolationKind, VisibilitySpec, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -155,6 +155,11 @@ fn commit_investigate(
             observed_tick: txn.tick(),
             source: PerceptionSource::DirectObservation,
         });
+    }
+    if let Some(place_belief) =
+        build_believed_entity_state(txn, place, txn.tick(), PerceptionSource::DirectObservation)
+    {
+        store.update_entity(place, place_belief);
     }
     txn.set_component_agent_belief_store(instance.actor, store)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -403,15 +408,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, AgentBeliefStore, BelievedEntityState, CauseRef, CombatProfile,
-        ControlSource, EventLog, LoadUnits, PerceptionSource, Permille, Quantity, SaleListing,
-        Seed, StockAssignment, StockAssignmentKind, Tick, ViolationDispositionProfile,
-        ViolationMemory, WitnessData, World, Wound, WoundCause, WoundId, WoundList,
+        AgentBeliefStore, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
+        CauseRef, CombatProfile, ControlSource, DisturbanceKind, EventLog, EvidenceKind, LoadUnits,
+        PerceptionSource, Permille, Quantity, SaleListing, SceneEvidence, Seed, StockAssignment,
+        StockAssignmentKind, Tick, ViolationDispositionProfile, ViolationMemory, WitnessData,
+        World, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionInstanceId, Affordance, DeterministicRng, ExternalAbortReason, PerAgentBeliefView,
-        TickOutcome,
+        ActionExecutionAuthority, ActionInstanceId, Affordance, DeterministicRng,
+        ExternalAbortReason, PerAgentBeliefView, TickOutcome, abort_action, get_affordances,
+        start_action, tick_action,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -553,6 +559,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(1),
                 source: PerceptionSource::DirectObservation,
             },
@@ -632,6 +639,28 @@ mod tests {
         .expect("investigate affordance should exist for violation id")
     }
 
+    fn seed_scene_evidence(world: &mut World, place: EntityId, created_at: u64) {
+        let mut txn = new_txn(world, created_at);
+        txn.set_component_scene_evidence(
+            place,
+            SceneEvidence {
+                evidence: vec![worldwake_core::EvidenceEntry {
+                    id: worldwake_core::EvidenceEntryId(0),
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place,
+                        kind: DisturbanceKind::WildernessRelief,
+                        created_at: Tick(created_at),
+                    },
+                    created_at: Tick(created_at),
+                    decay_ticks: 50,
+                }],
+                next_entry_id: 1,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
     #[test]
     fn register_investigate_action_creates_expected_definition() {
         let (defs, handlers, def_id) = setup_registries();
@@ -645,9 +674,10 @@ mod tests {
         assert_eq!(def.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(def.visibility, VisibilitySpec::SamePlace);
         assert_eq!(def.causal_event_tags, BTreeSet::from([EventTag::Discovery]));
-        assert!(def
-            .actor_constraints
-            .contains(&Constraint::ActorNotIncapacitated));
+        assert!(
+            def.actor_constraints
+                .contains(&Constraint::ActorNotIncapacitated)
+        );
     }
 
     #[test]
@@ -838,6 +868,120 @@ mod tests {
                 "violation {} is not investigable at place {}",
                 violation_id.0, other_place
             ))
+        );
+    }
+
+    #[test]
+    fn investigate_action_refreshes_place_evidence_belief_at_commit_tick() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let missing = entity(30);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        seed_scene_evidence(&mut world, place, 2);
+        mark_entity_known(&mut world, actor, place, place);
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 1);
+            let mut store = txn
+                .get_component_agent_belief_store(actor)
+                .cloned()
+                .unwrap();
+            let belief = store.known_entities.get_mut(&place).unwrap();
+            belief.believed_evidence = Some(BelievedEvidenceState {
+                entries: vec![BelievedEvidenceEntry {
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place,
+                        kind: DisturbanceKind::WildernessRelief,
+                        created_at: Tick(0),
+                    },
+                    freshness: Tick(0),
+                }],
+                observed_tick: Tick(1),
+            });
+            belief.observed_tick = Tick(1);
+            txn.set_component_agent_belief_store(actor, store).unwrap();
+            commit_txn(txn);
+        }
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([0x42; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
+        )
+        .unwrap();
+
+        let _ = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+        )
+        .unwrap();
+        let _ = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
+        )
+        .unwrap();
+
+        let place_belief = world
+            .get_component_agent_belief_store(actor)
+            .unwrap()
+            .get_entity(&place)
+            .expect("investigation should refresh the place belief");
+        assert_eq!(place_belief.observed_tick, Tick(4));
+        assert_eq!(
+            place_belief.believed_evidence,
+            Some(BelievedEvidenceState {
+                entries: vec![BelievedEvidenceEntry {
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place,
+                        kind: DisturbanceKind::WildernessRelief,
+                        created_at: Tick(2),
+                    },
+                    freshness: Tick(2),
+                }],
+                observed_tick: Tick(4),
+            })
         );
     }
 
@@ -1510,10 +1654,12 @@ mod tests {
                     }
                 && record.resolved_tick == Some(Tick(4))
         }));
-        assert!(!memory
-            .violations
-            .iter()
-            .any(|record| { matches!(record.kind, ViolationKind::SuspectedTheft { .. }) }));
+        assert!(
+            !memory
+                .violations
+                .iter()
+                .any(|record| { matches!(record.kind, ViolationKind::SuspectedTheft { .. }) })
+        );
     }
 
     #[test]

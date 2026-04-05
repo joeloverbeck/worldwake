@@ -39,7 +39,7 @@ fn clears_switch_margin(new_score: u32, current_score: u32, margin: Permille) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{compare_goal_switch, GoalSwitchKind};
+    use super::{GoalSwitchKind, compare_goal_switch};
     use crate::GoalPriorityClass;
     use worldwake_core::Permille;
 

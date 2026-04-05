@@ -1,23 +1,23 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
+    ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, CommunicationClass,
+    EntityId, EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile,
+    PerceptionSource, Permille, RecipientKnowledgeStatus, SocialObservationDetail, TellMemoryKey,
+    TellProfile, TellTopic, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
     classify_communication, current_institutional_belief_topics,
     institutional_claim_same_memory_lane, institutional_claim_subject_entity,
     institutional_knowledge_chain_len, social_observation_is_redundant_for_listener,
-    tell_subject_is_directly_observable_by_listener, ActionDefId, AgentBeliefStore,
-    BelievedInstitutionalClaim, BodyCostPerTick, CommunicationClass, EntityId, EntityKind,
-    EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile, PerceptionSource,
-    Permille, RecipientKnowledgeStatus, SocialObservationDetail, TellMemoryKey, TellProfile,
-    TellTopic, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
+    tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
-    belief_chain_len, listener_aware_tell_topic_selection, AbortReason, ActionAbortRequestReason,
-    ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, CommitTraceData, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-    PayloadEntityRole, Precondition, TargetSpec, TellActionPayload, TellBeliefDeltaKind,
-    TellCommitResult, TellCommitTrace,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
+    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
+    ActionProgress, ActionState, CommitOutcome, CommitTraceData, Constraint, DeterministicRng,
+    DurationExpr, Interruptibility, PayloadEntityRole, Precondition, TargetSpec, TellActionPayload,
+    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace, belief_chain_len,
+    listener_aware_tell_topic_selection,
 };
 
 pub fn register_tell_action(
@@ -623,26 +623,24 @@ fn commit_tell(
                         listener_beliefs.record_social_observation(transferred);
                         if let SocialObservationDetail::SuspectedTheft { theft, suspect } =
                             transferred.detail
-                        {
-                            if let Some(profile) =
+                            && let Some(profile) =
                                 txn.get_component_violation_disposition_profile(listener)
-                            {
-                                let mut violation_memory = txn
-                                    .get_component_violation_memory(listener)
-                                    .cloned()
-                                    .unwrap_or_default();
-                                let violation = ViolationKind::SuspectedTheft { theft, suspect };
-                                if !violation_memory.is_recorded(&violation, txn.tick()) {
-                                    violation_memory.record(
-                                        violation,
-                                        txn.tick(),
-                                        profile.violation_memory_retention_ticks,
-                                    );
-                                    txn.set_component_violation_memory(listener, violation_memory)
-                                        .map_err(|error| {
-                                            ActionError::InternalError(error.to_string())
-                                        })?;
-                                }
+                        {
+                            let mut violation_memory = txn
+                                .get_component_violation_memory(listener)
+                                .cloned()
+                                .unwrap_or_default();
+                            let violation = ViolationKind::SuspectedTheft { theft, suspect };
+                            if !violation_memory.is_recorded(&violation, txn.tick()) {
+                                violation_memory.record(
+                                    violation,
+                                    txn.tick(),
+                                    profile.violation_memory_retention_ticks,
+                                );
+                                txn.set_component_violation_memory(listener, violation_memory)
+                                    .map_err(|error| {
+                                        ActionError::InternalError(error.to_string())
+                                    })?;
                             }
                         }
                         listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
@@ -750,23 +748,24 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, to_shared_belief_snapshot, ActionDefId,
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-        BodyCostPerTick, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        CommunicationProfile, ControlSource, DemandObservation, DriveThresholds, EntityId,
-        EntityKind, EventLog, EventTag, EventView, HeardBeliefDisposition, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        PerceptionProfile, PerceptionSource, Permille, Quantity, RecipeId,
-        RecipientKnowledgeStatus, ResourceSource, Seed, SharedTellState, SuccessionLaw,
-        TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        BelievedInstitutionalClaim, BodyCostPerTick, CauseRef, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommunicationProfile, ControlSource,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
+        HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource,
+        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed,
+        SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, Wound, build_believed_entity_state, build_prototype_world,
+        to_shared_belief_snapshot,
     };
     use worldwake_sim::{
-        get_affordances, ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance,
-        ActionPayload, ActionState, ActionStatus, CommitTraceData, DeterministicRng, DurationExpr,
+        ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionPayload,
+        ActionState, ActionStatus, CommitTraceData, DeterministicRng, DurationExpr,
         Interruptibility, Precondition, RuntimeBeliefView, TargetSpec, TellActionPayload,
-        TellBeliefDeltaKind, TellCommitResult,
+        TellBeliefDeltaKind, TellCommitResult, get_affordances,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1463,6 +1462,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -1504,9 +1504,10 @@ mod tests {
         assert!(handlers.get(tell.handler).is_some());
         assert_eq!(tell.payload, ActionPayload::None);
         assert!(tell.preconditions.contains(&Precondition::TargetAlive(0)));
-        assert!(tell
-            .commit_conditions
-            .contains(&Precondition::TargetAlive(0)));
+        assert!(
+            tell.commit_conditions
+                .contains(&Precondition::TargetAlive(0))
+        );
     }
 
     #[test]
@@ -2141,9 +2142,11 @@ mod tests {
         assert_eq!(heard.heard_state, SharedTellState::EntityBelief(expected));
         assert_eq!(heard.disposition, HeardBeliefDisposition::NotInternalized);
         let speaker_store = world.get_component_agent_belief_store(speaker).unwrap();
-        assert!(speaker_store
-            .told_beliefs
-            .contains_key(&tell_memory_key(listener, subject)));
+        assert!(
+            speaker_store
+                .told_beliefs
+                .contains_key(&tell_memory_key(listener, subject))
+        );
     }
 
     #[test]
@@ -2212,11 +2215,13 @@ mod tests {
             heard.disposition,
             HeardBeliefDisposition::AlreadyHeldEqualOrNewer
         );
-        assert!(world
-            .get_component_agent_belief_store(speaker)
-            .unwrap()
-            .told_beliefs
-            .contains_key(&tell_memory_key(listener, subject)));
+        assert!(
+            world
+                .get_component_agent_belief_store(speaker)
+                .unwrap()
+                .told_beliefs
+                .contains_key(&tell_memory_key(listener, subject))
+        );
     }
 
     #[test]
@@ -2932,6 +2937,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(2),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -2949,6 +2955,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(4),
                         source: PerceptionSource::Report {
                             from: entity(77),
@@ -2969,6 +2976,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(6),
                         source: PerceptionSource::Inference,
                     },
@@ -3225,6 +3233,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(3),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -3242,6 +3251,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(9),
                         source: PerceptionSource::Report {
                             from: entity(80),
@@ -3262,6 +3272,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(9),
                         source: PerceptionSource::Inference,
                     },
@@ -3279,6 +3290,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(7),
                         source: PerceptionSource::Rumor { chain_len: 3 },
                     },
@@ -3296,6 +3308,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(5),
                         source: PerceptionSource::Rumor { chain_len: 1 },
                     },
@@ -3347,6 +3360,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(3),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3432,6 +3446,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(9),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3560,18 +3575,20 @@ mod tests {
             let _ = txn.commit(&mut log);
         }
 
-        assert!(validate_tell_payload_authoritatively(
-            def,
-            &defs,
-            speaker,
-            &[listener],
-            &ActionPayload::Tell(TellActionPayload {
-                listener,
-                topic: TellTopic::SocialObservation { observation },
-            }),
-            &world,
-        )
-        .is_ok());
+        assert!(
+            validate_tell_payload_authoritatively(
+                def,
+                &defs,
+                speaker,
+                &[listener],
+                &ActionPayload::Tell(TellActionPayload {
+                    listener,
+                    topic: TellTopic::SocialObservation { observation },
+                }),
+                &world,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -3649,14 +3666,16 @@ mod tests {
             SharedTellState::SocialObservation(observation)
         );
         assert_eq!(heard.disposition, HeardBeliefDisposition::Accepted);
-        assert!(listener_store
-            .social_observations
-            .contains(&worldwake_core::SocialObservation {
-                source: PerceptionSource::Report {
-                    from: speaker,
-                    chain_len: 1,
-                },
-                ..observation
-            }));
+        assert!(
+            listener_store
+                .social_observations
+                .contains(&worldwake_core::SocialObservation {
+                    source: PerceptionSource::Report {
+                        from: speaker,
+                        chain_len: 1,
+                    },
+                    ..observation
+                })
+        );
     }
 }

@@ -94,9 +94,9 @@ mod tests {
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, DisturbanceKind, EventLog,
-        EventTag, EventView, EvidenceEntry, EvidenceEntryId, EvidenceKind, PrototypePlace,
-        SceneEvidence, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, DisturbanceKind, EventLog, EventTag, EventView, EvidenceEntry, EvidenceEntryId,
+        EvidenceKind, PrototypePlace, SceneEvidence, Seed, Tick, VisibilitySpec, WitnessData,
+        World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,

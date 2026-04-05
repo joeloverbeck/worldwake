@@ -6,8 +6,8 @@ use worldwake_core::{
     EventTag, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
-    validate_action_def_authoritatively, ActionDefRegistry, ActionInstance, ActionStatus,
-    SystemError, SystemExecutionContext,
+    ActionDefRegistry, ActionInstance, ActionStatus, SystemError, SystemExecutionContext,
+    validate_action_def_authoritatively,
 };
 
 #[derive(Clone, Copy)]
@@ -538,13 +538,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyPart, CauseRef, CommodityKind,
-        ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
-        ControlSource, DeadAt, DeprivationKind, EntityId, EntityKind, EventLog, EventTag,
-        EventView, GoalKey, GoalKind, KnownRecipes, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent, ResourceSource, Seed,
-        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        ActionDefId, BodyPart, CauseRef, CommodityKind, ContentionDispositionProfile,
+        ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+        DeprivationKind, EntityId, EntityKind, EventLog, EventTag, EventView, GoalKey, GoalKind,
+        KnownRecipes, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        Quantity, QueuedContentionIntent, ResourceSource, Seed, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -812,11 +812,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
     }
 
     #[test]
@@ -839,11 +841,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
     }
 
     #[test]
@@ -860,11 +864,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
     }
 
     #[test]
@@ -945,11 +951,13 @@ mod tests {
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
     }
 
@@ -964,11 +972,13 @@ mod tests {
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
     }
 
@@ -1214,11 +1224,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &active, 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .granted
-            .is_none());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .granted
+                .is_none()
+        );
     }
 
     #[test]

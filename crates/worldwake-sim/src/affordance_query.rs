@@ -612,13 +612,13 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BelievedEntityState, BodyCostPerTick,
-        CauseRef, CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind,
-        ContentionGrant, ContentionStatus, ControlSource, DemandObservation, DriveThresholds,
-        EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TellProfile,
-        Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, Wound,
+        ActionDefId, ActionDomain, BelievedEntityState, BodyCostPerTick, CauseRef, CombatProfile,
+        CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ContentionGrant,
+        ContentionStatus, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
+        EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, Wound, build_prototype_world,
     };
 
     #[derive(Default)]

@@ -1,7 +1,6 @@
 use crate::{
-    authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
     AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PatrolRouteSnapshotTrace, PlannedStep,
-    PlannerOpKind,
+    PlannerOpKind, authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
@@ -104,15 +103,13 @@ pub(super) fn update_frame_for_adopted_plan(
 
     let same_frame = relation == crate::FramePlanRelation::RefreshesFrame;
 
-    if same_frame {
-        if let Some(existing) = frame {
-            return Some(IntentionFrame {
-                goal: selected_plan.goal,
-                domain: IntentionDomain::Travel { destination },
-                state: FrameState::Active,
-                ..existing.clone()
-            });
-        }
+    if same_frame && let Some(existing) = frame {
+        return Some(IntentionFrame {
+            goal: selected_plan.goal,
+            domain: IntentionDomain::Travel { destination },
+            state: FrameState::Active,
+            ..existing.clone()
+        });
     }
 
     Some(IntentionFrame {
@@ -238,13 +235,13 @@ pub(super) fn populate_assumptions(
         IntentionDomain::Care { patient } => {
             let mut assumptions = Vec::with_capacity(2);
             assumptions.push(FrameAssumption::TargetAlive(patient));
-            if let Some(from) = current_place {
-                if let Some(patient_place) = view.effective_place(patient) {
-                    assumptions.push(FrameAssumption::RouteExists {
-                        from,
-                        to: patient_place,
-                    });
-                }
+            if let Some(from) = current_place
+                && let Some(patient_place) = view.effective_place(patient)
+            {
+                assumptions.push(FrameAssumption::RouteExists {
+                    from,
+                    to: patient_place,
+                });
             }
             assumptions
         }

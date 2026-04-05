@@ -12,12 +12,12 @@ use worldwake_core::{
     WoundList,
 };
 use worldwake_sim::{
-    commodity_opportunity_score, evaluate_trade_bundle, AbortReason, ActionAbortRequestReason,
-    ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
-    PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry, RuntimeBeliefView,
-    StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
+    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
+    ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView,
+    Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry,
+    RuntimeBeliefView, StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
+    TradeRejectionReason, commodity_opportunity_score, evaluate_trade_bundle,
 };
 
 pub fn register_trade_action(
@@ -221,7 +221,7 @@ fn tick_trade(
         _ => {
             return Err(ActionError::InternalError(
                 "trade action missing negotiation state".to_string(),
-            ))
+            ));
         }
     };
     let (round, initiator_role, initiator_last_offer, responder_last_offer, agreed_price) = state;
@@ -1513,15 +1513,13 @@ fn commit_staff_market(
     let commodity = payload.commodity;
     // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
     // Record unproductive demand if displayed stock remains unsold.
-    if let Some(profile) = txn.get_component_merchandise_profile(instance.actor) {
-        if let Some(home_facility) = profile.home_facility {
-            if let Some(place) = txn.effective_place(home_facility) {
-                if staff_market_has_sellable_stock(txn, instance.actor, home_facility, commodity) {
-                    record_unproductive_demand(txn, instance.actor, commodity, place);
-                    record_sell_blocked_intent(txn, instance.actor, commodity, place);
-                }
-            }
-        }
+    if let Some(profile) = txn.get_component_merchandise_profile(instance.actor)
+        && let Some(home_facility) = profile.home_facility
+        && let Some(place) = txn.effective_place(home_facility)
+        && staff_market_has_sellable_stock(txn, instance.actor, home_facility, commodity)
+    {
+        record_unproductive_demand(txn, instance.actor, commodity, place);
+        record_sell_blocked_intent(txn, instance.actor, commodity, place);
     }
     Ok(CommitOutcome::empty())
 }
@@ -1600,30 +1598,29 @@ fn record_sell_blocked_intent(
 #[cfg(test)]
 mod tests {
     use super::{
-        buyer_reservation_price, count_local_alternatives, derive_opening_offer, generate_offer,
-        register_trade_action, rejection_count_for, select_substitute_trade_candidate,
-        seller_reservation_price, urgency_modulated_deadline, validate_trade_payload_override,
-        SubstituteTradeCandidate,
+        SubstituteTradeCandidate, buyer_reservation_price, count_local_alternatives,
+        derive_opening_offer, generate_offer, register_trade_action, rejection_count_for,
+        select_substitute_trade_candidate, seller_reservation_price, urgency_modulated_deadline,
+        validate_trade_payload_override,
     };
     use crate::trade_actions::local_alternatives;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, BlockingFact, CauseRef, CommodityKind, ControlSource, DemandMemory,
         DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag, EventView,
         GoalKind, HomeostaticNeeds, LotOperation, MerchandiseProfile, PerceptionSource, Permille,
         PreferenceProfile, Quantity, ReliabilityRecord, SaleListing, Seed, SourceKey,
         SourceReliability, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionAbortRequestReason,
-        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Affordance, DeterministicRng,
-        ExternalAbortReason, PayloadEntityRole, PerAgentBeliefView, TickOutcome,
-        TradeActionPayload,
+        ActionAbortRequestReason, ActionDefRegistry, ActionError, ActionExecutionAuthority,
+        ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
+        Affordance, DeterministicRng, ExternalAbortReason, PayloadEntityRole, PerAgentBeliefView,
+        TickOutcome, TradeActionPayload, abort_action, get_affordances, start_action, tick_action,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -2525,10 +2522,12 @@ mod tests {
             &harness.handlers,
         );
 
-        assert!(!affordances
-            .iter()
-            .any(|affordance| affordance.def_id == harness.def_id
-                && affordance.bound_targets == vec![harness.counterparty]));
+        assert!(
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == harness.def_id
+                    && affordance.bound_targets == vec![harness.counterparty])
+        );
     }
 
     #[test]
@@ -2843,16 +2842,20 @@ mod tests {
             .world
             .get_component_demand_memory(harness.counterparty)
             .unwrap();
-        assert!(buyer_memory
-            .observations
-            .iter()
-            .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
-                && obs.quantity == Quantity(4)));
-        assert!(seller_memory
-            .observations
-            .iter()
-            .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
-                && obs.quantity == Quantity(4)));
+        assert!(
+            buyer_memory
+                .observations
+                .iter()
+                .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
+                    && obs.quantity == Quantity(4))
+        );
+        assert!(
+            seller_memory
+                .observations
+                .iter()
+                .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
+                    && obs.quantity == Quantity(4))
+        );
     }
 
     #[test]
@@ -3612,10 +3615,12 @@ mod tests {
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
         // Confirm listing exists before trade.
-        assert!(harness
-            .world
-            .get_component_sale_listing(harness.counterparty_offer)
-            .is_some());
+        assert!(
+            harness
+                .world
+                .get_component_sale_listing(harness.counterparty_offer)
+                .is_some()
+        );
 
         let (instance_id, mut active) = harness.start_with_active();
         let _outcome = tick_action(
@@ -3633,10 +3638,12 @@ mod tests {
         .unwrap();
 
         // After trade, the transferred lot should not have SaleListing.
-        assert!(harness
-            .world
-            .get_component_sale_listing(harness.counterparty_offer)
-            .is_none());
+        assert!(
+            harness
+                .world
+                .get_component_sale_listing(harness.counterparty_offer)
+                .is_none()
+        );
     }
 
     #[test]
@@ -3671,10 +3678,12 @@ mod tests {
         .unwrap();
 
         // Seller's original lot should retain SaleListing (it still has Quantity(2)).
-        assert!(harness
-            .world
-            .get_component_sale_listing(harness.counterparty_offer)
-            .is_some());
+        assert!(
+            harness
+                .world
+                .get_component_sale_listing(harness.counterparty_offer)
+                .is_some()
+        );
         // Seller's remainder should still have quantity.
         let remainder = harness
             .world

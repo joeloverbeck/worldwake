@@ -10,10 +10,10 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    hash_event_log, hash_world, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-    CombatProfile, CommodityKind, Container, ControlSource, EntityId, GoalKey, GoalKind,
-    HomeostaticNeeds, MetabolismProfile, PerceptionProfile, PerceptionSource, PlaceTag, Quantity,
-    Seed, StateHash, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
+    BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, CombatProfile, CommodityKind,
+    Container, ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, PlaceTag, Quantity, Seed, StateHash, Tick, Topology,
+    TravelEdge, TravelEdgeId, UtilityProfile, hash_event_log, hash_world,
 };
 use worldwake_sim::{ActionRequestMode, ActionTraceKind, RequestProvenance};
 
@@ -395,11 +395,11 @@ fn run_scenario_1(seed: Seed) -> (StateHash, StateHash) {
             bandit_arrived = true;
         }
 
-        if let Some(wounds) = h.world.get_component_wound_list(ids.traveler) {
-            if !wounds.wounds.is_empty() {
-                traveler_wounded = true;
-                break;
-            }
+        if let Some(wounds) = h.world.get_component_wound_list(ids.traveler)
+            && !wounds.wounds.is_empty()
+        {
+            traveler_wounded = true;
+            break;
         }
     }
 
@@ -651,11 +651,11 @@ fn run_scenario_3(seed: Seed) -> (StateHash, StateHash) {
     for _ in 0..15 {
         h.step_once();
 
-        if let Some(wounds) = h.world.get_component_wound_list(ids.traveler) {
-            if !wounds.wounds.is_empty() {
-                initial_attack_happened = true;
-                break;
-            }
+        if let Some(wounds) = h.world.get_component_wound_list(ids.traveler)
+            && !wounds.wounds.is_empty()
+        {
+            initial_attack_happened = true;
+            break;
         }
     }
     assert!(
@@ -693,11 +693,11 @@ fn run_scenario_3(seed: Seed) -> (StateHash, StateHash) {
             bandit_arrived_at_b = true;
         }
 
-        if let Some(wounds) = h.world.get_component_wound_list(ids.traveler) {
-            if wounds.wounds.len() > wounds_before {
-                second_attack = true;
-                break;
-            }
+        if let Some(wounds) = h.world.get_component_wound_list(ids.traveler)
+            && wounds.wounds.len() > wounds_before
+        {
+            second_attack = true;
+            break;
         }
     }
 

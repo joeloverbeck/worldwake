@@ -11,15 +11,15 @@ use worldwake_sim::{
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::{
-    authoritative_target, clear_resolved_blockers, rank_candidates, AgentDecisionRuntime,
-    DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
+    AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
+    authoritative_target, clear_resolved_blockers, rank_candidates,
 };
 use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
 use super::{
-    advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-    current_step, handle_current_step_failure, plan_finished, runtime_belief_view,
-    AgentTickContext,
+    AgentTickContext, advance_completed_step, apply_step_materialization_bindings,
+    committed_action_for_step, current_step, handle_current_step_failure, plan_finished,
+    runtime_belief_view,
 };
 
 #[derive(Clone, Copy)]

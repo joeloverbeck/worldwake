@@ -6,20 +6,20 @@ use worldwake_sim::{
     SchedulerActionRuntime, TickInputError,
 };
 
-use crate::failure_handling::ExecutionFailure;
 use crate::DirtySet;
+use crate::failure_handling::ExecutionFailure;
 use crate::{
-    classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
-    PlannedStep, RankedGoal,
+    PlannedStep, RankedGoal, classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure,
+    has_frame,
 };
 use worldwake_core::ReasoningProfile;
 
 use super::frame::progress_op_kinds;
-use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
+use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
 use super::{
-    build_candidate_plans, persist_blocked_memory, selection_candidates, AgentTickContext,
-    FrameSwitchMarginSource,
+    AgentTickContext, FrameSwitchMarginSource, build_candidate_plans, persist_blocked_memory,
+    selection_candidates,
 };
 
 pub(super) fn active_action_for_agent(
@@ -186,11 +186,11 @@ pub(super) fn advance_completed_step(
 
     let mut updated_jc = jc.cloned();
 
-    if let Some(ref mut c) = updated_jc {
-        if progress_op_kinds(&c.domain).contains(&completed_op_kind) {
-            c.last_progress_tick = Some(tick);
-            c.stalled_ticks = 0;
-        }
+    if let Some(ref mut c) = updated_jc
+        && progress_op_kinds(&c.domain).contains(&completed_op_kind)
+    {
+        c.last_progress_tick = Some(tick);
+        c.stalled_ticks = 0;
     }
 
     runtime.current_step_index = runtime

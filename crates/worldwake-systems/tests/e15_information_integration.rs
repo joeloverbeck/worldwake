@@ -2,17 +2,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use worldwake_core::{
-    build_believed_entity_state, ActionDefId, AgentBeliefStore, BeliefConfidencePolicy,
-    BelievedEntityState, CauseRef, ControlSource, EntityId, EventLog, EventPayload, EventTag,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Seed,
-    SocialObservationKind, StateHash, TellProfile, TellTopic, Tick, Topology, TravelEdge,
-    TravelEdgeId, VisibilitySpec, WitnessData, World, WorldTxn,
+    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CauseRef,
+    ControlSource, EntityId, EventLog, EventPayload, EventTag, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, Seed, SocialObservationKind, StateHash, TellProfile,
+    TellTopic, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, World,
+    WorldTxn, build_believed_entity_state,
 };
 use worldwake_sim::{
-    get_affordances, record_tick_checkpoint, replay_and_verify, step_tick, ActionPayload,
-    ActionRequestMode, DeterministicRng, InputKind, PerAgentBeliefView, RecipeRegistry,
-    ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemManifest,
-    TellActionPayload, TickStepResult, TickStepServices,
+    ActionPayload, ActionRequestMode, DeterministicRng, InputKind, PerAgentBeliefView,
+    RecipeRegistry, ReplayRecordingConfig, ReplayState, Scheduler, SimulationState, SystemManifest,
+    TellActionPayload, TickStepResult, TickStepServices, get_affordances, record_tick_checkpoint,
+    replay_and_verify, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -481,7 +481,8 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
         "tell affordance missing before replay input; speaker_place={:?}, listener_place={:?}, known_subjects={:?}",
         state.world().effective_place(speaker),
         state.world().effective_place(listener),
-        state.world()
+        state
+            .world()
             .get_component_agent_belief_store(speaker)
             .map(|store| store.known_entities.keys().copied().collect::<Vec<_>>())
     );
@@ -608,10 +609,12 @@ fn build_recorded_replay_state() -> (SimulationState, StateHash) {
     }
 
     assert!(!state.event_log().events_by_tag(EventTag::Social).is_empty());
-    assert!(!state
-        .event_log()
-        .events_by_tag(EventTag::Discovery)
-        .is_empty());
+    assert!(
+        !state
+            .event_log()
+            .events_by_tag(EventTag::Discovery)
+            .is_empty()
+    );
 
     let final_hash = state.replay_bootstrap_hash().unwrap();
     *initial_state.replay_state_mut() = state.replay_state().clone();
@@ -770,18 +773,20 @@ fn bystander_observes_witnessed_telling_without_receiving_subject_belief() {
 
     let bystander_store = harness.bystander_store().unwrap();
     assert!(bystander_store.get_entity(&harness.subject).is_none());
-    assert!(bystander_store
-        .social_observations
-        .iter()
-        .any(|observation| {
-            observation.kind() == SocialObservationKind::WitnessedTelling
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedTelling {
-                        speaker: harness.speaker,
-                        listener: harness.listener,
-                    }
-                && observation.place == harness.destination
-        }));
+    assert!(
+        bystander_store
+            .social_observations
+            .iter()
+            .any(|observation| {
+                observation.kind() == SocialObservationKind::WitnessedTelling
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedTelling {
+                            speaker: harness.speaker,
+                            listener: harness.listener,
+                        }
+                    && observation.place == harness.destination
+            })
+    );
 }
 
 #[test]

@@ -1237,18 +1237,18 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-        BelievedEntityState, CauseRef, CombatProfile, CommodityKind, ControlSource,
-        EligibilityRule, EntityId, EventLog, EventTag, EventView, InstitutionalBeliefRead,
-        OfficeData, PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed,
-        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, CombatProfile, CommodityKind,
+        ControlSource, EligibilityRule, EntityId, EventLog, EventTag, EventView,
+        InstitutionalBeliefRead, OfficeData, PerceptionSource, Permille, Quantity, RecordData,
+        RecordKind, Seed, SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World,
+        WorldTxn, build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        get_affordances, AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
+        AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
         BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
         PerAgentBeliefView, PressForceClaimActionPayload, SystemExecutionContext, SystemId,
-        ThreatenActionPayload, YieldForceClaimActionPayload,
+        ThreatenActionPayload, YieldForceClaimActionPayload, get_affordances,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1572,6 +1572,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },
@@ -1705,6 +1706,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2607,19 +2609,20 @@ mod tests {
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &instance, 8, 3);
         run_perception(&mut fx.world, &mut log, 3);
 
-        assert!(fx
-            .world
-            .get_component_agent_belief_store(fx.observer)
-            .unwrap()
-            .social_observations
-            .iter()
-            .any(|observation| observation.kind()
-                == worldwake_core::SocialObservationKind::WitnessedObligation
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedObligation {
-                        actor: fx.actor,
-                        target: fx.target,
-                    }));
+        assert!(
+            fx.world
+                .get_component_agent_belief_store(fx.observer)
+                .unwrap()
+                .social_observations
+                .iter()
+                .any(|observation| observation.kind()
+                    == worldwake_core::SocialObservationKind::WitnessedObligation
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedObligation {
+                            actor: fx.actor,
+                            target: fx.target,
+                        })
+        );
     }
 
     #[test]
@@ -2643,19 +2646,20 @@ mod tests {
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[1], &instance, 9, 3);
         run_perception(&mut fx.world, &mut log, 3);
 
-        assert!(fx
-            .world
-            .get_component_agent_belief_store(fx.observer)
-            .unwrap()
-            .social_observations
-            .iter()
-            .any(|observation| observation.kind()
-                == worldwake_core::SocialObservationKind::WitnessedConflict
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedConflict {
-                        actor: fx.actor,
-                        target: fx.target,
-                    }));
+        assert!(
+            fx.world
+                .get_component_agent_belief_store(fx.observer)
+                .unwrap()
+                .social_observations
+                .iter()
+                .any(|observation| observation.kind()
+                    == worldwake_core::SocialObservationKind::WitnessedConflict
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedConflict {
+                            actor: fx.actor,
+                            target: fx.target,
+                        })
+        );
     }
 
     #[test]
@@ -2682,19 +2686,20 @@ mod tests {
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[2], &instance, 10, 3);
         run_perception(&mut fx.world, &mut log, 3);
 
-        assert!(fx
-            .world
-            .get_component_agent_belief_store(fx.observer)
-            .unwrap()
-            .social_observations
-            .iter()
-            .any(|observation| observation.kind()
-                == worldwake_core::SocialObservationKind::WitnessedCooperation
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedCooperation {
-                        actor: fx.actor,
-                        counterpart: fx.candidate,
-                    }));
+        assert!(
+            fx.world
+                .get_component_agent_belief_store(fx.observer)
+                .unwrap()
+                .social_observations
+                .iter()
+                .any(|observation| observation.kind()
+                    == worldwake_core::SocialObservationKind::WitnessedCooperation
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedCooperation {
+                            actor: fx.actor,
+                            counterpart: fx.candidate,
+                        })
+        );
     }
 
     #[test]

@@ -204,7 +204,7 @@ mod tests {
         CommodityKind, EntityId, EntityKind, EventId, Name, ObservedEntitySnapshot, Quantity,
         ReservationId, ReservationRecord, Tick, TickRange, WoundId,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 
@@ -682,6 +682,7 @@ mod tests {
                     courage: None,
                     artifact_state: None,
                     contention_state: None,
+                    evidence_state: None,
                 },
             )]),
             visibility: VisibilitySpec::SamePlace,

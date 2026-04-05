@@ -5,17 +5,17 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
-    load_per_unit, to_shared_belief_snapshot, ActionDefId, ActionDomain, BelievedEntityState,
-    BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant, DemandObservation,
-    DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    ActionDefId, ActionDomain, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
+    CommodityKind, ContentionGrant, DemandObservation, DriveThresholds, EntityId, EntityKind,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+    LoadUnits, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
+    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+    TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
+    ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView, estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -332,14 +332,12 @@ impl<'snapshot> PlanningState<'snapshot> {
 
         // Add purely hypothetical declarations (supporters NOT in base)
         for (&(supporter, decl_office), override_val) in self.support_declaration_overrides.iter() {
-            if decl_office == office {
-                if let Some(decl_candidate) = override_val {
-                    if *decl_candidate == candidate
-                        && !base_declarations.iter().any(|(s, _)| *s == supporter)
-                    {
-                        count += 1;
-                    }
-                }
+            if decl_office == office
+                && let Some(decl_candidate) = override_val
+                && *decl_candidate == candidate
+                && !base_declarations.iter().any(|(s, _)| *s == supporter)
+            {
+                count += 1;
             }
         }
 
@@ -362,10 +360,10 @@ impl<'snapshot> PlanningState<'snapshot> {
             all_candidates.insert(c);
         }
         for (&(_, decl_office), override_val) in self.support_declaration_overrides.iter() {
-            if decl_office == office {
-                if let Some(c) = override_val {
-                    all_candidates.insert(*c);
-                }
+            if decl_office == office
+                && let Some(c) = override_val
+            {
+                all_candidates.insert(*c);
             }
         }
 
@@ -950,23 +948,23 @@ impl<'snapshot> PlanningState<'snapshot> {
 
     fn direct_child_refs(&self, holder: PlanningEntityRef) -> Vec<PlanningEntityRef> {
         let mut candidates = BTreeSet::new();
-        if let PlanningEntityRef::Authoritative(holder_entity) = holder {
-            if let Some(snapshot) = self.snapshot.entities.get(&holder_entity) {
-                candidates.extend(
-                    snapshot
-                        .direct_possessions
-                        .iter()
-                        .copied()
-                        .map(PlanningEntityRef::Authoritative),
-                );
-                candidates.extend(
-                    snapshot
-                        .direct_contents
-                        .iter()
-                        .copied()
-                        .map(PlanningEntityRef::Authoritative),
-                );
-            }
+        if let PlanningEntityRef::Authoritative(holder_entity) = holder
+            && let Some(snapshot) = self.snapshot.entities.get(&holder_entity)
+        {
+            candidates.extend(
+                snapshot
+                    .direct_possessions
+                    .iter()
+                    .copied()
+                    .map(PlanningEntityRef::Authoritative),
+            );
+            candidates.extend(
+                snapshot
+                    .direct_contents
+                    .iter()
+                    .copied()
+                    .map(PlanningEntityRef::Authoritative),
+            );
         }
         candidates.extend(self.direct_possessor_overrides.keys().copied());
         candidates.extend(self.direct_container_overrides.keys().copied());
@@ -2025,11 +2023,11 @@ mod tests {
         Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
-        ActionDuration, ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
-        ActionPayload, ActionProgress, ActionState, CombatActionPayload, Constraint,
-        DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
-        ReservationReq, RuntimeBeliefView, TargetSpec,
+        ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
+        Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
+        ReservationReq, RuntimeBeliefView, TargetSpec, estimate_duration_from_beliefs,
+        get_affordances,
     };
     use worldwake_systems::register_office_actions;
 
@@ -2568,6 +2566,7 @@ mod tests {
             }),
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -2962,9 +2961,11 @@ mod tests {
         assert_eq!(get_affordances(&base, actor, &registry, &handlers).len(), 1);
         assert!(RuntimeBeliefView::is_dead(&removed, bread));
         assert!(!RuntimeBeliefView::is_alive(&removed, bread));
-        assert!(RuntimeBeliefView::entities_at(&removed, entity(10))
-            .iter()
-            .all(|entity| *entity != bread));
+        assert!(
+            RuntimeBeliefView::entities_at(&removed, entity(10))
+                .iter()
+                .all(|entity| *entity != bread)
+        );
         assert!(get_affordances(&removed, actor, &registry, &handlers).is_empty());
     }
 
@@ -3001,6 +3002,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(4),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -3105,13 +3107,10 @@ mod tests {
             RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
             vec![trader]
         );
-        assert!(RuntimeBeliefView::agents_active_at(
-            &state,
-            field,
-            ActionDomain::Trade,
-            Some(source)
-        )
-        .is_empty());
+        assert!(
+            RuntimeBeliefView::agents_active_at(&state, field, ActionDomain::Trade, Some(source))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -3147,6 +3146,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(7),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -3176,6 +3176,7 @@ mod tests {
                             believed_activity: None,
                             believed_artifact: None,
                             believed_contention: None,
+                            believed_evidence: None,
                             observed_tick: Tick(4),
                             source: worldwake_core::PerceptionSource::DirectObservation,
                         }),
@@ -3243,6 +3244,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(0),
                     source: worldwake_core::PerceptionSource::DirectObservation,
                 },
@@ -3660,8 +3662,8 @@ mod tests {
     }
 
     #[test]
-    fn removed_hypothetical_entities_stop_answering_ref_queries_and_do_not_leak_through_belief_view(
-    ) {
+    fn removed_hypothetical_entities_stop_answering_ref_queries_and_do_not_leak_through_belief_view()
+     {
         let (view, actor, _town, _field, bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let mut state = PlanningState::new(&snapshot);

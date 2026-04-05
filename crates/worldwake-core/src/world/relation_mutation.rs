@@ -19,10 +19,10 @@ impl World {
         entity: EntityId,
         target: EntityId,
     ) {
-        if let Some(previous) = forward.insert(entity, target) {
-            if previous != target {
-                Self::remove_reverse_link(reverse, previous, entity);
-            }
+        if let Some(previous) = forward.insert(entity, target)
+            && previous != target
+        {
+            Self::remove_reverse_link(reverse, previous, entity);
         }
         reverse.entry(target).or_default().insert(entity);
     }

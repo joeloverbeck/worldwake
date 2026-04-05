@@ -802,10 +802,11 @@ mod tests {
         // Post: lot is possessed by agent, not in container, no assignment.
         assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
         assert!(h.world.direct_container(h.bread_lot).is_none());
-        assert!(h
-            .world
-            .get_component_stock_assignment(h.bread_lot)
-            .is_none());
+        assert!(
+            h.world
+                .get_component_stock_assignment(h.bread_lot)
+                .is_none()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1249,10 +1250,11 @@ mod tests {
         // Lot is back in possession, quantity preserved.
         assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
         assert!(h.world.direct_container(h.bread_lot).is_none());
-        assert!(h
-            .world
-            .get_component_stock_assignment(h.bread_lot)
-            .is_none());
+        assert!(
+            h.world
+                .get_component_stock_assignment(h.bread_lot)
+                .is_none()
+        );
         assert!(h.world.get_component_sale_listing(h.bread_lot).is_none());
         assert_eq!(
             h.world

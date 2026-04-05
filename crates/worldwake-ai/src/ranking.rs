@@ -1,5 +1,8 @@
 use crate::{
-    assess_danger, classify_band,
+    DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
+    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
+    RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment, assess_danger,
+    classify_band,
     decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
@@ -7,23 +10,20 @@ use crate::{
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::threat_warning_signal_for_place,
     theft::assess_theft_deterrence,
-    DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
-    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
-    RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
 };
 use worldwake_core::{
-    belief_confidence, failure_ratio_permille, ActionDomain, BelievedEntityState, BountyTarget,
-    CommodityKind, CommodityPurpose, CommunicationClass, DriveThresholds, EntityId, GoalKey,
-    GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource,
-    Permille, Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationKind,
+    ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
+    CommunicationClass, DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey,
+    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
+    failure_ratio_permille,
 };
-use worldwake_sim::{commodity_opportunity_score, CommodityOpportunityBreakdown, GoalBeliefView};
+use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
 /// Outcome of the ranking pipeline, preserving information about filtered candidates.
 #[derive(Clone, Debug)]
@@ -1452,21 +1452,21 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_competition_discount, apply_source_reliability_discount, build_decision_context,
-        rank_candidates, RankingContext,
+        RankingContext, apply_competition_discount, apply_source_reliability_discount,
+        build_decision_context, rank_candidates,
     };
     use crate::{
-        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
         GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
         RankedPriorityAdjustment,
+        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        belief_confidence, ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState,
-        BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
-        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget,
-        BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState, BeliefConfidencePolicy,
+        BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationKind,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
@@ -1476,7 +1476,7 @@ mod tests {
         RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
         RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
         TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId,
+        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView,
@@ -1924,6 +1924,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -1995,6 +1996,7 @@ mod tests {
             }),
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(9),
             source: PerceptionSource::DirectObservation,
         }
@@ -2030,6 +2032,7 @@ mod tests {
                 observed_tick: Tick(9),
             }),
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(9),
             source: PerceptionSource::DirectObservation,
         }
@@ -4989,6 +4992,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: current_tick(),
                     source: PerceptionSource::DirectObservation,
                 },

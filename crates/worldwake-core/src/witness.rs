@@ -15,7 +15,7 @@ pub struct WitnessData {
 mod tests {
     use super::WitnessData;
     use crate::EntityId;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
     use std::fmt::Debug;
 

@@ -238,10 +238,10 @@ mod tests {
         InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
     };
     use crate::{
-        traits::Component, CommodityKind, EntityId, PunishmentKind, Quantity, TheftFacts, Tick,
-        ViolationId,
+        CommodityKind, EntityId, PunishmentKind, Quantity, TheftFacts, Tick, ViolationId,
+        traits::Component,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

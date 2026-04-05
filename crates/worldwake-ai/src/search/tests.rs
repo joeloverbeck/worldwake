@@ -1,41 +1,42 @@
 use super::candidates::relevant_action_defs;
 use super::{
-    build_successor, combined_relevant_places, compare_search_nodes, compute_heuristic,
-    prune_travel_away_from_goal, root_node, search_candidate_from_planner, search_candidates,
-    search_candidates_from_affordance, search_plan, FrontierEntry, SearchCandidate, SearchNode,
+    FrontierEntry, SearchCandidate, SearchNode, build_successor, combined_relevant_places,
+    compare_search_nodes, compute_heuristic, prune_travel_away_from_goal, root_node,
+    search_candidate_from_planner, search_candidates, search_candidates_from_affordance,
+    search_plan,
 };
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
 use crate::shared_collections::SharedVec;
 use crate::{
-    build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
-    build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult,
-    PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
-    PlanningEntityRef, PlanningSnapshot, PlanningState, ReasoningProfile,
+    CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult, PlanTerminalKind,
+    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningEntityRef,
+    PlanningSnapshot, PlanningState, ReasoningProfile, build_planning_snapshot,
+    build_planning_snapshot_with_blocked_facility_uses, build_semantics_table,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
+    ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, BelievedArtifactState,
+    BelievedBountyTerms, BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey,
+    BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant, ContentionPolicy,
+    ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
+    DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
+    EntityKind, EpistemicDispositionProfile, EventLog, HomeostaticNeeds, InTransitOnEdge,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, PerceptionSource,
+    Permille, Place, PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId,
+    ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
     build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile, ActionDefId, ArtifactKind,
-    ArtifactPostingContext, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
-    BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-    BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue,
-    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-    EpistemicDispositionProfile, EventLog, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
-    LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, PerceptionSource, Permille,
-    Place, PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId, ResourceSource,
-    RewardSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
-    TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
-    estimate_duration_from_beliefs, ActionDefRegistry, ActionPayload, Affordance, DurationExpr,
-    PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, TradeActionPayload, TransportActionPayload,
+    ActionDefRegistry, ActionPayload, Affordance, DurationExpr, PerAgentBeliefView,
+    QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+    TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
 };
 use worldwake_systems::build_full_action_registries;
 
@@ -510,6 +511,7 @@ fn believed_entity_state_at(
         believed_activity: None,
         believed_artifact: None,
         believed_contention: None,
+        believed_evidence: None,
         observed_tick,
         source: PerceptionSource::DirectObservation,
     }
@@ -2436,9 +2438,11 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         after_pick_up.steps.as_slice()[0].targets,
         vec![PlanningEntityRef::Authoritative(bread)]
     );
-    assert!(!after_pick_up.steps.as_slice()[0]
-        .expected_materializations
-        .is_empty());
+    assert!(
+        !after_pick_up.steps.as_slice()[0]
+            .expected_materializations
+            .is_empty()
+    );
 
     let follow_up_candidates = search_candidates(
         &goal,
@@ -6097,6 +6101,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
                     observed_tick: Tick(1),
                 }),
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(1),
                 source: PerceptionSource::DirectObservation,
             },
@@ -6234,6 +6239,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -6251,6 +6257,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -6372,6 +6379,7 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
                     observed_tick: Tick(1),
                 }),
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(1),
                 source: PerceptionSource::DirectObservation,
             },
@@ -6484,6 +6492,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -6501,6 +6510,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -6615,6 +6625,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
                         observed_tick: Tick(1),
                     }),
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -6632,6 +6643,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -7768,10 +7780,11 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         PlanSearchResult::Found(plan) => plan,
         other => panic!("expected plan, got {other:?}"),
     };
-    assert!(plan
-        .steps
-        .iter()
-        .all(|step| step.op_kind != PlannerOpKind::ConsultRecord));
+    assert!(
+        plan.steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::ConsultRecord)
+    );
 }
 
 #[test]
@@ -7997,10 +8010,12 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
         .iter()
         .find(|summary| summary.depth == 0)
         .expect("root expansion summary should be recorded");
-    assert!(!root
-        .root_candidates
-        .iter()
-        .any(|candidate| { candidate.op_kind == Some(PlannerOpKind::AskWitness) }));
+    assert!(
+        !root
+            .root_candidates
+            .iter()
+            .any(|candidate| { candidate.op_kind == Some(PlannerOpKind::AskWitness) })
+    );
     assert!(root.root_candidates.is_empty());
     assert!(root.root_omissions.iter().any(|omission| {
         omission.op_kind == PlannerOpKind::PressForceClaim
@@ -8246,10 +8261,12 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         .iter()
         .find(|summary| summary.depth == 0)
         .expect("root expansion summary should be recorded");
-    assert!(!root
-        .root_candidates
-        .iter()
-        .any(|candidate| { candidate.op_kind == Some(PlannerOpKind::AskWitness) }));
+    assert!(
+        !root
+            .root_candidates
+            .iter()
+            .any(|candidate| { candidate.op_kind == Some(PlannerOpKind::AskWitness) })
+    );
     assert!(root.root_candidates.is_empty());
     assert!(root.root_omissions.iter().any(|omission| {
         omission.op_kind == PlannerOpKind::Trade
@@ -8896,6 +8913,7 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },
@@ -8996,6 +9014,7 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },

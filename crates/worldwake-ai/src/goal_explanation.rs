@@ -1,4 +1,4 @@
-use crate::{build_decision_context, generate_candidates, rank_candidates, GoalPriorityClass};
+use crate::{GoalPriorityClass, build_decision_context, generate_candidates, rank_candidates};
 use worldwake_core::{BlockedIntentMemory, EntityId, GoalKind, Tick, UtilityProfile};
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -53,7 +53,7 @@ pub fn explain_goal(
 
 #[cfg(test)]
 mod tests {
-    use super::{explain_goal, GoalExplanation};
+    use super::{GoalExplanation, explain_goal};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -65,8 +65,8 @@ mod tests {
         UtilityProfile, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
-        RecipeRegistry, RuntimeBeliefView,
+        ActionDuration, ActionPayload, DurationExpr, RecipeRegistry, RuntimeBeliefView,
+        estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]

@@ -10,14 +10,14 @@ use worldwake_ai::{
     PlannerOpKind, RankedGoalComparisonDimension, SelectedPlanSource,
 };
 use worldwake_core::{
+    AgentData, BlockingFact, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
+    ContentionGrant, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DeprivationKind, EntityId, EventTag, EventView, HomeostaticNeeds,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, AgentData, BlockingFact,
-    BodyPart, CarryCapacity, CombatProfile, CommodityKind, ContentionGrant, ControlSource,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
-    EntityId, EventTag, EventView, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed,
-    StateHash, Tick, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
-    Wound, WoundCause, WoundId, WoundList,
+    verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind, RequestAttemptTrace,
@@ -1353,7 +1353,8 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
         ActionStartFailureReason::ReservationUnavailable(local_workstation)
     );
     assert!(
-        planning_tick_1.selection.selected_plan_source != Some(SelectedPlanSource::RetainedCurrentPlan),
+        planning_tick_1.selection.selected_plan_source
+            != Some(SelectedPlanSource::RetainedCurrentPlan),
         "start-failure reconciliation should not keep the failed harvest step as a retained current plan"
     );
     assert!(

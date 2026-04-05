@@ -103,6 +103,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: observed,
             source: PerceptionSource::DirectObservation,
         }

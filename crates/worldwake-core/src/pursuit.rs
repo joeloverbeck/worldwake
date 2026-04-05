@@ -22,8 +22,8 @@ impl Component for PursuitProfile {}
 #[cfg(test)]
 mod tests {
     use super::PursuitProfile;
-    use crate::{traits::Component, Permille};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{Permille, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 

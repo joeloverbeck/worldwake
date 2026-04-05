@@ -1,9 +1,9 @@
 use super::{SearchCandidate, SearchNode};
-use crate::goal_model::{grounded_goal_matches_epistemic_barrier, GoalPayloadOverrideError};
+use crate::goal_model::{GoalPayloadOverrideError, grounded_goal_matches_epistemic_barrier};
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
-    apply_hypothetical_transition, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep,
-    PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
+    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
+    PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition,
 };
 use heuristic::{combined_relevant_places, compute_heuristic};
 use std::collections::BTreeMap;

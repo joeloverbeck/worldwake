@@ -73,7 +73,7 @@ impl RecipeRegistry {
 mod tests {
     use super::RecipeRegistry;
     use crate::RecipeDefinition;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::num::NonZeroU32;
     use worldwake_core::{
         BodyCostPerTick, CommodityKind, Permille, Quantity, RecipeId, UniqueItemKind,
@@ -181,9 +181,11 @@ mod tests {
             registry.recipes_for_workstation(WorkstationTag::Mill),
             &[mill]
         );
-        assert!(registry
-            .recipes_for_workstation(WorkstationTag::Forge)
-            .is_empty());
+        assert!(
+            registry
+                .recipes_for_workstation(WorkstationTag::Forge)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -192,9 +194,11 @@ mod tests {
         let id = registry.register(sample_recipe("Rest", None));
 
         assert_eq!(registry.get(id).unwrap().required_workstation_tag, None);
-        assert!(registry
-            .recipes_for_workstation(WorkstationTag::Mill)
-            .is_empty());
+        assert!(
+            registry
+                .recipes_for_workstation(WorkstationTag::Mill)
+                .is_empty()
+        );
     }
 
     #[test]

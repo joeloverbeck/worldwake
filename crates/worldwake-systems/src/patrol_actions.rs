@@ -211,14 +211,14 @@ mod tests {
     use super::register_patrol_action;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, ControlSource, EventLog, EventTag,
-        EventView, PatrolProfile, PatrolRoute, Permille, PrototypePlace, Seed, Tick,
-        VisibilitySpec, World, WorldTxn,
+        CauseRef, ControlSource, EventLog, EventTag, EventView, PatrolProfile, PatrolRoute,
+        Permille, PrototypePlace, Seed, Tick, VisibilitySpec, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        get_affordances, interrupt_action, start_action, tick_action, ActionDefRegistry,
-        ActionError, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason, TickOutcome,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        ActionInstance, ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason,
+        TickOutcome, get_affordances, interrupt_action, start_action, tick_action,
     };
 
     use super::*;

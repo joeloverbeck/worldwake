@@ -4,8 +4,8 @@
 //! authoritative state must satisfy. No runtime type registration or
 //! type-erased storage is introduced here.
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt::Debug;
 
 /// Marker trait for authoritative ECS component types.

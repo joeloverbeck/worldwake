@@ -219,11 +219,7 @@ impl DistanceMatrix {
         let i = self.place_ids.binary_search(&from).ok()?;
         let j = self.place_ids.binary_search(&to).ok()?;
         let val = self.data[i * n + j];
-        if val == u32::MAX {
-            None
-        } else {
-            Some(val)
-        }
+        if val == u32::MAX { None } else { Some(val) }
     }
 }
 
@@ -579,7 +575,7 @@ fn build_snapshot_places(
     included_places: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
-    let places = included_places
+    included_places
         .iter()
         .copied()
         .map(|place| {
@@ -607,8 +603,7 @@ fn build_snapshot_places(
                 },
             )
         })
-        .collect();
-    places
+        .collect()
 }
 
 fn build_snapshot_entity(
@@ -885,15 +880,15 @@ fn collect_entities(
                 frontier.push_back(related);
             }
         }
-        if let Some(container) = view.direct_container(entity) {
-            if included.insert(container) {
-                frontier.push_back(container);
-            }
+        if let Some(container) = view.direct_container(entity)
+            && included.insert(container)
+        {
+            frontier.push_back(container);
         }
-        if let Some(possessor) = view.direct_possessor(entity) {
-            if included.insert(possessor) {
-                frontier.push_back(possessor);
-            }
+        if let Some(possessor) = view.direct_possessor(entity)
+            && included.insert(possessor)
+        {
+            frontier.push_back(possessor);
         }
     }
     included
@@ -917,7 +912,7 @@ fn included_entities_contains(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_planning_snapshot, SnapshotFacilityQueue};
+    use super::{SnapshotFacilityQueue, build_planning_snapshot};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -1425,6 +1420,7 @@ mod tests {
                             believed_activity: None,
                             believed_artifact: None,
                             believed_contention: None,
+                            believed_evidence: None,
                             observed_tick: Tick(6),
                             source: worldwake_core::PerceptionSource::DirectObservation,
                         }),
@@ -1858,9 +1854,11 @@ mod tests {
         assert!(declarations.contains(&(supporter_b, actor)));
 
         // Non-office returns empty
-        assert!(snapshot
-            .base_support_declarations_for_office(entity(999))
-            .is_empty());
+        assert!(
+            snapshot
+                .base_support_declarations_for_office(entity(999))
+                .is_empty()
+        );
     }
 
     #[test]

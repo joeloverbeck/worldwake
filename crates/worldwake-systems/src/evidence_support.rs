@@ -27,9 +27,9 @@ pub(crate) fn emit_evidence(
 mod tests {
     use super::emit_evidence;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, DisturbanceKind, EntityId,
-        EventLog, EvidenceEntryId, EvidenceKind, PrototypePlace, Tick, VisibilitySpec, WitnessData,
-        World, WorldTxn,
+        CauseRef, DisturbanceKind, EntityId, EventLog, EvidenceEntryId, EvidenceKind,
+        PrototypePlace, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {

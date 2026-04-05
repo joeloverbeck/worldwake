@@ -1,4 +1,4 @@
-use crate::{goal_dispatch_key::GoalDispatchKey, PlannerOpKind, RankedGoalProvenanceFamily};
+use crate::{PlannerOpKind, RankedGoalProvenanceFamily, goal_dispatch_key::GoalDispatchKey};
 use worldwake_core::HomeostaticNeedId;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

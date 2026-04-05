@@ -1,6 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
+    EntityId,
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
@@ -40,7 +41,6 @@ use crate::{
     valuation::CommodityValuationProfile,
     violation::{ViolationDispositionProfile, ViolationMemory},
     wounds::WoundList,
-    EntityId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -89,7 +89,7 @@ macro_rules! component_table_methods {
 }
 
 macro_rules! define_component_tables_struct {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         /// Explicit typed component storage for non-topological authoritative components.
         #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
         pub struct ComponentTables {
@@ -99,7 +99,7 @@ macro_rules! define_component_tables_struct {
 }
 
 macro_rules! define_component_table_impls {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         impl ComponentTables {
             $(
                 component_table_methods!(
@@ -134,6 +134,14 @@ with_component_schema_entries!(
 mod tests {
     use super::ComponentTables;
     use crate::{
+        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
+        CommodityKind, CommunicationProfile, Container, ContentionIntents, ContentionPolicy,
+        ContentionQueue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, PatrolProfile, PatrolRoute,
+        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
         belief::{
             AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, PerceptionProfile,
             PerceptionSource, TellProfile,
@@ -151,14 +159,6 @@ mod tests {
             sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile, sample_utility_profile,
         },
-        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
-        CommodityKind, CommunicationProfile, Container, ContentionIntents, ContentionPolicy,
-        ContentionQueue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, ItemLot,
-        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, PatrolProfile, PatrolRoute,
-        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -214,6 +214,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(7),
                     source: PerceptionSource::DirectObservation,
                 },

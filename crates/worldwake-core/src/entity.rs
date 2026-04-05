@@ -30,7 +30,7 @@ pub struct EntityMeta {
 mod tests {
     use super::{EntityKind, EntityMeta};
     use crate::Tick;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     const ALL_ENTITY_KINDS: [EntityKind; 10] = [
         EntityKind::Agent,

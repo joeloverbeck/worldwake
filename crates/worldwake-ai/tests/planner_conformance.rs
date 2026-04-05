@@ -14,15 +14,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use golden_harness::*;
 use worldwake_ai::{
-    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table, GroundedGoal,
-    PlannerOpSemantics, PlanningEntityRef, PlanningState,
+    GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
+    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
 };
 use worldwake_core::{
-    prototype_place_entity, total_live_lot_quantity, AgentBeliefStore, AgentData, CommodityKind,
-    ContentionIntents, ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds,
-    InstitutionalClaim, MetabolismProfile, PerceptionSource, Permille, Quantity,
-    QueuedContentionIntent, RecordData, RecordKind, Seed, SuccessionLaw, TellProfile, TellTopic,
-    TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    AgentBeliefStore, AgentData, CommodityKind, ContentionIntents, ControlSource, EntityId,
+    GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim, MetabolismProfile, PerceptionSource,
+    Permille, Quantity, QueuedContentionIntent, RecordData, RecordKind, Seed, SuccessionLaw,
+    TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile,
+    ViolationKind, ViolationMemory, prototype_place_entity, total_live_lot_quantity,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
@@ -207,13 +207,13 @@ fn assert_planner_noop(
         before_place, after_place,
         "{label}: planner should not change position"
     );
-    if let Some(before_needs) = initial_state.homeostatic_needs_for(agent) {
-        if let Some(after_needs) = planner_state.homeostatic_needs_for(agent) {
-            assert_eq!(
-                before_needs, after_needs,
-                "{label}: planner should not change needs"
-            );
-        }
+    if let Some(before_needs) = initial_state.homeostatic_needs_for(agent)
+        && let Some(after_needs) = planner_state.homeostatic_needs_for(agent)
+    {
+        assert_eq!(
+            before_needs, after_needs,
+            "{label}: planner should not change needs"
+        );
     }
 }
 

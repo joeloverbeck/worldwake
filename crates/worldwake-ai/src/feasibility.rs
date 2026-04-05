@@ -12,7 +12,7 @@ use worldwake_core::{
 use worldwake_sim::GoalBeliefView;
 
 use crate::{
-    enterprise::merchant_home_place, goal_model::RankedGoal, FeasibilityStrategy, GoalDispatchKey,
+    FeasibilityStrategy, GoalDispatchKey, enterprise::merchant_home_place, goal_model::RankedGoal,
 };
 
 /// Cheap pre-GOAP estimate of whether a goal is locally actionable.
@@ -177,16 +177,14 @@ fn goal_specific_feasibility(
         }
         (FeasibilityStrategy::CargoDestinationCheck, GoalKind::MoveCargo { commodity, .. }) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
-            if has_commodity {
-                if let Some(agent_place) = view.effective_place(agent) {
-                    let destination = goal.grounded.key.place;
-                    if destination == Some(agent_place) {
-                        return Some(FeasibilityHint::Likely);
-                    }
-                    let adjacent = view.adjacent_places_with_travel_ticks(agent_place);
-                    if destination.is_some_and(|d| adjacent.iter().any(|(p, _)| *p == d)) {
-                        return Some(FeasibilityHint::Likely);
-                    }
+            if has_commodity && let Some(agent_place) = view.effective_place(agent) {
+                let destination = goal.grounded.key.place;
+                if destination == Some(agent_place) {
+                    return Some(FeasibilityHint::Likely);
+                }
+                let adjacent = view.adjacent_places_with_travel_ticks(agent_place);
+                if destination.is_some_and(|d| adjacent.iter().any(|(p, _)| *p == d)) {
+                    return Some(FeasibilityHint::Likely);
                 }
             }
             None
@@ -260,8 +258,8 @@ fn check_evidence_places_local(
 mod tests {
     use super::*;
     use crate::{
-        goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal},
         GoalDispatchKey,
+        goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal},
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;

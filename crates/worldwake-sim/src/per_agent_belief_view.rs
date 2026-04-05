@@ -1,22 +1,22 @@
 use crate::{
-    estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionInstance,
-    ActionInstanceId, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView,
+    ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
+    DurationExpr, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+    estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    danger_ratio_permille, is_incapacitated, load_of_entity, AgentBeliefStore,
-    BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity,
-    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityValuationProfile,
-    ContentionGrant, ControlSource, DemandObservation, DriveThresholds, EffectiveRight, EntityId,
-    EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, WorkstationTag, World, Wound,
+    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
+    CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DriveThresholds,
+    EffectiveRight, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
+    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
+    danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -590,10 +590,10 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             return self.commodity_quantity(holder, kind);
         }
 
-        if let Some(source) = self.world.get_component_resource_source(holder) {
-            if source.commodity == kind {
-                return source.available_quantity;
-            }
+        if let Some(source) = self.world.get_component_resource_source(holder)
+            && source.commodity == kind
+        {
+            return source.available_quantity;
         }
 
         self.world
@@ -1471,11 +1471,6 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world,
-        test_utils::{
-            sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
-            sample_source_reliability,
-        },
         ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
         BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource,
         EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, FactionData,
@@ -1485,7 +1480,11 @@ mod tests {
         ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
         ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId,
+        WoundId, build_believed_entity_state, build_prototype_world,
+        test_utils::{
+            sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
+            sample_source_reliability,
+        },
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1514,6 +1513,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -1928,13 +1928,15 @@ mod tests {
             RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Trade, Some(source)),
             vec![b]
         );
-        assert!(RuntimeBeliefView::agents_active_at(
-            &view,
-            other_place,
-            ActionDomain::Trade,
-            Some(source)
-        )
-        .is_empty());
+        assert!(
+            RuntimeBeliefView::agents_active_at(
+                &view,
+                other_place,
+                ActionDomain::Trade,
+                Some(source)
+            )
+            .is_empty()
+        );
     }
 
     #[test]

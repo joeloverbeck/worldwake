@@ -1,9 +1,9 @@
 use crate::{
-    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
     EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
     LotOperation, Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
     StockStoragePolicy, Tick, TickRange, UniqueItemKind, World, WorldError,
+    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
@@ -1935,12 +1935,6 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        component_schema::with_component_schema_entries,
-        test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
-            sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_utility_profile,
-        },
         AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
         CommunicationProfile, DemandMemory, EpistemicDispositionProfile, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
@@ -1949,6 +1943,12 @@ mod tests {
         PerceptionSource, PreferenceProfile, ReasoningProfile, RecordData, RecordEntryId,
         RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
         UtilityProfile,
+        component_schema::with_component_schema_entries,
+        test_utils::{
+            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_utility_profile,
+        },
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
@@ -3907,8 +3907,8 @@ mod tests {
     }
 
     #[test]
-    fn set_component_production_output_ownership_policy_records_component_delta_and_updates_world_on_commit(
-    ) {
+    fn set_component_production_output_ownership_policy_records_component_delta_and_updates_world_on_commit()
+     {
         let mut world = World::new(test_topology()).unwrap();
         let facility = world.create_entity(EntityKind::Facility, Tick(1));
         let before = sample_production_output_ownership_policy();
@@ -4507,6 +4507,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(12),
                 source: PerceptionSource::Inference,
             },

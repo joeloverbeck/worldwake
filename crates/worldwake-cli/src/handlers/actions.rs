@@ -1,8 +1,8 @@
 //! Action command handlers: actions, do, cancel.
 
 use worldwake_sim::{
-    get_affordances, ActionRequestMode, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView,
-    SimulationState,
+    ActionRequestMode, InputKind, PerAgentBeliefRuntime, PerAgentBeliefView, SimulationState,
+    get_affordances,
 };
 use worldwake_systems::ActionRegistries;
 
@@ -209,7 +209,7 @@ fn format_duration_estimate(duration: &worldwake_sim::DurationExpr) -> String {
 mod tests {
     use super::*;
     use crate::repl::ReplState;
-    use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
+    use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
     use worldwake_ai::AgentTickDriver;
     use worldwake_core::{
         control::ControlSource,

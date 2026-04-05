@@ -1,8 +1,8 @@
 use crate::goal_model::{
-    grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
-    RootCandidateSynthesis,
+    RootCandidateSynthesis, grounded_goal_epistemic_subjects,
+    grounded_goal_matches_epistemic_barrier,
 };
-use crate::planner_ops::{planner_only_candidates, PlannerOpKind};
+use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
 };
@@ -11,8 +11,8 @@ use worldwake_core::{
     ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
 };
 use worldwake_sim::{
-    get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
-    QueueForFacilityUsePayload, RuntimeBeliefView,
+    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
+    QueueForFacilityUsePayload, RuntimeBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;

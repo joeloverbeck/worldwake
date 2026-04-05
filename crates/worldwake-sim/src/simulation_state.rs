@@ -1,6 +1,6 @@
 use crate::{ControllerState, DeterministicRng, RecipeRegistry, ReplayState, Scheduler};
 use serde::{Deserialize, Serialize};
-use worldwake_core::{hash_serializable, CanonicalError, EventLog, StateHash, World};
+use worldwake_core::{CanonicalError, EventLog, StateHash, World, hash_serializable};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SimulationState {
@@ -196,12 +196,12 @@ mod tests {
         ControllerState, DeterministicRng, InputEvent, InputKind, RecipeDefinition, RecipeRegistry,
         ReplayCheckpoint, ReplayRecordingConfig, ReplayState, Scheduler, SystemManifest,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::num::NonZeroU64;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventPayload, PendingEvent, Quantity, Seed, StateHash,
-        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        ActionDefId, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId, EventLog,
+        EventPayload, PendingEvent, Quantity, Seed, StateHash, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

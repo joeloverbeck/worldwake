@@ -352,23 +352,23 @@ pub enum Interruptibility {
 #[cfg(test)]
 mod tests {
     use super::{
-        patrol_duration_ticks, Constraint, ConsumableEffect, DurationExpr, Interruptibility,
-        MetabolismDurationKind, Precondition, ReservationReq, TargetSpec,
+        Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,
+        Precondition, ReservationReq, TargetSpec, patrol_duration_ticks,
     };
     use crate::{
         ActionDuration, ActionPayload, CombatActionPayload, EstablishCampActionPayload,
         TradeActionPayload,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::mem;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, BanditFactionPolicy, CauseRef,
-        CombatProfile, CombatWeaponRef, CommodityKind, ControlSource, EntityId, EntityKind,
-        EventLog, HomeostaticNeeds, MetabolismProfile, PatrolProfile, Permille, PrototypePlace,
-        Quantity, RecipeId, RecordData, RecordKind, TheftDispositionProfile, Tick,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn,
+        BanditFactionPolicy, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind,
+        ControlSource, EntityId, EntityKind, EventLog, HomeostaticNeeds, MetabolismProfile,
+        PatrolProfile, Permille, PrototypePlace, Quantity, RecipeId, RecordData, RecordKind,
+        TheftDispositionProfile, Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
 
     const ENTITY_A: EntityId = EntityId {

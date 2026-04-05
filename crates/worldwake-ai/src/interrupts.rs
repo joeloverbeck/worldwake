@@ -1,11 +1,10 @@
 use crate::{
-    classify_frame_plan_relation,
-    frame_switch_policy::compare_relation_aware_goal_switch,
-    goal_policy::{goal_family_policy, FreeInterruptRole, PenaltyInterruptEligibility},
-    goal_switching::{compare_goal_switch, GoalSwitchKind},
-    plan_selection::SelectionCandidatePlan,
     AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalKey, GoalPriorityClass,
-    RankedGoal,
+    RankedGoal, classify_frame_plan_relation,
+    frame_switch_policy::compare_relation_aware_goal_switch,
+    goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility, goal_family_policy},
+    goal_switching::{GoalSwitchKind, compare_goal_switch},
+    plan_selection::SelectionCandidatePlan,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{IntentionFrame, Permille};
@@ -242,13 +241,12 @@ fn current_priority(
     runtime: &AgentDecisionRuntime,
     ranked_candidates: &[RankedGoal],
 ) -> Option<(GoalPriorityClass, Option<u32>)> {
-    if let Some(current_goal) = active_goal {
-        if let Some(current) = ranked_candidates
+    if let Some(current_goal) = active_goal
+        && let Some(current) = ranked_candidates
             .iter()
             .find(|candidate| candidate.grounded.key == current_goal)
-        {
-            return Some((current.priority_class, Some(current.motive_score)));
-        }
+    {
+        return Some((current.priority_class, Some(current.motive_score)));
     }
 
     runtime.last_priority_class.map(|class| (class, None))
@@ -256,7 +254,7 @@ fn current_priority(
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
+    use super::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
     use crate::plan_selection::SelectionCandidatePlan;
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, DecisionContext, GoalKey, GoalPriorityClass,

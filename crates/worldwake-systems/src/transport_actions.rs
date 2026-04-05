@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    load_of_entity, load_per_unit, ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy,
-    ContentionQueue, EntityId, EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn,
+    ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy, ContentionQueue, EntityId,
+    EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn, load_of_entity, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -273,16 +273,15 @@ fn clear_unique_item_pickup_grant(
     if txn.entity_kind(target) != Some(EntityKind::UniqueItem) {
         return Ok(());
     }
-    if let Some(mut queue) = txn.get_component_contention_queue(target).cloned() {
-        if queue
+    if let Some(mut queue) = txn.get_component_contention_queue(target).cloned()
+        && queue
             .granted
             .as_ref()
             .is_some_and(|granted| granted.actor == actor && granted.intended_action == action_def)
-        {
-            queue.clear_grant();
-            txn.set_component_contention_queue(target, queue)
-                .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        }
+    {
+        queue.clear_grant();
+        txn.set_component_contention_queue(target, queue)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
     if detach_when_ineligible && !unique_item_pickup_contention_eligible(txn, target) {
         if txn.get_component_contention_queue(target).is_some() {
@@ -667,10 +666,10 @@ fn abort_transport(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    if def.name == "pick_up" {
-        if let Some(target) = instance.targets.first().copied() {
-            clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
-        }
+    if def.name == "pick_up"
+        && let Some(target) = instance.targets.first().copied()
+    {
+        clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
     }
     Ok(())
 }
@@ -728,17 +727,17 @@ mod tests {
     use super::register_transport_actions;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
         DisturbanceKind, EventLog, EventView, EvidenceEntry, EvidenceEntryId, EvidenceKind,
         LoadUnits, PerceptionSource, Place, Quantity, SaleListing, Seed, StockAssignment,
         StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
-        PerAgentBeliefView, TickOutcome,
+        ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
+        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome, get_affordances,
+        start_action, tick_action,
     };
 
     use super::*;
@@ -913,18 +912,26 @@ mod tests {
                 kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
             }]
         );
-        assert!(pick_up
-            .preconditions
-            .contains(&Precondition::TargetNotInContainer(0)));
-        assert!(pick_up
-            .preconditions
-            .contains(&Precondition::TargetUnpossessed(0)));
-        assert!(put_down
-            .preconditions
-            .contains(&Precondition::TargetDirectlyPossessedByActor(0)));
-        assert!(!steal
-            .preconditions
-            .contains(&Precondition::TargetNotInContainer(0)));
+        assert!(
+            pick_up
+                .preconditions
+                .contains(&Precondition::TargetNotInContainer(0))
+        );
+        assert!(
+            pick_up
+                .preconditions
+                .contains(&Precondition::TargetUnpossessed(0))
+        );
+        assert!(
+            put_down
+                .preconditions
+                .contains(&Precondition::TargetDirectlyPossessedByActor(0))
+        );
+        assert!(
+            !steal
+                .preconditions
+                .contains(&Precondition::TargetNotInContainer(0))
+        );
         assert_eq!(steal.duration, DurationExpr::ActorTheftDisposition);
         assert_eq!(steal.visibility, VisibilitySpec::Hidden);
         assert!(steal.causal_event_tags.contains(&EventTag::Crime));
@@ -1631,12 +1638,16 @@ mod tests {
             .filter(|affordance| affordance.def_id == pick_up_id)
             .collect::<Vec<_>>();
 
-        assert!(affordances
-            .iter()
-            .any(|affordance| affordance.bound_targets == vec![ground_lot]));
-        assert!(!affordances
-            .iter()
-            .any(|affordance| affordance.bound_targets == vec![contained_lot]));
+        assert!(
+            affordances
+                .iter()
+                .any(|affordance| affordance.bound_targets == vec![ground_lot])
+        );
+        assert!(
+            !affordances
+                .iter()
+                .any(|affordance| affordance.bound_targets == vec![contained_lot])
+        );
     }
 
     #[test]

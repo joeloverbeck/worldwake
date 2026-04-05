@@ -9,9 +9,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    prototype_place_entity, CommodityKind, EventTag, EventView, HomeostaticNeeds,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
-    UtilityProfile, WorkstationTag,
+    CommodityKind, EventTag, EventView, HomeostaticNeeds, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    prototype_place_entity,
 };
 
 // ---------------------------------------------------------------------------
@@ -279,10 +279,10 @@ fn golden_critical_bladder_local_relief() {
     for _ in 0..80 {
         h.step_once();
 
-        if let Some(action_name) = h.agent_active_action_name(agent) {
-            if action_name == "toilet" || action_name == "relieve_wilderness" {
-                saw_relieve_action = true;
-            }
+        if let Some(action_name) = h.agent_active_action_name(agent)
+            && (action_name == "toilet" || action_name == "relieve_wilderness")
+        {
+            saw_relieve_action = true;
         }
 
         if saw_relieve_action {
@@ -294,12 +294,11 @@ fn golden_critical_bladder_local_relief() {
     if let Some(sink) = h.action_trace_sink() {
         let events = sink.events_for(agent);
         for event in &events {
-            if matches!(event.kind, worldwake_sim::ActionTraceKind::Aborted { .. }) {
-                if let Some(def) = h.defs.get(event.def_id) {
-                    if def.name == "travel" {
-                        travel_was_interrupted = true;
-                    }
-                }
+            if matches!(event.kind, worldwake_sim::ActionTraceKind::Aborted { .. })
+                && let Some(def) = h.defs.get(event.def_id)
+                && def.name == "travel"
+            {
+                travel_was_interrupted = true;
             }
         }
     }

@@ -25,7 +25,7 @@ impl ActionDomain {
 #[cfg(test)]
 mod tests {
     use super::ActionDomain;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn assert_traits<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,

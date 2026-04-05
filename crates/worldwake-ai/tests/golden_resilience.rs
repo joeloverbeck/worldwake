@@ -14,9 +14,9 @@ mod golden_harness;
 use golden_harness::soak_world::*;
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, CauseRef, CommodityKind, DeadAt, EntityId, EntityKind,
-    EventId, EventView, Permille, Seed, StateHash, Tick,
+    CauseRef, CommodityKind, DeadAt, EntityId, EntityKind, EventId, EventView, Permille, Seed,
+    StateHash, Tick, hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    verify_authoritative_conservation,
 };
 
 // ---------------------------------------------------------------------------

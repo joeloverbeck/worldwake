@@ -106,7 +106,7 @@ mod tests {
         BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
     };
     use crate::{CommodityKind, EntityId, InstitutionalClaim, Quantity, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

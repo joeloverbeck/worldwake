@@ -1,16 +1,16 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, hash_serializable,
-    verify_live_lot_conservation, ActionDefId, CarryCapacity, CauseRef, CombatProfile,
-    CombatWeaponRef, CommodityKind, ControlSource, DeadAt, EventLog, LoadUnits, PerceptionSource,
-    Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+    ActionDefId, CarryCapacity, CauseRef, CombatProfile, CombatWeaponRef, CommodityKind,
+    ControlSource, DeadAt, EventLog, LoadUnits, PerceptionSource, Quantity, Seed, Tick,
+    VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+    build_prototype_world, hash_serializable, verify_live_lot_conservation,
 };
 use worldwake_sim::{
-    step_tick, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, CombatActionPayload,
-    ControllerState, DeterministicRng, InputKind, QueueForFacilityUsePayload, RecipeRegistry,
-    ReplayRecordingConfig, ReplayState, Scheduler, SystemDispatchTable, SystemManifest,
-    TickStepError, TickStepResult, TickStepServices,
+    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, CombatActionPayload, ControllerState,
+    DeterministicRng, InputKind, QueueForFacilityUsePayload, RecipeRegistry, ReplayRecordingConfig,
+    ReplayState, Scheduler, SystemDispatchTable, SystemManifest, TickStepError, TickStepResult,
+    TickStepServices, step_tick,
 };
 use worldwake_systems::{
     dispatch_table, register_attack_action, register_loot_action,
@@ -459,10 +459,12 @@ fn scheduler_rejects_new_attack_requests_from_dead_actors() {
 
     harness.queue_attack(harness.attacker, harness.target);
     harness.run_until_no_active_actions(6, false);
-    assert!(harness
-        .world
-        .get_component_dead_at(harness.target)
-        .is_some());
+    assert!(
+        harness
+            .world
+            .get_component_dead_at(harness.target)
+            .is_some()
+    );
 
     harness.queue_attack(harness.target, harness.attacker);
     let error = harness.step_once().unwrap_err();

@@ -1134,19 +1134,19 @@ mod tests {
     use super::{register_accuse_action, register_exile_action, register_fine_action};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-        BeliefConfidencePolicy, BelievedEntityState, CauseRef, EligibilityRule, EntityId, EventLog,
-        EventTag, EventView, InstitutionalClaim, JusticeDispositionProfile, OfficeData,
-        PerceptionProfile, PerceptionSource, PrototypePlace, PunishmentKind, Quantity, RecordData,
-        RecordEntryId, RecordKind, Seed, SocialObservation, SocialObservationDetail, SuccessionLaw,
-        TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationId, ViolationKind,
-        ViolationMemory, VisibilitySpec, WitnessData, World, WorldTxn,
+        ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CauseRef,
+        EligibilityRule, EntityId, EventLog, EventTag, EventView, InstitutionalClaim,
+        JusticeDispositionProfile, OfficeData, PerceptionProfile, PerceptionSource, PrototypePlace,
+        PunishmentKind, Quantity, RecordData, RecordEntryId, RecordKind, Seed, SocialObservation,
+        SocialObservationDetail, SuccessionLaw, TheftFacts, Tick, UtilityProfile,
+        ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        get_affordances, AbortReason, AccuseActionPayload, ActionAbortRequestReason,
-        ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionStatus, DeterministicRng, ExternalAbortReason, PerAgentBeliefView,
-        PunishActionPayload,
+        AbortReason, AccuseActionPayload, ActionAbortRequestReason, ActionDefRegistry, ActionError,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
+        DeterministicRng, ExternalAbortReason, PerAgentBeliefView, PunishActionPayload,
+        get_affordances,
     };
 
     fn pm(value: u16) -> worldwake_core::Permille {
@@ -1281,6 +1281,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },

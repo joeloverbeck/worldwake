@@ -53,9 +53,9 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
 mod tests {
     use super::artifact_lifecycle_system;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, ArtifactHeader, ArtifactKind, ArtifactState,
-        CauseRef, ControlSource, EventLog, EventTag, NoticeContent, NoticeTopic, PrototypePlace,
-        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        ArtifactHeader, ArtifactKind, ArtifactState, CauseRef, ControlSource, EventLog, EventTag,
+        NoticeContent, NoticeTopic, PrototypePlace, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 

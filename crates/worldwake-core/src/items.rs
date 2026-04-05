@@ -362,8 +362,8 @@ mod tests {
         ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
         UniqueItemPhysicalProfile,
     };
-    use crate::{traits::Component, EntityId, EventId, LoadUnits, Permille, Quantity, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{EntityId, EventId, LoadUnits, Permille, Quantity, Tick, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
 

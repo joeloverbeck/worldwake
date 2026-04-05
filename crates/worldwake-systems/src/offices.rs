@@ -1059,9 +1059,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
-        OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute, Permille, RecordData,
-        RecordKind, Seed, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView, OfficeData,
+        OfficeForceProfile, OfficeForceState, PatrolRoute, Permille, RecordData, RecordKind, Seed,
+        Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, DeterministicRng, ForceCandidateTrace, OfficeAvailabilityPhase,
@@ -1529,10 +1529,11 @@ mod tests {
                 .vacancy_since,
             None
         );
-        assert!(fx
-            .world
-            .support_declarations_for_office(fx.office)
-            .is_empty());
+        assert!(
+            fx.world
+                .support_declarations_for_office(fx.office)
+                .is_empty()
+        );
         let record = event_log
             .get(event_log.events_by_tag(EventTag::Political)[0])
             .unwrap();
@@ -1648,11 +1649,13 @@ mod tests {
             })
         );
         assert_eq!(event.trace.support_declarations.len(), 2);
-        assert!(event
-            .trace
-            .support_declarations
-            .iter()
-            .all(|declaration| declaration.counted));
+        assert!(
+            event
+                .trace
+                .support_declarations
+                .iter()
+                .all(|declaration| declaration.counted)
+        );
     }
 
     #[test]
@@ -1704,11 +1707,13 @@ mod tests {
             })
         );
         assert_eq!(event.trace.support_declarations.len(), 2);
-        assert!(event
-            .trace
-            .support_declarations
-            .iter()
-            .all(|declaration| declaration.candidate_eligible && declaration.counted));
+        assert!(
+            event
+                .trace
+                .support_declarations
+                .iter()
+                .all(|declaration| declaration.candidate_eligible && declaration.counted)
+        );
     }
 
     #[test]
@@ -1965,10 +1970,12 @@ mod tests {
 
         run_succession(&mut death_fx.world, &mut event_log, 5);
 
-        assert!(death_fx
-            .world
-            .force_claimants_for_office_including_dead(death_fx.office)
-            .is_empty());
+        assert!(
+            death_fx
+                .world
+                .force_claimants_for_office_including_dead(death_fx.office)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1994,10 +2001,11 @@ mod tests {
                 last_uncontested_tick: None,
             })
         );
-        assert!(fx
-            .world
-            .force_claimants_for_office_including_dead(fx.office)
-            .is_empty());
+        assert!(
+            fx.world
+                .force_claimants_for_office_including_dead(fx.office)
+                .is_empty()
+        );
         let register = record_at_place(&fx.world, fx.place, RecordKind::OfficeRegister);
         assert_eq!(
             register.active_entries().len(),

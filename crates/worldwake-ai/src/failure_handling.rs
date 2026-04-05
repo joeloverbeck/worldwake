@@ -1,4 +1,4 @@
-use crate::{authoritative_target, AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind};
+use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
     EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, ReasoningProfile, Tick,
@@ -306,15 +306,13 @@ fn classify_production_failure(
         .payload_override
         .as_ref()
         .and_then(ActionPayload::as_harvest)
-    {
-        if let Some(missing_tool) = payload
+        && let Some(missing_tool) = payload
             .required_tool_kinds
             .iter()
             .copied()
             .find(|tool| view.unique_item_count(agent, *tool) == 0)
-        {
-            return Some(BlockingFact::MissingTool(missing_tool));
-        }
+    {
+        return Some(BlockingFact::MissingTool(missing_tool));
     }
 
     if let Some(payload) = step
@@ -830,8 +828,8 @@ fn blocking_fact_ttl(fact: BlockingFact, reasoning: &ReasoningProfile) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        blocking_fact_ttl, clear_resolved_blockers, derive_blocking_fact, handle_plan_failure,
-        ExecutionFailure, PlanFailureContext,
+        ExecutionFailure, PlanFailureContext, blocking_fact_ttl, clear_resolved_blockers,
+        derive_blocking_fact, handle_plan_failure,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,

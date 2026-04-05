@@ -10,24 +10,23 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
-    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind,
-    CommunicationProfile, ComponentKind, ComponentValue, ControlSource, DeadAt,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKey, GoalKind,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, JusticeDispositionProfile,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
-    RecordData, RecordKind, RelationValue, ResourceSource, RightKind, Seed, StateHash,
-    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand,
-    Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState,
+    BelievedInstitutionalClaim, CombatProfile, CommodityKind, CommunicationProfile, ComponentKind,
+    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
+    EventTag, EventView, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, JusticeDispositionProfile, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind,
+    RelationValue, ResourceSource, RightKind, Seed, StateHash, SuccessionLaw, TellProfile,
+    TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, hash_event_log, hash_world,
+    prototype_place_entity, total_live_lot_quantity, verify_live_lot_conservation,
 };
 use worldwake_sim::{
-    step_tick, ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail,
-    ActionTraceKind, AutonomousController, AutonomousControllerContext,
-    DeclareSupportActionPayload, InputKind, OfficeAvailabilityPhase, OfficeSuccessionOutcome,
-    PressForceClaimActionPayload, RequestProvenance, RequestResolutionOutcome,
-    ResolvedRequestTrace, TickStepServices,
+    ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
+    AutonomousController, AutonomousControllerContext, DeclareSupportActionPayload, InputKind,
+    OfficeAvailabilityPhase, OfficeSuccessionOutcome, PressForceClaimActionPayload,
+    RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace, TickStepServices, step_tick,
 };
 
 // ---------------------------------------------------------------------------
@@ -2890,10 +2889,11 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         })
         .expect("listener should commit declare_support after learning the office fact");
     assert!(
-        office_tell_commit_order < (
-            declare_support_commit.tick,
-            declare_support_commit.sequence_in_tick,
-        ),
+        office_tell_commit_order
+            < (
+                declare_support_commit.tick,
+                declare_support_commit.sequence_in_tick,
+            ),
         "the tell that unlocks the office fact must appear before declare_support in the action trace"
     );
     assert_eq!(
@@ -2919,8 +2919,8 @@ fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact() {
 }
 
 #[test]
-fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically(
-) {
+fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically()
+ {
     let first =
         run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(Seed([46; 32]));
     let second =
@@ -3577,14 +3577,14 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
     let mut d_learned = false;
     for _ in 0..80 {
         h.step_once();
-        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
-            if matches!(
+        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener)
+            && matches!(
                 store.believed_force_controller(office),
                 InstitutionalBeliefRead::Certain((Some(controller), _)) if controller == challenger
-            ) {
-                d_learned = true;
-                break;
-            }
+            )
+        {
+            d_learned = true;
+            break;
         }
     }
     assert!(
@@ -4113,14 +4113,14 @@ fn run_contested_force_state_propagates_through_belief_system(
     let mut d_learned = false;
     for _ in 0..80 {
         h.step_once();
-        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
-            if !matches!(
+        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener)
+            && !matches!(
                 store.believed_force_controller(office),
                 InstitutionalBeliefRead::Unknown
-            ) {
-                d_learned = true;
-                break;
-            }
+            )
+        {
+            d_learned = true;
+            break;
         }
     }
     assert!(
@@ -4513,16 +4513,16 @@ fn run_same_place_concurrent_violation_lifecycle(
             .expect("decision tracing should be enabled")
             .trace_at(investigator, just_ran_tick)
             .expect("decision trace should exist for each stepped tick");
-        if let DecisionOutcome::Planning(planning) = &trace.outcome {
-            if planning.selection.selected_goal_is(
+        if let DecisionOutcome::Planning(planning) = &trace.outcome
+            && planning.selection.selected_goal_is(
                 GoalKind::InvestigateViolation {
                     violation_id: sibling_violation_id,
                     place: VILLAGE_SQUARE,
                 }
                 .into(),
-            ) {
-                sibling_selected = true;
-            }
+            )
+        {
+            sibling_selected = true;
         }
 
         let committed_ids = h
@@ -4972,6 +4972,7 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },
@@ -7673,6 +7674,7 @@ fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateH
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },

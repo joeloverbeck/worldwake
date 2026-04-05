@@ -1,26 +1,25 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    ArtifactHeader, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
-    CarryCapacity, CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile,
-    CommunicationProfile, Container, ContentionDispositionProfile, ContentionIntents,
-    ContentionPolicy, ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, EpistemicDispositionProfile, FactionData, HomeostaticNeeds,
-    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
-    JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
+    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
+    BlockedIntentMemory, BountyTerms, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
+    CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
+    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
+    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
+    ItemLot, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
     NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
     PerceptionProfile, Permille, PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy,
     PursuitProfile, Quantity, ReasoningProfile, RecordData, ReservationRecord, ResourceSource,
     RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
     StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     TradeDispositionProfile, UniqueItem, UtilityProfile, ViolationDispositionProfile,
-    ViolationMemory, WorkstationMarker, WoundList,
+    ViolationMemory, WorkstationMarker, WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
         pub enum ComponentKind {
             $($component_variant,)*
@@ -35,7 +34,7 @@ macro_rules! define_component_kind {
 }
 
 macro_rules! define_component_value {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
         pub enum ComponentValue {
             $($component_variant($component_ty),)*
@@ -53,7 +52,7 @@ macro_rules! define_component_value {
 }
 
 macro_rules! count_authoritative_components {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         <[()]>::len(&[$(count_authoritative_components!(@replace $component_variant)),*])
     };
     (@replace $component_variant:ident) => { () };
@@ -237,13 +236,6 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        test_utils::{
-            sample_blocked_intent_memory, sample_commodity_valuation_profile,
-            sample_contention_disposition_profile, sample_demand_memory,
-            sample_merchandise_profile, sample_preference_profile, sample_route_experience,
-            sample_source_reliability, sample_substitute_preferences,
-            sample_trade_disposition_profile, sample_utility_profile,
-        },
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactKind,
         ArtifactState, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CombatProfile,
@@ -263,8 +255,15 @@ mod tests {
         TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
         ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
         WoundCause, WoundList,
+        test_utils::{
+            sample_blocked_intent_memory, sample_commodity_valuation_profile,
+            sample_contention_disposition_profile, sample_demand_memory,
+            sample_merchandise_profile, sample_preference_profile, sample_route_experience,
+            sample_source_reliability, sample_substitute_preferences,
+            sample_trade_disposition_profile, sample_utility_profile,
+        },
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 
@@ -428,6 +427,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(14),
                         source: PerceptionSource::DirectObservation,
                     },

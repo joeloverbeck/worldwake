@@ -67,8 +67,8 @@ pub fn handle_load(
 mod tests {
     use super::*;
     use worldwake_core::{
-        build_prototype_world, CauseRef, ControlSource, EventLog, ReasoningProfile, Seed,
-        StateHash, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, ControlSource, EventLog, ReasoningProfile, Seed, StateHash, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::SaveableRuntime;
     use worldwake_sim::{

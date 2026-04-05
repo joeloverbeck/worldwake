@@ -141,11 +141,11 @@ impl WoundId {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_incapacitated, is_wound_load_fatal, BodyPart, CombatWeaponRef, DeprivationKind, Wound,
-        WoundCause, WoundId, WoundList,
+        BodyPart, CombatWeaponRef, DeprivationKind, Wound, WoundCause, WoundId, WoundList,
+        is_incapacitated, is_wound_load_fatal,
     };
-    use crate::{traits::Component, CombatProfile, CommodityKind, EntityId, Permille, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{CombatProfile, CommodityKind, EntityId, Permille, Tick, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 
@@ -344,14 +344,18 @@ mod tests {
     #[test]
     fn has_bleeding_wounds_detects_any_positive_bleed_rate() {
         assert!(!WoundList::default().has_bleeding_wounds());
-        assert!(!WoundList {
-            wounds: vec![sample_wound()]
-        }
-        .has_bleeding_wounds());
-        assert!(WoundList {
-            wounds: vec![sample_wound(), sample_combat_wound()]
-        }
-        .has_bleeding_wounds());
+        assert!(
+            !WoundList {
+                wounds: vec![sample_wound()]
+            }
+            .has_bleeding_wounds()
+        );
+        assert!(
+            WoundList {
+                wounds: vec![sample_wound(), sample_combat_wound()]
+            }
+            .has_bleeding_wounds()
+        );
     }
 
     #[test]

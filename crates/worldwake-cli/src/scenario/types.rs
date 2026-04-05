@@ -7,13 +7,13 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    items::CommodityKind, topology::PlaceTag, CarryCapacity, CombatProfile,
-    CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
-    DriveThresholds, EpistemicDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
-    JusticeDispositionProfile, MetabolismProfile, PatrolProfile, PerceptionProfile,
-    PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile, SubstitutePreferences,
-    TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag,
+    CarryCapacity, CombatProfile, CommodityValuationProfile, CommunicationProfile,
+    ContentionDispositionProfile, ControlSource, DriveThresholds, EpistemicDispositionProfile,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, MetabolismProfile,
+    PatrolProfile, PerceptionProfile, PreferenceProfile, PursuitProfile, Quantity,
+    ReasoningProfile, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.

@@ -426,10 +426,10 @@ fn saturating_u64_to_u32(value: u64) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{commodity_opportunity_score, CommodityOpportunityBreakdown};
+    use super::{CommodityOpportunityBreakdown, commodity_opportunity_score};
     use crate::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
     use std::collections::BTreeMap;
-    use std::num::{NonZeroU32, NonZeroU8};
+    use std::num::{NonZeroU8, NonZeroU32};
     use worldwake_core::{
         BeliefConfidencePolicy, BodyCostPerTick, BodyPart, CommodityKind,
         CommodityValuationProfile, DemandObservation, DemandObservationReason, DriveThresholds,

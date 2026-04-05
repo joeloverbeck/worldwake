@@ -67,14 +67,14 @@ pub fn hash_event_log(event_log: &EventLog) -> Result<StateHash, CanonicalError>
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, StateHash,
+        StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world,
     };
     use crate::{
-        build_prototype_world, CauseRef, EventLog, EventTag, InstitutionalClaim,
-        InstitutionalRecordEntry, PrototypePlace, RecordData, RecordEntryId, RecordKind,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, EventLog, EventTag, InstitutionalClaim, InstitutionalRecordEntry, PrototypePlace,
+        RecordData, RecordEntryId, RecordKind, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt;
 
     fn assert_traits<T>()

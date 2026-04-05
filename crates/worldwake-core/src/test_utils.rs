@@ -13,7 +13,7 @@ use crate::{
     UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::{NonZeroU32, NonZeroU8};
+use std::num::{NonZeroU8, NonZeroU32};
 
 /// Returns a fixed, well-known seed for deterministic test scenarios.
 pub fn deterministic_seed() -> Seed {

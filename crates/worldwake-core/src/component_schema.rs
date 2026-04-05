@@ -1619,7 +1619,7 @@ macro_rules! with_component_schema_entries {
 }
 
 macro_rules! forward_authoritative_components {
-    ($callback:ident; $({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident, $txn_component_ty:ty, $set_fn:ident, $clear_fn:ident, $txn_marker:ident })*) => {
+    ($callback:ident; $({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident, $txn_component_ty:ty, $set_fn:ident, $clear_fn:ident, $txn_marker:ident })*) => {
         $callback! {
             $(
                 {
@@ -1673,7 +1673,7 @@ macro_rules! select_txn_simple_set_components {
         $query_fn:ident,
         $count_fn:ident,
         $component_name:literal,
-        $kind_check:expr,
+        $kind_check:expr_2021,
         $component_variant:ident,
         $txn_component_ty:ty,
         $set_fn:ident,
@@ -1714,7 +1714,7 @@ macro_rules! select_txn_simple_set_components {
         $query_fn:ident,
         $count_fn:ident,
         $component_name:literal,
-        $kind_check:expr,
+        $kind_check:expr_2021,
         $component_variant:ident,
         $txn_component_ty:ty,
         $set_fn:ident,

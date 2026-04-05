@@ -165,10 +165,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ControlSource, DemandMemory,
-        DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag, EventView,
-        MerchandiseProfile, Permille, Quantity, SaleListing, Seed, Tick, TradeDispositionProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        CauseRef, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+        DemandObservationReason, EntityId, EventLog, EventTag, EventView, MerchandiseProfile,
+        Permille, Quantity, SaleListing, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -529,11 +529,13 @@ mod tests {
                 .observations,
             vec![observation(5, CommodityKind::Bread)]
         );
-        assert!(world
-            .get_component_demand_memory(forgetful)
-            .unwrap()
-            .observations
-            .is_empty());
+        assert!(
+            world
+                .get_component_demand_memory(forgetful)
+                .unwrap()
+                .observations
+                .is_empty()
+        );
     }
 
     #[test]
@@ -663,11 +665,13 @@ mod tests {
         ))
         .unwrap();
 
-        assert!(world
-            .get_component_demand_memory(agent)
-            .unwrap()
-            .observations
-            .is_empty());
+        assert!(
+            world
+                .get_component_demand_memory(agent)
+                .unwrap()
+                .observations
+                .is_empty()
+        );
         assert_eq!(event_log.len(), 1);
     }
 

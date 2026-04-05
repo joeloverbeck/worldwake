@@ -1,11 +1,11 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
-    ActionDomain, BelievedInstitutionalClaim, CommodityKind, Component, EntityId,
+    ActionDomain, BelievedInstitutionalClaim, CommodityKind, Component, EntityId, EvidenceKind,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
     WorkstationTag, World, Wound,
+    social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -660,6 +660,8 @@ pub struct ObservedEntitySnapshot {
     pub artifact_state: Option<BelievedArtifactState>,
     #[serde(default)]
     pub contention_state: Option<BelievedContentionState>,
+    #[serde(default)]
+    pub evidence_state: Option<BelievedEvidenceState>,
 }
 
 impl ObservedEntitySnapshot {
@@ -680,6 +682,7 @@ impl ObservedEntitySnapshot {
             believed_activity: None,
             believed_artifact: self.artifact_state.clone(),
             believed_contention: self.contention_state,
+            believed_evidence: self.evidence_state.clone(),
             observed_tick,
             source,
         }
@@ -720,6 +723,18 @@ pub struct BelievedArtifactState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedEvidenceEntry {
+    pub kind: EvidenceKind,
+    pub freshness: Tick,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BelievedEvidenceState {
+    pub entries: Vec<BelievedEvidenceEntry>,
+    pub observed_tick: Tick,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BelievedEntityState {
     pub last_known_place: Option<EntityId>,
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
@@ -733,6 +748,8 @@ pub struct BelievedEntityState {
     pub believed_artifact: Option<BelievedArtifactState>,
     #[serde(default)]
     pub believed_contention: Option<BelievedContentionState>,
+    #[serde(default)]
+    pub believed_evidence: Option<BelievedEvidenceState>,
     pub observed_tick: Tick,
     pub source: PerceptionSource,
 }
@@ -1153,6 +1170,7 @@ pub fn build_observed_entity_snapshot(
             .map(|p| p.courage),
         artifact_state: build_believed_artifact_state(world, entity, Tick(0)),
         contention_state: build_believed_contention_state(world, entity, Tick(0)),
+        evidence_state: build_believed_evidence_state(world, entity, Tick(0)),
     })
 }
 
@@ -1202,6 +1220,26 @@ pub fn build_believed_contention_state(
 }
 
 #[must_use]
+pub fn build_believed_evidence_state(
+    world: &World,
+    entity: EntityId,
+    observed_tick: Tick,
+) -> Option<BelievedEvidenceState> {
+    let scene = world.get_component_scene_evidence(entity)?;
+    Some(BelievedEvidenceState {
+        entries: scene
+            .evidence
+            .iter()
+            .map(|entry| BelievedEvidenceEntry {
+                kind: entry.kind,
+                freshness: entry.created_at,
+            })
+            .collect(),
+        observed_tick,
+    })
+}
+
+#[must_use]
 pub fn build_believed_entity_state(
     world: &World,
     entity: EntityId,
@@ -1214,6 +1252,9 @@ pub fn build_believed_entity_state(
         }
         if let Some(contention) = snapshot.contention_state.as_mut() {
             contention.observed_tick = observed_tick;
+        }
+        if let Some(evidence) = snapshot.evidence_state.as_mut() {
+            evidence.observed_tick = observed_tick;
         }
         snapshot.to_believed_entity_state(observed_tick, source)
     })
@@ -1466,24 +1507,25 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
 #[cfg(test)]
 mod tests {
     use super::{
+        AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
+        BelievedActivity, BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry,
+        BelievedEvidenceState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
+        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
+        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
-        AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BelievedActivity,
-        BelievedContentionState, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
-        MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-        RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState, SocialObservation,
-        SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
-        ToldBeliefMemory,
+        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot,
     };
     use crate::{
-        build_prototype_world, current_institutional_belief_topics,
-        institutional_claim_same_memory_lane, traits::Component, ActionDefId, ActionDomain,
-        BelievedArtifactState, BelievedBountyTerms, BelievedInstitutionalClaim, BodyPart,
-        CommodityKind, ControlSource, DeadAt, EntityId, EntityKind, InstitutionalBeliefKey,
+        ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
+        BelievedInstitutionalClaim, BodyPart, CommodityKind, ControlSource, DeadAt,
+        DisturbanceKind, EntityId, EntityKind, EvidenceKind, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-        Permille, Quantity, TheftFacts, Tick, World, Wound, WoundCause, WoundId, WoundList,
+        Permille, Quantity, SceneEvidence, TheftFacts, Tick, World, Wound, WoundCause, WoundId,
+        WoundList, build_prototype_world, current_institutional_belief_topics,
+        institutional_claim_same_memory_lane, traits::Component,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
 
     fn entity(slot: u32) -> EntityId {
@@ -1553,6 +1595,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
@@ -1975,15 +2018,19 @@ mod tests {
             }
         ));
         assert_eq!(store.total_institutional_beliefs(), 2);
-        assert!(store
-            .institutional_beliefs
-            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office: entity(70) }));
-        assert!(store
-            .institutional_beliefs
-            .contains_key(&InstitutionalBeliefKey::SupportFor {
-                supporter: entity(72),
-                office: entity(73),
-            }));
+        assert!(
+            store
+                .institutional_beliefs
+                .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office: entity(70) })
+        );
+        assert!(
+            store
+                .institutional_beliefs
+                .contains_key(&InstitutionalBeliefKey::SupportFor {
+                    supporter: entity(72),
+                    office: entity(73),
+                })
+        );
     }
 
     #[test]
@@ -2407,6 +2454,7 @@ mod tests {
                 queue_length: 2,
                 observed_tick: Tick(4),
             }),
+            evidence_state: None,
         };
 
         let bytes = bincode::serialize(&snapshot).unwrap();
@@ -3093,6 +3141,8 @@ mod tests {
         assert_ordered_traits::<MismatchKind>();
         assert_serde_bounds::<BeliefConfidencePolicy>();
         assert_serde_bounds::<BelievedEntityState>();
+        assert_serde_bounds::<BelievedEvidenceEntry>();
+        assert_serde_bounds::<BelievedEvidenceState>();
         assert_serde_bounds::<MismatchKind>();
         assert_serde_bounds::<SocialObservation>();
         assert_serde_bounds::<SocialObservationDetail>();
@@ -3186,6 +3236,7 @@ mod tests {
         assert!(snapshot.wounds.is_empty());
         assert_eq!(snapshot.courage, None); // no UtilityProfile set
         assert_eq!(snapshot.contention_state, None);
+        assert_eq!(snapshot.evidence_state, None);
     }
 
     #[test]
@@ -3245,6 +3296,63 @@ mod tests {
             Some(BelievedContentionState {
                 grant_holder: Some(grantee),
                 queue_length: 1,
+                observed_tick: Tick(0),
+            })
+        );
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_projects_evidence_state_for_places() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        world
+            .insert_component_scene_evidence(
+                place,
+                SceneEvidence {
+                    evidence: vec![crate::EvidenceEntry {
+                        id: crate::EvidenceEntryId(0),
+                        kind: EvidenceKind::DisturbanceMarker {
+                            place,
+                            kind: DisturbanceKind::WildernessRelief,
+                            created_at: Tick(4),
+                        },
+                        created_at: Tick(4),
+                        decay_ticks: 50,
+                    }],
+                    next_entry_id: 1,
+                },
+            )
+            .unwrap();
+
+        let snapshot = build_observed_entity_snapshot(&world, place).unwrap();
+        assert_eq!(
+            snapshot.evidence_state,
+            Some(BelievedEvidenceState {
+                entries: vec![BelievedEvidenceEntry {
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place,
+                        kind: DisturbanceKind::WildernessRelief,
+                        created_at: Tick(4),
+                    },
+                    freshness: Tick(4),
+                }],
+                observed_tick: Tick(0),
+            })
+        );
+
+        let believed =
+            snapshot.to_believed_entity_state(Tick(9), PerceptionSource::DirectObservation);
+        assert_eq!(
+            believed.believed_evidence,
+            Some(BelievedEvidenceState {
+                entries: vec![BelievedEvidenceEntry {
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place,
+                        kind: DisturbanceKind::WildernessRelief,
+                        created_at: Tick(4),
+                    },
+                    freshness: Tick(4),
+                }],
                 observed_tick: Tick(0),
             })
         );

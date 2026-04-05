@@ -3,6 +3,7 @@
 //! All functions are pure read-only — no world mutation.
 
 use worldwake_core::{
+    Tick,
     control::ControlSource,
     delta::{
         ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
@@ -14,7 +15,6 @@ use worldwake_core::{
     items::CommodityKind,
     numerics::{Permille, Quantity},
     world::World,
-    Tick,
 };
 
 /// Errors from [`resolve_entity`].
@@ -150,12 +150,12 @@ pub fn format_location(world: &World, entity_id: EntityId, current_tick: Tick) -
         let place_name = entity_display_name(world, place_id);
         return format!("at {place_name}");
     }
-    if world.is_in_transit(entity_id) {
-        if let Some(transit) = world.get_component_in_transit_on_edge(entity_id) {
-            let dest = entity_display_name(world, transit.destination);
-            let remaining = transit.arrival_tick.0.saturating_sub(current_tick.0);
-            return format!("in transit to {dest} ({remaining} ticks remaining)");
-        }
+    if world.is_in_transit(entity_id)
+        && let Some(transit) = world.get_component_in_transit_on_edge(entity_id)
+    {
+        let dest = entity_display_name(world, transit.destination);
+        let remaining = transit.arrival_tick.0.saturating_sub(current_tick.0);
+        return format!("in transit to {dest} ({remaining} ticks remaining)");
     }
     "(no location)".to_string()
 }
@@ -469,8 +469,11 @@ fn format_needs_delta(
     } else {
         format!(
             "HomeostaticNeeds on {agent_name}: hunger={}‰, thirst={}‰, fatigue={}‰, bladder={}‰, dirtiness={}‰",
-            after_needs.hunger.value(), after_needs.thirst.value(), after_needs.fatigue.value(),
-            after_needs.bladder.value(), after_needs.dirtiness.value()
+            after_needs.hunger.value(),
+            after_needs.thirst.value(),
+            after_needs.fatigue.value(),
+            after_needs.bladder.value(),
+            after_needs.dirtiness.value()
         )
     }
 }
@@ -539,14 +542,14 @@ fn format_belief_store_delta(
     // Diff told beliefs (Tell sending)
     let before_told = before_store.map_or(0, |s| s.told_beliefs.len());
     let after_told = after_store.told_beliefs.len();
-    if after_told > before_told {
-        if let Some(bs) = before_store {
-            for key in after_store.told_beliefs.keys() {
-                if !bs.told_beliefs.contains_key(key) {
-                    let listener = entity_display_name(world, key.counterparty);
-                    let topic = format_tell_topic_brief(world, &key.topic);
-                    changes.push(format!("told {listener} about {topic}"));
-                }
+    if after_told > before_told
+        && let Some(bs) = before_store
+    {
+        for key in after_store.told_beliefs.keys() {
+            if !bs.told_beliefs.contains_key(key) {
+                let listener = entity_display_name(world, key.counterparty);
+                let topic = format_tell_topic_brief(world, &key.topic);
+                changes.push(format!("told {listener} about {topic}"));
             }
         }
     }
@@ -576,10 +579,10 @@ fn format_belief_store_delta(
         if let Some(bs) = before_store {
             let mut updated = 0;
             for (entity_id, after_state) in &after_store.known_entities {
-                if let Some(before_state) = bs.known_entities.get(entity_id) {
-                    if before_state != after_state {
-                        updated += 1;
-                    }
+                if let Some(before_state) = bs.known_entities.get(entity_id)
+                    && before_state != after_state
+                {
+                    updated += 1;
                 }
             }
             if updated > 0 {
@@ -614,7 +617,7 @@ fn format_tell_topic_brief(world: &World, topic: &worldwake_core::TellTopic) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
+    use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
     use worldwake_core::{
         control::ControlSource,
         drives::ThresholdBand,

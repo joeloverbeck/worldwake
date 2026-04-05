@@ -1,13 +1,13 @@
 use crate::{
-    authoritative_target, decision_trace::PursuitInvalidationReason, resolve_planning_targets_with,
-    MaterializationBindings, PlannedPlan, PlannedStep, PlannerOpKind,
+    MaterializationBindings, PlannedPlan, PlannedStep, PlannerOpKind, authoritative_target,
+    decision_trace::PursuitInvalidationReason, resolve_planning_targets_with,
 };
 use std::collections::BTreeSet;
-use worldwake_core::{belief_confidence, EntityId, GoalKind, Tick};
+use worldwake_core::{EntityId, GoalKind, Tick, belief_confidence};
 use worldwake_sim::{
+    ActionDefRegistry, ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
     evaluate_constraint, evaluate_precondition, get_affordances_for_defs,
-    requested_affordance_matches, ActionDefRegistry, ActionHandlerRegistry, Affordance,
-    RuntimeBeliefView, TargetSpec,
+    requested_affordance_matches,
 };
 
 #[must_use]
@@ -206,10 +206,10 @@ pub fn is_pursuit_plan_invalid(
     }
 
     // Check if believed place still matches the plan's destination.
-    if let Some(planned_dest) = planned_pursuit_destination(plan) {
-        if believed_place != planned_dest {
-            return Some(PursuitInvalidationReason::PlaceChanged);
-        }
+    if let Some(planned_dest) = planned_pursuit_destination(plan)
+        && believed_place != planned_dest
+    {
+        return Some(PursuitInvalidationReason::PlaceChanged);
     }
 
     // Re-derive confidence and check against profile threshold.
@@ -1193,6 +1193,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: observed,
             source: PerceptionSource::DirectObservation,
         }

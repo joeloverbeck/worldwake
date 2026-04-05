@@ -212,11 +212,11 @@ mod tests {
         ViolationId,
     };
     use crate::{
-        test_utils::entity_id, ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind,
-        CommunicationClass, NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId,
-        RewardSource,
+        ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
+        NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RewardSource,
+        test_utils::entity_id,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 

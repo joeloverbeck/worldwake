@@ -234,20 +234,20 @@ impl World {
             });
         }
 
-        if let Some(owner) = self.relations.owned_by.get(&entity).copied() {
-            if unpossessed {
-                if self.factions_of(actor).contains(&owner) {
-                    rights.push(EffectiveRight {
-                        kind: RightKind::FactionAuthority,
-                        via: Some(owner),
-                    });
-                }
-                if self.offices_held_by(actor).contains(&owner) {
-                    rights.push(EffectiveRight {
-                        kind: RightKind::OfficeAuthority,
-                        via: Some(owner),
-                    });
-                }
+        if let Some(owner) = self.relations.owned_by.get(&entity).copied()
+            && unpossessed
+        {
+            if self.factions_of(actor).contains(&owner) {
+                rights.push(EffectiveRight {
+                    kind: RightKind::FactionAuthority,
+                    via: Some(owner),
+                });
+            }
+            if self.offices_held_by(actor).contains(&owner) {
+                rights.push(EffectiveRight {
+                    kind: RightKind::OfficeAuthority,
+                    via: Some(owner),
+                });
             }
         }
 

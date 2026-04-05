@@ -1,9 +1,9 @@
 use crate::{
-    abort_action, start_action, tick_action, ActionAbortRequestReason, ActionDefRegistry,
-    ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstance, ActionInstanceId, Affordance, CommitOutcome, DeterministicRng,
-    ExternalAbortReason, InputEvent, InputQueue, InterruptReason, ReplanNeeded,
-    ResolvedRequestTrace, SystemManifest, TickOutcome,
+    ActionAbortRequestReason, ActionDefRegistry, ActionError, ActionExecutionAuthority,
+    ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId, Affordance,
+    CommitOutcome, DeterministicRng, ExternalAbortReason, InputEvent, InputQueue, InterruptReason,
+    ReplanNeeded, ResolvedRequestTrace, SystemManifest, TickOutcome, abort_action, start_action,
+    tick_action,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -360,7 +360,7 @@ mod tests {
         CommitOutcome, InputKind, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
         ResolvedRequestTrace, SystemManifest,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{ActionDefId, EntityId, ReservationId, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

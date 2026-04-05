@@ -1,9 +1,9 @@
 use crate::{
-    step_tick, InputQueueError, ReplayCheckpoint, ReplayStateError, SimulationState,
-    TickStepServices,
+    InputQueueError, ReplayCheckpoint, ReplayStateError, SimulationState, TickStepServices,
+    step_tick,
 };
 use std::fmt;
-use worldwake_core::{hash_event_log, hash_world, CanonicalError, StateHash, Tick};
+use worldwake_core::{CanonicalError, StateHash, Tick, hash_event_log, hash_world};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayError {
@@ -253,7 +253,7 @@ fn verify_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::{
-        record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler, ReplayError,
+        ReplayError, record_tick_checkpoint, replay_and_verify, seed_replay_inputs_from_scheduler,
     };
     use crate::{
         ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
@@ -263,9 +263,9 @@ mod tests {
     };
     use std::num::NonZeroU64;
     use worldwake_core::{
-        build_prototype_world, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EventLog, Quantity, Seed, StateHash, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn,
+        BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId, EventLog, Quantity,
+        Seed, StateHash, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
+        WorldTxn, build_prototype_world,
     };
 
     fn entity(slot: u32) -> EntityId {

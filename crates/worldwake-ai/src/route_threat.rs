@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{derive_danger_pressure, PlanningSnapshot};
+use crate::{PlanningSnapshot, derive_danger_pressure};
 use worldwake_core::{
-    belief_confidence, ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy,
-    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille, SocialObservation,
-    SocialObservationKind, Tick,
+    ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy, BelievedArtifactState,
+    BelievedEntityState, EntityId, NoticeTopic, Permille, SocialObservation, SocialObservationKind,
+    Tick, belief_confidence,
 };
 use worldwake_sim::GoalBeliefView;
 
@@ -247,6 +247,7 @@ mod tests {
             }),
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }
@@ -295,6 +296,7 @@ mod tests {
                 observed_tick,
             }),
             believed_contention: None,
+            believed_evidence: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }

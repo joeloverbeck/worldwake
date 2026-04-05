@@ -3,8 +3,8 @@
 use worldwake_ai::AgentTickDriver;
 use worldwake_core::{drives::ThresholdBand, numerics::Permille};
 use worldwake_sim::{
-    step_tick, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, SimulationState,
-    SystemDispatchTable, TickStepServices,
+    ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, SimulationState,
+    SystemDispatchTable, TickStepServices, step_tick,
 };
 use worldwake_systems::ActionRegistries;
 
@@ -171,7 +171,7 @@ pub fn handle_status(sim: &SimulationState, registries: &ActionRegistries) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
+    use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
     use worldwake_core::{
         control::ControlSource, ids::EntityId, needs::HomeostaticNeeds, numerics::Permille,
         topology::PlaceTag,

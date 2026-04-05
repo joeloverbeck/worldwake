@@ -10,12 +10,12 @@ use worldwake_ai::{
     RankedPriorityAdjustment,
 };
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, AgentData, BeliefConfidencePolicy,
-    BelievedContentionState, CombatProfile, CombatStance, CommodityKind, ContentionIntents,
-    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DeprivationExposure, GoalKey,
-    GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, PrototypePlace,
-    Quantity, QueuedContentionIntent, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
-    WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    AgentData, BeliefConfidencePolicy, BelievedContentionState, CombatProfile, CombatStance,
+    CommodityKind, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+    DeprivationExposure, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PrototypePlace, Quantity, QueuedContentionIntent, ResourceSource, Seed,
+    StateHash, Tick, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    hash_event_log, hash_world, total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionDuration, ActionInstance, ActionPayload, ActionRequestMode, ActionStatus,
@@ -2752,10 +2752,10 @@ fn run_corpse_contention_visible_state_scenario(seed: Seed) -> CorpseContentionO
             .get_component_contention_queue(corpse)
             .cloned()
             .expect("corpse contention state should persist during the scenario");
-        if let Some(granted) = queue.granted.as_ref() {
-            if grant_sequence.last().copied() != Some(granted.actor) {
-                grant_sequence.push(granted.actor);
-            }
+        if let Some(granted) = queue.granted.as_ref()
+            && grant_sequence.last().copied() != Some(granted.actor)
+        {
+            grant_sequence.push(granted.actor);
         }
         let second_has_grant = queue
             .granted

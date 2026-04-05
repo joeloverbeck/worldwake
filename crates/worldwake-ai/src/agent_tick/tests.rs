@@ -1,53 +1,55 @@
 use super::candidates::abandon_expired_facility_queues_with_limit;
 use super::execution::resolve_step_targets;
 use super::observation::{
-    facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
-    update_runtime_observation_snapshot, ReadPhaseContext,
+    ReadPhaseContext, facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
+    update_runtime_observation_snapshot,
 };
 use super::planning::{
     determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
 };
 use super::{
-    advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-    effective_goal_switch_margin, handle_recoverable_travel_step_blockage, persist_blocked_memory,
-    plan_and_validate_next_step_traced, update_frame_for_adopted_plan, AgentTickDriver,
+    AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
+    committed_action_for_step, effective_goal_switch_margin,
+    handle_recoverable_travel_step_blockage, persist_blocked_memory,
+    plan_and_validate_next_step_traced, update_frame_for_adopted_plan,
 };
+use crate::ReasoningProfile;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
-use crate::ReasoningProfile;
 use crate::{
-    build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
+    AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
     ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
     GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
-    RankedGoalProvenance, SelectedPlanReplacementKind,
+    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, ActionDefId, BanditFactionPolicy,
-    BeliefConfidencePolicy, BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory,
-    BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
-    ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, EventLog, EventPayload, FrameState, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent,
-    PerceptionProfile, PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent,
-    RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
-    UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    ActionDefId, BanditFactionPolicy, BeliefConfidencePolicy, BelievedInstitutionalClaim,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart,
+    CarryCapacity, CauseRef, CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy,
+    ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
+    DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+    EventPayload, FrameState, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
     WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
-    step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
+    ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
     DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
     RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
     SystemExecutionContext, SystemId, SystemManifest, TickStepServices, TransportActionPayload,
+    step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -1827,15 +1829,17 @@ fn abandon_expired_facility_queues_removes_actor_from_authoritative_queue() {
     let mut harness = Harness::new(ControlSource::Ai);
     let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
 
-    assert!(abandon_expired_facility_queues_with_limit(
-        &mut harness.world,
-        &mut harness.event_log,
-        harness.actor,
-        Tick(4),
-        NonZeroU32::new(3).unwrap(),
-        ReasoningProfile::default().structural_block_ticks,
-    )
-    .unwrap());
+    assert!(
+        abandon_expired_facility_queues_with_limit(
+            &mut harness.world,
+            &mut harness.event_log,
+            harness.actor,
+            Tick(4),
+            NonZeroU32::new(3).unwrap(),
+            ReasoningProfile::default().structural_block_ticks,
+        )
+        .unwrap()
+    );
 
     let queue = harness
         .world
@@ -1879,15 +1883,17 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
     update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
-    assert!(abandon_expired_facility_queues_with_limit(
-        &mut harness.world,
-        &mut harness.event_log,
-        harness.actor,
-        Tick(4),
-        NonZeroU32::new(3).unwrap(),
-        ReasoningProfile::default().structural_block_ticks,
-    )
-    .unwrap());
+    assert!(
+        abandon_expired_facility_queues_with_limit(
+            &mut harness.world,
+            &mut harness.event_log,
+            harness.actor,
+            Tick(4),
+            NonZeroU32::new(3).unwrap(),
+            ReasoningProfile::default().structural_block_ticks,
+        )
+        .unwrap()
+    );
 
     let blocked = harness
         .world
@@ -1901,10 +1907,12 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     );
     assert_eq!(intent.blocker_key.target, Some(facility));
     assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
-    assert!(harness
-        .world
-        .get_component_contention_intents(harness.actor)
-        .is_none_or(|intents| intents.intents.is_empty()));
+    assert!(
+        harness
+            .world
+            .get_component_contention_intents(harness.actor)
+            .is_none_or(|intents| intents.intents.is_empty())
+    );
 }
 
 #[test]
@@ -2174,10 +2182,12 @@ fn queued_actor_can_eat_without_losing_queue_membership() {
         .world
         .get_component_contention_queue(facility)
         .expect("queued facility should still exist");
-    assert!(queue
-        .waiting
-        .values()
-        .any(|queued| queued.actor == harness.actor));
+    assert!(
+        queue
+            .waiting
+            .values()
+            .any(|queued| queued.actor == harness.actor)
+    );
 }
 
 #[test]
@@ -2574,10 +2584,12 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
     assert_eq!(runtime.current_plan, None);
     assert_eq!(runtime.current_step_index, 0);
     assert!(blocked_memory.intents.is_empty());
-    assert!(runtime
-        .materialization_bindings
-        .hypothetical_to_authoritative
-        .is_empty());
+    assert!(
+        runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty()
+    );
 }
 
 #[test]
@@ -2815,10 +2827,12 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
     );
     assert_eq!(updated_jc.last_progress_tick, Some(Tick(4)));
     assert!(!runtime.dirty.is_empty());
-    assert!(runtime
-        .materialization_bindings
-        .hypothetical_to_authoritative
-        .is_empty());
+    assert!(
+        runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty()
+    );
 }
 
 #[test]
@@ -3131,10 +3145,12 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
 
     assert!(runtime.current_plan.is_none());
     assert!(!runtime.step_in_flight);
-    assert!(runtime
-        .materialization_bindings
-        .hypothetical_to_authoritative
-        .is_empty());
+    assert!(
+        runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty()
+    );
 }
 
 #[allow(clippy::too_many_lines)]
@@ -3721,12 +3737,14 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
             purpose: CommodityPurpose::SelfConsume,
         }
     ));
-    assert!(harness
-        .world
-        .get_component_agent_belief_store(harness.actor)
-        .unwrap()
-        .get_entity(&seller)
-        .is_none());
+    assert!(
+        harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .unwrap()
+            .get_entity(&seller)
+            .is_none()
+    );
 
     run_same_place_observation(&mut harness, Tick(2), origin, seller);
     run_same_place_observation(&mut harness, Tick(2), origin, bread);
@@ -3886,15 +3904,15 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal(
 
     let after = ranked_goals_at(&mut harness, Tick(10));
     assert!(
-            !has_goal(
-                &after,
-                GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Bread,
-                    purpose: CommodityPurpose::SelfConsume,
-                }
-            ),
-            "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
-        );
+        !has_goal(
+            &after,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ),
+        "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
+    );
 }
 
 #[test]
@@ -5035,17 +5053,17 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                 "Force-law ClaimOffice should enter political plan search in agent_tick"
             );
             assert!(
-                    !planning.planning.attempts.iter().any(|attempt| {
-                        matches!(
-                            attempt.goal.kind,
-                            GoalKind::SupportCandidateForOffice {
-                                office: goal_office,
-                                candidate
-                            } if goal_office == office && candidate == rival
-                        )
-                    }),
-                    "Force-law support-candidate goals must not enter political plan search in agent_tick"
-                );
+                !planning.planning.attempts.iter().any(|attempt| {
+                    matches!(
+                        attempt.goal.kind,
+                        GoalKind::SupportCandidateForOffice {
+                            office: goal_office,
+                            candidate
+                        } if goal_office == office && candidate == rival
+                    )
+                }),
+                "Force-law support-candidate goals must not enter political plan search in agent_tick"
+            );
             let claim_attempt = planning
                 .planning
                 .attempts
@@ -5063,13 +5081,13 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                 .find(|summary| summary.depth == 0)
                 .expect("root expansion summary should be present for ClaimOffice");
             assert!(
-                    root.root_candidates.iter().any(|candidate| {
-                        candidate.op_kind == Some(PlannerOpKind::PressForceClaim)
-                            && candidate.outcome
-                                == crate::decision_trace::RootCandidateOutcome::Expanded
-                    }),
-                    "force-law ClaimOffice root trace should expose the retained PressForceClaim candidate"
-                );
+                root.root_candidates.iter().any(|candidate| {
+                    candidate.op_kind == Some(PlannerOpKind::PressForceClaim)
+                        && candidate.outcome
+                            == crate::decision_trace::RootCandidateOutcome::Expanded
+                }),
+                "force-law ClaimOffice root trace should expose the retained PressForceClaim candidate"
+            );
             let selected_plan = planning
                 .selection
                 .selected_plan
@@ -5085,16 +5103,19 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                 "force-law ClaimOffice should bind directly to PressForceClaim when already local"
             );
             assert!(
-                    planning.candidates.omitted_political.iter().any(|omission| {
-                        omission.family
-                            == crate::PoliticalGoalFamily::SupportCandidateForOffice
+                planning
+                    .candidates
+                    .omitted_political
+                    .iter()
+                    .any(|omission| {
+                        omission.family == crate::PoliticalGoalFamily::SupportCandidateForOffice
                             && omission.office == office
                             && omission.candidate.is_none()
                             && omission.reason
                                 == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
                     }),
-                    "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
-                );
+                "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
+            );
         }
         other => panic!("expected Planning outcome, got {other:?}"),
     }
@@ -5656,12 +5677,14 @@ fn tracing_disabled_produces_identical_behavior() {
     );
 
     // Traced harness should have trace data.
-    assert!(!harness_traced
-        .driver
-        .trace_sink()
-        .unwrap()
-        .traces()
-        .is_empty());
+    assert!(
+        !harness_traced
+            .driver
+            .trace_sink()
+            .unwrap()
+            .traces()
+            .is_empty()
+    );
 
     // Non-traced harness should have no trace data.
     assert!(harness_no_trace.driver.trace_sink().is_none());
@@ -5883,11 +5906,11 @@ fn goal_completion_does_not_create_blocked_intent() {
                 || intent.blocking_fact == BlockingFact::AssumptionFailed
         });
         assert!(
-                !has_patience_or_assumption,
-                "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
+            !has_patience_or_assumption,
+            "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
                  got: {:?}",
-                memory.intents
-            );
+            memory.intents
+        );
     }
 }
 

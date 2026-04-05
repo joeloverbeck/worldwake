@@ -61,10 +61,10 @@ fn main() {
     if let Some(ref command) = cli.exec {
         // Single-command execution mode.
         // Load persisted state if --state file exists.
-        if let Some(ref state_path) = cli.state {
-            if state_path.exists() {
-                load_state_file(state_path, &mut sim, &mut driver);
-            }
+        if let Some(ref state_path) = cli.state
+            && state_path.exists()
+        {
+            load_state_file(state_path, &mut sim, &mut driver);
         }
 
         // Run the single command.
@@ -80,11 +80,11 @@ fn main() {
         }
 
         // Save state if --state provided.
-        if let Some(ref state_path) = cli.state {
-            if let Err(e) = worldwake_sim::save(&sim, Some(&driver), state_path) {
-                eprintln!("state save failed: {e}");
-                process::exit(1);
-            }
+        if let Some(ref state_path) = cli.state
+            && let Err(e) = worldwake_sim::save(&sim, Some(&driver), state_path)
+        {
+            eprintln!("state save failed: {e}");
+            process::exit(1);
         }
     } else {
         // Normal REPL mode.

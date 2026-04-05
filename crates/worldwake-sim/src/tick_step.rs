@@ -1,13 +1,13 @@
 use crate::scheduler::SchedulerActionRuntime;
 use crate::{
-    derive_start_failure_legality_trace, get_affordances, ActionDefRegistry, ActionError,
-    ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionTraceDetail,
-    ActionTraceEvent, ActionTraceKind, ActionTraceSink, ControlError, ControllerState,
-    DeterministicRng, ExternalAbortReason, InputKind, InstitutionalKnowledgeTraceSink,
-    PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry, RequestBindingKind,
-    RequestResolutionOutcome, RequestResolutionRejectionReason, RequestResolutionTraceEvent,
-    RequestResolutionTraceSink, Scheduler, SystemDispatchTable, SystemError, TickInputContext,
-    TickInputError, TickInputProducer, TickOutcome,
+    ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandlerRegistry,
+    ActionInstanceId, ActionTraceDetail, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
+    ControlError, ControllerState, DeterministicRng, ExternalAbortReason, InputKind,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeRegistry,
+    RequestBindingKind, RequestResolutionOutcome, RequestResolutionRejectionReason,
+    RequestResolutionTraceEvent, RequestResolutionTraceSink, Scheduler, SystemDispatchTable,
+    SystemError, TickInputContext, TickInputError, TickInputProducer, TickOutcome,
+    derive_start_failure_legality_trace, get_affordances,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -539,14 +539,14 @@ fn validate_cancel_actor(
     actor: EntityId,
     action_instance_id: ActionInstanceId,
 ) -> Result<(), TickStepError> {
-    if let Some(actual_actor) = scheduler.active_action_actor(action_instance_id) {
-        if actual_actor != actor {
-            return Err(TickStepError::CancelActorMismatch {
-                actor,
-                action_instance_id,
-                actual_actor,
-            });
-        }
+    if let Some(actual_actor) = scheduler.active_action_actor(action_instance_id)
+        && actual_actor != actor
+    {
+        return Err(TickStepError::CancelActorMismatch {
+            actor,
+            action_instance_id,
+            actual_actor,
+        });
     }
 
     Ok(())
@@ -870,27 +870,27 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_affordance, step_tick, RequestedAction, TickStepError, TickStepResult,
-        TickStepServices,
+        RequestedAction, TickStepError, TickStepResult, TickStepServices, resolve_affordance,
+        step_tick,
     };
     use crate::{
-        get_affordances, ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext,
-        ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionProgress, ActionRequestMode, ActionState, ActionStatus,
-        ActionTraceDetail, ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState,
-        DeterministicRng, DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry,
+        ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload,
+        ActionProgress, ActionRequestMode, ActionState, ActionStatus, ActionTraceDetail,
+        ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState, DeterministicRng,
+        DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry,
         RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
         RequestResolutionRejectionReason, RequestResolutionTraceSink, ReservationReq, Scheduler,
         SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
-        TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
+        TellActionPayload, TickInputContext, TickInputError, TickInputProducer, get_affordances,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource,
-        DeadAt, EntityId, EntityKind, EventLog, EventTag, EventView, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, DeadAt, EntityId,
+        EntityKind, EventLog, EventTag, EventView, Seed, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn, build_prototype_world,
     };
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

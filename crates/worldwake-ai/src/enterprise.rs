@@ -252,8 +252,8 @@ mod tests {
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
-        RuntimeBeliefView,
+        ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
+        estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]

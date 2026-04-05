@@ -1,8 +1,8 @@
 //! Communication-type classification and per-agent acceptance profiles.
 
 use crate::{
-    current_institutional_belief_topics, AgentBeliefStore, Component, InstitutionalKnowledgeSource,
-    PerceptionSource, Permille, SocialObservationDetail, TellTopic,
+    AgentBeliefStore, Component, InstitutionalKnowledgeSource, PerceptionSource, Permille,
+    SocialObservationDetail, TellTopic, current_institutional_belief_topics,
 };
 use serde::{Deserialize, Serialize};
 
@@ -87,14 +87,14 @@ pub fn classify_communication(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_communication, CommunicationClass, CommunicationProfile};
+    use super::{CommunicationClass, CommunicationProfile, classify_communication};
     use crate::{
-        traits::Component, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
-        ControlSource, EntityId, EntityKind, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, PerceptionSource, Quantity, SocialObservation,
-        SocialObservationDetail, TellTopic, Tick, Topology, World,
+        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, ControlSource, EntityId,
+        EntityKind, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        PerceptionSource, Quantity, SocialObservation, SocialObservationDetail, TellTopic, Tick,
+        Topology, World, traits::Component,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 
@@ -156,6 +156,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(10),
                 source: PerceptionSource::DirectObservation,
             },
@@ -184,6 +185,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(13),
                 source: PerceptionSource::DirectObservation,
             },
@@ -212,6 +214,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(16),
                 source: PerceptionSource::Rumor { chain_len: 2 },
             },

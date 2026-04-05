@@ -146,17 +146,17 @@ impl Component for PreferenceProfile {}
 #[cfg(test)]
 mod tests {
     use super::{
-        danger_ratio_permille, failure_ratio_permille, EdgeExperience, PreferenceProfile,
-        ReliabilityRecord, RouteExperience, SourceKey, SourceReliability,
+        EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
+        SourceReliability, danger_ratio_permille, failure_ratio_permille,
     };
     use crate::{
+        ControlSource, EntityId, EntityKind, Tick, Topology, TravelEdgeId, World, WorldError,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
         traits::Component,
-        ControlSource, EntityId, EntityKind, Tick, Topology, TravelEdgeId, World, WorldError,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 

@@ -1,4 +1,5 @@
 use crate::{
+    GroundedGoal,
     decision_trace::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         BlockerMatchDetail, CandidateEvidenceContributor, CandidateEvidenceExclusion,
@@ -10,8 +11,8 @@ use crate::{
     },
     derive_danger_pressure,
     enterprise::{
-        analyze_candidate_enterprise, merchant_home_facility, merchant_home_place,
-        restock_gap_at_destination, EnterpriseSignals,
+        EnterpriseSignals, analyze_candidate_enterprise, merchant_home_facility,
+        merchant_home_place, restock_gap_at_destination,
     },
     institutional_queries::consulted_office_holder_read_for_record_data,
     knowledge_path::{
@@ -21,12 +22,9 @@ use crate::{
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::strongest_threat_warning_place,
     theft::assess_theft_deterrence,
-    GroundedGoal,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    classify_communication, current_institutional_belief_topics, load_per_unit,
-    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
     BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
     EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
@@ -35,11 +33,13 @@ use worldwake_core::{
     PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
     PunishmentKind, Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
     SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
-    ViolationKind, ViolationMemory,
+    ViolationKind, ViolationMemory, classify_communication, current_institutional_belief_topics,
+    load_per_unit, social_observation_is_redundant_for_listener,
+    tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
-    listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
-    TellTopicOmissionReason,
+    GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
+    listener_aware_tell_topic_selection,
 };
 
 #[derive(Clone, Default)]
@@ -875,10 +875,9 @@ fn emit_accusation_candidates(
                 theft: observed_theft,
                 suspect: Some(accused),
             } = observation.detail
+                && observed_theft == theft
             {
-                if observed_theft == theft {
-                    accused_candidates.insert(accused);
-                }
+                accused_candidates.insert(accused);
             }
         }
 
@@ -1206,43 +1205,40 @@ fn emit_social_candidates(
             if let TellTopic::EntityBelief { subject } = topic {
                 evidence.entities.insert(subject);
                 trace.contributor(CandidateEvidenceKind::TellSubject, place, subject);
-                if ctx.tracing_enabled {
-                    if let Some((_, state)) = known_beliefs.iter().find(|(id, _)| *id == subject) {
-                        trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                            subject,
-                            aspect: BeliefAspect::LocationAt { place },
-                            source: state.source,
-                            observed_tick: state.observed_tick,
-                        });
-                    }
+                if ctx.tracing_enabled
+                    && let Some((_, state)) = known_beliefs.iter().find(|(id, _)| *id == subject)
+                {
+                    trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                        subject,
+                        aspect: BeliefAspect::LocationAt { place },
+                        source: state.source,
+                        observed_tick: state.observed_tick,
+                    });
                 }
-            } else if let TellTopic::InstitutionalClaim { claim } = topic {
-                if ctx.tracing_enabled {
-                    if let Some(belief) = known_institutional_beliefs
-                        .iter()
-                        .filter(|belief| belief.claim == claim)
-                        .max_by_key(|belief| {
-                            (
-                                std::cmp::Reverse(
-                                    worldwake_core::institutional_knowledge_chain_len(
-                                        belief.source,
-                                    ),
-                                ),
-                                belief.learned_tick,
-                                belief.learned_at,
-                            )
-                        })
-                    {
-                        trace.knowledge_path.institutional_beliefs.push(
-                            InstitutionalBeliefProvenance {
-                                claim,
-                                source: belief.source,
-                                learned_tick: belief.learned_tick,
-                                learned_at: belief.learned_at,
-                            },
-                        );
-                    }
-                }
+            } else if let TellTopic::InstitutionalClaim { claim } = topic
+                && ctx.tracing_enabled
+                && let Some(belief) = known_institutional_beliefs
+                    .iter()
+                    .filter(|belief| belief.claim == claim)
+                    .max_by_key(|belief| {
+                        (
+                            std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
+                                belief.source,
+                            )),
+                            belief.learned_tick,
+                            belief.learned_at,
+                        )
+                    })
+            {
+                trace
+                    .knowledge_path
+                    .institutional_beliefs
+                    .push(InstitutionalBeliefProvenance {
+                        claim,
+                        source: belief.source,
+                        learned_tick: belief.learned_tick,
+                        learned_at: belief.learned_at,
+                    });
             }
             emit_candidate_with_trace(
                 candidates,
@@ -1869,15 +1865,15 @@ fn emit_engage_hostile_goals(
             evidence.places.insert(place);
         }
         let mut trace = EvidenceTrace::default();
-        if ctx.tracing_enabled {
-            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == *target) {
-                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                    subject: *target,
-                    aspect: BeliefAspect::Hostile,
-                    source: state.source,
-                    observed_tick: state.observed_tick,
-                });
-            }
+        if ctx.tracing_enabled
+            && let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == *target)
+        {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject: *target,
+                aspect: BeliefAspect::Hostile,
+                source: state.source,
+                observed_tick: state.observed_tick,
+            });
         }
         emit_candidate_with_trace(
             candidates,
@@ -3003,15 +2999,15 @@ fn emit_loot_goals(
         let mut evidence = Evidence::with_entity(corpse);
         evidence.places.insert(place);
         let mut trace = EvidenceTrace::default();
-        if ctx.tracing_enabled {
-            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == corpse) {
-                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                    subject: corpse,
-                    aspect: BeliefAspect::Dead,
-                    source: state.source,
-                    observed_tick: state.observed_tick,
-                });
-            }
+        if ctx.tracing_enabled
+            && let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == corpse)
+        {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject: corpse,
+                aspect: BeliefAspect::Dead,
+                source: state.source,
+                observed_tick: state.observed_tick,
+            });
         }
         emit_candidate_with_trace(
             candidates,
@@ -3063,15 +3059,15 @@ fn emit_bury_goals(
         evidence.entities.insert(burial_site);
         evidence.places.insert(place);
         let mut trace = EvidenceTrace::default();
-        if ctx.tracing_enabled {
-            if let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == corpse) {
-                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                    subject: corpse,
-                    aspect: BeliefAspect::Dead,
-                    source: state.source,
-                    observed_tick: state.observed_tick,
-                });
-            }
+        if ctx.tracing_enabled
+            && let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == corpse)
+        {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject: corpse,
+                aspect: BeliefAspect::Dead,
+                source: state.source,
+                observed_tick: state.observed_tick,
+            });
         }
         emit_candidate_with_trace(
             candidates,
@@ -3140,15 +3136,15 @@ fn emit_theft_candidates(
         let mut evidence = Evidence::with_entity(item);
         evidence.places.insert(place);
         let mut trace = EvidenceTrace::default();
-        if ctx.tracing_enabled {
-            if let Some((_, state)) = beliefs.iter().find(|(entity, _)| *entity == item) {
-                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
-                    subject: item,
-                    aspect: BeliefAspect::LocationAt { place },
-                    source: state.source,
-                    observed_tick: state.observed_tick,
-                });
-            }
+        if ctx.tracing_enabled
+            && let Some((_, state)) = beliefs.iter().find(|(entity, _)| *entity == item)
+        {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject: item,
+                aspect: BeliefAspect::LocationAt { place },
+                source: state.source,
+                observed_tick: state.observed_tick,
+            });
         }
         emit_candidate_with_trace(
             candidates,
@@ -3318,24 +3314,23 @@ fn emit_expectation_violation_candidates(
 
         // Check for SupplyDepleted: believed resource source at current place
         // with available quantity > 0, now observed at 0.
-        if let Some(resource_source) = &believed_state.resource_source {
-            if believed_state.last_known_place == Some(current_place)
-                && resource_source.available_quantity > Quantity(0)
-                && ctx.view.locally_observed_commodity_quantity(
-                    ctx.agent,
-                    *entity_id,
-                    resource_source.commodity,
-                ) == Quantity(0)
-            {
-                violations.push((
-                    ViolationKind::SupplyDepleted {
-                        commodity: resource_source.commodity,
-                        source: *entity_id,
-                        place: current_place,
-                    },
-                    true, // emits goal
-                ));
-            }
+        if let Some(resource_source) = &believed_state.resource_source
+            && believed_state.last_known_place == Some(current_place)
+            && resource_source.available_quantity > Quantity(0)
+            && ctx.view.locally_observed_commodity_quantity(
+                ctx.agent,
+                *entity_id,
+                resource_source.commodity,
+            ) == Quantity(0)
+        {
+            violations.push((
+                ViolationKind::SupplyDepleted {
+                    commodity: resource_source.commodity,
+                    source: *entity_id,
+                    place: current_place,
+                },
+                true, // emits goal
+            ));
         }
     }
 
@@ -3692,12 +3687,12 @@ fn acquisition_path_evidence_inner(
         let mut place_trace = EvidenceTrace::default();
 
         for lot in view.listed_sale_lots_at(candidate_place, commodity) {
-            if let Some(seller) = view.seller_for_sale_lot(lot) {
-                if seller != agent {
-                    place_evidence.places.insert(candidate_place);
-                    place_evidence.entities.insert(seller);
-                    place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
-                }
+            if let Some(seller) = view.seller_for_sale_lot(lot)
+                && seller != agent
+            {
+                place_evidence.places.insert(candidate_place);
+                place_evidence.entities.insert(seller);
+                place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
             }
         }
         if let Some(local_lots) =
@@ -3787,12 +3782,12 @@ fn acquisition_path_evidence_at_place(
     let mut place_trace = EvidenceTrace::default();
 
     for lot in view.listed_sale_lots_at(candidate_place, commodity) {
-        if let Some(seller) = view.seller_for_sale_lot(lot) {
-            if seller != agent {
-                place_evidence.places.insert(candidate_place);
-                place_evidence.entities.insert(seller);
-                place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
-            }
+        if let Some(seller) = view.seller_for_sale_lot(lot)
+            && seller != agent
+        {
+            place_evidence.places.insert(candidate_place);
+            place_evidence.entities.insert(seller);
+            place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
         }
     }
     if let Some(local_lots) = local_unpossessed_commodity_evidence(view, candidate_place, commodity)
@@ -4258,17 +4253,18 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
-        generate_candidates_with_travel_horizon, CandidateGenerationDiagnostics, GenerationContext,
+        CandidateGenerationDiagnostics, GenerationContext, deliverable_quantity,
+        emit_produce_goals, emit_restock_goals, generate_candidates,
+        generate_candidates_with_travel_horizon,
     };
     use crate::{
-        enterprise::{analyze_candidate_enterprise, EnterpriseSignals},
-        knowledge_path::{
-            BeliefAspect, InstitutionalBeliefProvenance, KnowledgePath, SelfKnowledgeProvenance,
-        },
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceTrace, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
         SocialCandidateOmission, ViolationDetectionOmissionReason,
+        enterprise::{EnterpriseSignals, analyze_candidate_enterprise},
+        knowledge_path::{
+            BeliefAspect, InstitutionalBeliefProvenance, KnowledgePath, SelfKnowledgeProvenance,
+        },
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -5185,6 +5181,7 @@ mod tests {
                 observed_tick: Tick(5),
             }),
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(5),
             source: PerceptionSource::DirectObservation,
         }
@@ -5230,6 +5227,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(5),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -5351,6 +5349,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(5),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -5426,6 +5425,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(5),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -5545,10 +5545,12 @@ mod tests {
             6,
             false,
         );
-        assert!(!invalid_route_result
-            .candidates
-            .iter()
-            .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. })));
+        assert!(
+            !invalid_route_result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. }))
+        );
     }
 
     fn goals_for<'a>(
@@ -5631,6 +5633,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source,
         }
@@ -8096,9 +8099,11 @@ mod tests {
             Tick(5),
         );
 
-        assert!(!candidates
-            .iter()
-            .any(|candidate| { matches!(candidate.key.kind, GoalKind::SellCommodity { .. }) }));
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| { matches!(candidate.key.kind, GoalKind::SellCommodity { .. }) })
+        );
     }
 
     #[test]
@@ -8898,8 +8903,8 @@ mod tests {
     }
 
     #[test]
-    fn justice_candidates_suppress_duplicate_accusation_when_same_theft_is_already_recorded_under_different_violation_id(
-    ) {
+    fn justice_candidates_suppress_duplicate_accusation_when_same_theft_is_already_recorded_under_different_violation_id()
+     {
         let agent = entity(1);
         let accused = entity(2);
         let office = entity(4);
@@ -11047,7 +11052,10 @@ mod tests {
         );
 
         assert!(
-            contains_goal(&unknown_with_record.candidates, GoalKind::ClaimOffice { office }),
+            contains_goal(
+                &unknown_with_record.candidates,
+                GoalKind::ClaimOffice { office }
+            ),
             "unknown vacancy belief should remain emittable when a consultable office register is known"
         );
         assert!(
@@ -12078,15 +12086,14 @@ mod tests {
         let trace = evidence_trace_for_goal(&result.diagnostics, key);
 
         assert!(
-            trace
-                .knowledge_path
-                .entity_beliefs
-                .contains(&crate::knowledge_path::BeliefProvenance {
+            trace.knowledge_path.entity_beliefs.contains(
+                &crate::knowledge_path::BeliefProvenance {
                     subject: hostile,
                     aspect: BeliefAspect::Hostile,
                     source: PerceptionSource::DirectObservation,
                     observed_tick: Tick(3),
-                }),
+                }
+            ),
             "knowledge_path.entity_beliefs should contain Hostile belief for hostile target, got {:?}",
             trace.knowledge_path.entity_beliefs,
         );
@@ -12614,6 +12621,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: tick,
             source: PerceptionSource::DirectObservation,
         }
@@ -12642,6 +12650,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: tick,
             source: PerceptionSource::DirectObservation,
         }

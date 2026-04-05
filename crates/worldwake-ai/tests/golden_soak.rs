@@ -14,9 +14,8 @@ mod golden_harness;
 use golden_harness::soak_world::build_t30_world;
 use std::collections::BTreeSet;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, CauseRef, CommodityKind, EventId, EventView, Permille, Seed,
-    StateHash,
+    CauseRef, CommodityKind, EventId, EventView, Permille, Seed, StateHash, hash_event_log,
+    hash_world, total_authoritative_commodity_quantity, verify_authoritative_conservation,
 };
 
 /// Per-run result collected for cross-run diversity analysis.

@@ -40,9 +40,9 @@ mod theft;
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
-    has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry,
-    ExhaustionRetryState, FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings,
+    AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState, FramePlanRelation,
+    FrameRuntimeSnapshot, MaterializationBindings, classify_frame_plan_relation,
+    frame_runtime_snapshot, frame_travel_destination, has_active_frame_travel, has_frame,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
@@ -66,8 +66,8 @@ pub use decision_trace::{
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
-pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
-pub use feasibility::{feasibility_hint, FeasibilityHint};
+pub use failure_handling::{PlanFailureContext, clear_resolved_blockers, handle_plan_failure};
+pub use feasibility::{FeasibilityHint, feasibility_hint};
 pub use goal_dispatch_decl::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
@@ -76,36 +76,36 @@ pub use goal_model::{
     RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
 pub use goal_policy::{
-    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
-    GoalPolicyOutcome,
+    DecisionContext, FreeInterruptRole, GoalFamilyPolicy, GoalPolicyOutcome, evaluate_suppression,
+    goal_family_policy,
 };
 pub use goal_switching::GoalSwitchKind;
-pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
+pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
 pub use plan_revalidation::{is_pursuit_plan_invalid, revalidate_next_step};
-pub use plan_selection::{select_best_plan, SelectionPolicy};
+pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
-    apply_hypothetical_transition, authoritative_target, authoritative_targets,
-    build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
     ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlannerTransitionKind,
+    PlannerOpSemantics, PlannerTransitionKind, apply_hypothetical_transition, authoritative_target,
+    authoritative_targets, build_semantics_table, resolve_planning_target_with,
+    resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
-    build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses, PlanningSnapshot,
+    PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
 };
 pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
 };
 pub use pressure::{
-    assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure, DangerAssessment,
+    DangerAssessment, assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
 };
-pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
+pub use pursuit_belief::{PursuitTargetBelief, pursuit_target_belief};
 pub use ranking::{
-    build_decision_context, rank_candidates, RankedGoalComparison, RankedGoalComparisonDimension,
-    RankingOutcome,
+    RankedGoalComparison, RankedGoalComparisonDimension, RankingOutcome, build_decision_context,
+    rank_candidates,
 };
-pub use search::{search_plan, PlanSearchResult};
-pub use side_benefit::{build_plan_value, detect_side_benefits, PlanValue, SideBenefit};
+pub use search::{PlanSearchResult, search_plan};
+pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
 pub use worldwake_core::{
     CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, ReasoningProfile,
 };

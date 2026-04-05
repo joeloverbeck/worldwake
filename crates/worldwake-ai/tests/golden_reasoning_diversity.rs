@@ -5,9 +5,9 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, BeliefConfidencePolicy, CommodityKind, EntityId, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, ReasoningProfile, Seed,
-    StateHash, Tick, UtilityProfile, WorkstationTag,
+    BeliefConfidencePolicy, CommodityKind, EntityId, HomeostaticNeeds, KnownRecipes,
+    MetabolismProfile, PerceptionProfile, Quantity, ReasoningProfile, Seed, StateHash, Tick,
+    UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
 
 fn planning_trace_at(

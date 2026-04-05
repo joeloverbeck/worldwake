@@ -10,16 +10,16 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind,
-    EventLog, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick,
-    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
-    WorldTxn,
+    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
+    LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick, Topology,
+    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
+    hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
     Scheduler, SimulationState, SystemDispatchTable, SystemManifest,
 };
-use worldwake_systems::{build_full_action_registries, dispatch_table, ActionRegistries};
+use worldwake_systems::{ActionRegistries, build_full_action_registries, dispatch_table};
 
 /// Bundled result of scenario spawning: persistent simulation state plus
 /// transient runtime artifacts (action registries, dispatch table).

@@ -146,7 +146,7 @@ impl std::error::Error for SystemManifestError {}
 #[cfg(test)]
 mod tests {
     use super::{SystemId, SystemManifest, SystemManifestError};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn assert_traits<
         T: Copy

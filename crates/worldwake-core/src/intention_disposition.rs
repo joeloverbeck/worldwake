@@ -51,7 +51,7 @@ impl Component for IntentionDispositionProfile {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::{de::DeserializeOwned, Serialize as SerializeTrait};
+    use serde::{Serialize as SerializeTrait, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}

@@ -52,8 +52,8 @@ pub enum EligibilityRule {
 #[cfg(test)]
 mod tests {
     use super::{EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw};
-    use crate::{traits::Component, EntityId, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{EntityId, Tick, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
     use std::fmt::Debug;
     use std::num::NonZeroU32;

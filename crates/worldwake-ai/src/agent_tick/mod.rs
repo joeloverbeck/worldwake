@@ -15,14 +15,14 @@ use execution::{
     persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame, plan_finished,
 };
 use frame::{
-    apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
+    AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
     handle_recoverable_travel_step_blockage, populate_assumptions,
-    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan, AssumptionEvalResult,
+    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
-    reconcile_in_flight_state, refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
-    InFlightReconciliation, ReadPhaseContext,
+    InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
+    refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
 };
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, selection_candidates,
@@ -37,7 +37,7 @@ use crate::decision_trace::{
     UnknownBlockerTrace,
 };
 use crate::{
-    build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
+    AgentDecisionRuntime, PlannerOpSemantics, build_semantics_table, frame_runtime_snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -536,42 +536,42 @@ fn process_agent(
     // ── Deferred NoCriticalThreat evaluation ──
     // Now that ranked candidates are available, evaluate NoCriticalThreat
     // assumptions that were deferred in the pre-planning stage.
-    if let Some(frame) = current_frame.as_ref() {
-        if !matches!(frame.state, worldwake_core::FrameState::Exhausted) {
-            let has_no_critical_threat = frame
-                .assumptions
-                .iter()
-                .any(|a| matches!(a, worldwake_core::FrameAssumption::NoCriticalThreat));
-            if has_no_critical_threat {
-                let deferred_eval = evaluate_assumptions(
-                    &[worldwake_core::FrameAssumption::NoCriticalThreat],
-                    &runtime_belief_view(
-                        agent,
-                        ctx.world,
-                        ctx.scheduler,
-                        action_defs,
-                        recipe_registry,
-                    ),
-                    Some(&ranked_candidates),
+    if let Some(frame) = current_frame.as_ref()
+        && !matches!(frame.state, worldwake_core::FrameState::Exhausted)
+    {
+        let has_no_critical_threat = frame
+            .assumptions
+            .iter()
+            .any(|a| matches!(a, worldwake_core::FrameAssumption::NoCriticalThreat));
+        if has_no_critical_threat {
+            let deferred_eval = evaluate_assumptions(
+                &[worldwake_core::FrameAssumption::NoCriticalThreat],
+                &runtime_belief_view(
+                    agent,
+                    ctx.world,
+                    ctx.scheduler,
+                    action_defs,
+                    recipe_registry,
+                ),
+                Some(&ranked_candidates),
+            );
+            if matches!(
+                deferred_eval,
+                AssumptionEvalResult::RecoverableFailure(_) | AssumptionEvalResult::AllPass
+            ) {
+                let pre_state = frame.state;
+                current_frame = Some(apply_assumption_result(
+                    frame,
+                    &deferred_eval,
+                    tick,
+                    runtime,
+                ));
+                emit_assumption_transitions(
+                    &pre_state,
+                    &deferred_eval,
+                    tick,
+                    &mut frame_transitions,
                 );
-                if matches!(
-                    deferred_eval,
-                    AssumptionEvalResult::RecoverableFailure(_) | AssumptionEvalResult::AllPass
-                ) {
-                    let pre_state = frame.state;
-                    current_frame = Some(apply_assumption_result(
-                        frame,
-                        &deferred_eval,
-                        tick,
-                        runtime,
-                    ));
-                    emit_assumption_transitions(
-                        &pre_state,
-                        &deferred_eval,
-                        tick,
-                        &mut frame_transitions,
-                    );
-                }
             }
         }
     }
@@ -731,12 +731,11 @@ fn process_agent(
                 valid,
             );
 
-            if let Err(ref _e) = exec_result {
-                if let Some(et) = execution_trace.as_mut() {
-                    if !valid {
-                        et.failure = Some(ExecutionFailureReason::RevalidationFailed);
-                    }
-                }
+            if let Err(ref _e) = exec_result
+                && let Some(et) = execution_trace.as_mut()
+                && !valid
+            {
+                et.failure = Some(ExecutionFailureReason::RevalidationFailed);
             }
             exec_result?;
         }
@@ -935,10 +934,9 @@ fn process_agent(
             && !ft
                 .iter()
                 .any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
+            && let Some(reason) = runtime.last_frame_clear_reason
         {
-            if let Some(reason) = runtime.last_frame_clear_reason {
-                ft.push(FrameTransitionKind::Cleared { reason });
-            }
+            ft.push(FrameTransitionKind::Cleared { reason });
         }
     }
 

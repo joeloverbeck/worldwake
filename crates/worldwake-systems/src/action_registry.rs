@@ -11,8 +11,8 @@ use crate::{
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
-    action_handler_registry::verify_completeness, ActionDefRegistry, ActionHandlerRegistry,
-    RecipeRegistry,
+    ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry,
+    action_handler_registry::verify_completeness,
 };
 
 pub struct ActionRegistries {

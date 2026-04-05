@@ -1,7 +1,7 @@
 use crate::SystemId;
 use rand_chacha::{
-    rand_core::{RngCore, SeedableRng},
     ChaCha8Rng,
+    rand_core::{RngCore, SeedableRng},
 };
 use serde::{Deserialize, Serialize};
 use worldwake_core::{Seed, Tick};
@@ -83,7 +83,7 @@ fn substream_word_pos(tick: Tick, system_id: SystemId) -> u128 {
 mod tests {
     use super::DeterministicRng;
     use crate::SystemId;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{Seed, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

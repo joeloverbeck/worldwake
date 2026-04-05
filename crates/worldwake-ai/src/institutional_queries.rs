@@ -21,10 +21,9 @@ pub(crate) fn consulted_office_holder_read_for_record_data(
             holder,
             ..
         } = entry.claim
+            && entry_office == office
         {
-            if entry_office == office {
-                holders.insert(holder);
-            }
+            holders.insert(holder);
         }
     }
 

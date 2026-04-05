@@ -6,22 +6,22 @@ use std::collections::BTreeSet;
 
 use golden_harness::*;
 use worldwake_ai::{
-    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table, DecisionOutcome,
-    GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind, PlanningState,
-    ReasoningProfile, SelectedPlanSource,
+    DecisionOutcome, GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind,
+    PlanningState, ReasoningProfile, SelectedPlanSource, apply_hypothetical_transition,
+    build_planning_snapshot, build_semantics_table,
 };
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, AgentData, BeliefConfidencePolicy,
-    BlockedIntentMemory, CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
-    FactionPurpose, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, MetabolismProfile,
-    NoticeTopic, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed,
-    StateHash, SuccessionLaw, TellProfile, Tick, UtilityProfile,
+    AgentData, BeliefConfidencePolicy, BlockedIntentMemory, CombatProfile, CommodityKind,
+    ControlSource, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead, MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource,
+    Permille, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
+    UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
 };
 use worldwake_sim::{
-    get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
-    InputKind, OfficeSuccessionOutcome, PerAgentBeliefView, PostNoticeActionPayload,
+    ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind,
+    OfficeSuccessionOutcome, PerAgentBeliefView, PostNoticeActionPayload,
     PressForceClaimActionPayload, RequestProvenance, RuntimeBeliefView, SupportCountTrace,
-    SupportResolutionTrace, VacancyTimerTrace, YieldForceClaimActionPayload,
+    SupportResolutionTrace, VacancyTimerTrace, YieldForceClaimActionPayload, get_affordances,
 };
 
 // ---------------------------------------------------------------------------
@@ -1537,7 +1537,9 @@ fn run_remote_record_consultation_political_action(seed: Seed) -> (StateHash, St
             key: worldwake_core::InstitutionalBeliefKey::OfficeHolderOf { office },
             source_entry_ids: vec![worldwake_core::RecordEntryId(0)],
             previous: worldwake_sim::InstitutionalBeliefReadSummary::Unknown,
-            new: worldwake_sim::InstitutionalBeliefReadSummary::OfficeHolderCertain { holder: None },
+            new: worldwake_sim::InstitutionalBeliefReadSummary::OfficeHolderCertain {
+                holder: None
+            },
         }],
         "remote-record office scenario should trace the authoritative office-holder knowledge acquisition"
     );

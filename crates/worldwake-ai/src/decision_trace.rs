@@ -15,6 +15,7 @@ use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
 };
 
+use crate::ExhaustionRetryState;
 use crate::feasibility::FeasibilityHint;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
@@ -27,7 +28,6 @@ use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::ranking::RankedGoalComparison;
 use crate::side_benefit::SideBenefit;
-use crate::ExhaustionRetryState;
 // ── Frame Transition Trace ──────────────────────────────────────
 
 /// One lifecycle event recorded for an `IntentionFrame` during a tick.
@@ -1643,9 +1643,10 @@ fn format_ranked_goal_provenance_summary(provenance: &RankedGoalProvenance) -> S
                 })
                 .collect::<Vec<_>>()
                 .join("; ");
-            let adjustment = provenance
-                .adjustment
-                .map_or_else(|| "none".to_string(), |adjustment| format!("{adjustment:?}"));
+            let adjustment = provenance.adjustment.map_or_else(
+                || "none".to_string(),
+                |adjustment| format!("{adjustment:?}"),
+            );
             format!(
                 ", drive=base={:?} final={:?} adjustment={} motive_inputs=[{}]",
                 provenance.base_priority_class,
@@ -2731,15 +2732,17 @@ mod tests {
 
         assert_eq!(selection.selected_goal(), Some(goal));
         assert!(selection.selected_goal_is(goal));
-        assert!(!SelectionTrace {
-            selected_opportunity: None,
-            selected_plan: None,
-            selected_plan_source: None,
-            goal_switch: None,
-            previous_goal: None,
-            plan_replacement: None,
-        }
-        .selected_goal_is(goal));
+        assert!(
+            !SelectionTrace {
+                selected_opportunity: None,
+                selected_plan: None,
+                selected_plan_source: None,
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+            }
+            .selected_goal_is(goal)
+        );
     }
 
     #[test]

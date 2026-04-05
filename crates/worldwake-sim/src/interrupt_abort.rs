@@ -1,8 +1,8 @@
 use crate::{
-    action_termination::{finalize_failed_action, FailedActionTermination},
     ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
     ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus, ExternalAbortReason,
     InterruptReason, Interruptibility, ReplanNeeded,
+    action_termination::{FailedActionTermination, finalize_failed_action},
 };
 use worldwake_core::{EventLog, EventTag, WitnessData, World, WorldTxn};
 
@@ -175,20 +175,20 @@ fn transition_action_inner(
 mod tests {
     use super::{abort_action, interrupt_action};
     use crate::{
-        start_action, AbortReason, ActionDef, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionExecutionContext, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionProgress,
-        ActionState, ActionStatus, Affordance, Constraint, DeterministicRng, DurationExpr,
-        ExternalAbortReason, InterruptReason, Interruptibility, Precondition, RecipeRegistry,
-        ReservationReq, TargetSpec,
+        AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionExecutionAuthority,
+        ActionExecutionContext, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionProgress, ActionState, ActionStatus,
+        Affordance, Constraint, DeterministicRng, DurationExpr, ExternalAbortReason,
+        InterruptReason, Interruptibility, Precondition, RecipeRegistry, ReservationReq,
+        TargetSpec, start_action,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EventLog, EventPayload, EventTag, EventView, PendingEvent,
-        Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CommodityKind, ControlSource,
+        EntityId, EventLog, EventPayload, EventTag, EventView, PendingEvent, Quantity, Seed, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     #[allow(clippy::struct_field_names)]

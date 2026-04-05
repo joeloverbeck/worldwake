@@ -204,13 +204,12 @@ impl PoliticalTraceEvent {
                 "tick {}: office {} remains force-contested by {} claimants [{}]",
                 self.tick.0, self.office, claimant_count, phase
             )),
-            OfficeSuccessionOutcome::ForceInstallationDeferred {
-                controller,
-                reason,
-            } => Some(format!(
-                "tick {}: office {} defers force installation of {} — {reason:?} [{}]",
-                self.tick.0, self.office, controller, phase
-            )),
+            OfficeSuccessionOutcome::ForceInstallationDeferred { controller, reason } => {
+                Some(format!(
+                    "tick {}: office {} defers force installation of {} — {reason:?} [{}]",
+                    self.tick.0, self.office, controller, phase
+                ))
+            }
             OfficeSuccessionOutcome::ForceInstalled { holder } => Some(format!(
                 "tick {}: office {} installs {} by force-law uncontested succession [{}]",
                 self.tick.0, self.office, holder, phase
@@ -470,11 +469,12 @@ mod tests {
         assert_eq!(sink.events_at(Tick(7)).len(), 1);
         assert!(sink.event_for_office_at(office_a, Tick(7)).is_some());
         assert!(sink.event_for_office_at(office_a, Tick(8)).is_none());
-        assert!(sink
-            .event_for_office_at(office_a, Tick(7))
-            .unwrap()
-            .summary()
-            .contains("phase: vacant pending resolution"));
+        assert!(
+            sink.event_for_office_at(office_a, Tick(7))
+                .unwrap()
+                .summary()
+                .contains("phase: vacant pending resolution")
+        );
     }
 
     #[test]
@@ -502,9 +502,11 @@ mod tests {
                 force_candidates: Vec::new(),
             },
         };
-        assert!(vacancy_pending
-            .summary()
-            .contains("vacancy claim grace pending"));
+        assert!(
+            vacancy_pending
+                .summary()
+                .contains("vacancy claim grace pending")
+        );
 
         let challenger_pending = PoliticalTraceEvent {
             tick: Tick(5),

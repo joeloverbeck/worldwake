@@ -1,23 +1,22 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    ArtifactHeader, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
-    CarryCapacity, CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile,
-    CommunicationProfile, ComponentTables, ComponentValue, Container, ContentionDispositionProfile,
-    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
-    DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, FactionData, HomeostaticNeeds, InTransitOnEdge,
-    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
-    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, NoticeContent,
-    OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
-    PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile, ProductionJob,
-    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, ReasoningProfile,
-    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
-    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
-    WoundList,
+    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
+    BlockedIntentMemory, BountyTerms, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
+    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
+    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
+    DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind,
+    EntityMeta, EpistemicDispositionProfile, EventId, FactionData, HomeostaticNeeds,
+    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+    MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState,
+    PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
+    ReasoningProfile, RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing,
+    SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
+    TellProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
+    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -30,7 +29,7 @@ mod reservations;
 mod social;
 
 macro_rules! world_component_api {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         $(
             #[allow(dead_code)]
             pub(crate) fn $insert_fn(
@@ -97,7 +96,7 @@ macro_rules! world_component_api {
 }
 
 macro_rules! world_component_value_api {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         pub(crate) fn component_values(&self, entity: EntityId) -> Vec<ComponentValue> {
             let mut values = Vec::new();
 
@@ -610,12 +609,6 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        build_prototype_world,
-        test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
-            sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_utility_profile,
-        },
         AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
         CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
@@ -629,7 +622,12 @@ mod tests {
         ReservationId, ReservationRecord, ResourceSource, RightKind, SubstitutePreferences,
         SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
         TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
+        WorkstationTag, WorldError, Wound, WoundCause, WoundList, build_prototype_world,
+        test_utils::{
+            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_substitute_preferences, sample_trade_disposition_profile,
+            sample_utility_profile,
+        },
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -707,6 +705,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },
@@ -3894,12 +3893,14 @@ mod tests {
         world.set_ground_location(item, entity(2)).unwrap();
 
         assert!(world.has_right(holder, item, RightKind::JurisdictionalAuthority));
-        assert!(world
-            .effective_rights(holder, item)
-            .contains(&EffectiveRight {
-                kind: RightKind::JurisdictionalAuthority,
-                via: Some(office),
-            }));
+        assert!(
+            world
+                .effective_rights(holder, item)
+                .contains(&EffectiveRight {
+                    kind: RightKind::JurisdictionalAuthority,
+                    via: Some(office),
+                })
+        );
     }
 
     #[test]

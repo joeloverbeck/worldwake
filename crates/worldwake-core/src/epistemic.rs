@@ -41,8 +41,8 @@ impl Component for EpistemicDispositionProfile {}
 #[cfg(test)]
 mod tests {
     use super::{EpistemicDispositionProfile, EpistemicSubject};
-    use crate::{test_utils::entity_id, CommodityKind, Component, Permille};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{CommodityKind, Component, Permille, test_utils::entity_id};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 

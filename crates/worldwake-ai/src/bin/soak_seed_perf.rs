@@ -7,8 +7,8 @@ mod golden_harness;
 
 use golden_harness::soak_world::build_t30_world;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, CauseRef, CommodityKind, EventId, EventView, Permille, Seed,
+    CauseRef, CommodityKind, EventId, EventView, Permille, Seed, hash_event_log, hash_world,
+    total_authoritative_commodity_quantity, verify_authoritative_conservation,
 };
 
 struct SoakRunResult {

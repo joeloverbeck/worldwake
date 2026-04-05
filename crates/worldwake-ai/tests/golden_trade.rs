@@ -6,14 +6,14 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
+    AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind, ControlSource, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationKind, EventTag, FactionPurpose, GoalKey,
+    GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OpportunityAnchor, OpportunityKey, PerceptionProfile, PreferenceProfile, PrototypePlace,
+    Quantity, ResourceSource, SaleListing, Seed, SourceKey, StockAssignmentKind, Tick,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind,
-    ControlSource, DemandMemory, DemandObservation, DemandObservationReason, DeprivationKind,
-    EventTag, FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionProfile,
-    PreferenceProfile, PrototypePlace, Quantity, ResourceSource, SaleListing, Seed, SourceKey,
-    StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound,
-    WoundCause, WoundId, WoundList,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
@@ -354,7 +354,9 @@ fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityT
         "initial planning should target self-consume bread acquisition",
     );
     assert!(
-        initial_planning.selection.selected_opportunity_is(local_opportunity),
+        initial_planning
+            .selection
+            .selected_opportunity_is(local_opportunity),
         "without learned seller unreliability, the local seller should be selected first; traces={:?}",
         trade_trace_summaries(&h, buyer)
     );
@@ -362,14 +364,16 @@ fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityT
         .candidates
         .evidence_for_opportunity(local_opportunity)
         .expect("local seller opportunity should expose evidence");
-    assert!(initial_local_evidence
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
-                && contributor.place == VILLAGE_SQUARE
-                && contributor.entity == local_seller
-        }));
+    assert!(
+        initial_local_evidence
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+                    && contributor.place == VILLAGE_SQUARE
+                    && contributor.entity == local_seller
+            })
+    );
 
     let initial_buyer_hunger = h.agent_hunger(buyer);
     let initial_remote_seller_bread = h.agent_commodity_qty(remote_seller, CommodityKind::Bread);
@@ -514,26 +518,30 @@ fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityT
         .candidates
         .evidence_for_opportunity(local_opportunity)
         .expect("local opportunity should keep evidence after rejection");
-    assert!(reroute_local_evidence
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
-                && contributor.place == VILLAGE_SQUARE
-                && contributor.entity == local_seller
-        }));
+    assert!(
+        reroute_local_evidence
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+                    && contributor.place == VILLAGE_SQUARE
+                    && contributor.entity == local_seller
+            })
+    );
     let reroute_remote_evidence = reroute_planning
         .candidates
         .evidence_for_opportunity(remote_opportunity)
         .expect("remote opportunity should expose seller evidence");
-    assert!(reroute_remote_evidence
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
-                && contributor.place == general_store
-                && contributor.entity == remote_seller
-        }));
+    assert!(
+        reroute_remote_evidence
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+                    && contributor.place == general_store
+                    && contributor.entity == remote_seller
+            })
+    );
 
     let mut remote_trade_committed = false;
     let mut buyer_hunger_decreased = false;

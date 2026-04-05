@@ -5,12 +5,11 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::GoalTraceStatus;
 use worldwake_core::{
-    belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
-    verify_authoritative_conservation, CommodityKind, CommunicationProfile, EntityId, EventTag,
-    EventView, EvidenceRef, GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile,
-    PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservation,
-    SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick,
-    UtilityProfile, WorkstationTag,
+    CommodityKind, CommunicationProfile, EntityId, EventTag, EventView, EvidenceRef, GoalKind,
+    HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
+    Seed, SharedTellState, SocialObservation, SocialObservationDetail, SocialObservationKind,
+    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag, belief_confidence,
+    build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
 };
 use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
 
@@ -1948,7 +1947,8 @@ fn run_chain_length_filtering_scenario(
     assert!(
         matches!(
             bob_belief.source,
-            PerceptionSource::Report { chain_len: 1, .. } | PerceptionSource::Rumor { chain_len: 2 }
+            PerceptionSource::Report { chain_len: 1, .. }
+                | PerceptionSource::Rumor { chain_len: 2 }
         ),
         "Bob should retain relayed hearsay about the subject after Alice's first-hop tell and any later echo, got {:?}",
         bob_belief.source

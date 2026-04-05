@@ -1,6 +1,6 @@
 use super::active_action::handle_current_step_failure;
 use super::observation::update_runtime_observation_snapshot;
-use super::{handle_recoverable_travel_step_blockage, runtime_belief_view, AgentTickContext};
+use super::{AgentTickContext, handle_recoverable_travel_step_blockage, runtime_belief_view};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
     ActiveGoal, BlockedIntentMemory, CauseRef, ContentionIntents, EntityId, Tick, VisibilitySpec,

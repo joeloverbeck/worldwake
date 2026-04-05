@@ -11,12 +11,12 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
-    CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
-    EventTag, GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionProfile, PrototypePlace,
-    Quantity, SaleListing, Seed, StockAssignmentKind, Tick, TradeDispositionProfile,
-    UtilityProfile,
+    AgentData, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+    DemandObservationReason, EventTag, GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionProfile,
+    PrototypePlace, Quantity, SaleListing, Seed, StockAssignmentKind, Tick,
+    TradeDispositionProfile, UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
@@ -766,16 +766,15 @@ fn loose_home_stock_is_staged_before_sell_goal_settles() {
             .trace_sink()
             .expect("decision tracing enabled")
             .trace_at(merchant, tick_before)
+            && let DecisionOutcome::Planning(planning) = &trace.outcome
         {
-            if let DecisionOutcome::Planning(planning) = &trace.outcome {
-                sell_reselected_after_listing |=
-                    planning.selection.selected_goal().is_some_and(|goal| {
-                        goal.kind
-                            == GoalKind::SellCommodity {
-                                commodity: CommodityKind::Bread,
-                            }
-                    });
-            }
+            sell_reselected_after_listing |=
+                planning.selection.selected_goal().is_some_and(|goal| {
+                    goal.kind
+                        == GoalKind::SellCommodity {
+                            commodity: CommodityKind::Bread,
+                        }
+                });
         }
     }
     assert!(

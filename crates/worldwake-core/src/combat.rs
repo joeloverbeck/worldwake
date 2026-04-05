@@ -71,8 +71,8 @@ impl Component for CombatStance {}
 #[cfg(test)]
 mod tests {
     use super::{CombatProfile, CombatStance, DeadAt};
-    use crate::{traits::Component, Permille, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{Permille, Tick, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 

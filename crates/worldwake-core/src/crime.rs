@@ -77,8 +77,8 @@ mod tests {
         JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
         PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
     };
-    use crate::{traits::Component, CommodityKind, EntityId, Permille, Quantity, RecordEntryId};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{CommodityKind, EntityId, Permille, Quantity, RecordEntryId, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 
