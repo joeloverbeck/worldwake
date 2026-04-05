@@ -7538,7 +7538,8 @@ fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belie
         office,
         worldwake_core::OfficeData {
             title: "Steward".to_string(),
-            jurisdiction: hall,
+            seat: hall,
+            jurisdiction: BTreeSet::from([hall]),
             succession_law: worldwake_core::SuccessionLaw::Support,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 10,
@@ -7657,7 +7658,8 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         office,
         worldwake_core::OfficeData {
             title: "Steward".to_string(),
-            jurisdiction: hall,
+            seat: hall,
+            jurisdiction: BTreeSet::from([hall]),
             succession_law: worldwake_core::SuccessionLaw::Support,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 10,
@@ -7732,7 +7734,8 @@ fn planned_plan_carries_searched_opportunity_key() {
         office,
         worldwake_core::OfficeData {
             title: "War Chief".to_string(),
-            jurisdiction: hall,
+            seat: hall,
+            jurisdiction: BTreeSet::from([hall]),
             succession_law: worldwake_core::SuccessionLaw::Force,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 10,
@@ -7807,7 +7810,8 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         office,
         worldwake_core::OfficeData {
             title: "War Chief".to_string(),
-            jurisdiction: hall,
+            seat: hall,
+            jurisdiction: BTreeSet::from([hall]),
             succession_law: worldwake_core::SuccessionLaw::Force,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 10,

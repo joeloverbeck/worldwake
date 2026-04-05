@@ -797,7 +797,7 @@ fn emit_punishment_candidates(
         let mut evidence = Evidence::with_entity(accused);
         evidence.entities.insert(office);
         evidence.entities.insert(record);
-        evidence.places.insert(office_data.jurisdiction);
+        evidence.places.insert(office_data.seat);
         let mut trace = EvidenceTrace::default();
         if ctx.tracing_enabled {
             trace
@@ -1440,16 +1440,16 @@ fn emit_claim_office_candidate(
     let mut evidence = office_evidence.clone();
     evidence.entities.insert(office);
     evidence.entities.insert(ctx.agent);
-    evidence.places.insert(office_data.jurisdiction);
+    evidence.places.insert(office_data.seat);
     let mut trace = EvidenceTrace::default();
     trace.contributor(
         CandidateEvidenceKind::OfficeParticipant,
-        office_data.jurisdiction,
+        office_data.seat,
         office,
     );
     trace.contributor(
         CandidateEvidenceKind::OfficeParticipant,
-        office_data.jurisdiction,
+        office_data.seat,
         ctx.agent,
     );
     if ctx.tracing_enabled {
@@ -1536,16 +1536,16 @@ fn emit_support_candidate_goals(
         let mut evidence = office_evidence.clone();
         evidence.entities.insert(office);
         evidence.entities.insert(candidate);
-        evidence.places.insert(office_data.jurisdiction);
+        evidence.places.insert(office_data.seat);
         let mut trace = EvidenceTrace::default();
         trace.contributor(
             CandidateEvidenceKind::OfficeParticipant,
-            office_data.jurisdiction,
+            office_data.seat,
             office,
         );
         trace.contributor(
             CandidateEvidenceKind::OfficeParticipant,
-            office_data.jurisdiction,
+            office_data.seat,
             candidate,
         );
         if ctx.tracing_enabled {
@@ -5474,7 +5474,8 @@ mod tests {
     fn vacant_office(title: &str, jurisdiction: EntityId, faction: EntityId) -> OfficeData {
         OfficeData {
             title: title.to_string(),
-            jurisdiction,
+            seat: jurisdiction,
+            jurisdiction: BTreeSet::from([jurisdiction]),
             succession_law: worldwake_core::SuccessionLaw::Support,
             eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
             succession_period_ticks: 8,

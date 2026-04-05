@@ -84,7 +84,7 @@ fn evaluate_office_succession(
     }
 
     if office_data.vacancy_since.is_none() {
-        let mut txn = new_political_txn(world, tick, Some(office_data.jurisdiction));
+        let mut txn = new_political_txn(world, tick, Some(office_data.seat));
         let mut next = office_data.clone();
         next.vacancy_since = Some(tick);
         txn.set_component_office_data(office, next)
@@ -121,7 +121,9 @@ fn evaluate_office_succession(
 pub fn offices_with_jurisdiction(place: EntityId, world: &World) -> Vec<EntityId> {
     world
         .query_office_data()
-        .filter_map(|(office, office_data)| (office_data.jurisdiction == place).then_some(office))
+        .filter_map(|(office, office_data)| {
+            office_data.jurisdiction.contains(&place).then_some(office)
+        })
         .collect()
 }
 
@@ -418,12 +420,12 @@ fn build_force_succession_context(
     let present_claimants = live_claimants
         .iter()
         .copied()
-        .filter(|claimant| world.effective_place(*claimant) == Some(office_data.jurisdiction))
+        .filter(|claimant| world.effective_place(*claimant) == Some(office_data.seat))
         .filter(|claimant| candidate_is_eligible(world, office_data, *claimant))
         .collect::<Vec<_>>();
     let current_controller = world
         .office_controller(office)
-        .filter(|controller| world.effective_place(*controller) == Some(office_data.jurisdiction))
+        .filter(|controller| world.effective_place(*controller) == Some(office_data.seat))
         .filter(|controller| candidate_is_eligible(world, office_data, *controller))
         .filter(|controller| present_claimants.contains(controller));
 
@@ -541,7 +543,7 @@ fn install_office_holder(
     office_data: &OfficeData,
     holder: EntityId,
 ) -> Result<(), SystemError> {
-    let mut txn = new_political_txn(world, tick, Some(office_data.jurisdiction));
+    let mut txn = new_political_txn(world, tick, Some(office_data.seat));
     stage_office_holder_install(&mut txn, office, office_data, holder)?;
     let _ = txn.commit(event_log);
     Ok(())
@@ -559,7 +561,7 @@ fn install_force_office_holder(
     let holder = resolution
         .desired_controller
         .expect("force installation requires a controller");
-    let mut txn = new_political_txn(world, tick, Some(office_data.jurisdiction));
+    let mut txn = new_political_txn(world, tick, Some(office_data.seat));
     stage_office_holder_install(&mut txn, office, office_data, holder)?;
     for claimant in &context.raw_claimants {
         txn.remove_force_claim(*claimant, office)
@@ -575,7 +577,7 @@ fn install_force_office_holder(
     stage_force_control_record_update(
         &mut txn,
         office,
-        office_data.jurisdiction,
+        office_data.seat,
         force_control_claim(office, None, false, tick),
     )?;
     txn.add_target(office).add_target(holder);
@@ -598,16 +600,16 @@ fn commit_force_control_update(
         return Ok(());
     }
 
-    let jurisdiction = world
+    let seat = world
         .get_component_office_data(office)
-        .map(|office_data| office_data.jurisdiction);
-    let jurisdiction = jurisdiction.unwrap_or_else(|| {
+        .map(|office_data| office_data.seat);
+    let seat = seat.unwrap_or_else(|| {
         world
             .get_component_office_data(office)
             .expect("office should still have OfficeData")
-            .jurisdiction
+            .seat
     });
-    let mut txn = new_political_txn(world, tick, Some(jurisdiction));
+    let mut txn = new_political_txn(world, tick, Some(seat));
     if controller_changed {
         if let Some(controller) = resolution.desired_controller {
             txn.set_office_controller(office, controller)
@@ -629,7 +631,7 @@ fn commit_force_control_update(
     stage_force_control_record_update(
         &mut txn,
         office,
-        jurisdiction,
+        seat,
         force_control_claim(
             office,
             resolution.desired_controller,
@@ -677,10 +679,10 @@ fn force_control_claim(
 fn stage_force_control_record_update(
     txn: &mut WorldTxn<'_>,
     office: EntityId,
-    jurisdiction: EntityId,
+    seat: EntityId,
     claim: InstitutionalClaim,
 ) -> Result<(), SystemError> {
-    let Some(record) = unique_record_at_place(txn, jurisdiction, RecordKind::OfficeRegister)?
+    let Some(record) = unique_record_at_place(txn, seat, RecordKind::OfficeRegister)?
     else {
         return Ok(());
     };
@@ -875,7 +877,7 @@ fn counted_support_by_candidate(
 
 fn force_candidate_traces(office_data: &OfficeData, world: &World) -> Vec<ForceCandidateTrace> {
     world
-        .entities_effectively_at(office_data.jurisdiction)
+        .entities_effectively_at(office_data.seat)
         .into_iter()
         .filter(|entity| world.entity_kind(*entity) == Some(EntityKind::Agent))
         .map(|candidate| ForceCandidateTrace {
@@ -957,7 +959,7 @@ fn office_trace_event(
         tick,
         office,
         trace: OfficeSuccessionTrace {
-            jurisdiction: office_data.jurisdiction,
+            seat: office_data.seat,
             succession_law: office_data.succession_law.clone(),
             holder_before,
             vacancy_since_before,
@@ -1055,7 +1057,7 @@ mod tests {
         office_is_vacant, offices_with_jurisdiction, public_order, succession_system,
     };
     use crate::dispatch_table;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_prototype_world, CauseRef, ControlSource, EntityId, EventLog, EventTag, EventView,
@@ -1179,7 +1181,8 @@ mod tests {
                     office,
                     OfficeData {
                         title: "Ruler".to_string(),
-                        jurisdiction: place,
+                        seat: place,
+                        jurisdiction: BTreeSet::from([place]),
                         succession_law: law.clone(),
                         eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
                             faction,
@@ -1341,6 +1344,29 @@ mod tests {
         assert_eq!(
             eligible_agents_at(fx.office, fx.place, &fx.world),
             vec![fx.candidate_a, fx.candidate_b]
+        );
+    }
+
+    #[test]
+    fn offices_with_jurisdiction_matches_any_place_in_jurisdiction_set() {
+        let mut fx = Fixture::new(worldwake_core::SuccessionLaw::Support);
+        let extra_place = fx
+            .world
+            .topology()
+            .place_ids()
+            .find(|place| *place != fx.place)
+            .unwrap();
+
+        let mut txn = new_txn(&mut fx.world, 2);
+        let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+        office.jurisdiction.insert(extra_place);
+        txn.set_component_office_data(fx.office, office).unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+
+        assert_eq!(
+            offices_with_jurisdiction(extra_place, &fx.world),
+            vec![fx.office]
         );
     }
 
@@ -2163,7 +2189,8 @@ mod tests {
                 office,
                 OfficeData {
                     title: "Captain".to_string(),
-                    jurisdiction: fx.place,
+                    seat: fx.place,
+                    jurisdiction: BTreeSet::from([fx.place]),
                     succession_law: worldwake_core::SuccessionLaw::Support,
                     eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
                         fx.faction,
@@ -2319,7 +2346,8 @@ mod tests {
                     office,
                     OfficeData {
                         title: format!("Vacant {index}"),
-                        jurisdiction: fx.place,
+                        seat: fx.place,
+                        jurisdiction: BTreeSet::from([fx.place]),
                         succession_law: worldwake_core::SuccessionLaw::Support,
                         eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
                             fx.faction,

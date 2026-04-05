@@ -356,7 +356,8 @@ mod tests {
             }),
             ComponentValue::OfficeData(OfficeData {
                 title: "Granary Chair".to_string(),
-                jurisdiction: entity(32),
+                seat: entity(32),
+                jurisdiction: BTreeSet::from([entity(32)]),
                 succession_law: crate::SuccessionLaw::Support,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 12,

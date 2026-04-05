@@ -2831,7 +2831,8 @@ mod tests {
                 office,
                 OfficeData {
                     title: "Steward".to_string(),
-                    jurisdiction: place,
+                    seat: place,
+                    jurisdiction: BTreeSet::from([place]),
                     succession_law: SuccessionLaw::Support,
                     eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(
                         faction,
@@ -2911,8 +2912,9 @@ mod tests {
             RuntimeBeliefView::office_data(&view, office)
                 .unwrap()
                 .jurisdiction,
-            place
+            BTreeSet::from([place])
         );
+        assert_eq!(RuntimeBeliefView::office_data(&view, office).unwrap().seat, place);
         assert_eq!(
             RuntimeBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))

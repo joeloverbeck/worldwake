@@ -603,7 +603,7 @@ fn validate_office_authority_at_place(
     let office_data = world.get_component_office_data(office).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("office {office} lacks OfficeData"))
     })?;
-    if office_data.jurisdiction != place {
+    if !office_data.jurisdiction.contains(&place) {
         return Err(ActionError::PreconditionFailed(format!(
             "office {office} lacks jurisdiction at place {place}"
         )));
@@ -1132,7 +1132,7 @@ fn abort_punishment(
 #[cfg(test)]
 mod tests {
     use super::{register_accuse_action, register_exile_action, register_fine_action};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
         BeliefConfidencePolicy, BelievedEntityState, CauseRef, EligibilityRule, EntityId, EventLog,
@@ -1346,7 +1346,8 @@ mod tests {
                     office,
                     OfficeData {
                         title: "Magistrate".to_string(),
-                        jurisdiction: place,
+                        seat: place,
+                        jurisdiction: BTreeSet::from([place]),
                         succession_law: SuccessionLaw::Support,
                         eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
                         succession_period_ticks: 12,

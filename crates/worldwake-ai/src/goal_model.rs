@@ -822,7 +822,7 @@ impl GoalKindPlannerExt for GoalKind {
             PlannerOpKind::DeclareSupport => match self {
                 GoalKind::ClaimOffice { office } => {
                     // Principle 7 (Locality): DeclareSupport requires actor at office jurisdiction.
-                    if actor_at_jurisdiction(&state, actor, *office)
+                    if actor_at_office_seat(&state, actor, *office)
                         && office_succession_law(&state, *office) == Some(SuccessionLaw::Support)
                     {
                         state.with_support_declaration(actor, *office, actor)
@@ -831,7 +831,7 @@ impl GoalKindPlannerExt for GoalKind {
                     }
                 }
                 GoalKind::SupportCandidateForOffice { office, candidate } => {
-                    if actor_at_jurisdiction(&state, actor, *office) {
+                    if actor_at_office_seat(&state, actor, *office) {
                         state.with_support_declaration(actor, *office, *candidate)
                     } else {
                         state
@@ -853,7 +853,7 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::PressForceClaim => match self {
                 GoalKind::ClaimOffice { office } => {
-                    if actor_at_jurisdiction(&state, actor, *office)
+                    if actor_at_office_seat(&state, actor, *office)
                         && office_succession_law(&state, *office) == Some(SuccessionLaw::Force)
                     {
                         let mut state = state;
@@ -1169,7 +1169,7 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ClaimOffice { office } => {
                 if office_succession_law(state, *office) == Some(SuccessionLaw::Force) {
-                    state.snapshot().jurisdiction(*office).into_iter().collect()
+                    state.snapshot().seat(*office).into_iter().collect()
                 } else {
                     Vec::new()
                 }
@@ -1302,7 +1302,7 @@ impl GoalKindPlannerExt for GoalKind {
                 if matches!(self, GoalKind::ClaimOffice { .. })
                     && office_succession_law(state, *office) == Some(SuccessionLaw::Force)
                 {
-                    return state.snapshot().jurisdiction(*office).into_iter().collect();
+                    return state.snapshot().seat(*office).into_iter().collect();
                 }
                 if state.believed_office_holder(*office) != InstitutionalBeliefRead::Unknown {
                     return Vec::new();
@@ -1762,10 +1762,10 @@ fn update_actor_needs(
 /// office's jurisdiction. Used by all political social actions (`DeclareSupport`,
 /// `Bribe`, `Threaten`) to prevent the planner from simulating remote political
 /// actions without a preceding `Travel` step.
-fn actor_at_jurisdiction(state: &PlanningState<'_>, actor: EntityId, office: EntityId) -> bool {
+fn actor_at_office_seat(state: &PlanningState<'_>, actor: EntityId, office: EntityId) -> bool {
     let actor_place = state.effective_place(actor);
-    let jurisdiction = state.snapshot().jurisdiction(office);
-    actor_place.is_some() && actor_place == jurisdiction
+    let seat = state.snapshot().seat(office);
+    actor_place.is_some() && actor_place == seat
 }
 
 fn apply_bribe_for_office<'s>(
@@ -1779,7 +1779,7 @@ fn apply_bribe_for_office<'s>(
     };
     // Principle 7 (Locality): Bribe requires actor at the office jurisdiction.
     // Bribe targets are co-located at the jurisdiction (enforced by affordance generation).
-    if !actor_at_jurisdiction(&state, actor, office) {
+    if !actor_at_office_seat(&state, actor, office) {
         return state;
     }
     let current_qty = state.commodity_quantity(actor, bribe.offered_commodity);
@@ -1804,7 +1804,7 @@ fn apply_threaten_for_office<'s>(
     };
     // Principle 7 (Locality): Threaten requires actor at the office jurisdiction.
     // Threaten targets are co-located at the jurisdiction (enforced by affordance generation).
-    if !actor_at_jurisdiction(&state, actor, office) {
+    if !actor_at_office_seat(&state, actor, office) {
         return state;
     }
     let attack_skill = state
@@ -2073,7 +2073,8 @@ mod tests {
     fn vacant_office(title: &str, jurisdiction: EntityId, faction: EntityId) -> OfficeData {
         OfficeData {
             title: title.to_string(),
-            jurisdiction,
+            seat: jurisdiction,
+            jurisdiction: BTreeSet::from([jurisdiction]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: vec![worldwake_core::EligibilityRule::FactionMember(faction)],
             succession_period_ticks: 10,
@@ -6673,7 +6674,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Mayor".to_string(),
-                jurisdiction: town,
+                seat: town,
+                jurisdiction: BTreeSet::from([town]),
                 succession_law: SuccessionLaw::Support,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 1,
@@ -6738,7 +6740,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Warlord".to_string(),
-                jurisdiction: town,
+                seat: town,
+                jurisdiction: BTreeSet::from([town]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 1,
@@ -6977,7 +6980,8 @@ mod tests {
             office,
             OfficeData {
                 title: String::new(),
-                jurisdiction,
+                seat: jurisdiction,
+                jurisdiction: BTreeSet::from([jurisdiction]),
                 succession_law: SuccessionLaw::Support,
                 eligibility_rules: vec![],
                 succession_period_ticks: 5,

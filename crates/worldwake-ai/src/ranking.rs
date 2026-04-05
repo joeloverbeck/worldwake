@@ -847,8 +847,10 @@ fn patrol_relevant_offices(
             _ => None,
         })
         .filter_map(|(office, office_data)| {
-            route_places
-                .contains(&office_data.jurisdiction)
+            office_data
+                .jurisdiction
+                .iter()
+                .any(|place| route_places.contains(place))
                 .then_some(office)
         })
         .collect()
@@ -2211,7 +2213,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Captain".to_string(),
-                jurisdiction: place,
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
                 succession_law: worldwake_core::SuccessionLaw::Support,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 10,
@@ -2286,7 +2289,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Captain".to_string(),
-                jurisdiction: place,
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
                 succession_law: worldwake_core::SuccessionLaw::Support,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 10,

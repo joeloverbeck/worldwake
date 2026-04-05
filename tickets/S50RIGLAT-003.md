@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — trait method addition with default impl
-**Deps**: S50RIGLAT-001
+**Deps**: S50RIGLAT-002
 
 ## Problem
 
@@ -14,7 +14,7 @@ The AI planner has no way to ask "what rights does this agent believe they hold 
 
 1. `GoalBeliefView` trait at `crates/worldwake-sim/src/belief_view.rs:32`. Already has `believed_owner_of()`, `can_control()`, `factions_of()`, `direct_possessions()`. Verified this session.
 2. `PerAgentBeliefView` implements `GoalBeliefView` at `crates/worldwake-sim/src/per_agent_belief_view.rs`. `believed_owner_of()` reads from authoritative state filtered by agent access. Verified.
-3. `RightKind` and `EffectiveRight` types from ticket 001 must be available in `worldwake-sim` (which depends on `worldwake-core`). Dependency path confirmed.
+3. `RightKind` and `EffectiveRight` types from ticket 001 are already available, and the first live `JurisdictionalAuthority` result now lands in ticket 002. `believed_rights()` must sit on top of that corrected authoritative baseline. Verified this session.
 4. `can_control(actor, entity) -> bool` already exists on the trait (line 147). The new `believed_rights()` is the richer replacement that returns typed rights.
 5. This is a single-layer ticket (sim trait + impl). No AI, planning, or system changes.
 

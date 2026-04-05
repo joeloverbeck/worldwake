@@ -9,7 +9,7 @@
 mod timeline;
 pub mod soak_world;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
@@ -819,7 +819,8 @@ pub fn seed_office(
         office,
         OfficeData {
             title: title.to_string(),
-            jurisdiction,
+            seat: jurisdiction,
+            jurisdiction: BTreeSet::from([jurisdiction]),
             succession_law: succession_law.clone(),
             eligibility_rules,
             succession_period_ticks,

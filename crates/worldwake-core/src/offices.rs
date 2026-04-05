@@ -1,12 +1,14 @@
 use crate::{Component, EntityId, Tick};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 /// Authoritative metadata attached to office entities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OfficeData {
     pub title: String,
-    pub jurisdiction: EntityId,
+    pub seat: EntityId,
+    pub jurisdiction: BTreeSet<EntityId>,
     pub succession_law: SuccessionLaw,
     pub eligibility_rules: Vec<EligibilityRule>,
     pub succession_period_ticks: u64,
@@ -52,6 +54,7 @@ mod tests {
     use super::{EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw};
     use crate::{traits::Component, EntityId, Tick};
     use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeSet;
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 
@@ -80,7 +83,8 @@ mod tests {
     fn office_data_roundtrips_through_bincode() {
         let office = OfficeData {
             title: "Village Ruler".to_string(),
-            jurisdiction: entity(10),
+            seat: entity(10),
+            jurisdiction: BTreeSet::from([entity(10)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: vec![EligibilityRule::FactionMember(entity(12))],
             succession_period_ticks: 48,

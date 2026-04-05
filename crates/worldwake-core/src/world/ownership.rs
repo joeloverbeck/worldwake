@@ -170,7 +170,7 @@ impl World {
         self.ensure_alive(actor)?;
         self.ensure_alive(entity)?;
 
-        match self.collect_effective_rights(actor, entity) {
+        match self.collect_control_rights(actor, entity) {
             ControlOutcome::Allowed(_) => Ok(()),
             ControlOutcome::BlockedByPossessor(holder) => Err(WorldError::PreconditionFailed(
                 format!("entity {entity} is possessed by {holder}, so {actor} cannot exercise control"),
@@ -187,10 +187,14 @@ impl World {
             return Vec::new();
         }
 
-        match self.collect_effective_rights(actor, entity) {
+        let mut rights = match self.collect_control_rights(actor, entity) {
             ControlOutcome::Allowed(rights) => rights,
             ControlOutcome::BlockedByPossessor(_) | ControlOutcome::NoRights => Vec::new(),
+        };
+        if let Some(jurisdictional_right) = self.jurisdictional_right(actor, entity) {
+            rights.push(jurisdictional_right);
         }
+        rights
     }
 
     #[must_use]
@@ -200,9 +204,9 @@ impl World {
             .any(|right| right.kind == kind)
     }
 
-    fn collect_effective_rights(&self, actor: EntityId, entity: EntityId) -> ControlOutcome {
+    fn collect_control_rights(&self, actor: EntityId, entity: EntityId) -> ControlOutcome {
         if let Some(container) = self.direct_container(entity) {
-            return match self.collect_effective_rights(actor, container) {
+            return match self.collect_control_rights(actor, container) {
                 ControlOutcome::Allowed(_) => ControlOutcome::Allowed(vec![EffectiveRight {
                     kind: RightKind::ContainerAccess,
                     via: Some(container),
@@ -254,5 +258,19 @@ impl World {
         }
 
         ControlOutcome::NoRights
+    }
+
+    fn jurisdictional_right(&self, actor: EntityId, entity: EntityId) -> Option<EffectiveRight> {
+        let entity_place = self.effective_place(entity)?;
+        self.offices_held_by(actor)
+            .into_iter()
+            .find(|office| {
+                self.get_component_office_data(*office)
+                    .is_some_and(|office_data| office_data.jurisdiction.contains(&entity_place))
+            })
+            .map(|office| EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            })
     }
 }

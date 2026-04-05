@@ -107,6 +107,8 @@ When a concern is already covered by an active ticket in [tickets/](../../../tic
 
 When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets factually to remove already-delivered work, stale failure claims, or obsolete roadmap ownership.
 
+When a completed ticket in a staged chain lands only a shared type surface, reserved enum variant, or other non-live substrate slice, explicitly check nearby active tickets for confusion between "the symbol now exists" and "the behavior is now live." If those tickets still accurately reserve the first live behavior for a later slice, cite them as covered; if not, update them factually before archival so the active roadmap does not imply already-live behavior.
+
 Prefer small, distinct tickets split by architectural concern.
 
 When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually if needed.

@@ -905,7 +905,8 @@ mod tests {
                 office,
                 OfficeData {
                     title: "Village Elder".to_string(),
-                    jurisdiction: place,
+                    seat: place,
+                    jurisdiction: BTreeSet::from([place]),
                     succession_law: SuccessionLaw::Support,
                     eligibility_rules: Vec::new(),
                     succession_period_ticks: 5,

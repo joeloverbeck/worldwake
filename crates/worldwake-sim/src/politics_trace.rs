@@ -14,7 +14,7 @@ pub struct PoliticalTraceEvent {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OfficeSuccessionTrace {
-    pub jurisdiction: EntityId,
+    pub seat: EntityId,
     pub succession_law: SuccessionLaw,
     pub holder_before: Option<EntityId>,
     pub vacancy_since_before: Option<Tick>,
@@ -426,9 +426,9 @@ mod tests {
         let mut sink = PoliticalTraceSink::new();
         let office_a = office(1);
         let office_b = office(2);
-        let jurisdiction = office(3);
+        let seat = office(3);
         let trace = OfficeSuccessionTrace {
-            jurisdiction,
+            seat,
             succession_law: SuccessionLaw::Force,
             holder_before: None,
             vacancy_since_before: Some(Tick(1)),
@@ -479,14 +479,14 @@ mod tests {
 
     #[test]
     fn summary_formats_pending_force_grace_outcomes() {
-        let jurisdiction = office(3);
+        let seat = office(3);
         let office_id = office(1);
 
         let vacancy_pending = PoliticalTraceEvent {
             tick: Tick(4),
             office: office_id,
             trace: OfficeSuccessionTrace {
-                jurisdiction,
+                seat,
                 succession_law: SuccessionLaw::Force,
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),
@@ -510,7 +510,7 @@ mod tests {
             tick: Tick(5),
             office: office_id,
             trace: OfficeSuccessionTrace {
-                jurisdiction,
+                seat,
                 succession_law: SuccessionLaw::Force,
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),

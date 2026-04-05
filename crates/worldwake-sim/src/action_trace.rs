@@ -955,7 +955,8 @@ mod tests {
                 office,
                 worldwake_core::OfficeData {
                     title: "Magistrate".to_string(),
-                    jurisdiction: place,
+                    seat: place,
+                    jurisdiction: std::collections::BTreeSet::from([place]),
                     succession_law: worldwake_core::SuccessionLaw::Support,
                     eligibility_rules: Vec::new(),
                     succession_period_ticks: 8,

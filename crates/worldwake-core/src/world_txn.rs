@@ -1753,8 +1753,8 @@ impl<'w> WorldTxn<'w> {
             holder,
             effective_tick: self.tick,
         };
-        let record = self
-            .require_unique_record_at_place(office_data.jurisdiction, RecordKind::OfficeRegister)?;
+        let record =
+            self.require_unique_record_at_place(office_data.seat, RecordKind::OfficeRegister)?;
         let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
             matches!(
                 existing,
@@ -1793,8 +1793,8 @@ impl<'w> WorldTxn<'w> {
             candidate: Some(candidate),
             effective_tick: self.tick,
         };
-        let record = self
-            .require_unique_record_at_place(office_data.jurisdiction, RecordKind::SupportLedger)?;
+        let record =
+            self.require_unique_record_at_place(office_data.seat, RecordKind::SupportLedger)?;
         let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
             matches!(
                 existing,
@@ -2042,7 +2042,8 @@ mod tests {
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Granary Chair".to_string(),
-            jurisdiction: entity(5),
+            seat: entity(5),
+            jurisdiction: BTreeSet::from([entity(5)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 8,
@@ -2190,7 +2191,8 @@ mod tests {
                 office,
                 OfficeData {
                     title: "Chair".to_string(),
-                    jurisdiction: place,
+                    seat: place,
+                    jurisdiction: BTreeSet::from([place]),
                     succession_law: SuccessionLaw::Support,
                     eligibility_rules: Vec::new(),
                     succession_period_ticks: 8,

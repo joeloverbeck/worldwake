@@ -337,7 +337,7 @@ mod tests {
             tick: Tick(4),
             office,
             trace: OfficeSuccessionTrace {
-                jurisdiction: entity(3),
+                seat: entity(3),
                 succession_law: SuccessionLaw::Force,
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),

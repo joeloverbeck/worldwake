@@ -3245,7 +3245,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Marshal".to_string(),
-                jurisdiction: town,
+                seat: town,
+                jurisdiction: BTreeSet::from([town]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 19,

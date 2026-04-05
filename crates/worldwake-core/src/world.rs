@@ -887,7 +887,8 @@ mod tests {
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Ledger Hall".to_string(),
-            jurisdiction: entity(5),
+            seat: entity(5),
+            jurisdiction: BTreeSet::from([entity(5)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 12,
@@ -3843,8 +3844,29 @@ mod tests {
     }
 
     #[test]
-    fn effective_rights_does_not_surface_jurisdictional_authority_yet() {
-        let mut world = World::new(Topology::new()).unwrap();
+    fn effective_rights_surfaces_jurisdictional_authority_within_office_jurisdiction() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                entity(1),
+                Place {
+                    name: "Hall".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                entity(2),
+                Place {
+                    name: "Gate".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = World::new(topology).unwrap();
         let office = world.create_office("Mayor", Tick(1)).unwrap();
         let holder = world
             .create_agent("Aster", ControlSource::Ai, Tick(2))
@@ -3853,14 +3875,31 @@ mod tests {
             .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
             .unwrap();
 
+        world
+            .insert_component_office_data(
+                office,
+                OfficeData {
+                    title: "Mayor".to_string(),
+                    seat: entity(1),
+                    jurisdiction: BTreeSet::from([entity(1), entity(2)]),
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
         world.assign_office(office, holder).unwrap();
+        world.set_ground_location(item, entity(2)).unwrap();
 
-        assert!(!world.has_right(holder, item, RightKind::JurisdictionalAuthority));
+        assert!(world.has_right(holder, item, RightKind::JurisdictionalAuthority));
         assert!(
             world
                 .effective_rights(holder, item)
-                .iter()
-                .all(|right| right.kind != RightKind::JurisdictionalAuthority)
+                .contains(&EffectiveRight {
+                    kind: RightKind::JurisdictionalAuthority,
+                    via: Some(office),
+                })
         );
     }
 
@@ -3909,9 +3948,10 @@ mod tests {
                 rights.iter().any(|right| right.kind == kind)
             );
         }
-        assert_eq!(
-            !rights.is_empty(),
-            world.can_exercise_control(actor, bread).is_ok()
+        assert_eq!(world.can_exercise_control(actor, bread).is_ok(), !rights.is_empty());
+        assert!(
+            !world.has_right(actor, bread, RightKind::JurisdictionalAuthority),
+            "container-mediated control should stay separate from jurisdictional authority"
         );
     }
 

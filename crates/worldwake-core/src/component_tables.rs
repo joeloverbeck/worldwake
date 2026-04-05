@@ -259,7 +259,8 @@ mod tests {
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Granary Chair".to_string(),
-            jurisdiction: entity(30),
+            seat: entity(30),
+            jurisdiction: BTreeSet::from([entity(30)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: vec![EligibilityRule::FactionMember(entity(31))],
             succession_period_ticks: 24,

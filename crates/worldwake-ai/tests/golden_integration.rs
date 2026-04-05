@@ -2769,7 +2769,8 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
             office,
             worldwake_core::OfficeData {
                 title: "Ruler of the Road".to_string(),
-                jurisdiction: PLACE_T21_RULERS_HALL,
+                seat: PLACE_T21_RULERS_HALL,
+                jurisdiction: BTreeSet::from([PLACE_T21_RULERS_HALL]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: vec![EligibilityRule::FactionMember(ruling_faction)],
                 succession_period_ticks: 48,
@@ -3657,7 +3658,8 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
             office,
             worldwake_core::OfficeData {
                 title: "Ruler of the Market".to_string(),
-                jurisdiction: PLACE_T33_RULERS_HALL,
+                seat: PLACE_T33_RULERS_HALL,
+                jurisdiction: BTreeSet::from([PLACE_T33_RULERS_HALL]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: vec![EligibilityRule::FactionMember(ruling_faction)],
                 succession_period_ticks: 5,

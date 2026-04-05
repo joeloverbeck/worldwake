@@ -4988,7 +4988,8 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
             office,
             OfficeData {
                 title: "War Chief".to_string(),
-                jurisdiction: place,
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
                 succession_law: SuccessionLaw::Force,
                 succession_period_ticks: 5,
                 eligibility_rules: Vec::new(),
@@ -5360,7 +5361,8 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
             office,
             OfficeData {
                 title: "Speaker".to_string(),
-                jurisdiction: remote_place,
+                seat: remote_place,
+                jurisdiction: BTreeSet::from([remote_place]),
                 succession_law: SuccessionLaw::Support,
                 succession_period_ticks: 5,
                 eligibility_rules: Vec::new(),

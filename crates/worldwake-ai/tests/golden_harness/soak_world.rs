@@ -2,6 +2,7 @@
 //! and replay-determinism test binaries.
 
 use super::*;
+use std::collections::BTreeSet;
 use worldwake_core::{
     BanditCamp, BanditFactionPolicy, CombatProfile, CommodityKind, DemandMemory, EligibilityRule,
     EntityId, HomeostaticNeeds, JusticeDispositionProfile, MerchandiseProfile, MetabolismProfile,
@@ -285,7 +286,8 @@ pub fn build_t30_world(
             office,
             worldwake_core::OfficeData {
                 title: "Town Leader".to_string(),
-                jurisdiction: PLACE_T30_RULERS_HALL,
+                seat: PLACE_T30_RULERS_HALL,
+                jurisdiction: BTreeSet::from([PLACE_T30_RULERS_HALL]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: vec![EligibilityRule::FactionMember(ruling_faction)],
                 succession_period_ticks: 48,

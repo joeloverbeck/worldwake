@@ -412,13 +412,13 @@ impl PlanningSnapshot {
         self.actor
     }
 
-    /// Jurisdiction place for an Office entity, captured from `OfficeData.jurisdiction`.
+    /// Canonical seat place for an Office entity, captured from `OfficeData.seat`.
     #[must_use]
-    pub(crate) fn jurisdiction(&self, office: EntityId) -> Option<EntityId> {
+    pub(crate) fn seat(&self, office: EntityId) -> Option<EntityId> {
         self.entities
             .get(&office)
             .and_then(|snapshot| snapshot.office_data.as_ref())
-            .map(|office_data| office_data.jurisdiction)
+            .map(|office_data| office_data.seat)
     }
 
     /// Base support declarations for an office, captured at snapshot build time.
@@ -1929,7 +1929,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Marshal".to_string(),
-                jurisdiction: town,
+                seat: town,
+                jurisdiction: BTreeSet::from([town]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
                 succession_period_ticks: 19,
